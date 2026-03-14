@@ -1,0 +1,950 @@
+{% extends "layout.html" %}
+
+{% block title %}Business Insights Panel | Asarfi Hospital Ltd{% endblock %}
+
+{% block content %}
+  <script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+
+  <style>
+    /* Page Wrapper & Resets */
+    .bi-wrapper {
+      font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+      color: #0f172a;
+      background:
+        radial-gradient(1200px 600px at -10% -10%, #e3f2fd 0, transparent 40%),
+        radial-gradient(1400px 700px at 110% -10%, #e3f2fd 0, transparent 35%),
+        #f4f7fb;
+      min-height: 100vh;
+      width: 100%;
+      padding-bottom: 40px;
+      box-sizing: border-box;
+    }
+    .bi-wrapper * { box-sizing: border-box; }
+
+    /* Core Theme Variables */
+    .bi-wrapper {
+      --bg: #f4f7fb;
+      --card: #ffffff;
+      --ink: #0f172a;
+      --muted: #546e7a;
+      --brand: #1e40af;
+      --brand-2:#3b82f6;
+      --ok:#22c55e;
+      --shadow: 0 10px 30px rgba(0,0,0,.08);
+      --radius: 16px;
+    }
+
+    /* ===== FAB user button (Fixed Top Right) ===== */
+    .fab-user {
+      position: fixed;
+      top: 20px;
+      right: 20px;
+      z-index: 1000;
+    }
+    .fab-btn {
+      width: 52px; height: 52px;
+      border-radius: 50%;
+      background: linear-gradient(135deg, var(--brand), var(--brand-2));
+      color: #fff;
+      display: grid; place-items: center;
+      font-size: 22px;
+      box-shadow: 0 8px 20px rgba(37,99,235,.3);
+      border: none;
+      cursor: pointer;
+      transition: transform .18s ease;
+    }
+    .fab-btn:hover{ transform: scale(1.06); }
+    
+    .fab-menu {
+      position: absolute;
+      top: 60px; right: 0;
+      background: rgba(255,255,255,.96);
+      border-radius: 12px;
+      box-shadow: var(--shadow);
+      border: 1px solid rgba(0,0,0,.06);
+      backdrop-filter: blur(8px);
+      padding: 10px;
+      display: none;
+      min-width: 190px;
+    }
+    .fab-menu.open { display: block; animation: fadeIn .18s ease both; }
+    @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+    
+    .fab-menu a {
+      display: block;
+      padding: 8px 12px;
+      border-radius: 8px;
+      color: var(--ink);
+      font-weight: 600;
+      text-decoration: none;
+      font-size: 14px;
+    }
+    .fab-menu a:hover { background: #eef2ff; color: var(--brand); }
+
+    /* ===== Header ===== */
+    .bi-header {
+      text-align: center;
+      margin-top: 30px;
+      margin-bottom: 20px;
+    }
+    .bi-header img {
+      width: 78px; height: 78px; object-fit: contain; border-radius: 14px;
+      box-shadow: 0 10px 24px rgba(0,0,0,.18);
+      background: #fff;
+    }
+    .bi-header h1 {
+      margin: 10px 0 4px;
+      color: var(--brand);
+      font-size: 28px;
+      font-weight: 800;
+      letter-spacing: .2px;
+    }
+    .bi-header p {
+      margin: 0;
+      color: #607d8b;
+      letter-spacing: .3px;
+    }
+
+    /* ===== Layout & Cards ===== */
+    .bi-container {
+      width: 96%;
+      max-width: 1100px;
+      margin: 0 auto;
+    }
+    
+    .bi-card {
+      background: rgba(255,255,255,.9);
+      border: 1px solid rgba(0,0,0,.06);
+      border-radius: var(--radius);
+      box-shadow: var(--shadow);
+      backdrop-filter: blur(8px) saturate(180%);
+      padding: 16px;
+      margin-bottom: 16px;
+    }
+    
+    .title-row {
+      display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 10px;
+    }
+    .title {
+      font-size: 20px; font-weight: 800; color: #1e3a8a;
+    }
+
+    /* Filters */
+    .filters {
+      display: grid; grid-template-columns: 1fr auto; gap: 12px; align-items: center;
+    }
+    .chips { display: flex; flex-wrap: wrap; gap: 8px; }
+    .chip {
+      padding: 8px 12px; border-radius: 999px; background: #e8f0fe; color: #1e3a8a; border: 1px solid #dbeafe;
+      font-size: 13px; cursor: pointer; user-select: none; transition: transform .06s ease, background .2s ease;
+    }
+    .chip:hover { transform: translateY(-1px); }
+    .chip.active { background: #1e3a8a; color: #fff; border-color: #1e3a8a; }
+    
+    .dates { display: flex; gap: 8px; align-items: center; }
+    .dates input {
+      border: 1px solid #e2e8f0; padding: 8px 10px; border-radius: 10px; font-size: 13px; background: #fff;
+    }
+    
+    .bi-btn {
+      display: inline-flex; gap: 8px; align-items: center; justify-content: center;
+      padding: 9px 12px; border-radius: 10px; border: 1px solid #cbd5e1; background: #ffffff;
+      cursor: pointer; font-size: 13px; min-width: 88px;
+    }
+    .bi-btn.primary { background: #1e3a8a; color: #fff; border-color: #1e3a8a; }
+    .bi-btn[disabled] { opacity: .65; cursor: not-allowed; }
+    
+    .spinner {
+      width: 14px; height: 14px; border-radius: 50%; border: 2px solid rgba(255,255,255,.65);
+      border-top-color: #fff; animation: spin .8s linear infinite; display: none;
+    }
+    @keyframes spin { to { transform: rotate(360deg); } }
+
+    /* Unit selector */
+    .unit-box { display: flex; gap: 8px; align-items: center; }
+    .unit-box label { font-size: 13px; color: #334155; }
+    .unit-select {
+      border: 1px solid #e2e8f0; background: #fff; padding: 8px 10px; border-radius: 10px; font-size: 13px;
+    }
+
+    /* View toggle */
+    .view-toggle {
+      display: flex; gap: 6px; align-items: center;
+      background: #eef2ff; padding: 4px; border-radius: 999px; border: 1px solid #dbeafe;
+    }
+    .view-toggle button {
+      border: none; background: transparent; padding: 6px 10px; border-radius: 999px; cursor: pointer;
+      color: #1e3a8a; font-weight: 700; font-size: 12px;
+    }
+    .view-toggle button.active { background: #1e3a8a; color: #fff; }
+
+    /* KPIs */
+    .kpis { display: grid; grid-template-columns: repeat(3, 1fr); gap: 12px; margin-top: 8px; }
+    .kpi {
+      padding: 16px; background: linear-gradient(180deg, rgba(255,255,255,.95), rgba(255,255,255,.86));
+      border: 1px solid #eef2ff; border-radius: 16px; box-shadow: var(--shadow);
+    }
+    .kpi .label { color: #6b7280; font-size: 12px; }
+    .kpi .value { font-size: 22px; font-weight: 800; margin-top: 6px; }
+
+    /* Charts & Tables */
+    #chart { width: 100%; height: 420px; }
+    #chartDept { width: 100%; height: 620px; display: none; }
+
+    table.bi {
+      width: 100%; border-collapse: collapse; border-radius: 14px; overflow: hidden; font-size: 14px;
+      background: rgba(255,255,255,.92);
+    }
+    table.bi th, table.bi td { padding: 10px 12px; border-bottom: 1px solid #eef2f7; }
+    table.bi thead th { text-align: left; background: #f1f5ff; color: #1f2a5a; font-weight: 700; }
+    table.bi tbody tr:hover { background: #f8fbff; }
+    
+    .badge {
+      display: inline-block; padding: 4px 12px; border-radius: 12px; font-size: 12px;
+      font-weight: 700; text-align: center;
+    }
+    .badge.cash { background: linear-gradient(135deg, #1e40af, #3b82f6); color: #ffffff; }
+    .badge.cashless { background: linear-gradient(135deg, #16a34a, #86efac); color: #ffffff; }
+
+    .bi-footer {
+      margin: 36px 0 28px; text-align: center; color: #64748b; font-size: 13px;
+    }
+
+    /* Responsive */
+    @media (max-width: 900px){
+      .filters { grid-template-columns: 1fr; }
+      .kpis { grid-template-columns: 1fr; }
+    }
+
+    /* Loaders */
+    #chart, #chartDept, #tableVisit, #tableDept { position: relative; }
+    .section-loading {
+      position: absolute; inset: 0; display: none; align-items: center; justify-content: center;
+      background: rgba(255,255,255,.55); backdrop-filter: blur(2px) saturate(140%); z-index: 2;
+    }
+    .section-loading.show { display: flex; }
+    .section-loading .sec-spin {
+      width: 20px; height: 20px; border-radius: 50%; border: 3px solid #c7d2fe;
+      border-top-color: #1e40af; animation: spin .8s linear infinite;
+    }
+  </style>
+
+<div class="bi-wrapper">
+  <div class="fab-user">
+    <button class="fab-btn" id="fabToggle" title="User Menu">☰</button>
+    <div class="fab-menu" id="fabMenu">
+      <div style="padding:6px 12px;font-weight:700;color:#1e3a8a;">
+        👋 {{ session.get('username') or session.get('user') or 'User' }}
+      </div>
+      <a href="{{ url_for('dashboard') }}">🏠 Home</a>
+      <a href="{{ url_for('logout') }}">⏻ Logout</a>
+    </div>
+  </div>
+
+  <header class="bi-header">
+    <img src="{{ url_for('static', filename='logo/asarfi.png') }}" alt="Asarfi Hospital Logo">
+    <h1>Business Insights Panel</h1>
+    <p id="headerSubtitle">Daily Average Billing — Cash vs Cashless × Visit Type</p>
+  </header>
+
+  <div class="bi-container">
+    <section class="bi-card">
+      <div class="title-row">
+        <div class="title">Filters</div>
+      </div>
+      <div class="filters">
+        <div class="chips" id="rangeChips">
+          <div class="chip" data-range="today">Today</div>
+          <div class="chip" data-range="7d">Last 7 Days</div>
+          <div class="chip active" data-range="30d">Last 30 Days</div>
+          <div class="chip" data-range="fy">This Financial Year</div>
+          <div class="chip" data-range="custom">Custom</div>
+        </div>
+
+        <div class="dates" id="dateInputs" style="display:none;">
+          <input type="date" id="startDate">
+          <input type="date" id="endDate">
+          <button class="bi-btn primary" id="applyCustom">
+            <span class="btn-text">Apply</span>
+            <span class="spinner" id="applySpin"></span>
+          </button>
+        </div>
+
+        {# Unit locking resolved server-side #}
+
+        <div class="unit-box" id="unitBox" {% if unit_locked %}style="display:none"{% endif %}>
+          <label for="unitSelect">Unit</label>
+          <select id="unitSelect" class="unit-select" {% if unit_locked %}disabled{% endif %}>
+            {% if not unit_locked %}
+              <option value="" {% if not user_unit %}selected{% endif %}>All</option>
+            {% endif %}
+            {% for u in allowed_units or [] %}
+              <option value="{{ u }}" {% if user_unit==u %}selected{% endif %}>{{ u }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+
+      <div style="display:flex;justify-content:flex-end;margin-top:8px;">
+        <div class="view-toggle">
+          <button id="btnViewVisit" class="active" title="Show by Visit Type">By Visit Type</button>
+          <button id="btnViewDept" title="Show by Department">By Department</button>
+        </div>
+      </div>
+    </section>
+
+    <section class="kpis">
+      <div class="kpi">
+        <div class="label">Total Daily Avg (₹)</div>
+        <div class="value" id="kpiTotal">0</div>
+        <div class="label" style="margin-top:8px;font-size:11px;opacity:0.8">Avg Per Patient (₹)</div>
+        <div class="value" style="font-size:18px;" id="kpiTotalPerPatient">0</div>
+      </div>
+      <div class="kpi">
+        <div class="label">Cash Daily Avg (₹)</div>
+        <div class="value" id="kpiCash">0</div>
+        <div class="label" style="margin-top:8px;font-size:11px;opacity:0.8">Avg Per Patient (₹)</div>
+        <div class="value" style="font-size:18px;" id="kpiCashPerPatient">0</div>
+      </div>
+      <div class="kpi">
+        <div class="label">Cashless Daily Avg (₹)</div>
+        <div class="value" id="kpiCashless">0</div>
+        <div class="label" style="margin-top:8px;font-size:11px;opacity:0.8">Avg Per Patient (₹)</div>
+        <div class="value" style="font-size:18px;" id="kpiCashlessPerPatient">0</div>
+      </div>
+    </section>
+
+    <section class="bi-card" style="margin-top:12px;">
+      <div id="chart"></div>
+      <div class="section-loading" id="loadChart" aria-hidden="true"><div class="sec-spin"></div></div>
+
+      <div id="chartDept"></div>
+      <div class="section-loading" id="loadChartDept" aria-hidden="true"><div class="sec-spin"></div></div>
+    </section>
+
+    <section class="bi-card" style="margin-top:12px;">
+      <div id="tableVisit">
+        <table class="bi" id="tbl">
+          <thead>
+            <tr>
+              <th>Payment Type</th>
+              <th>Visit Type</th>
+              <th>Daily Avg Billing (₹)</th>
+              <th>Daily Avg Bills (#)</th>
+              <th>Avg Per Patient (₹)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="section-loading" id="loadTableVisit" aria-hidden="true"><div class="sec-spin"></div></div>
+      </div>
+
+      <div id="tableDept" style="display:none;">
+        <table class="bi" id="tblDept">
+          <thead>
+            <tr>
+              <th>Department</th>
+              <th>Daily Avg Cash (₹)</th>
+              <th>Daily Avg Cashless (₹)</th>
+              <th>Daily Avg Total (₹)</th>
+              <th>Avg Per Patient (Cash) (₹)</th>
+              <th>Avg Per Patient (Cashless) (₹)</th>
+            </tr>
+          </thead>
+          <tbody></tbody>
+        </table>
+        <div class="section-loading" id="loadTableDept" aria-hidden="true"><div class="sec-spin"></div></div>
+      </div>
+    </section>
+  </div>
+
+  <footer class="bi-footer">
+    &copy; 2025 Asarfi Hospital Ltd. All Rights Reserved.
+  </footer>
+
+  <script>
+    // FAB Menu
+    const fabToggle = document.getElementById('fabToggle');
+    const fabMenu = document.getElementById('fabMenu');
+    if(fabToggle && fabMenu) {
+      fabToggle.addEventListener('click', () => fabMenu.classList.toggle('open'));
+      document.addEventListener('click', (e)=>{
+        if(!e.target.closest('.fab-user')) fabMenu.classList.remove('open');
+      });
+    }
+    
+    // --- MAIN LOGIC START ---
+    const chips = document.querySelectorAll('#rangeChips .chip');
+    const dateInputs = document.getElementById('dateInputs');
+    const startEl = document.getElementById('startDate');
+    const endEl = document.getElementById('endDate');
+    const applyBtn = document.getElementById('applyCustom');
+    const applySpin = document.getElementById('applySpin');
+    const applyText = applyBtn ? applyBtn.querySelector('.btn-text') : null;
+    const unitSelect = document.getElementById('unitSelect');
+
+    const btnViewVisit = document.getElementById('btnViewVisit');
+    const btnViewDept  = document.getElementById('btnViewDept');
+
+    let currentRange = '30d';
+    let lastStart = null;
+    let lastEnd   = null;
+    let viewMode  = 'visit';
+
+    /* Per-section loader handles */
+    const loadChartEl      = document.getElementById('loadChart');
+    const loadChartDeptEl  = document.getElementById('loadChartDept');
+    const loadTableVisitEl = document.getElementById('loadTableVisit');
+    const loadTableDeptEl  = document.getElementById('loadTableDept');
+    const showSec = el => el && el.classList.add('show');
+    const hideSec = el => el && el.classList.remove('show');
+
+    /* Lock unit for HODs using server-provided flags */
+    const UNIT_LOCKED = {{ unit_locked|tojson }};
+    const DEFAULT_UNIT = {{ (user_unit or '')|tojson }};
+    if (UNIT_LOCKED && unitSelect) {
+      unitSelect.value = DEFAULT_UNIT;
+      unitSelect.setAttribute('disabled','disabled');
+    }
+
+    function setActiveChip(range) {
+      chips.forEach(c => c.classList.toggle('active', c.dataset.range === range));
+    }
+
+    chips.forEach(chip => {
+      chip.addEventListener('click', () => {
+        const r = chip.dataset.range;
+        currentRange = r;
+        setActiveChip(r);
+        if (r === 'custom') {
+          dateInputs.style.display = 'flex';
+        } else {
+          dateInputs.style.display = 'none';
+          const u = UNIT_LOCKED ? DEFAULT_UNIT : (unitSelect ? unitSelect.value : '');
+          fetchAndRender({ range: r, unit: u });
+        }
+      });
+    });
+
+    if(unitSelect) {
+        unitSelect.addEventListener('change', () => {
+          if (UNIT_LOCKED) return; 
+          const params = { range: currentRange };
+          if (currentRange === 'custom' && startEl.value && endEl.value) {
+            params.start = startEl.value; params.end = endEl.value;
+          }
+          params.unit = unitSelect.value;
+          fetchAndRender(params);
+        });
+    }
+
+    if(applyBtn) {
+        applyBtn.addEventListener('click', () => {
+          if (!startEl.value || !endEl.value) return;
+          const u = UNIT_LOCKED ? DEFAULT_UNIT : (unitSelect ? unitSelect.value : '');
+          fetchAndRender(
+            { range: 'custom', start: startEl.value, end: endEl.value, unit: u },
+            { showApplyLoading:true }
+          );
+        });
+    }
+
+    // View toggle
+    btnViewVisit.addEventListener('click', () => {
+      if (viewMode === 'visit') return;
+      viewMode = 'visit';
+      btnViewVisit.classList.add('active'); btnViewDept.classList.remove('active');
+      document.getElementById('chart').style.display = 'block';
+      document.getElementById('chartDept').style.display = 'none';
+      document.getElementById('tableVisit').style.display = 'block';
+      document.getElementById('tableDept').style.display = 'none';
+      document.getElementById('headerSubtitle').textContent = 'Daily Average Billing — Cash vs Cashless × Visit Type';
+    });
+
+    btnViewDept.addEventListener('click', async () => {
+      if (viewMode === 'dept') return;
+      viewMode = 'dept';
+      btnViewDept.classList.add('active'); btnViewVisit.classList.remove('active');
+      document.getElementById('chart').style.display = 'none';
+      document.getElementById('tableVisit').style.display = 'none';
+      const deptEl = document.getElementById('chartDept');
+      deptEl.style.display = 'block';
+      document.getElementById('tableDept').style.display = 'block';
+      document.getElementById('headerSubtitle').textContent = 'Department-wise Revenue — Cash vs Cashless';
+      ensureDeptChart();
+      await renderDepartmentChart();
+    });
+
+    const chart = echarts.init(document.getElementById('chart'));
+    let chartDept = null; // lazy
+
+    function ensureDeptChart(){
+      const el = document.getElementById('chartDept');
+      if (!chartDept){
+        chartDept = echarts.init(el);
+      }
+      setTimeout(() => { chartDept && chartDept.resize(); }, 0);
+    }
+
+    function rupee(x) {
+      const n = Number(x || 0);
+      return n.toLocaleString('en-IN', { maximumFractionDigits: 2 });
+    }
+    function rupeeWithSymbol(x){ return '₹ ' + rupee(x); }
+
+    function deriveWindowFromRange(){
+      const today = new Date();
+      const pad = n => String(n).padStart(2,'0');
+      const fmt = d => `${d.getFullYear()}-${pad(d.getMonth()+1)}-${pad(d.getDate())}`;
+
+      if (currentRange === 'custom' && startEl.value && endEl.value){
+        return { start: startEl.value, end: endEl.value };
+      }
+      if (currentRange === 'today'){
+        const t = fmt(today); return { start:t, end:t };
+      }
+      if (currentRange === '7d'){
+        const d = new Date(today); d.setDate(d.getDate()-6);
+        return { start: fmt(d), end: fmt(today) };
+      }
+      if (currentRange === '30d'){
+        const d = new Date(today); d.setDate(d.getDate()-29);
+        return { start: fmt(d), end: fmt(today) };
+      }
+      if (currentRange === 'fy'){
+        const y = today.getMonth() >= 3 ? today.getFullYear() : today.getFullYear()-1;
+        return { start: `${y}-04-01`, end: fmt(today) };
+      }
+      const d = new Date(today); d.setDate(d.getDate()-29);
+      return { start: fmt(d), end: fmt(today) };
+    }
+
+    async function fetchAndRender(params, opts) {
+      /* Show visit loaders */
+      showSec(loadChartEl);
+      showSec(loadTableVisitEl);
+
+      if (opts?.showApplyLoading && applyBtn) {
+        applyBtn.disabled = true;
+        applySpin.style.display = 'inline-block';
+        applyText.textContent = 'Processing';
+      }
+
+      const url = new URL(location.origin + '/api/business_insights');
+      Object.entries(params || {}).forEach(([k,v]) => {
+        if (v !== '') url.searchParams.set(k, v);
+      });
+
+      const res = await fetch(url);
+      const data = await res.json();
+
+      if (opts?.showApplyLoading && applyBtn) {
+        applyBtn.disabled = false;
+        applySpin.style.display = 'none';
+        applyText.textContent = 'Apply';
+      }
+
+      if (data.status !== 'success') {
+        document.getElementById('kpiTotal').textContent = '0';
+        document.getElementById('kpiCash').textContent = '0';
+        document.getElementById('kpiCashless').textContent = '0';
+        document.getElementById('kpiTotalPerPatient').textContent = '0';
+        document.getElementById('kpiCashPerPatient').textContent = '0';
+        document.getElementById('kpiCashlessPerPatient').textContent = '0';
+        document.querySelector('#tbl tbody').innerHTML = '';
+        chart.clear();
+        if (chartDept) chartDept.clear();
+        hideSec(loadChartEl);
+        hideSec(loadTableVisitEl);
+        return;
+      }
+
+      lastStart = data.start;
+      lastEnd   = data.end;
+
+      // KPIs
+      document.getElementById('kpiTotal').textContent    = rupee(data.overall.total_daily_avg);
+      document.getElementById('kpiCash').textContent     = rupee(data.overall.cash_daily_avg);
+      document.getElementById('kpiCashless').textContent = rupee(data.overall.cashless_daily_avg);
+      
+      document.getElementById('kpiTotalPerPatient').textContent    = rupee(data.overall.avg_per_patient || 0);
+      document.getElementById('kpiCashPerPatient').textContent     = rupee(data.overall.cash_avg_per_patient || 0);
+      document.getElementById('kpiCashlessPerPatient').textContent = rupee(data.overall.cashless_avg_per_patient || 0);
+
+      // Table
+      const tb = document.querySelector('#tbl tbody');
+      tb.innerHTML = (data.rows || []).map(r => `
+        <tr>
+          <td><span class="badge ${r.PayCategory === 'Cash' ? 'cash' : 'cashless'}">${r.PayCategory}</span></td>
+          <td>${r.VisitType}</td>
+          <td>${rupee(r.DailyAvgBilling)}</td>
+          <td>${(Number(r.DailyAvgBills || 0)).toLocaleString('en-IN')}</td>
+          <td>${rupee(r.AvgBillingPerPatient || 0)}</td>
+        </tr>
+      `).join('');
+
+      // Visit-Type chart
+      const visitTypes = [...new Set((data.rows || []).map(r => r.VisitType))];
+      const cashMap = new Map();
+      const cashlessMap = new Map();
+      (data.rows || []).forEach(r => {
+        if (r.PayCategory === 'Cash') cashMap.set(r.VisitType, r.DailyAvgBilling);
+        else cashlessMap.set(r.VisitType, r.DailyAvgBilling);
+      });
+
+      const cashSeries = visitTypes.map(v => cashMap.get(v) || 0);
+      const cashlessSeries = visitTypes.map(v => cashlessMap.get(v) || 0);
+
+      chart.setOption({
+        animationDuration: 600,
+        animationEasing: 'cubicOut',
+        tooltip: {
+          trigger: 'axis',
+          axisPointer: { type: 'shadow' },
+          formatter: (params) => {
+            const name = params?.[0]?.axisValueLabel ?? '';
+            const u = UNIT_LOCKED ? DEFAULT_UNIT : (unitSelect ? unitSelect.value : '');
+            const lines = params.map(p => `${p.marker} ${p.seriesName} <b>${rupeeWithSymbol(p.value)}</b>`).join('<br/>');
+            const unitLabel = u ? ` <span style="opacity:.7">(${u})</span>` : '';
+            return `<div><b>${name}${unitLabel}</b><br/>${lines}</div>`;
+          }
+        },
+        legend: { data: ['Cash', 'Cashless'], top: 6, itemGap: 20 },
+        grid: { left: 72, right: 20, top: 48, bottom: 48, containLabel: true },
+        xAxis: { type: 'category', data: visitTypes, axisTick:{alignWithLabel:true} },
+        yAxis: {
+          type: 'value',
+          axisLabel: { formatter: (val) => rupee(val) },
+          splitLine:{ show:true, lineStyle:{ color:'rgba(0,0,0,.06)' } }
+        },
+        series: [
+          { name: 'Cash', type: 'bar', data: cashSeries, barMaxWidth: 36,
+            itemStyle:{ borderRadius:[8,8,0,0], shadowBlur:4, shadowColor:'rgba(0,0,0,.08)' } },
+          { name: 'Cashless', type: 'bar', data: cashlessSeries, barMaxWidth: 36,
+            itemStyle:{ borderRadius:[8,8,0,0], shadowBlur:4, shadowColor:'rgba(0,0,0,.08)' } }
+        ]
+      });
+
+      // If currently in Dept view, refresh
+      if (viewMode === 'dept') {
+        ensureDeptChart();
+        await renderDepartmentChart();
+      }
+
+      hideSec(loadChartEl);
+      hideSec(loadTableVisitEl);
+    }
+
+    async function renderDepartmentChart() {
+      showSec(loadChartDeptEl);
+      showSec(loadTableDeptEl);
+
+      const unit = (UNIT_LOCKED ? DEFAULT_UNIT : (unitSelect ? unitSelect.value : '')).trim().toUpperCase();
+      if (!chartDept) ensureDeptChart();
+      chartDept.showLoading('default', { text: 'Loading…' });
+
+      if (!unit) {
+        chartDept.hideLoading();
+        chartDept.clear();
+        chartDept.setOption({
+          title: {
+            text: 'Select a Unit to view Department-wise totals',
+            left: 'center',
+            top: 'center',
+            textStyle: { color: '#64748b', fontWeight: '700', fontSize: 14 }
+          }
+        });
+        window.lastDeptData = null;
+        renderDepartmentTable();
+        hideSec(loadChartDeptEl);
+        hideSec(loadTableDeptEl);
+        return;
+      }
+
+      let from = lastStart, to = lastEnd;
+      if (!from || !to) {
+        const win = deriveWindowFromRange();
+        from = win.start; to = win.end;
+      }
+
+      try {
+        const form = new URLSearchParams();
+        form.set('from_date', from);
+        form.set('to_date', to);
+        form.set('unit', unit);
+        form.set('mode', 'department');
+        form.set('pay_split', '1');
+
+        const res = await fetch('/breakdown', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/x-www-form-urlencoded' },
+          body: form.toString()
+        });
+        const js = await res.json();
+        chartDept.hideLoading();
+
+        if (js.status !== 'success' || !(js.labels && js.labels.length)) {
+          chartDept.clear();
+          chartDept.setOption({
+            title: {
+              text: 'No department data for this window',
+              left: 'center',
+              top: 'center',
+              textStyle: { color: '#64748b', fontWeight: '700', fontSize: 14 }
+            }
+          });
+          window.lastDeptData = null;
+          renderDepartmentTable();
+          hideSec(loadChartDeptEl);
+          hideSec(loadTableDeptEl);
+          return;
+        }
+
+        const labels = js.labels || [];
+        const cleanedLabels = labels.map(lbl =>
+          lbl.replace(/^(Department|Dept)\s+of\s*/i, '').trim()
+        );
+        const cash = (js.cash || []).map(Number);
+        const cashless = (js.cashless || []).map(Number);
+        const billCounts = js.bill_counts || {};
+        
+        const cleanedBillCounts = {};
+        labels.forEach((originalLabel, idx) => {
+          const cleanedLabel = cleanedLabels[idx];
+          if (billCounts[originalLabel]) {
+            cleanedBillCounts[cleanedLabel] = billCounts[originalLabel];
+          }
+        });
+
+        window.lastDeptData = { 
+          labels: cleanedLabels, 
+          cash, 
+          cashless, 
+          from: from, 
+          to: to, 
+          bill_counts: cleanedBillCounts
+        };
+
+        chartDept.clear();
+        chartDept.setOption({
+          title: { show: false },
+          animationDuration: 900,
+          animationEasing: 'cubicOut',
+          backgroundColor: 'transparent',
+          tooltip: {
+            trigger: 'axis',
+            axisPointer: { type: 'shadow' },
+            borderWidth: 0,
+            backgroundColor: 'rgba(255,255,255,0.95)',
+            textStyle: { color: '#1e293b' },
+            shadowColor: 'rgba(0,0,0,.1)',
+            formatter: (params) => {
+              const name = params?.[0]?.axisValueLabel ?? '';
+              const lines = params.map(
+                p => `${p.marker} ${p.seriesName}: <b>${rupeeWithSymbol(p.value)}</b>`
+              ).join('<br/>');
+              const total = params.reduce((s, p) => s + (Number(p.value) || 0), 0);
+              return `<b>${name} (${unit})</b><br/>${lines}<br/><span style="opacity:.75">Total: <b>${rupeeWithSymbol(total)}</b></span>`;
+            }
+          },
+          legend: {
+            data: ['Cash', 'Cashless'],
+            top: 8,
+            itemGap: 20,
+            icon: 'roundRect',
+            textStyle: { color: '#1e293b', fontWeight: 600 }
+          },
+          grid: { left: 100, right: 140, top: 56, bottom: 180, containLabel: false },
+          xAxis: {
+            type: 'category',
+            data: cleanedLabels,
+            boundaryGap: true,
+            axisLabel: {
+              interval: 0,
+              rotate: 30,
+              width: 180,
+              overflow: 'break',
+              margin: 24,
+              padding: [0, 0, 12, 0],
+              hideOverlap: false,
+              showMaxLabel: true,
+              showMinLabel: true
+            },
+            axisLine: { lineStyle: { color: 'rgba(0,0,0,.2)' } },
+            axisTick: { alignWithLabel: true }
+          },
+          yAxis: {
+            type: 'value',
+            axisLabel: { formatter: v => rupee(v) },
+            splitLine: { show: true, lineStyle: { color: 'rgba(0,0,0,.06)' } }
+          },
+          dataZoom: [
+            {
+              type: 'inside',
+              start: 0,
+              end: 100,
+              zoomOnMouseWheel: true,
+              moveOnMouseMove: true
+            },
+            {
+              type: 'slider',
+              start: 0,
+              end: 100,
+              height: 24,
+              bottom: 20,
+              left: 100,
+              right: 140,
+              brushSelect: false,
+              handleSize: 12,
+              borderColor: 'rgba(0,0,0,0)',
+              fillerColor: 'rgba(59,130,246,0.18)',
+              backgroundColor: 'rgba(59,130,246,0.08)',
+              handleStyle: { color: '#1e40af', borderColor: '#1e3a8a', shadowBlur: 2, shadowColor: 'rgba(0,0,0,.15)' }
+            }
+          ],
+          series: [
+            {
+              name: 'Cash',
+              type: 'bar',
+              stack: 'pay',
+              data: cash,
+              barMaxWidth: 28,
+              barGap: '15%',
+              itemStyle: {
+                borderRadius: [8, 8, 8, 8],
+                shadowBlur: 6,
+                shadowColor: 'rgba(0,0,0,.08)',
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                  { offset: 0, color: '#1e40af' },
+                  { offset: 1, color: '#3b82f6' }
+                ])
+              },
+              emphasis: { focus: 'series' }
+            },
+            {
+              name: 'Cashless',
+              type: 'bar',
+              stack: 'pay',
+              data: cashless,
+              barMaxWidth: 28,
+              itemStyle: {
+                borderRadius: [8, 8, 8, 8],
+                shadowBlur: 6,
+                shadowColor: 'rgba(0,0,0,.08)',
+                color: new echarts.graphic.LinearGradient(0, 0, 0, 1, [
+                  { offset: 0, color: '#16a34a' },
+                  { offset: 1, color: '#86efac' }
+                ])
+              },
+              emphasis: { focus: 'series' }
+            }
+          ]
+        });
+
+        setTimeout(() => chartDept && chartDept.resize(), 0);
+        renderDepartmentTable();
+      } catch (e) {
+        chartDept.hideLoading();
+        chartDept.clear();
+        chartDept.setOption({
+          title: {
+            text: 'Unable to load department chart',
+            left: 'center',
+            top: 'center',
+            textStyle: { color: '#64748b', fontWeight: '700', fontSize: 14 }
+          }
+        });
+        renderDepartmentTable();
+      } finally {
+        hideSec(loadChartDeptEl);
+        hideSec(loadTableDeptEl);
+      }
+    }
+
+    async function renderDepartmentTable() {
+      const tb = document.querySelector('#tblDept tbody');
+      if (!window.lastDeptData || !window.lastDeptData.labels || window.lastDeptData.labels.length === 0) {
+        tb.innerHTML = '<tr><td colspan="6" style="text-align:center;padding:20px;color:#64748b;">No department data available. Please select a unit.</td></tr>';
+        return;
+      }
+
+      const { labels, cash, cashless, from, to } = window.lastDeptData;
+      let ndays = 1;
+      if (from && to) {
+        const startDate = new Date(from);
+        const endDate = new Date(to);
+        ndays = Math.max(1, Math.round((endDate - startDate) / (1000 * 60 * 60 * 24)) + 1);
+      }
+
+      const billCounts = window.lastDeptData.bill_counts || {};
+      
+      const rows = labels.map((dept, idx) => {
+        const cashTotal = cash[idx] || 0;
+        const cashlessTotal = cashless[idx] || 0;
+        const totalAmount = cashTotal + cashlessTotal;
+        const cashDaily = cashTotal / ndays;
+        const cashlessDaily = cashlessTotal / ndays;
+        const totalDaily = totalAmount / ndays;
+        
+        const deptCounts = billCounts[dept] || {cash: 0, cashless: 0};
+        const cashBills = deptCounts.cash || 0;
+        const cashlessBills = deptCounts.cashless || 0;
+        
+        const cashAvgPerPatient = cashBills > 0 ? (cashTotal / cashBills) : 0;
+        const cashlessAvgPerPatient = cashlessBills > 0 ? (cashlessTotal / cashlessBills) : 0;
+        
+        return `
+          <tr>
+            <td style="font-weight:600;">${dept}</td>
+            <td>${rupee(cashDaily)}</td>
+            <td>${rupee(cashlessDaily)}</td>
+            <td style="font-weight:700;">${rupee(totalDaily)}</td>
+            <td>${rupee(cashAvgPerPatient)}</td>
+            <td>${rupee(cashlessAvgPerPatient)}</td>
+          </tr>
+        `;
+      }).join('');
+
+      const totalCash = cash.reduce((sum, val) => sum + val, 0);
+      const totalCashless = cashless.reduce((sum, val) => sum + val, 0);
+      const grandTotal = totalCash + totalCashless;
+      const dailyAvgCash = totalCash / ndays;
+      const dailyAvgCashless = totalCashless / ndays;
+      const dailyAvgTotal = grandTotal / ndays;
+      
+      let totalCashBills = 0;
+      let totalCashlessBills = 0;
+      for (const dept of labels) {
+        const deptCounts = billCounts[dept] || {cash: 0, cashless: 0};
+        totalCashBills += deptCounts.cash || 0;
+        totalCashlessBills += deptCounts.cashless || 0;
+      }
+      const grandCashAvgPerPatient = totalCashBills > 0 ? (totalCash / totalCashBills) : 0;
+      const grandCashlessAvgPerPatient = totalCashlessBills > 0 ? (totalCashless / totalCashlessBills) : 0;
+
+      tb.innerHTML = rows + `
+        <tr style="background:#f1f5ff;font-weight:800;border-top:2px solid #1e3a8a;">
+          <td>Grand Total (Daily Avg)</td>
+          <td>${rupee(dailyAvgCash)}</td>
+          <td>${rupee(dailyAvgCashless)}</td>
+          <td>${rupee(dailyAvgTotal)}</td>
+          <td>${rupee(grandCashAvgPerPatient)}</td>
+          <td>${rupee(grandCashlessAvgPerPatient)}</td>
+        </tr>
+      `;
+    }
+
+    const initialUnit = UNIT_LOCKED ? DEFAULT_UNIT : (unitSelect ? unitSelect.value : '');
+    fetchAndRender({ range: currentRange, unit: initialUnit });
+    setInterval(() => {
+      const u = UNIT_LOCKED ? DEFAULT_UNIT : (unitSelect ? unitSelect.value : '');
+      fetchAndRender({ range: currentRange, unit: u });
+    }, 300000);
+
+    window.addEventListener('resize', () => {
+      chart.resize();
+      if (chartDept) chartDept.resize();
+    });
+  </script>
+</div>
+{% endblock %}

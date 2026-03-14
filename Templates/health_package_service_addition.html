@@ -1,0 +1,2801 @@
+{% extends "layout.html" %}
+{% block title %}Health Package Service Addition | HID{% endblock %}
+{% block content %}
+{% if embed %}
+<style>
+  header, footer { display: none !important; }
+  main { padding: 0 !important; width: 100% !important; }
+  body { background: #f4f7fb !important; }
+  .svc-hero-side .svc-back { display: none !important; }
+</style>
+{% endif %}
+<style>
+  .svc-wrapper {
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: #0f172a;
+    background:
+      radial-gradient(1200px 600px at -10% -10%, #e3f2fd 0, transparent 40%),
+      radial-gradient(1400px 700px at 110% -10%, #e3f2fd 0, transparent 35%),
+      #f4f7fb;
+    min-height: 100vh;
+    width: 100%;
+    padding: 24px 18px 50px;
+    box-sizing: border-box;
+  }
+  .svc-wrapper * { box-sizing: border-box; }
+  .svc-wrapper,
+  .svc-modal {
+    --brand: #1e3a8a;
+    --brand-2: #3b82f6;
+    --ink: #0f172a;
+    --muted: #64748b;
+    --line: #e2e8f0;
+    --card: rgba(255,255,255,0.94);
+    --shadow: 0 12px 30px rgba(15,23,42,0.08);
+    --radius: 18px;
+    --ok: #16a34a;
+    --warn: #f59e0b;
+    --bad: #dc2626;
+  }
+  html.modal-open,
+  body.modal-open {
+    overflow: hidden;
+  }
+  .svc-progress {
+    height: 4px;
+    width: 100%;
+    background: rgba(30, 64, 175, 0.12);
+    border-radius: 999px;
+    overflow: hidden;
+    position: relative;
+    margin: 16px auto 0;
+    max-width: 1200px;
+  }
+  .svc-progress span {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, var(--brand), var(--brand-2));
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.25s ease;
+  }
+  .svc-wrapper.is-busy .svc-progress span {
+    transform: scaleX(0.65);
+  }
+  .svc-wrapper.is-busy.is-done .svc-progress span {
+    transform: scaleX(1);
+  }
+
+  .svc-hero {
+    max-width: 1200px;
+    margin: 0 auto 18px;
+    background: linear-gradient(120deg, #1e3a8a, #2563eb 55%, #38bdf8);
+    color: #fff;
+    border-radius: 22px;
+    padding: 22px 26px;
+    box-shadow: 0 18px 36px rgba(30, 58, 138, 0.2);
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 18px;
+    align-items: center;
+  }
+  .svc-hero h1 {
+    margin: 0 0 6px;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+  }
+  .svc-hero p {
+    margin: 0;
+    font-size: 14px;
+    color: rgba(255,255,255,0.88);
+    line-height: 1.5;
+  }
+  .svc-status {
+    margin-top: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .svc-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,0.18);
+    border: 1px solid rgba(255,255,255,0.25);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .svc-status-pill.ready { background: rgba(34, 197, 94, 0.25); border-color: rgba(34, 197, 94, 0.45); }
+  .svc-status-pill.warn { background: rgba(245, 158, 11, 0.25); border-color: rgba(245, 158, 11, 0.5); }
+  .svc-status-pill.error { background: rgba(239, 68, 68, 0.25); border-color: rgba(239, 68, 68, 0.55); }
+  .svc-status-text {
+    font-size: 13px;
+    color: rgba(255,255,255,0.88);
+  }
+  .svc-hero-side {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-end;
+  }
+  .svc-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 8px 12px;
+    border-radius: 999px;
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+  .svc-back:hover { transform: translateY(-1px); background: rgba(255,255,255,0.22); }
+  .svc-unit-select {
+    width: 100%;
+    max-width: 260px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 14px;
+    padding: 10px 12px;
+    border: 1px solid rgba(255,255,255,0.2);
+  }
+  .svc-unit-select label {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: rgba(255,255,255,0.85);
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .svc-unit-select select {
+    width: 100%;
+    border: none;
+    background: rgba(255,255,255,0.9);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-weight: 700;
+    color: #0f172a;
+    font-size: 13px;
+  }
+  .svc-steps {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .svc-step {
+    position: relative;
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    padding: 16px 18px;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    box-shadow: 0 10px 20px rgba(15,23,42,0.08);
+    overflow: hidden;
+  }
+  .svc-step::before {
+    content: "";
+    position: absolute;
+    left: 0;
+    top: 0;
+    bottom: 0;
+    width: 6px;
+    background: #bfdbfe;
+  }
+  .svc-step:nth-child(1)::before { background: #93c5fd; }
+  .svc-step:nth-child(2)::before { background: #a7f3d0; }
+  .svc-step:nth-child(3)::before { background: #fcd34d; }
+  .svc-step span {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: #eff6ff;
+    color: #1e3a8a;
+    font-weight: 800;
+    display: grid;
+    place-items: center;
+    font-size: 13px;
+  }
+  .svc-step:nth-child(2) span { background: #ecfdf5; color: #065f46; }
+  .svc-step:nth-child(3) span { background: #fffbeb; color: #92400e; }
+  .svc-step strong {
+    display: block;
+    font-size: 13px;
+    color: var(--ink);
+  }
+  .svc-step small {
+    display: block;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .svc-alert {
+    max-width: 1200px;
+    margin: 16px auto 0;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1e3a8a;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    display: none;
+    align-items: center;
+    gap: 10px;
+  }
+  .svc-alert.show { display: flex; }
+  .svc-alert.error { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+  .svc-alert.success { background: #ecfdf3; border-color: #bbf7d0; color: #166534; }
+  .svc-alert.warn { background: #fff7ed; border-color: #fdba74; color: #9a3412; }
+
+  .svc-container {
+    max-width: 1200px;
+    margin: 18px auto 0;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 22px;
+  }
+  .svc-card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    border: 1px solid #e5e7eb;
+    padding: 16px 18px;
+  }
+  .svc-card + .svc-card { margin-top: 18px; }
+  .svc-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 10px;
+  }
+  .svc-card-title {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 800;
+    color: var(--brand);
+  }
+  .svc-card-sub {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .svc-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    background: #e0f2fe;
+    color: #0369a1;
+  }
+  .svc-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .svc-span-2 { grid-column: span 2; }
+  .svc-field {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+    position: relative;
+  }
+  .svc-field label {
+    font-size: 11px;
+    font-weight: 700;
+    color: #334155;
+  }
+  .svc-field input,
+  .svc-field select,
+  .svc-field textarea {
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-family: inherit;
+    background: #fff;
+    color: #0f172a;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .svc-field input:focus,
+  .svc-field select:focus,
+  .svc-field textarea:focus {
+    outline: none;
+    border-color: #93c5fd;
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+  }
+  .svc-field input[readonly] {
+    background: #f1f5f9;
+    color: #64748b;
+  }
+  .svc-field.tint-slate label { color: #334155; }
+  .svc-field.tint-slate input,
+  .svc-field.tint-slate select,
+  .svc-field.tint-slate textarea {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+  }
+  .svc-field.tint-slate .svc-switch {
+    background: #f1f5f9;
+    border-color: #cbd5e1;
+  }
+  .svc-field.tint-blue label { color: #1e3a8a; }
+  .svc-field.tint-blue input,
+  .svc-field.tint-blue select,
+  .svc-field.tint-blue textarea {
+    background: #eff6ff;
+    border-color: #c7d2fe;
+  }
+  .svc-field.tint-emerald label { color: #065f46; }
+  .svc-field.tint-emerald input,
+  .svc-field.tint-emerald select,
+  .svc-field.tint-emerald textarea {
+    background: #ecfdf5;
+    border-color: #a7f3d0;
+  }
+  .svc-field.tint-amber label { color: #92400e; }
+  .svc-field.tint-amber input,
+  .svc-field.tint-amber select,
+  .svc-field.tint-amber textarea {
+    background: #fff7ed;
+    border-color: #fed7aa;
+  }
+  .svc-field.tint-violet label { color: #5b21b6; }
+  .svc-field.tint-violet input,
+  .svc-field.tint-violet select,
+  .svc-field.tint-violet textarea {
+    background: #f5f3ff;
+    border-color: #ddd6fe;
+  }
+  .svc-field.tint-rose label { color: #9f1239; }
+  .svc-field.tint-rose input,
+  .svc-field.tint-rose select,
+  .svc-field.tint-rose textarea {
+    background: #fff1f2;
+    border-color: #fecdd3;
+  }
+  .svc-field .hint {
+    font-size: 11px;
+    color: #94a3b8;
+  }
+  .svc-field.error input,
+  .svc-field.error select,
+  .svc-field.error textarea {
+    border-color: #fca5a5;
+    box-shadow: 0 0 0 3px rgba(248,113,113,0.15);
+  }
+
+  .svc-switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 8px 10px;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    font-size: 11px;
+    font-weight: 700;
+    color: #334155;
+  }
+  .svc-toggle {
+    position: relative;
+    width: 46px;
+    height: 24px;
+  }
+  .svc-toggle input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .svc-toggle span {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: #e2e8f0;
+    border: 1px solid #cbd5e1;
+    transition: 0.2s ease;
+  }
+  .svc-toggle span::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 4px 10px rgba(15,23,42,0.15);
+    transition: transform 0.2s ease;
+  }
+  .svc-toggle input:checked + span {
+    background: linear-gradient(135deg, #f97316, #ef4444);
+    border-color: #f97316;
+  }
+  .svc-toggle input:checked + span::after {
+    transform: translateX(22px);
+  }
+
+  .svc-billing {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .svc-billing label {
+    position: relative;
+    cursor: pointer;
+  }
+  .svc-billing input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .svc-billing span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    border-radius: 12px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    font-size: 12px;
+    font-weight: 800;
+    color: #1e293b;
+    transition: 0.2s ease;
+  }
+  .svc-billing input:checked + span {
+    background: #e0f2fe;
+    border-color: #93c5fd;
+    color: #1e40af;
+    box-shadow: inset 0 0 0 1px #bfdbfe;
+  }
+
+  .svc-mode-toggle {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .svc-mode-option {
+    position: relative;
+    cursor: pointer;
+  }
+  .svc-mode-option input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .svc-mode-option span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    border-radius: 12px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    font-size: 12px;
+    font-weight: 800;
+    color: #1e293b;
+    transition: 0.2s ease;
+  }
+  .svc-mode-option input:checked + span {
+    background: #dbeafe;
+    border-color: #93c5fd;
+    color: #1e40af;
+    box-shadow: inset 0 0 0 1px #bfdbfe;
+  }
+  .svc-update-only { display: none; }
+  .svc-copy-only { display: none; }
+  .svc-wrapper.is-update .svc-update-only { display: flex; }
+  .svc-wrapper.is-copy .svc-update-only { display: flex; }
+  .svc-wrapper.is-copy .svc-copy-only { display: block; }
+
+  .svc-suggest {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 12px;
+    box-shadow: 0 10px 24px rgba(15,23,42,0.12);
+    max-height: 220px;
+    overflow: auto;
+    display: none;
+    z-index: 5;
+  }
+  .svc-suggest.show { display: block; }
+  .svc-suggest button {
+    width: 100%;
+    border: none;
+    background: transparent;
+    padding: 8px 10px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 700;
+    color: #334155;
+    cursor: pointer;
+  }
+  .svc-suggest button:hover { background: #f1f5f9; }
+
+  .svc-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.4);
+    display: none;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 24px 18px;
+    overflow: auto;
+    z-index: 60;
+  }
+  .svc-modal.open { display: flex; }
+  .svc-modal-card {
+    width: min(1100px, 95vw);
+    max-height: calc(100vh - 48px);
+    background: #fff;
+    border-radius: 18px;
+    box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .svc-modal-head {
+    padding: 16px 18px;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+  }
+  .svc-modal-head h4 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--brand);
+  }
+  .svc-modal-search {
+    flex: 1;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .svc-modal-search input {
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  .svc-modal-body {
+    padding: 0;
+    overflow: auto;
+  }
+  .svc-modal-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .svc-modal-table th,
+  .svc-modal-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 12px;
+    text-align: left;
+  }
+  .svc-modal-table th {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 10px;
+    color: #94a3b8;
+    background: #f8fafc;
+  }
+  .svc-modal-table tr:hover td {
+    background: #f8fafc;
+  }
+  .svc-modal-footer {
+    padding: 12px 18px;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .svc-modal-pagination {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    font-size: 12px;
+    color: #475569;
+    font-weight: 700;
+  }
+  .svc-modal-empty {
+    padding: 20px;
+    text-align: center;
+    font-size: 13px;
+    color: #94a3b8;
+    font-weight: 700;
+  }
+  .svc-modal-actions {
+    display: flex;
+    gap: 10px;
+  }
+  .svc-modal-card--service {
+    width: min(1200px, 96vw);
+  }
+  .svc-modal-head--wrap {
+    flex-wrap: wrap;
+  }
+  .svc-modal-head--wrap h4 {
+    margin-right: auto;
+  }
+  .svc-modal-search--stack {
+    min-width: 260px;
+  }
+  .svc-modal-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #64748b;
+  }
+  .svc-modal-count {
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+  }
+  .svc-modal-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .svc-modal-status.loading { color: #1d4ed8; }
+  .svc-modal-status.success { color: #166534; }
+  .svc-modal-status.warn { color: #92400e; }
+  .svc-spinner {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid #cbd5e1;
+    border-top-color: #3b82f6;
+    animation: svc-spin 0.8s linear infinite;
+    display: none;
+  }
+  .svc-modal-status.loading .svc-spinner {
+    display: inline-block;
+  }
+  @keyframes svc-spin {
+    to { transform: rotate(360deg); }
+  }
+  .svc-modal-selection {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 12px 18px 0;
+  }
+  .svc-chip.svc-chip--selected {
+    background: #e0f2fe;
+    border-color: #93c5fd;
+    color: #1e40af;
+  }
+  .svc-modal-table--service tbody tr.is-selected td {
+    background: #eff6ff;
+  }
+  .svc-modal-table--service th,
+  .svc-modal-table--service td {
+    border-left: none;
+    border-right: none;
+  }
+  .svc-modal-table--service tbody tr.is-active td {
+    box-shadow: none;
+  }
+  .svc-modal-table--service tbody tr.is-active td:first-child {
+    box-shadow: inset 3px 0 0 #e2e8f0;
+  }
+  .svc-modal-table--service tbody tr.is-added {
+    opacity: 0.55;
+  }
+  .svc-modal-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 6px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    background: #ecfdf3;
+    border: 1px solid #bbf7d0;
+    color: #166534;
+    margin-left: 6px;
+  }
+  .svc-modal-summary {
+    font-size: 12px;
+    font-weight: 700;
+    color: #475569;
+  }
+
+  .svc-table-wrap {
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    overflow: hidden;
+    margin-top: 16px;
+    background: #fff;
+  }
+  .svc-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .svc-table th,
+  .svc-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 12px;
+    color: #334155;
+    text-align: left;
+  }
+  .svc-table th {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 10px;
+    color: #94a3b8;
+    background: #f8fafc;
+  }
+  .svc-table td:last-child,
+  .svc-table th:last-child {
+    text-align: center;
+  }
+  .svc-table tr:last-child td { border-bottom: none; }
+  .svc-table input {
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 6px 8px;
+    font-size: 12px;
+  }
+  .svc-empty {
+    padding: 14px;
+    font-size: 12px;
+    color: #94a3b8;
+    font-weight: 700;
+    text-align: center;
+  }
+  .svc-muted { color: #94a3b8; font-size: 11px; }
+  .svc-banner {
+    display: none;
+    padding: 12px 14px;
+    border-radius: 12px;
+    background: #fef3c7;
+    border: 1px solid #fde68a;
+    color: #92400e;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .svc-banner strong { display: block; font-size: 13px; margin-bottom: 4px; }
+  .svc-inline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .svc-inline input#packageLookupInput {
+    flex: 1;
+    min-width: 320px;
+  }
+  .svc-inline .btn {
+    white-space: nowrap;
+  }
+  .svc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    font-size: 11px;
+    font-weight: 700;
+    color: #475569;
+  }
+  .svc-chip input { accent-color: #2563eb; }
+
+  .svc-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-top: 18px;
+  }
+  .svc-save-status {
+    flex: 1;
+    text-align: right;
+    font-size: 12px;
+    font-weight: 700;
+    color: #475569;
+  }
+  .svc-save-status.success { color: #166534; }
+  .svc-save-status.warn { color: #9a3412; }
+  .svc-save-status.error { color: #991b1b; }
+  .btn {
+    border: none;
+    cursor: pointer;
+    border-radius: 12px;
+    padding: 12px 18px;
+    font-weight: 800;
+    font-size: 13px;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+  }
+  .btn-primary {
+    background: linear-gradient(90deg, var(--brand), var(--brand-2));
+    color: #fff;
+    box-shadow: 0 10px 20px rgba(37,99,235,0.22);
+  }
+  .btn-primary:hover { transform: translateY(-1px); }
+  .btn-ghost {
+    background: #f1f5f9;
+    color: #475569;
+  }
+  .btn-ghost:hover { transform: translateY(-1px); }
+  .btn[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .svc-kpi-bar {
+    max-width: 1200px;
+    margin: 18px auto 0;
+  }
+  .svc-kpi-grid {
+    display: grid;
+    gap: 12px;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+  }
+  .svc-kpi-card {
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    padding: 12px 14px;
+    box-shadow: 0 10px 22px rgba(15,23,42,0.08);
+  }
+  .svc-kpi-card.compact {
+    padding: 10px 12px;
+  }
+  .svc-kpi-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    margin-bottom: 10px;
+  }
+  .svc-kpi-head h4 {
+    margin: 0;
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--brand);
+  }
+  .svc-kpi-card.compact .svc-kpi-head {
+    margin-bottom: 8px;
+  }
+  .svc-kpi-card.compact .svc-kpi-head h4 {
+    font-size: 13px;
+  }
+  .svc-kpi-metrics {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .svc-kpi-metric {
+    background: #f8fafc;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    padding: 8px 10px;
+  }
+  .svc-kpi-metric span {
+    display: block;
+    font-size: 10px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #64748b;
+    font-weight: 700;
+  }
+  .svc-kpi-metric strong {
+    display: block;
+    font-size: 13px;
+    color: #0f172a;
+    margin-top: 2px;
+  }
+  .svc-kpi-metric.span-2 { grid-column: span 2; }
+  .svc-kpi-metric.tight {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+  }
+  .svc-kpi-metric.tight strong { margin-top: 0; }
+  .svc-kpi-metric.tint-slate {
+    background: #f8fafc;
+    border-color: #e2e8f0;
+  }
+  .svc-kpi-metric.tint-slate span { color: #64748b; }
+  .svc-kpi-metric.tint-blue {
+    background: #eff6ff;
+    border-color: #bfdbfe;
+  }
+  .svc-kpi-metric.tint-blue span,
+  .svc-kpi-metric.tint-blue strong { color: #1e3a8a; }
+  .svc-kpi-metric.tint-violet {
+    background: #f5f3ff;
+    border-color: #ddd6fe;
+  }
+  .svc-kpi-metric.tint-violet span,
+  .svc-kpi-metric.tint-violet strong { color: #5b21b6; }
+  .svc-kpi-metric.tint-rose {
+    background: #fff1f2;
+    border-color: #fecdd3;
+  }
+  .svc-kpi-metric.tint-rose span,
+  .svc-kpi-metric.tint-rose strong { color: #9f1239; }
+  .svc-kpi-metric.tint-amber {
+    background: #fff7ed;
+    border-color: #fed7aa;
+  }
+  .svc-kpi-metric.tint-amber span,
+  .svc-kpi-metric.tint-amber strong { color: #9a3412; }
+  .svc-kpi-metric.tint-emerald {
+    background: #ecfdf5;
+    border-color: #a7f3d0;
+  }
+  .svc-kpi-metric.tint-emerald span,
+  .svc-kpi-metric.tint-emerald strong { color: #065f46; }
+  .svc-kpi-tags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    margin-top: 8px;
+  }
+  .svc-kpi-tag {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    font-size: 11px;
+    font-weight: 700;
+    color: #475569;
+  }
+  .svc-kpi-tag strong {
+    font-size: 11px;
+    color: #0f172a;
+  }
+
+  .svc-activity {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 8px;
+  }
+  .svc-activity li {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #475569;
+    background: #f8fafc;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .svc-activity li.active {
+    border-color: #93c5fd;
+    color: #1e40af;
+    background: #eff6ff;
+  }
+  .svc-activity li.done {
+    border-color: #86efac;
+    color: #166534;
+    background: #ecfdf3;
+  }
+  .svc-activity li.warn {
+    border-color: #fdba74;
+    color: #9a3412;
+    background: #fff7ed;
+  }
+
+  .svc-checklist {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 8px;
+  }
+  .svc-checklist li {
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    color: #64748b;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .svc-checklist li.done {
+    background: #ecfdf3;
+    border-color: #bbf7d0;
+    color: #166534;
+  }
+  .svc-kpi-card.compact .svc-activity,
+  .svc-kpi-card.compact .svc-checklist {
+    gap: 6px;
+  }
+  .svc-kpi-card.compact .svc-activity li,
+  .svc-kpi-card.compact .svc-checklist li {
+    padding: 6px 8px;
+    font-size: 11px;
+  }
+
+  @media (max-width: 1024px) {
+    .svc-hero { grid-template-columns: 1fr; }
+    .svc-hero-side { align-items: flex-start; }
+    .svc-container { grid-template-columns: 1fr; }
+    .svc-kpi-grid { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 760px) {
+    .svc-wrapper { padding: 18px 12px 40px; }
+    .svc-hero { padding: 18px 18px; }
+    .svc-hero h1 { font-size: 22px; }
+    .svc-card { padding: 16px; }
+    .svc-grid { grid-template-columns: 1fr; }
+    .svc-steps { grid-template-columns: 1fr; }
+    .svc-actions { flex-direction: column; align-items: stretch; }
+    .svc-save-status { text-align: left; }
+    .svc-inline { align-items: stretch; }
+    .svc-inline .btn { width: 100%; justify-content: center; }
+    .svc-inline input#packageLookupInput { min-width: 0; width: 100%; }
+    .svc-mode-toggle,
+    .svc-billing { flex-direction: column; align-items: stretch; }
+    .svc-mode-option span,
+    .svc-billing span { width: 100%; justify-content: center; }
+    .svc-kpi-metrics { grid-template-columns: 1fr; }
+    .svc-table th { display: none; }
+    .svc-table td { display: block; padding: 8px 12px; }
+    .svc-table td:last-child { text-align: left; }
+    .svc-modal-head { flex-wrap: wrap; }
+    .svc-modal-search { width: 100%; }
+    .svc-modal-search--stack { width: 100%; min-width: 0; }
+    .svc-modal-meta { width: 100%; justify-content: space-between; }
+    .svc-modal-selection { padding: 8px 12px 0; }
+    .svc-modal-footer { flex-direction: column; align-items: stretch; }
+    .svc-modal-pagination { justify-content: space-between; }
+    .svc-modal-actions { width: 100%; }
+    .svc-modal-actions .btn { width: 100%; justify-content: center; }
+    .svc-modal-table { min-width: 680px; }
+  }
+</style>
+
+<div class="svc-wrapper" data-single-unit="{% if allowed_units and allowed_units|length == 1 %}1{% else %}0{% endif %}" data-role="{{ role }}">
+  <div class="svc-hero">
+    <div>
+      <h1>Health Package Service Addition</h1>
+      <p>Build new health packages, copy existing ones, and tweak services without rework.</p>
+      <div class="svc-status">
+        <span class="svc-status-pill ready" id="statusPill">Ready</span>
+        <span class="svc-status-text" id="statusText">Select a unit to load tariff schemes.</span>
+      </div>
+    </div>
+    <div class="svc-hero-side">
+      <a class="svc-back" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+      <div class="svc-unit-select">
+        <label for="unitSelect">Unit</label>
+        <select id="unitSelect">
+          {% if allowed_units %}
+            {% if allowed_units|length > 1 %}
+              <option value="">Select Unit</option>
+            {% endif %}
+            {% for u in allowed_units %}
+              <option value="{{ u }}">{{ u }}</option>
+            {% endfor %}
+          {% else %}
+            <option value="">No unit access</option>
+          {% endif %}
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="svc-progress"><span></span></div>
+  <div class="svc-alert" id="formAlert"></div>
+
+  <div class="svc-kpi-bar">
+    <div class="svc-kpi-grid">
+      <div class="svc-kpi-card">
+        <div class="svc-kpi-head">
+          <h4>Package Snapshot</h4>
+        </div>
+        <div class="svc-kpi-metrics">
+          <div class="svc-kpi-metric span-2 tint-blue">
+            <span>Package Name</span>
+            <strong id="summaryName">Not set</strong>
+          </div>
+          <div class="svc-kpi-metric tint-blue">
+            <span>Package Code</span>
+            <strong id="summaryCode">Not set</strong>
+          </div>
+          <div class="svc-kpi-metric tint-rose">
+            <span>Package Cost</span>
+            <strong id="summaryPackageCost">0.00</strong>
+          </div>
+          <div class="svc-kpi-metric tint-amber">
+            <span>Discount</span>
+            <strong id="summaryDiscount">0.00</strong>
+          </div>
+          <div class="svc-kpi-metric tint-emerald">
+            <span>Discount %</span>
+            <strong id="summaryDiscountPct">0%</strong>
+          </div>
+          <div class="svc-kpi-metric tint-slate">
+            <span>Status</span>
+            <strong id="summaryStatus">Active</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="svc-kpi-card">
+        <div class="svc-kpi-head">
+          <h4>Service Snapshot</h4>
+        </div>
+        <div class="svc-kpi-metrics">
+          <div class="svc-kpi-metric tint-slate">
+            <span>Service Count</span>
+            <strong id="summaryServices">0</strong>
+          </div>
+          <div class="svc-kpi-metric tint-violet">
+            <span>Service Total</span>
+            <strong id="summaryServiceTotal">0.00</strong>
+          </div>
+          <div class="svc-kpi-metric span-2 tint-slate">
+            <span>Copy Source</span>
+            <strong id="summaryCopySource">None</strong>
+          </div>
+        </div>
+        <div class="svc-kpi-tags" id="summaryCategoryTags"></div>
+      </div>
+
+      <div class="svc-kpi-card compact">
+        <div class="svc-kpi-head">
+          <h4>Activity</h4>
+        </div>
+        <ul class="svc-activity" id="activityList">
+          <li data-activity="connect">Unit connection<span>Idle</span></li>
+          <li data-activity="masters">Tariff schemes<span>Idle</span></li>
+          <li data-activity="package">Package lookup<span>Idle</span></li>
+          <li data-activity="services">Service search<span>Idle</span></li>
+          <li data-activity="save">Save package<span>Idle</span></li>
+        </ul>
+      </div>
+
+      <div class="svc-kpi-card compact">
+        <div class="svc-kpi-head">
+          <h4>Validation</h4>
+        </div>
+        <ul class="svc-checklist" id="validationList">
+          <li data-check="package_code">Package code<span>Required</span></li>
+          <li data-check="package_name">Package name<span>Required</span></li>
+          <li data-check="launch_date">Launch date<span>Required</span></li>
+          <li data-check="package_cost">Package cost<span>Required</span></li>
+          <li data-check="services">Services added<span>Required</span></li>
+          <li data-check="updated_by">Updated by<span>Required</span></li>
+        </ul>
+      </div>
+    </div>
+  </div>
+
+  <div class="svc-container">
+    <div class="svc-main">
+      <form id="packageForm" autocomplete="off">
+        <div class="svc-card">
+          <div class="svc-card-head">
+            <div>
+              <h3 class="svc-card-title">Package Action</h3>
+              <p class="svc-card-sub">Create, update, or copy an existing package.</p>
+            </div>
+            <span class="svc-pill">Mode</span>
+          </div>
+          <div class="svc-grid">
+            <div class="svc-field svc-span-2">
+              <label>Mode</label>
+              <div class="svc-mode-toggle">
+                <label class="svc-mode-option">
+                  <input type="radio" name="pkgMode" id="modeAdd" value="add" checked />
+                  <span>Add New</span>
+                </label>
+                <label class="svc-mode-option">
+                  <input type="radio" name="pkgMode" id="modeUpdate" value="update" />
+                  <span>Update Existing</span>
+                </label>
+                <label class="svc-mode-option">
+                  <input type="radio" name="pkgMode" id="modeCopy" value="copy" />
+                  <span>Copy to New</span>
+                </label>
+              </div>
+            </div>
+
+            <div class="svc-field svc-span-2 svc-update-only">
+              <label>Find Package</label>
+              <div class="svc-inline">
+                <input type="text" id="packageLookupInput" placeholder="Select a package" readonly />
+                <button type="button" class="btn btn-ghost" id="openPackageModal">Browse Packages</button>
+              </div>
+              <input type="hidden" id="packageLookupId" />
+              <div class="hint">Search by name, code, or ID, then load to update or copy.</div>
+            </div>
+
+            <div class="svc-banner svc-span-2 svc-copy-only" id="copyBanner">
+              <strong>Copy Mode Active</strong>
+              <span id="copyLabel">Load a package to duplicate its services.</span>
+            </div>
+          </div>
+        </div>
+
+        <div class="svc-card">
+          <div class="svc-card-head">
+            <div>
+              <h3 class="svc-card-title">Package Services</h3>
+              <p class="svc-card-sub">Search services and adjust quantities or rates.</p>
+            </div>
+            <span class="svc-pill">Services</span>
+          </div>
+          <div class="svc-grid">
+            <div class="svc-field">
+              <label>Tariff Scheme</label>
+              <select id="tariffScheme">
+                <option value="">Select Tariff Scheme</option>
+              </select>
+            </div>
+            <div class="svc-field svc-span-2">
+              <label>Search Mode</label>
+              <div class="svc-billing">
+                <label>
+                  <input type="radio" name="serviceSearchMode" value="1" checked />
+                  <span>Service Name</span>
+                </label>
+                <label>
+                  <input type="radio" name="serviceSearchMode" value="2" />
+                  <span>Service Code</span>
+                </label>
+                <label>
+                  <input type="radio" name="serviceSearchMode" value="3" />
+                  <span>CGHS Code</span>
+                </label>
+              </div>
+            </div>
+            <div class="svc-field svc-span-2">
+              <label>Search Services</label>
+              <div class="svc-inline">
+                <input type="text" id="serviceSearchInput" placeholder="Browse and select services" readonly />
+                <button type="button" class="btn btn-ghost" id="openServiceModal">Browse Services</button>
+              </div>
+              <div class="hint">Search inside the modal to multi-select services before adding.</div>
+            </div>
+          </div>
+
+          <div class="svc-table-wrap">
+            <table class="svc-table">
+              <thead>
+                <tr>
+                  <th>Service</th>
+                  <th>Code</th>
+                  <th>CGHS</th>
+                  <th>Qty</th>
+                  <th>Rate</th>
+                  <th>Amount</th>
+                  <th>Remove</th>
+                </tr>
+              </thead>
+              <tbody id="serviceTableBody"></tbody>
+            </table>
+            <div class="svc-empty" id="serviceEmpty">No services added yet.</div>
+          </div>
+
+          <div class="svc-inline" style="margin-top: 12px; justify-content: space-between;">
+            <div class="svc-inline">
+              <span class="svc-chip">Services: <strong id="serviceCount">0</strong></span>
+              <span class="svc-chip">Service Total: <strong id="serviceTotal">0.00</strong></span>
+            </div>
+            <div class="svc-inline">
+              <label class="svc-chip">
+                <input type="checkbox" id="autoCost" checked />
+                Auto-sync to service total
+              </label>
+              <button type="button" class="btn btn-ghost" id="setCostBtn">Use total as package cost</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="svc-card">
+          <div class="svc-card-head">
+            <div>
+              <h3 class="svc-card-title">Package Details</h3>
+              <p class="svc-card-sub">Update basics and pricing before saving.</p>
+            </div>
+            <span class="svc-pill">Details</span>
+          </div>
+          <div class="svc-grid">
+            <input type="hidden" id="packageId" />
+            <div class="svc-field tint-blue" data-check="package_code">
+              <label>Package Code</label>
+              <input type="text" id="packageCode" placeholder="Eg. HCP-001" />
+            </div>
+            <div class="svc-field tint-slate">
+              <label>Deactivate Package</label>
+              <div class="svc-switch">
+                <span>Deactivate</span>
+                <label class="svc-toggle">
+                  <input type="checkbox" id="deactiveToggle" />
+                  <span></span>
+                </label>
+              </div>
+              <div class="hint">Active when switch is off.</div>
+            </div>
+            <div class="svc-field svc-span-2 tint-blue" data-check="package_name">
+              <label>Package Name</label>
+              <input type="text" id="packageName" placeholder="Eg. Diabetic Fasting Package" />
+            </div>
+            <div class="svc-field tint-emerald" data-check="launch_date">
+              <label>Launch Date</label>
+              <input type="date" id="launchDate" />
+            </div>
+            <div class="svc-field tint-emerald">
+              <label>Validity (days)</label>
+              <input type="number" id="validityPeriod" min="0" placeholder="0" />
+            </div>
+            <div class="svc-field tint-emerald">
+              <label>Visits Allowed</label>
+              <input type="number" id="visitsAllowed" min="0" placeholder="0" />
+            </div>
+            <div class="svc-field tint-amber">
+              <label>Discount Amount</label>
+              <input type="number" id="discountAmount" min="0" step="0.01" placeholder="0.00" />
+            </div>
+            <div class="svc-field tint-violet">
+              <label>Basic Cost</label>
+              <input type="number" id="basicCost" min="0" step="0.01" placeholder="0.00" />
+            </div>
+            <div class="svc-field tint-rose" data-check="package_cost">
+              <label>Package Cost</label>
+              <input type="number" id="packageCost" min="0" step="0.01" placeholder="0.00" />
+            </div>
+            <input type="hidden" id="packageType" value="HCP" />
+            <input type="hidden" id="updatedBy" value="{{ account_id or '' }}" />
+          </div>
+        </div>
+
+        <div class="svc-actions">
+          <button type="button" class="btn btn-ghost" id="resetBtn">Reset</button>
+          <div class="svc-save-status" id="saveStatus"></div>
+          <button type="submit" class="btn btn-primary" id="saveBtn">Save Package</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="svc-modal" id="packageModal">
+  <div class="svc-modal-card">
+    <div class="svc-modal-head">
+      <h4>Find Health Package</h4>
+      <div class="svc-modal-search">
+        <input type="text" id="packageSearchInput" placeholder="Search by name, code, or ID" />
+        <button type="button" class="btn btn-ghost" id="packageSearchClear">Clear</button>
+      </div>
+      <button type="button" class="btn btn-ghost" id="packageModalClose">Close</button>
+    </div>
+    <div class="svc-modal-body">
+      <table class="svc-modal-table">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Code</th>
+            <th>Name</th>
+            <th>Basic Cost</th>
+            <th>Discount</th>
+            <th>Package Cost</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody id="packageTableBody"></tbody>
+      </table>
+      <div class="svc-modal-empty" id="packageTableEmpty">Start typing to search packages.</div>
+    </div>
+    <div class="svc-modal-footer">
+      <div class="svc-modal-pagination">
+        <button type="button" class="btn btn-ghost" id="packagePrev">Prev</button>
+        <span id="packagePageInfo">Page 1</span>
+        <button type="button" class="btn btn-ghost" id="packageNext">Next</button>
+      </div>
+      <div class="svc-modal-actions">
+        <button type="button" class="btn btn-ghost" id="packageModalCancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="packageLoadBtn" disabled>Load Package</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="svc-modal" id="serviceModal">
+  <div class="svc-modal-card svc-modal-card--service">
+    <div class="svc-modal-head svc-modal-head--wrap">
+      <h4>Search Services</h4>
+      <div class="svc-modal-search svc-modal-search--stack">
+        <input type="text" id="serviceModalSearch" placeholder="Search by name, code, or CGHS" />
+        <button type="button" class="btn btn-ghost" id="serviceModalClear">Clear</button>
+      </div>
+      <div class="svc-modal-meta">
+        <span class="svc-modal-count" id="serviceModalCount">0 results</span>
+        <span class="svc-modal-status" id="serviceModalStatus">
+          <span class="svc-spinner" id="serviceModalSpinner" aria-hidden="true"></span>
+          <span id="serviceModalStatusText">Idle</span>
+        </span>
+      </div>
+      <button type="button" class="btn btn-ghost" id="serviceModalClose">Close</button>
+    </div>
+    <div class="svc-modal-body">
+      <div class="svc-modal-selection" id="serviceModalSelection"></div>
+      <table class="svc-modal-table svc-modal-table--service">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Service</th>
+            <th>Code</th>
+            <th>Category</th>
+            <th>Rate</th>
+            <th>CGHS</th>
+          </tr>
+        </thead>
+        <tbody id="serviceModalTableBody"></tbody>
+      </table>
+      <div class="svc-modal-empty" id="serviceModalEmpty">Type at least 2 characters to search services.</div>
+    </div>
+    <div class="svc-modal-footer">
+      <div class="svc-modal-summary">
+        Selected: <strong id="serviceModalSelected">0</strong>
+      </div>
+      <div class="svc-modal-actions">
+        <button type="button" class="btn btn-ghost" id="serviceModalCancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="serviceModalAddBtn" disabled>Add Selected Services</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const svcWrapper = document.querySelector('.svc-wrapper');
+  const unitSelect = document.getElementById('unitSelect');
+  const statusPill = document.getElementById('statusPill');
+  const statusText = document.getElementById('statusText');
+  const formAlert = document.getElementById('formAlert');
+  const packageForm = document.getElementById('packageForm');
+  const saveBtn = document.getElementById('saveBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const saveStatus = document.getElementById('saveStatus');
+
+  const modeAdd = document.getElementById('modeAdd');
+  const modeUpdate = document.getElementById('modeUpdate');
+  const modeCopy = document.getElementById('modeCopy');
+
+  const packageLookupInput = document.getElementById('packageLookupInput');
+  const packageLookupId = document.getElementById('packageLookupId');
+  const openPackageModalBtn = document.getElementById('openPackageModal');
+  const packageModal = document.getElementById('packageModal');
+  const packageSearchInput = document.getElementById('packageSearchInput');
+  const packageSearchClear = document.getElementById('packageSearchClear');
+  const packageModalClose = document.getElementById('packageModalClose');
+  const packageModalCancel = document.getElementById('packageModalCancel');
+  const packageTableBody = document.getElementById('packageTableBody');
+  const packageTableEmpty = document.getElementById('packageTableEmpty');
+  const packagePrev = document.getElementById('packagePrev');
+  const packageNext = document.getElementById('packageNext');
+  const packagePageInfo = document.getElementById('packagePageInfo');
+  const packageLoadBtn = document.getElementById('packageLoadBtn');
+  const copyBanner = document.getElementById('copyBanner');
+  const copyLabel = document.getElementById('copyLabel');
+
+  const packageId = document.getElementById('packageId');
+  const packageCode = document.getElementById('packageCode');
+  const packageName = document.getElementById('packageName');
+  const launchDate = document.getElementById('launchDate');
+  const validityPeriod = document.getElementById('validityPeriod');
+  const visitsAllowed = document.getElementById('visitsAllowed');
+  const discountAmount = document.getElementById('discountAmount');
+  const basicCost = document.getElementById('basicCost');
+  const packageCost = document.getElementById('packageCost');
+  const packageType = document.getElementById('packageType');
+  const deactiveToggle = document.getElementById('deactiveToggle');
+  const updatedBy = document.getElementById('updatedBy');
+  const defaultUpdatedBy = updatedBy.value;
+
+  const tariffScheme = document.getElementById('tariffScheme');
+  const serviceSearchInput = document.getElementById('serviceSearchInput');
+  const openServiceModalBtn = document.getElementById('openServiceModal');
+  const serviceModal = document.getElementById('serviceModal');
+  const serviceModalSearch = document.getElementById('serviceModalSearch');
+  const serviceModalClear = document.getElementById('serviceModalClear');
+  const serviceModalClose = document.getElementById('serviceModalClose');
+  const serviceModalCancel = document.getElementById('serviceModalCancel');
+  const serviceModalTableBody = document.getElementById('serviceModalTableBody');
+  const serviceModalEmpty = document.getElementById('serviceModalEmpty');
+  const serviceModalAddBtn = document.getElementById('serviceModalAddBtn');
+  const serviceModalSelection = document.getElementById('serviceModalSelection');
+  const serviceModalSelected = document.getElementById('serviceModalSelected');
+  const serviceModalCount = document.getElementById('serviceModalCount');
+  const serviceModalStatus = document.getElementById('serviceModalStatus');
+  const serviceModalStatusText = document.getElementById('serviceModalStatusText');
+  const serviceModalSpinner = document.getElementById('serviceModalSpinner');
+  const serviceTableBody = document.getElementById('serviceTableBody');
+  const serviceEmpty = document.getElementById('serviceEmpty');
+  const serviceTotal = document.getElementById('serviceTotal');
+  const serviceCount = document.getElementById('serviceCount');
+  const autoCost = document.getElementById('autoCost');
+  const setCostBtn = document.getElementById('setCostBtn');
+
+  const summaryName = document.getElementById('summaryName');
+  const summaryCode = document.getElementById('summaryCode');
+  const summaryStatus = document.getElementById('summaryStatus');
+  const summaryServices = document.getElementById('summaryServices');
+  const summaryServiceTotal = document.getElementById('summaryServiceTotal');
+  const summaryPackageCost = document.getElementById('summaryPackageCost');
+  const summaryDiscount = document.getElementById('summaryDiscount');
+  const summaryDiscountPct = document.getElementById('summaryDiscountPct');
+  const summaryCopySource = document.getElementById('summaryCopySource');
+  const summaryCategoryTags = document.getElementById('summaryCategoryTags');
+  const validationList = document.getElementById('validationList');
+
+  const activityItems = {
+    connect: document.querySelector('[data-activity="connect"]'),
+    masters: document.querySelector('[data-activity="masters"]'),
+    package: document.querySelector('[data-activity="package"]'),
+    services: document.querySelector('[data-activity="services"]'),
+    save: document.querySelector('[data-activity="save"]'),
+  };
+
+  const state = {
+    isUpdate: false,
+    isCopy: false,
+    packageId: '',
+    copySourceId: '',
+    services: [],
+    tariffSchemes: [],
+  };
+
+  const packageModalState = {
+    page: 1,
+    pageSize: 10,
+    total: 0,
+    query: '',
+    selectedId: '',
+    selectedLabel: '',
+  };
+  const serviceModalState = {
+    query: '',
+    results: [],
+    selected: new Map(),
+    catalog: new Map(),
+    activeIndex: -1,
+    loading: false,
+  };
+
+  let showFieldErrors = false;
+  let packageSearchTimer = null;
+  let serviceSearchTimer = null;
+  let packageCodeTouched = false;
+  let packageCostTouched = false;
+  let isSubmitting = false;
+
+  function setBusy(isBusy, isDone) {
+    svcWrapper.classList.toggle('is-busy', Boolean(isBusy));
+    svcWrapper.classList.toggle('is-done', Boolean(isDone));
+  }
+
+  function setStatus(message, tone) {
+    statusText.textContent = message || '';
+    const label = tone === 'warn' ? 'Working' : tone === 'error' ? 'Issue' : 'Ready';
+    statusPill.textContent = label;
+    statusPill.classList.remove('ready', 'warn', 'error');
+    statusPill.classList.add(tone || 'ready');
+  }
+
+  function setAlert(message, tone) {
+    if (!message) {
+      formAlert.className = 'svc-alert';
+      formAlert.textContent = '';
+      return;
+    }
+    formAlert.className = 'svc-alert show';
+    if (tone) {
+      formAlert.classList.add(tone);
+    }
+    formAlert.textContent = message;
+  }
+
+  function setSaveStatus(message, tone) {
+    if (!saveStatus) return;
+    saveStatus.textContent = message || '';
+    saveStatus.className = 'svc-save-status';
+    if (tone) {
+      saveStatus.classList.add(tone);
+    }
+  }
+
+  function setActivity(key, status) {
+    const item = activityItems[key];
+    if (!item) return;
+    item.classList.remove('active', 'done', 'warn');
+    if (status) item.classList.add(status);
+  }
+
+  function parseNum(value) {
+    const num = Number(String(value || '').replace(/,/g, ''));
+    return Number.isFinite(num) ? num : 0;
+  }
+
+  function formatMoney(value) {
+    const num = parseNum(value);
+    return num.toFixed(2);
+  }
+
+  function localNextCode() {
+    return '';
+  }
+
+  function toDateInput(raw) {
+    if (!raw) return '';
+    const isoMatch = String(raw).match(/^(\d{4}-\d{2}-\d{2})/);
+    if (isoMatch) return isoMatch[1];
+    const parsed = new Date(raw);
+    if (Number.isNaN(parsed.getTime())) return '';
+    return parsed.toISOString().slice(0, 10);
+  }
+
+  function updatePackageCostAuto() {
+    if (packageCostTouched) return;
+    const basic = parseNum(basicCost.value);
+    const discountVal = parseNum(discountAmount.value);
+    const computed = Math.max(0, basic - discountVal);
+    packageCost.value = formatMoney(computed);
+    updateSummary();
+    updateValidation();
+  }
+
+  function updateTotals() {
+    let total = 0;
+    state.services.forEach((svc) => {
+      total += parseNum(svc.amount);
+    });
+    serviceCount.textContent = String(state.services.length);
+    serviceTotal.textContent = formatMoney(total);
+    if (autoCost.checked) {
+      basicCost.value = formatMoney(total);
+      packageCostTouched = false;
+    }
+    updatePackageCostAuto();
+    updateSummary();
+    updateValidation();
+  }
+
+  function updateSummary() {
+    summaryName.textContent = packageName.value.trim() || 'Not set';
+    summaryCode.textContent = packageCode.value.trim() || 'Not set';
+    summaryStatus.textContent = deactiveToggle.checked ? 'Deactive' : 'Active';
+    summaryServices.textContent = String(state.services.length);
+    summaryServiceTotal.textContent = serviceTotal.textContent || '0.00';
+    summaryPackageCost.textContent = packageCost.value ? formatMoney(packageCost.value) : '0.00';
+    const discountVal = parseNum(discountAmount.value);
+    const baseVal = parseNum(basicCost.value);
+    summaryDiscount.textContent = formatMoney(discountVal);
+    const pct = baseVal > 0 ? (discountVal / baseVal) * 100 : 0;
+    summaryDiscountPct.textContent = `${pct.toFixed(1)}%`;
+    summaryCopySource.textContent = state.copySourceId ? `Package #${state.copySourceId}` : 'None';
+
+    if (summaryCategoryTags) {
+      const counts = {};
+      state.services.forEach((svc) => {
+        const label = (svc.categoryName || 'Uncategorized').trim() || 'Uncategorized';
+        counts[label] = (counts[label] || 0) + 1;
+      });
+      const entries = Object.entries(counts);
+      summaryCategoryTags.innerHTML = '';
+      if (!entries.length) {
+        summaryCategoryTags.style.display = 'none';
+      } else {
+        summaryCategoryTags.style.display = 'flex';
+        entries
+          .sort((a, b) => a[0].localeCompare(b[0]))
+          .forEach(([label, count]) => {
+            const tag = document.createElement('div');
+            tag.className = 'svc-kpi-tag';
+            tag.innerHTML = `<span>${label}</span><strong>${count}</strong>`;
+            summaryCategoryTags.appendChild(tag);
+          });
+      }
+    }
+  }
+
+  function updateValidation() {
+    const checks = {
+      package_code: packageCode.value.trim(),
+      package_name: packageName.value.trim(),
+      launch_date: launchDate.value,
+      package_cost: packageCost.value,
+      services: state.services.length > 0,
+      updated_by: updatedBy.value.trim(),
+    };
+    validationList.querySelectorAll('li').forEach((item) => {
+      const key = item.getAttribute('data-check');
+      const ok = Boolean(checks[key]);
+      item.classList.toggle('done', ok);
+    });
+    Object.entries(checks).forEach(([key, val]) => {
+      const field = document.querySelector(`.svc-field[data-check="${key}"]`);
+      if (!field) return;
+      if (!showFieldErrors) {
+        field.classList.remove('error');
+        return;
+      }
+      field.classList.toggle('error', !val);
+    });
+  }
+
+  function applyMode(mode) {
+    state.isUpdate = mode === 'update';
+    state.isCopy = mode === 'copy';
+    svcWrapper.classList.toggle('is-update', state.isUpdate);
+    svcWrapper.classList.toggle('is-copy', state.isCopy);
+    packageLookupInput.disabled = !(state.isUpdate || state.isCopy);
+    openPackageModalBtn.disabled = !(state.isUpdate || state.isCopy);
+    packageLookupInput.value = '';
+    packageLookupId.value = '';
+    resetPackageSelection();
+    if (mode === 'add') {
+      state.packageId = '';
+      state.copySourceId = '';
+      packageId.value = '';
+      copyBanner.classList.remove('show');
+    }
+    saveBtn.textContent = state.isUpdate ? 'Update Package' : 'Save Package';
+    updateSummary();
+    updateValidation();
+  }
+
+  function renderTariffSchemes(items) {
+    tariffScheme.innerHTML = '<option value="">Select Tariff Scheme</option>';
+    let baseSchemeId = '';
+    let generalSchemeId = '';
+    (items || []).forEach((item) => {
+      const id = String(item.TariffScheme_ID || item.tariffscheme_id || '');
+      const desc = item.TariffScheme_Desc || item.tariffscheme_desc || '';
+      const code = item.TariffScheme_Code || item.tariffscheme_code || '';
+      const inactive = String(item.Deactive || item.deactive || 0) === '1';
+      if (String(item.IsBaseTariffScheme || 0) === '1' && !inactive) {
+        baseSchemeId = id;
+      }
+      const labelText = `${code} ${desc}`.toLowerCase();
+      if (!inactive && !generalSchemeId && labelText.includes('general')) {
+        generalSchemeId = id;
+      }
+      const label = code ? `${code} - ${desc}` : desc || `#${id}`;
+      const opt = document.createElement('option');
+      opt.value = id;
+      opt.textContent = inactive ? `${label} (Inactive)` : label;
+      opt.disabled = inactive;
+      tariffScheme.appendChild(opt);
+    });
+    if (generalSchemeId) {
+      tariffScheme.value = generalSchemeId;
+    } else if (baseSchemeId) {
+      tariffScheme.value = baseSchemeId;
+    }
+  }
+
+  function renderServices() {
+    if (!state.services.length) {
+      serviceTableBody.innerHTML = '';
+      serviceEmpty.style.display = 'block';
+      updateTotals();
+      return;
+    }
+    serviceEmpty.style.display = 'none';
+    serviceTableBody.innerHTML = state.services.map((svc, idx) => `
+      <tr data-index="${idx}">
+        <td>
+          <div><strong>${svc.name || ''}</strong></div>
+          <div class="svc-muted">${svc.categoryName || ''}</div>
+        </td>
+        <td>${svc.code || ''}</td>
+        <td>${svc.cghs || ''}</td>
+        <td><input type="number" class="svc-qty" min="1" value="${svc.quantity || 1}"></td>
+        <td><input type="number" class="svc-rate" min="0" step="0.01" value="${formatMoney(svc.rate || 0)}"></td>
+        <td class="svc-amount">${formatMoney(svc.amount || 0)}</td>
+        <td><button type="button" class="btn btn-ghost svc-remove">Remove</button></td>
+      </tr>
+    `).join('');
+    updateTotals();
+  }
+
+  function addServiceRow(service) {
+    const exists = state.services.find((svc) => String(svc.serviceId) === String(service.serviceId));
+    if (exists) {
+      setAlert('Service already added to this package.', 'warn');
+      return;
+    }
+    state.services.push(service);
+    renderServices();
+  }
+
+  async function loadInit(unit) {
+    if (!unit) return;
+    setBusy(true);
+    setStatus(`Loading tariff schemes for ${unit}...`, 'warn');
+    setActivity('connect', 'active');
+    setActivity('masters', '');
+    try {
+      const res = await fetch(`/api/health_package/init?unit=${encodeURIComponent(unit)}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || 'Unable to load tariff schemes');
+      }
+      state.tariffSchemes = data.tariff_schemes || [];
+      renderTariffSchemes(state.tariffSchemes);
+      if (!packageCodeTouched && !state.isUpdate) {
+        loadNextPackageCode();
+      }
+      updatePackageCostAuto();
+      setActivity('connect', 'done');
+      setActivity('masters', 'done');
+      setStatus('Tariff schemes loaded. Ready to build package.', 'ready');
+      updateSummary();
+      updateValidation();
+    } catch (err) {
+      setActivity('connect', 'warn');
+      setActivity('masters', 'warn');
+      setStatus('Failed to load tariff schemes.', 'error');
+      setAlert(err.message || 'Failed to load tariff schemes.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function resetPackageSelection() {
+    packageModalState.selectedId = '';
+    packageModalState.selectedLabel = '';
+    packageLoadBtn.disabled = true;
+  }
+
+  function updatePackagePagination() {
+    const totalPages = Math.max(1, Math.ceil(packageModalState.total / packageModalState.pageSize));
+    const page = Math.min(packageModalState.page, totalPages);
+    packageModalState.page = page;
+    packagePageInfo.textContent = `Page ${page} of ${totalPages}`;
+    packagePrev.disabled = page <= 1;
+    packageNext.disabled = page >= totalPages;
+  }
+
+  function renderPackageTable(items) {
+    packageTableBody.innerHTML = '';
+    if (!items.length) {
+      packageTableEmpty.textContent = packageModalState.query
+        ? 'No packages found for this search.'
+        : 'No packages available.';
+      packageTableEmpty.style.display = 'block';
+      return;
+    }
+    packageTableEmpty.style.display = 'none';
+    items.forEach((pkg) => {
+      const id = pkg.HealthPlanID;
+      const code = pkg.HealthPlanCode || '';
+      const name = pkg.HealthPlanName || '';
+      const label = code ? `${code} - ${name}` : (name || `Package #${id}`);
+      const row = document.createElement('tr');
+      row.dataset.id = id;
+      row.dataset.label = label;
+      const checked = String(id) === String(packageModalState.selectedId);
+      const statusLabel = pkg.Status || (String(pkg.Deactive || 0) === '1' ? 'Deactive' : 'Active');
+      row.innerHTML = `
+        <td><input type="radio" name="packageSelect" value="${id}" ${checked ? 'checked' : ''}></td>
+        <td>${code || '-'}</td>
+        <td>${name || '-'}</td>
+        <td>${formatMoney(pkg.BasicCost || 0)}</td>
+        <td>${formatMoney(pkg.Discount || 0)}</td>
+        <td>${formatMoney(pkg.PackageCost || 0)}</td>
+        <td>${statusLabel}</td>
+      `;
+      packageTableBody.appendChild(row);
+    });
+  }
+
+  async function fetchPackagePage(page) {
+    const unit = unitSelect.value;
+    if (!unit) {
+      setAlert('Select a unit before searching packages.', 'warn');
+      return;
+    }
+    packageModalState.page = page;
+    packageModalState.query = packageSearchInput.value.trim();
+    packageTableEmpty.textContent = 'Loading packages...';
+    packageTableEmpty.style.display = 'block';
+    packageTableBody.innerHTML = '';
+    setActivity('package', 'active');
+    try {
+      const res = await fetch(
+        `/api/health_package/search?unit=${encodeURIComponent(unit)}&q=${encodeURIComponent(packageModalState.query)}&page=${packageModalState.page}&page_size=${packageModalState.pageSize}`,
+        { cache: 'no-store' },
+      );
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || 'Unable to search packages');
+      }
+      packageModalState.total = Number(data.total || 0);
+      renderPackageTable(data.packages || []);
+      updatePackagePagination();
+      setActivity('package', 'done');
+    } catch (err) {
+      packageTableEmpty.textContent = 'Unable to load packages.';
+      packageTableEmpty.style.display = 'block';
+      updatePackagePagination();
+      setActivity('package', 'warn');
+      setAlert(err.message || 'Failed to search packages.', 'error');
+    }
+  }
+
+  function openPackageModal() {
+    if (!state.isUpdate && !state.isCopy) return;
+    if (!unitSelect.value) {
+      setStatus('Select a unit to search packages.', 'warn');
+      setAlert('Select a unit before searching packages.', 'warn');
+      return;
+    }
+    packageModal.scrollTop = 0;
+    const modalCard = packageModal.querySelector('.svc-modal-card');
+    if (modalCard) {
+      modalCard.scrollTop = 0;
+    }
+    document.documentElement.classList.add('modal-open');
+    document.body.classList.add('modal-open');
+    if (window.frameElement && window.parent) {
+      try {
+        const rect = window.frameElement.getBoundingClientRect();
+        const parentDoc = window.parent.document;
+        const parentScroll = window.parent.pageYOffset
+          || parentDoc.documentElement.scrollTop
+          || parentDoc.body.scrollTop
+          || 0;
+        const targetTop = Math.max(0, parentScroll + rect.top - 16);
+        window.parent.scrollTo({ top: targetTop, behavior: 'smooth' });
+      } catch (err) {
+        window.scrollTo({ top: 0, behavior: 'smooth' });
+      }
+    } else {
+      window.scrollTo({ top: 0, behavior: 'smooth' });
+    }
+    packageModal.classList.add('open');
+    packageModalState.selectedId = packageLookupId.value || '';
+    packageModalState.selectedLabel = packageLookupInput.value || '';
+    packageLoadBtn.disabled = !packageModalState.selectedId;
+    packageModalState.page = 1;
+    fetchPackagePage(packageModalState.page);
+    setTimeout(() => packageSearchInput.focus(), 0);
+  }
+
+  function closePackageModal() {
+    packageModal.classList.remove('open');
+    document.documentElement.classList.remove('modal-open');
+    document.body.classList.remove('modal-open');
+  }
+
+  function normalizeServiceRecord(svc) {
+    const qty = parseNum(svc.pQuantity || svc.Quantity || 1) || 1;
+    const rate = parseNum(svc.pRate || svc.Rate || 0);
+    return {
+      serviceId: svc.pServiceid || svc.Service_ID || svc.ServiceID || svc.ServiceId || '',
+      code: svc.Service_Code || svc.ServiceCode || '',
+      name: svc.Service_Name || svc.ServiceName || '',
+      categoryId: svc.Category_Id || svc.ServiceCategoryID || '',
+      categoryCode: svc.ServiceCategory_Code || '',
+      categoryName: svc.ServiceCategory_Name || '',
+      cghs: svc.CGHSCode || '',
+      quantity: qty,
+      rate: rate,
+      amount: rate * qty,
+    };
+  }
+
+  function setServiceModalStatus(message, tone, loading) {
+    if (!serviceModalStatus || !serviceModalStatusText) return;
+    serviceModalStatusText.textContent = message || '';
+    serviceModalStatus.classList.remove('loading', 'success', 'warn');
+    if (tone) serviceModalStatus.classList.add(tone);
+    if (loading) serviceModalStatus.classList.add('loading');
+  }
+
+  function updateServiceModalSelection() {
+    const count = serviceModalState.selected.size;
+    serviceModalSelected.textContent = String(count);
+    serviceModalAddBtn.textContent = count ? `Add Selected Services (${count})` : 'Add Selected Services';
+    serviceModalAddBtn.disabled = count === 0 || serviceModalState.loading;
+    serviceModalSelection.innerHTML = '';
+    if (!count) return;
+    const list = Array.from(serviceModalState.selected.values());
+    list.slice(0, 4).forEach((svc) => {
+      const chip = document.createElement('span');
+      chip.className = 'svc-chip svc-chip--selected';
+      chip.textContent = svc.name || 'Service';
+      serviceModalSelection.appendChild(chip);
+    });
+    if (count > 4) {
+      const chip = document.createElement('span');
+      chip.className = 'svc-chip svc-chip--selected';
+      chip.textContent = `+${count - 4} more`;
+      serviceModalSelection.appendChild(chip);
+    }
+  }
+
+  function updateServiceModalCount(count) {
+    serviceModalCount.textContent = `${count} results`;
+  }
+
+  function getServiceModalRows() {
+    return Array.from(serviceModalTableBody.querySelectorAll('tr'));
+  }
+
+  function findSelectableIndex(start, dir) {
+    const rows = getServiceModalRows();
+    if (!rows.length) return -1;
+    let idx = Math.max(0, Math.min(rows.length - 1, start));
+    for (let i = 0; i < rows.length; i += 1) {
+      const row = rows[idx];
+      if (row && row.dataset.disabled !== '1') {
+        return idx;
+      }
+      idx += dir;
+      if (idx < 0) idx = rows.length - 1;
+      if (idx >= rows.length) idx = 0;
+    }
+    return -1;
+  }
+
+  function setServiceModalActiveIndex(nextIndex, dir = 1) {
+    const rows = getServiceModalRows();
+    if (!rows.length) {
+      serviceModalState.activeIndex = -1;
+      return;
+    }
+    const idx = findSelectableIndex(nextIndex, dir);
+    serviceModalState.activeIndex = idx;
+    rows.forEach((row, i) => {
+      const isActive = i === idx;
+      row.classList.toggle('is-active', isActive);
+      if (isActive) {
+        row.setAttribute('aria-selected', 'true');
+      } else {
+        row.removeAttribute('aria-selected');
+      }
+    });
+    if (idx >= 0 && rows[idx]) {
+      rows[idx].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function toggleServiceSelectionByRow(row) {
+    if (!row || row.dataset.disabled === '1') return;
+    const id = row.dataset.id || '';
+    if (!id) return;
+    if (serviceModalState.selected.has(id)) {
+      serviceModalState.selected.delete(id);
+      row.classList.remove('is-selected');
+    } else {
+      const svc = serviceModalState.catalog.get(id);
+      if (!svc) return;
+      serviceModalState.selected.set(id, svc);
+      row.classList.add('is-selected');
+    }
+    const checkbox = row.querySelector('input[type="checkbox"]');
+    if (checkbox) checkbox.checked = serviceModalState.selected.has(id);
+    updateServiceModalSelection();
+  }
+
+  function renderServiceModalTable(items) {
+    serviceModalTableBody.innerHTML = '';
+    if (!items.length) {
+      serviceModalEmpty.textContent = serviceModalState.query
+        ? 'No services found for this search.'
+        : 'Type at least 2 characters to search services.';
+      serviceModalEmpty.style.display = 'block';
+      updateServiceModalCount(0);
+      serviceModalState.activeIndex = -1;
+      return;
+    }
+    serviceModalEmpty.style.display = 'none';
+    updateServiceModalCount(items.length);
+    const existingIds = new Set(state.services.map((svc) => String(svc.serviceId)));
+    items.forEach((svc) => {
+      const id = String(svc.serviceId || '');
+      const alreadyAdded = existingIds.has(id);
+      const isSelected = serviceModalState.selected.has(id);
+      const row = document.createElement('tr');
+      row.dataset.id = id;
+      row.dataset.disabled = alreadyAdded ? '1' : '0';
+      if (alreadyAdded) row.classList.add('is-added');
+      if (isSelected) row.classList.add('is-selected');
+      const tag = alreadyAdded ? '<span class="svc-modal-tag">Added</span>' : '';
+      row.innerHTML = `
+        <td><input type="checkbox" ${isSelected ? 'checked' : ''} ${alreadyAdded ? 'disabled' : ''}></td>
+        <td>
+          <div><strong>${svc.name || '-'}</strong>${tag}</div>
+          <div class="svc-muted">${svc.categoryName || ''}</div>
+        </td>
+        <td>${svc.code || '-'}</td>
+        <td>${svc.categoryName || '-'}</td>
+        <td>${formatMoney(svc.rate || 0)}</td>
+        <td>${svc.cghs || '-'}</td>
+      `;
+      serviceModalTableBody.appendChild(row);
+    });
+    const startIndex = serviceModalState.activeIndex >= 0 ? serviceModalState.activeIndex : 0;
+    setServiceModalActiveIndex(startIndex, 1);
+  }
+
+  async function fetchServiceResults(query) {
+    const unit = unitSelect.value;
+    if (!unit) {
+      setAlert('Select a unit before searching services.', 'warn');
+      return;
+    }
+    const schemeId = tariffScheme.value;
+    if (!schemeId) {
+      setAlert('Select a tariff scheme to search services.', 'warn');
+      return;
+    }
+    const trimmed = (query || '').trim();
+    serviceModalState.query = trimmed;
+    if (trimmed.length < 2) {
+      serviceModalState.results = [];
+      serviceModalState.catalog = new Map();
+      renderServiceModalTable([]);
+      setServiceModalStatus('Type at least 2 characters.', 'warn', false);
+      setActivity('services', '');
+      return;
+    }
+    const mode = document.querySelector('input[name="serviceSearchMode"]:checked');
+    const tag = mode ? mode.value : '1';
+    serviceModalState.loading = true;
+    updateServiceModalSelection();
+    setServiceModalStatus('Searching...', 'loading', true);
+    setActivity('services', 'active');
+    serviceModalEmpty.textContent = 'Searching services...';
+    serviceModalEmpty.style.display = 'block';
+    try {
+      const res = await fetch(`/api/health_package/services?unit=${encodeURIComponent(unit)}&scheme_id=${encodeURIComponent(schemeId)}&q=${encodeURIComponent(trimmed)}&tag=${encodeURIComponent(tag)}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || 'Unable to search services');
+      }
+      const items = (data.services || []).map((svc) => normalizeServiceRecord(svc)).filter((svc) => svc.serviceId);
+      serviceModalState.results = items;
+      serviceModalState.catalog = new Map(items.map((svc) => [String(svc.serviceId), svc]));
+      renderServiceModalTable(items);
+      if (items.length) {
+        setServiceModalStatus('Results updated.', 'success', false);
+        setActivity('services', 'done');
+      } else {
+        setServiceModalStatus('No matches found.', 'warn', false);
+        setActivity('services', 'warn');
+      }
+    } catch (err) {
+      serviceModalState.results = [];
+      serviceModalState.catalog = new Map();
+      renderServiceModalTable([]);
+      serviceModalEmpty.textContent = 'Unable to load services.';
+      serviceModalEmpty.style.display = 'block';
+      setServiceModalStatus('Search failed.', 'warn', false);
+      setActivity('services', 'warn');
+      setAlert(err.message || 'Failed to search services.', 'error');
+    } finally {
+      serviceModalState.loading = false;
+      updateServiceModalSelection();
+    }
+  }
+
+  function resetServiceModal() {
+    serviceModalState.query = '';
+    serviceModalState.results = [];
+    serviceModalState.catalog = new Map();
+    serviceModalState.selected = new Map();
+    serviceModalState.loading = false;
+    serviceModalState.activeIndex = -1;
+    serviceModalSearch.value = '';
+    renderServiceModalTable([]);
+    updateServiceModalSelection();
+    setServiceModalStatus('Ready to search.', '', false);
+  }
+
+  function openServiceModal() {
+    const unit = unitSelect.value;
+    if (!unit) {
+      setAlert('Select a unit before searching services.', 'warn');
+      return;
+    }
+    if (!tariffScheme.value) {
+      setAlert('Select a tariff scheme to search services.', 'warn');
+      return;
+    }
+    if (serviceModal.classList.contains('open')) return;
+    resetServiceModal();
+    document.documentElement.classList.add('modal-open');
+    document.body.classList.add('modal-open');
+    serviceModal.classList.add('open');
+    setTimeout(() => serviceModalSearch.focus(), 0);
+  }
+
+  function closeServiceModal() {
+    serviceModal.classList.remove('open');
+    document.documentElement.classList.remove('modal-open');
+    document.body.classList.remove('modal-open');
+    resetServiceModal();
+  }
+
+  function attemptCloseServiceModal() {
+    if (serviceModalState.selected.size > 0) {
+      const ok = window.confirm(`You have ${serviceModalState.selected.size} selected services. Exit without adding them?`);
+      if (!ok) return;
+    }
+    closeServiceModal();
+  }
+
+  function addSelectedServices() {
+    if (serviceModalState.selected.size === 0) return;
+    const selected = Array.from(serviceModalState.selected.values());
+    const existingIds = new Set(state.services.map((svc) => String(svc.serviceId)));
+    let added = 0;
+    let skipped = 0;
+    selected.forEach((svc) => {
+      const id = String(svc.serviceId);
+      if (existingIds.has(id)) {
+        skipped += 1;
+        return;
+      }
+      state.services.push(svc);
+      existingIds.add(id);
+      added += 1;
+    });
+    if (added) {
+      renderServices();
+    }
+    if (added && skipped) {
+      setAlert(`Added ${added} services. ${skipped} already existed.`, 'warn');
+    } else if (added) {
+      setAlert(`Added ${added} services to the package.`, 'success');
+    } else if (skipped) {
+      setAlert('All selected services are already in the package.', 'warn');
+    }
+    closeServiceModal();
+  }
+
+  async function loadPackageDetails(packageIdValue, asCopy) {
+    const unit = unitSelect.value;
+    if (!unit || !packageIdValue) return;
+    setBusy(true);
+    setStatus('Loading package details...', 'warn');
+    setActivity('package', 'active');
+    try {
+      const res = await fetch(`/api/health_package/detail?unit=${encodeURIComponent(unit)}&package_id=${encodeURIComponent(packageIdValue)}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || 'Unable to load package');
+      }
+      await applyPackageDetails(data.package, data.services || [], asCopy);
+      setActivity('package', 'done');
+      setStatus(asCopy ? 'Package copied. Adjust and save.' : 'Package loaded. Ready to update.', 'ready');
+    } catch (err) {
+      setActivity('package', 'warn');
+      setStatus('Failed to load package.', 'error');
+      setAlert(err.message || 'Failed to load package.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function applyPackageDetails(pkg, services, asCopy) {
+    const code = pkg.HealthPlanCode || '';
+    const name = pkg.HealthPlanName || '';
+    packageCodeTouched = false;
+    packageId.value = asCopy ? '' : (pkg.HealthPlanID || packageId.value || '');
+    state.packageId = asCopy ? '' : (pkg.HealthPlanID || '');
+    packageCode.value = code;
+    packageName.value = name;
+    const lookupLabel = code ? `${code} - ${name}` : (name || `Package #${pkg.HealthPlanID || ''}`);
+    if (pkg.HealthPlanID) {
+      packageLookupId.value = pkg.HealthPlanID;
+      packageLookupInput.value = lookupLabel;
+    } else {
+      packageLookupId.value = '';
+      packageLookupInput.value = '';
+    }
+    launchDate.value = toDateInput(pkg.LaunchDate);
+    validityPeriod.value = pkg.ValidityPeriod || 0;
+    visitsAllowed.value = pkg.NoOfVisitsAllowed || 0;
+    discountAmount.value = formatMoney(pkg.Discount || 0);
+    basicCost.value = formatMoney(pkg.BasicCost || 0);
+    packageCost.value = formatMoney(pkg.PackageCost || 0);
+    packageCostTouched = false;
+    if (autoCost.checked) {
+      packageCostTouched = false;
+    }
+    deactiveToggle.checked = String(pkg.Deactive || 0) === '1';
+    if (asCopy) {
+      state.copySourceId = pkg.HealthPlanID || '';
+      copyLabel.textContent = `Copied from package #${state.copySourceId}`;
+      copyBanner.classList.add('show');
+      if (!packageCodeTouched) {
+        await loadNextPackageCode();
+      }
+    } else {
+      state.copySourceId = '';
+      copyBanner.classList.remove('show');
+    }
+    state.services = (services || []).map((svc) => {
+      const qty = parseNum(svc.pQuantity || svc.Quantity || 1) || 1;
+      const rate = parseNum(svc.pRate || svc.Rate || 0);
+      return {
+        serviceId: svc.pServiceid || svc.ServiceID,
+        code: svc.Service_Code || svc.ServiceCode || '',
+        name: svc.Service_Name || svc.ServiceName || '',
+        categoryId: svc.Category_Id || svc.ServiceCategoryID || '',
+        categoryCode: svc.ServiceCategory_Code || '',
+        categoryName: svc.ServiceCategory_Name || '',
+        cghs: svc.CGHSCode || '',
+        quantity: qty,
+        rate: rate,
+        amount: rate * qty,
+      };
+    });
+    renderServices();
+    updatePackageCostAuto();
+  }
+
+  async function loadNextPackageCode() {
+    const unit = unitSelect.value;
+    if (!unit) return;
+    try {
+      const res = await fetch(`/api/health_package/next_code?unit=${encodeURIComponent(unit)}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || 'Unable to generate code');
+      }
+      if (data.next_code && !packageCodeTouched) {
+        packageCode.value = data.next_code;
+        updateSummary();
+        updateValidation();
+      }
+    } catch (err) {
+      if (!packageCodeTouched) {
+        packageCode.value = localNextCode();
+        updateSummary();
+        updateValidation();
+      }
+    }
+  }
+
+
+  function resetForm() {
+    packageForm.reset();
+    showFieldErrors = false;
+    packageCodeTouched = false;
+    packageCostTouched = false;
+    state.services = [];
+    state.packageId = '';
+    state.copySourceId = '';
+    launchDate.value = new Date().toISOString().slice(0, 10);
+    updatedBy.value = defaultUpdatedBy || '';
+    packageLookupInput.value = '';
+    packageLookupId.value = '';
+    packageSearchInput.value = '';
+    packageTableBody.innerHTML = '';
+    packageTableEmpty.textContent = 'Start typing to search packages.';
+    packageTableEmpty.style.display = 'block';
+    resetPackageSelection();
+    serviceSearchInput.value = '';
+    copyBanner.classList.remove('show');
+    applyMode('add');
+    if (unitSelect.value) {
+      loadNextPackageCode();
+    }
+    renderServices();
+    setAlert('');
+    setSaveStatus('');
+    setStatus('Ready to build a health package.', 'ready');
+  }
+
+  serviceTableBody.addEventListener('input', (event) => {
+    const row = event.target.closest('tr');
+    if (!row) return;
+    const idx = Number(row.dataset.index || -1);
+    if (idx < 0 || !state.services[idx]) return;
+    if (event.target.classList.contains('svc-qty')) {
+      const qty = Math.max(1, parseNum(event.target.value));
+      state.services[idx].quantity = qty;
+      state.services[idx].amount = qty * parseNum(state.services[idx].rate);
+    }
+    if (event.target.classList.contains('svc-rate')) {
+      const rate = Math.max(0, parseNum(event.target.value));
+      state.services[idx].rate = rate;
+      state.services[idx].amount = rate * parseNum(state.services[idx].quantity);
+    }
+    row.querySelector('.svc-amount').textContent = formatMoney(state.services[idx].amount);
+    updateTotals();
+  });
+
+  serviceTableBody.addEventListener('click', (event) => {
+    if (!event.target.classList.contains('svc-remove')) return;
+    const row = event.target.closest('tr');
+    const idx = Number(row.dataset.index || -1);
+    if (idx < 0) return;
+    state.services.splice(idx, 1);
+    renderServices();
+  });
+
+  setCostBtn.addEventListener('click', () => {
+    packageCost.value = serviceTotal.textContent || '0.00';
+    packageCostTouched = true;
+    updateSummary();
+    updateValidation();
+  });
+
+  packageCode.addEventListener('input', () => {
+    packageCodeTouched = true;
+  });
+
+  packageCost.addEventListener('input', () => {
+    packageCostTouched = true;
+  });
+
+  [packageCode, packageName, launchDate, packageCost, updatedBy].forEach((el) => {
+    el.addEventListener('input', () => {
+      updateSummary();
+      updateValidation();
+    });
+  });
+
+  [validityPeriod, visitsAllowed].forEach((el) => {
+    el.addEventListener('input', updateSummary);
+  });
+  discountAmount.addEventListener('input', () => {
+    packageCostTouched = false;
+    updatePackageCostAuto();
+    updateSummary();
+  });
+  basicCost.addEventListener('input', () => {
+    packageCostTouched = false;
+    updatePackageCostAuto();
+    updateSummary();
+  });
+
+  deactiveToggle.addEventListener('change', updateSummary);
+  autoCost.addEventListener('change', () => {
+    packageCostTouched = false;
+    if (autoCost.checked) {
+      updateTotals();
+    } else {
+      updatePackageCostAuto();
+    }
+  });
+
+  modeAdd.addEventListener('change', () => {
+    if (modeAdd.checked) {
+      applyMode('add');
+      setStatus('Ready to create a new package.', 'ready');
+      setAlert('');
+      loadNextPackageCode();
+    }
+  });
+  modeUpdate.addEventListener('change', () => {
+    if (modeUpdate.checked) {
+      applyMode('update');
+      setStatus('Search and load a package to update.', 'ready');
+    }
+  });
+  modeCopy.addEventListener('change', () => {
+    if (modeCopy.checked) {
+      applyMode('copy');
+      setStatus('Search a package to copy and tweak services.', 'ready');
+    }
+  });
+
+  openPackageModalBtn.addEventListener('click', openPackageModal);
+  packageLookupInput.addEventListener('click', openPackageModal);
+  packageModalClose.addEventListener('click', closePackageModal);
+  packageModalCancel.addEventListener('click', closePackageModal);
+  packageModal.addEventListener('click', (event) => {
+    if (event.target === packageModal) {
+      closePackageModal();
+    }
+  });
+  packageSearchClear.addEventListener('click', () => {
+    packageSearchInput.value = '';
+    resetPackageSelection();
+    packageModalState.page = 1;
+    fetchPackagePage(packageModalState.page);
+  });
+  packageSearchInput.addEventListener('input', () => {
+    if (packageSearchTimer) clearTimeout(packageSearchTimer);
+    packageSearchTimer = setTimeout(() => {
+      resetPackageSelection();
+      packageModalState.page = 1;
+      fetchPackagePage(packageModalState.page);
+    }, 250);
+  });
+  packagePrev.addEventListener('click', () => {
+    if (packageModalState.page <= 1) return;
+    resetPackageSelection();
+    fetchPackagePage(packageModalState.page - 1);
+  });
+  packageNext.addEventListener('click', () => {
+    const totalPages = Math.max(1, Math.ceil(packageModalState.total / packageModalState.pageSize));
+    if (packageModalState.page >= totalPages) return;
+    resetPackageSelection();
+    fetchPackagePage(packageModalState.page + 1);
+  });
+  packageTableBody.addEventListener('click', (event) => {
+    const row = event.target.closest('tr');
+    if (!row) return;
+    packageModalState.selectedId = row.dataset.id || '';
+    packageModalState.selectedLabel = row.dataset.label || '';
+    const radio = row.querySelector('input[type="radio"]');
+    if (radio) radio.checked = true;
+    packageLoadBtn.disabled = !packageModalState.selectedId;
+  });
+  packageLoadBtn.addEventListener('click', () => {
+    if (!packageModalState.selectedId) return;
+    packageLookupId.value = packageModalState.selectedId;
+    packageLookupInput.value = packageModalState.selectedLabel || `Package #${packageModalState.selectedId}`;
+    closePackageModal();
+    loadPackageDetails(packageModalState.selectedId, state.isCopy);
+  });
+
+  openServiceModalBtn.addEventListener('click', openServiceModal);
+  serviceSearchInput.addEventListener('click', openServiceModal);
+  serviceSearchInput.addEventListener('focus', openServiceModal);
+
+  serviceModalClose.addEventListener('click', attemptCloseServiceModal);
+  serviceModalCancel.addEventListener('click', attemptCloseServiceModal);
+  serviceModal.addEventListener('click', (event) => {
+    if (event.target === serviceModal) {
+      attemptCloseServiceModal();
+    }
+  });
+  serviceModalClear.addEventListener('click', () => {
+    serviceModalSearch.value = '';
+    fetchServiceResults('');
+    serviceModalSearch.focus();
+  });
+  serviceModalSearch.addEventListener('input', () => {
+    if (serviceSearchTimer) clearTimeout(serviceSearchTimer);
+    serviceSearchTimer = setTimeout(() => fetchServiceResults(serviceModalSearch.value), 250);
+  });
+  serviceModalTableBody.addEventListener('click', (event) => {
+    const row = event.target.closest('tr');
+    if (!row) return;
+    const rows = getServiceModalRows();
+    const idx = rows.indexOf(row);
+    if (idx >= 0) {
+      setServiceModalActiveIndex(idx, 1);
+    }
+    toggleServiceSelectionByRow(row);
+  });
+  serviceModalAddBtn.addEventListener('click', () => {
+    addSelectedServices();
+  });
+  serviceModal.addEventListener('keydown', (event) => {
+    if (!serviceModal.classList.contains('open')) return;
+    const rows = getServiceModalRows();
+    const isTypingTarget = event.target === serviceModalSearch || event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA';
+    if (event.key === 'Escape') {
+      event.preventDefault();
+      attemptCloseServiceModal();
+      return;
+    }
+    if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+      event.preventDefault();
+      const dir = event.key === 'ArrowDown' ? 1 : -1;
+      if (!rows.length) return;
+      const start = serviceModalState.activeIndex === -1
+        ? (dir === 1 ? 0 : rows.length - 1)
+        : serviceModalState.activeIndex + dir;
+      setServiceModalActiveIndex(start, dir);
+      return;
+    }
+    if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+      if (!serviceModalAddBtn.disabled) {
+        event.preventDefault();
+        addSelectedServices();
+      }
+      return;
+    }
+    if ((event.key === 'Enter') || (!isTypingTarget && event.key === ' ')) {
+      if (serviceModalState.activeIndex < 0) return;
+      const row = rows[serviceModalState.activeIndex];
+      if (!row) return;
+      event.preventDefault();
+      toggleServiceSelectionByRow(row);
+    }
+  });
+  document.querySelectorAll('input[name="serviceSearchMode"]').forEach((el) => {
+    el.addEventListener('change', () => {
+      if (serviceModal.classList.contains('open') && serviceModalSearch.value.trim().length >= 2) {
+        fetchServiceResults(serviceModalSearch.value);
+      }
+    });
+  });
+
+  unitSelect.addEventListener('change', () => {
+    const unit = unitSelect.value;
+    if (unit) {
+      resetForm();
+      setAlert('');
+      loadInit(unit);
+    }
+  });
+
+  async function submitForm(event) {
+    event.preventDefault();
+    const submitter = event.submitter || document.activeElement;
+    if (submitter && submitter !== saveBtn) {
+      return;
+    }
+    if (isSubmitting) return;
+    setAlert('');
+    showFieldErrors = true;
+    updateValidation();
+
+    const missing = validationList.querySelectorAll('li:not(.done)');
+    if (missing.length > 0) {
+      setStatus('Complete required fields before saving.', 'warn');
+      setAlert('Please fill all required fields highlighted on the left.', 'error');
+      return;
+    }
+
+    const unit = unitSelect.value;
+    if (!unit) {
+      setStatus('Select a unit before saving.', 'warn');
+      setAlert('Unit is required to save the package.', 'error');
+      return;
+    }
+    if (state.isUpdate && !packageId.value) {
+      setStatus('Select a package to update.', 'warn');
+      setAlert('Choose an existing package before updating.', 'error');
+      return;
+    }
+
+    isSubmitting = true;
+    const payload = {
+      unit,
+      mode: state.isUpdate ? 'update' : (state.isCopy ? 'copy' : 'add'),
+      package_id: packageId.value,
+      package_code: packageCode.value.trim(),
+      package_name: packageName.value.trim(),
+      launch_date: launchDate.value,
+      package_cost: packageCost.value,
+      validity_period: validityPeriod.value,
+      visits_allowed: visitsAllowed.value,
+      discount_amount: discountAmount.value,
+      basic_cost: basicCost.value,
+      activation: deactiveToggle.checked ? 1 : 0,
+      updated_by: updatedBy.value,
+      package_or_plan: packageType.value || 'HCP',
+      services: state.services.map((svc) => ({
+        service_id: svc.serviceId,
+        service_code: svc.code,
+        service_name: svc.name,
+        category_id: svc.categoryId,
+        service_category_code: svc.categoryCode,
+        quantity: svc.quantity,
+        rate: svc.rate,
+        amount: svc.amount,
+        cghs_code: svc.cghs,
+      })),
+    };
+
+    saveBtn.disabled = true;
+    setBusy(true);
+    setStatus(state.isUpdate ? 'Updating package...' : 'Saving package...', 'warn');
+    setActivity('save', 'active');
+
+    try {
+      const res = await fetch('/api/health_package/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        if (res.status === 409) {
+          await loadNextPackageCode();
+          setStatus('Package code refreshed. Please save again.', 'warn');
+          setAlert(data.message || 'Package code already exists. A new code was generated.', 'warn');
+          return;
+        }
+        throw new Error(data.message || 'Unable to save package');
+      }
+      setActivity('save', 'done');
+      const action = data.action || (state.isUpdate ? 'updated' : 'added');
+      const pkgLabel = packageName.value.trim() || `Package ${data.package_id || ''}`;
+      setStatus(`Package ${action} successfully.`, 'ready');
+      setAlert(`Saved. ${pkgLabel}.`, 'success');
+      setSaveStatus(`Saved. ${pkgLabel}.`, 'success');
+      if (!state.isUpdate) {
+        packageId.value = data.package_id || '';
+      }
+    } catch (err) {
+      setActivity('save', 'warn');
+      setStatus('Failed to save package.', 'error');
+      setAlert(err.message || 'Failed to save package.', 'error');
+      setSaveStatus(err.message || 'Failed to save package.', 'error');
+    } finally {
+      isSubmitting = false;
+      saveBtn.disabled = false;
+      setBusy(false);
+    }
+  }
+
+  resetBtn.addEventListener('click', resetForm);
+  packageForm.addEventListener('submit', submitForm);
+
+  const isSingleUnit = svcWrapper.getAttribute('data-single-unit') === '1';
+  const urlParams = new URLSearchParams(window.location.search);
+  const presetUnit = (urlParams.get('unit') || '').trim().toUpperCase();
+  const presetPackageId = (urlParams.get('package_id') || '').trim();
+
+  if (presetUnit) {
+    const option = Array.from(unitSelect.options).find((opt) => opt.value === presetUnit);
+    if (option) {
+      unitSelect.value = presetUnit;
+    }
+  }
+
+  resetForm();
+
+  if (presetPackageId) {
+    modeUpdate.checked = true;
+    applyMode('update');
+  }
+
+  if (isSingleUnit && unitSelect.options.length > 0) {
+    unitSelect.selectedIndex = 0;
+    loadInit(unitSelect.value);
+  } else if (unitSelect.value) {
+    loadInit(unitSelect.value);
+  }
+
+  if (presetPackageId && unitSelect.value) {
+    loadPackageDetails(presetPackageId, false);
+  }
+</script>
+{% endblock %}

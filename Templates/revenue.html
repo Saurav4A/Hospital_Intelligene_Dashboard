@@ -1,0 +1,1519 @@
+{% extends "layout.html" %}
+{% block content %}
+<style>
+  @import url('https://fonts.googleapis.com/css2?family=Inter:wght@400;500;600;700;800&display=swap');
+
+  :root {
+    --primary: #2563eb;
+    --primary-dark: #1e40af;
+    --primary-light: #dbeafe;
+    --success: #10b981;
+    --danger: #ef4444;
+    --surface: rgba(255, 255, 255, 0.85);
+    --glass-border: rgba(255, 255, 255, 0.6);
+    --text-main: #0f172a;
+    --text-muted: #64748b;
+    --shadow-sm: 0 4px 6px -1px rgba(0, 0, 0, 0.1), 0 2px 4px -1px rgba(0, 0, 0, 0.06);
+    --shadow-lg: 0 10px 15px -3px rgba(0, 0, 0, 0.1), 0 4px 6px -2px rgba(0, 0, 0, 0.05);
+    --shadow-glow: 0 20px 25px -5px rgba(37, 99, 235, 0.15), 0 10px 10px -5px rgba(37, 99, 235, 0.1);
+  }
+
+  body {
+    font-family: 'Inter', system-ui, -apple-system, sans-serif;
+    background-color: #f0f4f8;
+    background-image: 
+      radial-gradient(at 0% 0%, rgba(37, 99, 235, 0.1) 0px, transparent 50%),
+      radial-gradient(at 100% 0%, rgba(16, 185, 129, 0.1) 0px, transparent 50%),
+      radial-gradient(at 100% 100%, rgba(239, 68, 68, 0.05) 0px, transparent 50%);
+    background-attachment: fixed;
+    color: var(--text-main);
+    -webkit-font-smoothing: antialiased;
+  }
+
+  .top-progress {
+    position: fixed; top: 0; left: 0; right: 0; height: 3px;
+    background: linear-gradient(90deg, var(--primary), var(--success));
+    transform: scaleX(0); transform-origin: left; z-index: 100;
+    transition: transform 0.3s ease;
+  }
+  body.is-busy .top-progress { transform: scaleX(0.7); }
+  body.is-busy.done .top-progress { transform: scaleX(1); }
+
+  /* Main Container */
+  .rev-container {
+    margin: 60px auto 80px;
+    width: 92%;
+    max-width: 1200px;
+    background: var(--surface);
+    border-radius: 24px;
+    border: 1px solid var(--glass-border);
+    box-shadow: var(--shadow-lg);
+    padding: 40px 40px 60px;
+    backdrop-filter: blur(16px);
+    position: relative;
+  }
+
+  .rev-header h2 {
+    font-size: 28px;
+    font-weight: 800;
+    color: var(--text-main);
+    margin-bottom: 8px;
+    background: linear-gradient(135deg, #1e3a8a 0%, #3b82f6 100%);
+    background-clip: text;
+    -webkit-background-clip: text;
+    -webkit-text-fill-color: transparent;
+    letter-spacing: -0.02em;
+  }
+
+  .rev-header p {
+    color: var(--text-muted);
+    font-size: 15px;
+    margin-bottom: 32px;
+  }
+
+  /* Filters Bar */
+  .rev-filters {
+    display: flex;
+    justify-content: center;
+    align-items: center;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 32px;
+    padding: 16px;
+    background: rgba(255, 255, 255, 0.5);
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.6);
+  }
+
+  .rev-filters label {
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--text-muted);
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+
+  .rev-filters input[type="date"] {
+    padding: 10px 16px;
+    border-radius: 12px;
+    border: 1px solid #cbd5e1;
+    font-size: 14px;
+    font-family: 'Inter', sans-serif;
+    color: var(--text-main);
+    background: #fff;
+    box-shadow: 0 1px 2px rgba(0,0,0,0.05);
+    transition: all 0.2s ease;
+    outline: none;
+  }
+
+  .rev-filters input[type="date"]:focus {
+    border-color: var(--primary);
+    box-shadow: 0 0 0 3px var(--primary-light);
+  }
+
+  /* Action Buttons */
+  .action-btn {
+    border: none;
+    border-radius: 12px;
+    padding: 10px 20px;
+    font-size: 14px;
+    font-weight: 600;
+    font-family: 'Inter', sans-serif;
+    cursor: pointer;
+    transition: all 0.2s ease;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    color: white;
+    background: var(--primary);
+    box-shadow: 0 4px 6px rgba(37, 99, 235, 0.2);
+    position: relative;
+    overflow: hidden;
+  }
+
+  .action-btn:hover { transform: translateY(-1px); box-shadow: 0 6px 12px rgba(37, 99, 235, 0.25); background: var(--primary-dark); }
+  .action-btn:active { transform: translateY(0); }
+  .action-btn:disabled { opacity: 0.6; cursor: not-allowed; transform: none; }
+
+  .action-btn.refresh-btn { background: var(--danger); box-shadow: 0 4px 6px rgba(239, 68, 68, 0.2); }
+  .action-btn.refresh-btn:hover { background: #dc2626; }
+
+  .action-btn.export-btn { background: #fff; color: var(--text-main); border: 1px solid #e2e8f0; box-shadow: 0 1px 2px rgba(0,0,0,0.05); }
+  .action-btn.export-btn:hover { background: #f8fafc; border-color: #cbd5e1; }
+
+  .btn-spinner {
+    width: 16px; height: 16px; border-radius: 50%;
+    border: 2px solid rgba(255,255,255,0.3); border-top-color: #fff;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* Tabs */
+  .main-chart-tabs { display: flex; gap: 8px; justify-content: center; margin-bottom: 24px; }
+  .main-chart-tab {
+    background: transparent;
+    border: none;
+    padding: 8px 16px;
+    font-size: 14px;
+    font-weight: 600;
+    color: var(--text-muted);
+    cursor: pointer;
+    border-radius: 8px;
+    transition: all 0.2s;
+  }
+  .main-chart-tab:hover { background: rgba(0,0,0,0.03); color: var(--text-main); }
+  .main-chart-tab.active { background: var(--primary-light); color: var(--primary-dark); }
+
+  /* Charts Container */
+  #chartContainer, #splitChart {
+    width: 100%;
+    background: #ffffff;
+    border-radius: 20px;
+    border: 1px solid #e2e8f0;
+    padding: 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+    position: relative;
+    overflow: hidden;
+  }
+  #chartContainer { height: 480px; margin-bottom: 30px; }
+  #splitChart { height: 420px; }
+
+  /* Split View */
+  .split-wrap {
+    display: grid;
+    grid-template-columns: 300px 1fr;
+    gap: 24px;
+    margin-top: 20px;
+  }
+
+  .split-card {
+    background: #fff;
+    border-radius: 20px;
+    border: 1px solid #e2e8f0;
+    padding: 24px;
+    box-shadow: 0 4px 20px rgba(0,0,0,0.03);
+    display: flex; flex-direction: column;
+  }
+
+  .split-title {
+    font-size: 16px;
+    font-weight: 700;
+    color: var(--text-main);
+    margin-bottom: 16px;
+  }
+
+  /* Pill Tabs */
+  .pill-tabs {
+    display: flex;
+    background: #f1f5f9;
+    border-radius: 10px;
+    padding: 4px;
+    margin-bottom: 20px;
+  }
+  .pill {
+    flex: 1;
+    border: none;
+    background: transparent;
+    padding: 8px;
+    font-size: 13px;
+    font-weight: 600;
+    color: var(--text-muted);
+    border-radius: 8px;
+    cursor: pointer;
+    transition: all 0.2s;
+  }
+  .pill.active { background: #fff; color: var(--primary); box-shadow: 0 1px 3px rgba(0,0,0,0.1); }
+
+  /* Selects */
+  select {
+    width: 100%;
+    padding: 10px 12px;
+    border-radius: 10px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    font-size: 14px;
+    color: var(--text-main);
+    margin-bottom: 16px;
+    cursor: pointer;
+    outline: none;
+  }
+  select:focus { border-color: var(--primary); background: #fff; }
+
+  /* Summary Cards */
+  .summary-cards {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 20px;
+    margin-top: 40px;
+  }
+
+  .summary-card {
+    background: #fff;
+    border-radius: 16px;
+    padding: 24px;
+    border: 1px solid #e2e8f0;
+    text-align: center;
+    transition: transform 0.3s ease, box-shadow 0.3s ease;
+    position: relative;
+    overflow: hidden;
+  }
+  
+  .summary-card:hover {
+    transform: translateY(-4px);
+    box-shadow: var(--shadow-lg);
+    border-color: var(--primary-light);
+  }
+
+  .summary-card::after {
+    content: ''; position: absolute; top: 0; left: 0; width: 100%; height: 4px;
+    background: linear-gradient(90deg, var(--primary), var(--success));
+    opacity: 0; transition: opacity 0.3s;
+  }
+  .summary-card:hover::after { opacity: 1; }
+
+  .summary-card h3 {
+    font-size: 14px; font-weight: 600; color: var(--text-muted);
+    text-transform: uppercase; letter-spacing: 0.05em; margin-bottom: 8px;
+  }
+  .summary-card p {
+    font-size: 28px; font-weight: 800; color: var(--text-main); margin: 0;
+    letter-spacing: -0.02em;
+  }
+  .summary-card span {
+    display: inline-block; margin-top: 8px; font-size: 12px; font-weight: 600;
+    padding: 2px 8px; border-radius: 6px; background: #f1f5f9; color: var(--text-muted);
+  }
+
+  .source-kpi-card {
+    margin-top: 28px;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fafc 100%);
+    border: 1px solid #dbeafe;
+    border-radius: 18px;
+    padding: 20px;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.05);
+  }
+
+  .source-kpi-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+    margin-bottom: 14px;
+  }
+
+  .source-kpi-title {
+    font-size: 20px;
+    font-weight: 800;
+    color: #0f172a;
+    margin: 0;
+    letter-spacing: -0.01em;
+  }
+
+  .source-kpi-sub {
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 13px;
+  }
+
+  .source-kpi-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+
+  .source-kpi-actions input,
+  .source-kpi-actions select {
+    min-width: 230px;
+    margin: 0;
+    background: #fff;
+  }
+
+  .source-kpi-metrics {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 10px;
+    margin: 10px 0 14px;
+  }
+
+  .source-kpi-pill {
+    border-radius: 12px;
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+  }
+
+  .source-kpi-pill .k {
+    display: block;
+    color: #64748b;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-weight: 700;
+  }
+
+  .source-kpi-pill .v {
+    display: block;
+    color: #0f172a;
+    font-size: 18px;
+    font-weight: 800;
+    margin-top: 4px;
+  }
+
+  .source-kpi-pill.revenue { border-color: #bfdbfe; background: #eff6ff; }
+  .source-kpi-pill.count { border-color: #bbf7d0; background: #f0fdf4; }
+  .source-kpi-pill.top { border-color: #fde68a; background: #fffbeb; }
+
+  .source-kpi-table-wrap {
+    max-height: 330px;
+    overflow: auto;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    background: #fff;
+  }
+
+  .source-kpi-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+
+  .source-kpi-table thead th {
+    position: sticky;
+    top: 0;
+    z-index: 1;
+    background: #f8fafc;
+    color: #334155;
+    font-weight: 700;
+    text-align: left;
+    padding: 10px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+
+  .source-kpi-table tbody td {
+    padding: 9px 10px;
+    border-bottom: 1px solid #f1f5f9;
+    color: #1e293b;
+  }
+
+  .source-kpi-table tbody tr.rank-top-1 { background: #ecfeff; }
+  .source-kpi-table tbody tr.rank-top-2 { background: #eff6ff; }
+  .source-kpi-table tbody tr.rank-top-3 { background: #f8fafc; }
+  .source-kpi-table .num { text-align: right; font-variant-numeric: tabular-nums; }
+  .source-kpi-table .center { text-align: center; }
+
+  /* FAB */
+  .fab-btn {
+    position: fixed; top: 30px; right: 40px;
+    width: 56px; height: 56px; border-radius: 28px;
+    background: var(--text-main); color: #fff;
+    border: none; box-shadow: var(--shadow-lg);
+    cursor: pointer; z-index: 90;
+    display: grid; place-items: center; font-size: 24px;
+    transition: transform 0.3s cubic-bezier(0.34, 1.56, 0.64, 1);
+  }
+  .fab-btn:hover { transform: scale(1.1) rotate(90deg); }
+  
+  .fab-menu {
+    position: fixed; top: 100px; right: 40px;
+    display: flex; flex-direction: column; gap: 10px; align-items: flex-end;
+    z-index: 89;
+  }
+  
+  .fab-item {
+    background: #fff; padding: 10px 20px; border-radius: 12px;
+    text-decoration: none; color: var(--text-main); font-weight: 600; font-size: 14px;
+    box-shadow: var(--shadow-lg); transform: translateX(20px); opacity: 0;
+    pointer-events: none; transition: all 0.2s; border: 1px solid #e2e8f0;
+  }
+  
+  #fabWrap[data-open="true"] .fab-item {
+    transform: translateX(0); opacity: 1; pointer-events: auto;
+  }
+  #fabWrap[data-open="true"] .fab-item:hover { transform: translateX(-5px); }
+
+  /* Print Styles */
+  @media print {
+    body { background: #fff; color: #000; -webkit-print-color-adjust: exact; print-color-adjust: exact; }
+    .rev-container, .fab-wrap, .top-progress, .rev-header, .rev-filters, .chart-tabs { display: none !important; }
+    #printArea { display: block !important; padding: 20px; width: 100%; }
+    .print-chart-box { 
+        border: 1px solid #e2e8f0; 
+        border-radius: 12px; 
+        padding: 15px; 
+        margin-bottom: 30px; 
+        break-inside: avoid;
+    }
+    h1, h2, h3 { color: #1e293b !important; }
+  }
+  #printArea { display: none; }
+
+  /* Responsive */
+  @media (max-width: 900px) { .split-wrap { grid-template-columns: 1fr; } #splitChart { height: 350px; } }
+  @media (max-width: 600px) { .rev-container { padding: 20px; width: 95%; } .rev-header h2 { font-size: 24px; } }
+
+  /* Custom Loader */
+  .modern-loader {
+    display: flex; flex-direction: column; align-items: center; justify-content: center;
+    height: 100%; color: var(--text-muted); font-weight: 500;
+  }
+  .modern-spinner {
+    width: 40px; height: 40px; border: 3px solid #e2e8f0;
+    border-top-color: var(--primary); border-radius: 50%;
+    animation: spin 1s cubic-bezier(0.6, 0.2, 0.4, 0.8) infinite;
+    margin-bottom: 16px;
+  }
+</style>
+
+<div class="top-progress" id="topProgress"></div>
+
+<div class="rev-container">
+  <div class="rev-header">
+    <h2>Revenue Intelligence</h2>
+    <p>Comprehensive financial performance analytics across all units</p>
+  </div>
+
+  <div class="rev-filters">
+    <div>
+      <label for="fromDate" style="display:block; margin-bottom:4px;">From Date</label>
+      <input type="date" id="fromDate" required>
+    </div>
+    <div>
+      <label for="toDate" style="display:block; margin-bottom:4px;">To Date</label>
+      <input type="date" id="toDate" required>
+    </div>
+    
+    <div style="display:flex; gap:10px; align-items:flex-end;">
+      <button id="fetchBtn" class="action-btn">
+        <span>Run Analysis</span>
+      </button>
+
+      <button id="refreshTodayBtn" class="action-btn refresh-btn" disabled title="Fetch live data from database">
+        <span>Update Now</span>
+      </button>
+    </div>
+
+    <div style="display:flex; gap:10px; align-items:flex-end; margin-left:auto;">
+      <button id="exportBtn" class="action-btn export-btn">
+        <span>Excel Export</span>
+      </button>
+      <button id="printBtn" class="action-btn export-btn">
+        <span>Print PDF</span>
+      </button>
+    </div>
+  </div>
+
+  <div class="main-chart-tabs" id="mainChartTabs" style="display:none;">
+    <button class="main-chart-tab active" data-view="typeofvisit">Visit Type Breakdown</button>
+    <button class="main-chart-tab" data-view="segregation">Revenue Segregation</button>
+  </div>
+
+  <div id="chartContainer">
+    <div class="modern-loader">
+      <div style="font-size:40px; margin-bottom:10px;">📊</div>
+      <p>Select a date range to view analytics</p>
+    </div>
+  </div>
+
+  <div class="split-wrap" id="splitWrap" style="display:none;">
+  <div class="split-card">
+      <div class="split-title">Drill Down</div>
+      
+      <div class="pill-tabs" id="modeTabs">
+        <button class="pill active" data-mode="department">Department</button>
+        <button class="pill" data-mode="category">Category</button>
+        <button class="pill" data-mode="corptype">Corp Type</button>
+      </div>
+      
+      <label for="unitSelect" style="font-size:12px; font-weight:600; color:var(--text-muted); margin-bottom:6px; display:block;">Select Unit</label>
+      <select id="unitSelect"></select>
+
+      <div id="deptExportWrap">
+        <label for="deptSelect" style="font-size:12px; font-weight:600; color:var(--text-muted); margin-bottom:6px; display:block;">Filter Department</label>
+        <select id="deptSelect" disabled>
+          <option value="">— Select after fetch —</option>
+        </select>
+      </div>
+      
+      <button id="exportDeptBtn" class="action-btn" style="width:100%; justify-content:center; margin-top:15px; background:#059669;" disabled>
+        <span>Export Data (Excel)</span>
+      </button>
+    </div>
+
+    <div class="split-card" style="padding:0; border:none; box-shadow:none; background:transparent;">
+      <div class="split-card" style="height:100%;">
+        <div class="split-title" id="splitTitle">Department Split</div>
+        <div id="splitChart"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="summary-cards" id="summaryCards"></div>
+
+  <div class="source-kpi-card" id="sourceKpiCard" style="display:none;">
+    <div class="source-kpi-head">
+      <div>
+        <h3 class="source-kpi-title">Patient Source Potential</h3>
+        <p class="source-kpi-sub" id="sourceKpiSub">Revenue opportunity by patient source with count intelligence.</p>
+      </div>
+      <div class="source-kpi-actions">
+        <select id="sourceUnitScope">
+          <option value="ALL">All Units</option>
+        </select>
+        <input id="sourceSearch" type="text" placeholder="Search source name or source ID">
+        <button id="sourceExcelBtn" class="action-btn export-btn"><span>Source Excel</span></button>
+        <button id="sourcePdfBtn" class="action-btn export-btn"><span>Source PDF</span></button>
+      </div>
+    </div>
+
+    <div class="source-kpi-metrics">
+      <div class="source-kpi-pill revenue">
+        <span class="k">Potential Revenue</span>
+        <span class="v" id="sourceTotalRevenue">-</span>
+      </div>
+      <div class="source-kpi-pill count">
+        <span class="k">Visit Count</span>
+        <span class="v" id="sourceVisitCount">-</span>
+      </div>
+      <div class="source-kpi-pill top">
+        <span class="k">Top Source</span>
+        <span class="v" id="sourceTopName">-</span>
+      </div>
+    </div>
+
+    <div class="source-kpi-table-wrap">
+      <table class="source-kpi-table">
+        <thead>
+          <tr>
+            <th style="width:70px;">Rank</th>
+            <th>Patient Source</th>
+            <th style="width:100px;">Source ID</th>
+            <th style="width:110px;">Visits</th>
+            <th style="width:110px;">Patients</th>
+            <th style="width:110px;">Bills</th>
+            <th style="width:160px;">Potential Revenue</th>
+          </tr>
+        </thead>
+        <tbody id="sourceKpiBody"></tbody>
+      </table>
+    </div>
+  </div>
+</div>
+
+<div id="printArea">
+  <div style="display:flex; justify-content:space-between; align-items:center; margin-bottom:20px; border-bottom:2px solid #e2e8f0; padding-bottom:15px;">
+      <div>
+        <h1 style="margin:0; font-size:24px; color:#1e3a8a;">Revenue Analytics Report</h1>
+        <div id="printMeta" style="color:#64748b; font-size:14px; margin-top:5px;"></div>
+      </div>
+      <div style="text-align:right; font-size:12px; color:#94a3b8;">Generated by<br>Hospital Intelligence Dashboard</div>
+  </div>
+
+  <div class="print-chart-box">
+      <h3 style="margin:0 0 10px 0; color:#475569;">High-Level Summary</h3>
+      <div id="printMainImg" style="width:100%;"></div>
+  </div>
+  
+  <div class="print-chart-box">
+      <h3 style="margin:0 0 10px 0; color:#475569;">Detailed Breakdown</h3>
+      <div id="printSplitImg" style="width:100%;"></div>
+  </div>
+</div>
+
+<div class="fab-wrap" id="fabWrap" data-open="false">
+  <div class="fab-menu" id="fabMenu">
+    <div class="fab-item" style="background:#f1f5f9;">👤 {{ session.get('username','User') }}</div>
+    <a class="fab-item" href="{{ url_for('dashboard') }}">🏠 Dashboard</a>
+    <a class="fab-item" href="{{ url_for('logout') }}" style="color:var(--danger);">🚪 Logout</a>
+  </div>
+  <button class="fab-btn" id="fabToggle">☰</button>
+</div>
+
+<script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+
+<script>
+document.addEventListener("DOMContentLoaded", () => {
+  console.log("🚀 Revenue Dashboard Initialized (Modern Segregation + Unified Hover)");
+  
+  const COLORS = {
+    // Revenue Sources
+    hospital: '#10b981',     // Emerald (Green)
+    pharmacy: '#f59e0b',     // Amber (Orange)
+    lab: '#3b82f6',          // Blue
+    radiology: '#06b6d4',    // Cyan
+    consumables: '#8b5cf6',  // Violet
+    
+    // Deductions (Negative/Cost)
+    returns: '#f43f5e',      // Rose (Red)
+    discount: '#ef4444',     // Red
+    
+    text: '#1e293b',
+    grayGrid: '#f1f5f9',
+    tooltipBg: 'rgba(255, 255, 255, 0.95)'
+  };
+
+  const FONT_FAMILY = "'Inter', system-ui, -apple-system, sans-serif";
+
+  // Elements
+  const fetchBtn = document.getElementById('fetchBtn');
+  const refreshTodayBtn = document.getElementById('refreshTodayBtn');
+  const exportBtn = document.getElementById('exportBtn');
+  const exportDeptBtn = document.getElementById('exportDeptBtn');
+  const printBtn = document.getElementById('printBtn');
+  const sourceKpiCard = document.getElementById('sourceKpiCard');
+  const sourceKpiSub = document.getElementById('sourceKpiSub');
+  const sourceUnitScope = document.getElementById('sourceUnitScope');
+  const sourceSearch = document.getElementById('sourceSearch');
+  const sourceExcelBtn = document.getElementById('sourceExcelBtn');
+  const sourcePdfBtn = document.getElementById('sourcePdfBtn');
+  const fromInput = document.getElementById('fromDate');
+  const toInput = document.getElementById('toDate');
+  const unitSelect = document.getElementById('unitSelect');
+  const deptSelect = document.getElementById('deptSelect');
+  const mainChartTabs = document.getElementById('mainChartTabs');
+
+  // State & Caches
+  let currentMode = "department";
+  let currentMainView = "typeofvisit";
+  let cachedSegregationData = null;
+  let mainChartDataCache = null; 
+  let forceRefreshFlag = false;
+  let currentDrillData = null; 
+  let lastPopulatedUnit = null;
+  let patientSourceCache = null;
+  let patientSourceVisibleRows = [];
+
+  const INR_FMT = new Intl.NumberFormat('en-IN', { style: 'currency', currency: 'INR', maximumFractionDigits: 0 });
+  const INT_FMT = new Intl.NumberFormat('en-IN', { maximumFractionDigits: 0 });
+
+  // --- HELPER: Safe Number Parser ---
+  function parseValue(val) {
+    if (typeof val === 'number') return val;
+    if (!val) return 0;
+    const clean = String(val).replace(/,/g, '').trim();
+    return parseFloat(clean) || 0;
+  }
+
+  function formatCompact(num) {
+    const n = Math.abs(parseValue(num));
+    if (n >= 10000000) return "₹" + (n / 10000000).toFixed(2) + " Cr";
+    if (n >= 100000) return "₹" + (n / 100000).toFixed(2) + " L";
+    return INR_FMT.format(n).replace('.00', '');
+  }
+
+  function showLoader(id, text) {
+    const el = document.getElementById(id);
+    if(el) el.innerHTML = `<div class="modern-loader"><div class="modern-spinner"></div><div>${text || 'Loading data...'}</div></div>`;
+  }
+
+  function clearLoader(id) {
+    const el = document.getElementById(id);
+    if(el && el.querySelector('.modern-loader')) el.innerHTML = '';
+  }
+
+  function setLoading(btn, isLoading) {
+    const span = btn.querySelector('span');
+    if(isLoading) {
+      btn.disabled = true;
+      btn.dataset.origText = span.innerText;
+      span.innerText = "Processing...";
+      btn.style.opacity = "0.7";
+    } else {
+      btn.disabled = false;
+      if(btn.dataset.origText) span.innerText = btn.dataset.origText;
+      btn.style.opacity = "1";
+    }
+  }
+
+  function getToday() {
+    const d = new Date();
+    return `${d.getFullYear()}-${String(d.getMonth()+1).padStart(2,'0')}-${String(d.getDate()).padStart(2,'0')}`;
+  }
+
+  function checkDates() {
+    const today = getToday();
+    const isToday = fromInput.value === today && toInput.value === today;
+    refreshTodayBtn.disabled = !isToday;
+    refreshTodayBtn.title = isToday ? "Fetch fresh live data" : "Live update only available for today";
+  }
+
+  fromInput.addEventListener('change', checkDates);
+  toInput.addEventListener('change', checkDates);
+
+  // ================= FETCH LOGIC =================
+
+  async function doFetch(isForceUpdate) {
+    const from = fromInput.value;
+    const to = toInput.value;
+    
+    if(!from || !to) { alert("Please select a date range"); return; }
+
+    document.body.classList.add('is-busy');
+    setLoading(isForceUpdate ? refreshTodayBtn : fetchBtn, true);
+    
+    Plotly.purge('chartContainer');
+    Plotly.purge('splitChart');
+    showLoader('chartContainer', isForceUpdate ? 'Updating Live Data...' : 'Analyzing Revenue...');
+    
+    document.getElementById('summaryCards').innerHTML = '';
+    document.getElementById('splitWrap').style.display = 'none';
+    
+    mainChartDataCache = null;
+    cachedSegregationData = null;
+    patientSourceCache = null;
+    patientSourceVisibleRows = [];
+    forceRefreshFlag = isForceUpdate;
+    lastPopulatedUnit = null;
+    sourceKpiCard.style.display = 'none';
+    sourceSearch.value = '';
+
+    try {
+      const fd = new FormData();
+      fd.append("from_date", from);
+      fd.append("to_date", to);
+      if(isForceUpdate) fd.append("refresh_today", "1");
+
+      const res = await fetch("/fetch", { method: "POST", body: fd });
+      const data = await res.json();
+
+      if(data.status !== "success") throw new Error(data.message || "No data found");
+
+      window.__lastSummary = data.summary;
+      
+      const units = data.summary.map(s => s.Unit);
+      populateUnits(units);
+      
+      mainChartTabs.style.display = 'flex';
+      
+      if(currentMainView === 'typeofvisit') {
+        await renderMainChart(units, from, to);
+      } else {
+        await renderSegregation(units, from, to);
+      }
+      
+      document.getElementById('splitWrap').style.display = 'grid';
+      await loadDrillDown();
+      await loadPatientSourceKpi(from, to, isForceUpdate);
+
+    } catch(e) {
+      console.error(e);
+      document.getElementById('chartContainer').innerHTML = 
+        `<div style="height:100%;display:grid;place-items:center;color:${COLORS.returns}"><div>⚠️ ${e.message}</div></div>`;
+    } finally {
+      document.body.classList.add('done');
+      setTimeout(() => document.body.classList.remove('is-busy', 'done'), 500);
+      setLoading(isForceUpdate ? refreshTodayBtn : fetchBtn, false);
+    }
+  }
+
+  function populateUnits(units) {
+    unitSelect.innerHTML = '';
+    units.sort((a,b) => (b.includes('AHL') ? 1 : 0) - (a.includes('AHL') ? 1 : 0));
+    units.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u; opt.innerText = u; unitSelect.appendChild(opt);
+    });
+    if(units.length > 0) unitSelect.selectedIndex = 0;
+  }
+
+  function populateSourceUnitScope(units) {
+    sourceUnitScope.innerHTML = '';
+    const allOpt = document.createElement('option');
+    allOpt.value = 'ALL';
+    allOpt.innerText = 'All Units';
+    sourceUnitScope.appendChild(allOpt);
+    units.forEach(u => {
+      const opt = document.createElement('option');
+      opt.value = u;
+      opt.innerText = u;
+      sourceUnitScope.appendChild(opt);
+    });
+    sourceUnitScope.value = 'ALL';
+  }
+
+  function sourceRowsByScope() {
+    if (!patientSourceCache) return [];
+    const scope = sourceUnitScope.value || 'ALL';
+    if (scope === 'ALL') {
+      return (patientSourceCache.rows || []).map((r, idx) => ({
+        ...r,
+        Rank: idx + 1
+      }));
+    }
+    const rows = (patientSourceCache.unit_rows || [])
+      .filter(r => String(r.Unit || '').toUpperCase() === scope)
+      .sort((a, b) => parseValue(b.PotentialRevenue) - parseValue(a.PotentialRevenue))
+      .map((r, idx) => ({
+        ...r,
+        Rank: idx + 1
+      }));
+    return rows;
+  }
+
+  function renderPatientSourceRows(rows) {
+    const body = document.getElementById('sourceKpiBody');
+    if (!rows || rows.length === 0) {
+      body.innerHTML = `<tr><td colspan="7" style="text-align:center;color:#64748b;padding:16px;">No patient source rows found.</td></tr>`;
+      return;
+    }
+
+    body.innerHTML = rows.map((r, idx) => {
+      let cls = '';
+      if (idx === 0) cls = 'rank-top-1';
+      else if (idx === 1) cls = 'rank-top-2';
+      else if (idx === 2) cls = 'rank-top-3';
+      return `
+        <tr class="${cls}">
+          <td class="center">${r.Rank || (idx + 1)}</td>
+          <td>${(r.SourceName || '').toString()}</td>
+          <td class="center">${r.SourceID ?? 0}</td>
+          <td class="center">${INT_FMT.format(parseValue(r.VisitCount))}</td>
+          <td class="center">${INT_FMT.format(parseValue(r.PatientCount))}</td>
+          <td class="center">${INT_FMT.format(parseValue(r.BillCount))}</td>
+          <td class="num">${INR_FMT.format(parseValue(r.PotentialRevenue))}</td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function applyPatientSourceFilters() {
+    if (!patientSourceCache) return;
+    const q = (sourceSearch.value || '').trim().toLowerCase();
+    const rows = sourceRowsByScope();
+    patientSourceVisibleRows = rows;
+
+    const topRow = rows.length ? rows[0] : null;
+    const totalRevenue = rows.reduce((sum, r) => sum + parseValue(r.PotentialRevenue), 0);
+    const totalVisits = rows.reduce((sum, r) => sum + parseValue(r.VisitCount), 0);
+
+    document.getElementById('sourceTotalRevenue').innerText = INR_FMT.format(totalRevenue);
+    document.getElementById('sourceVisitCount').innerText = INT_FMT.format(totalVisits);
+    document.getElementById('sourceTopName').innerText = topRow ? String(topRow.SourceName || '-').slice(0, 26) : '-';
+
+    let filtered = rows;
+    if (q) {
+      filtered = rows.filter(r => {
+        const name = String(r.SourceName || '').toLowerCase();
+        const sid = String(r.SourceID ?? '').toLowerCase();
+        return name.includes(q) || sid.includes(q);
+      });
+    }
+    renderPatientSourceRows(filtered);
+  }
+
+  async function loadPatientSourceKpi(from, to, refreshFlag) {
+    try {
+      const fd = new FormData();
+      fd.append("from_date", from);
+      fd.append("to_date", to);
+      if (refreshFlag) fd.append("refresh", "1");
+
+      const res = await fetch("/api/revenue_patient_source", { method: "POST", body: fd });
+      const data = await res.json();
+      if (data.status !== "success") throw new Error(data.message || "Failed to load patient source KPI");
+
+      patientSourceCache = data;
+      populateSourceUnitScope(data.units || []);
+      sourceKpiSub.innerText = `Date range: ${from} to ${to} | Scope: ${data.unit_scope || 'All Units'}`;
+      sourceKpiCard.style.display = 'block';
+      applyPatientSourceFilters();
+    } catch (e) {
+      console.error(e);
+      sourceKpiCard.style.display = 'block';
+      sourceKpiSub.innerText = 'Patient source KPI data could not be loaded for the selected range.';
+      renderPatientSourceRows([]);
+      document.getElementById('sourceTotalRevenue').innerText = '-';
+      document.getElementById('sourceVisitCount').innerText = '-';
+      document.getElementById('sourceTopName').innerText = '-';
+    }
+  }
+
+  // ================= MAIN CHARTS =================
+
+  async function renderMainChart(units, from, to) {
+    const values = units.map(u => {
+      const row = window.__lastSummary.find(s => s.Unit === u);
+      return row ? (parseValue(row.NetAmount) || parseValue(row.Records) || 0) : 0;
+    });
+
+    renderSummaryCards(units, values);
+
+    if (!mainChartDataCache || forceRefreshFlag) {
+        const unitDataMap = {};
+        const categories = new Set();
+
+        await Promise.all(units.map(async u => {
+            const fd = new FormData();
+            fd.append("from_date", from); fd.append("to_date", to);
+            fd.append("unit", u); fd.append("mode", "typeofvisit");
+            if(forceRefreshFlag) fd.append("refresh", "1");
+
+            try {
+                const r = await fetch("/breakdown", { method:"POST", body:fd });
+                const j = await r.json();
+                if(j.status === "success") {
+                    unitDataMap[u] = j;
+                    j.labels.forEach(l => categories.add(l));
+                    unitDataMap[u].trueTotal = j.total_revenue;
+                }
+            } catch(e) { console.warn(`Fetch failed for ${u}`, e); }
+        }));
+        mainChartDataCache = { unitDataMap, categories };
+    }
+
+    const { unitDataMap, categories } = mainChartDataCache;
+
+    const maxTotal = Math.max(...values);
+    const tickVals = []; const tickText = [];
+    if(maxTotal > 0) {
+        const step = maxTotal / 5;
+        for(let i=0; i<=maxTotal*1.15; i+=step) {
+            tickVals.push(i); tickText.push(formatCompact(i));
+        }
+    }
+
+    const traces = [];
+    const sortedCats = Array.from(categories).slice(0, 8);
+    const catColors = [COLORS.lab, COLORS.hospital, COLORS.pharmacy, COLORS.returns, COLORS.consumables, COLORS.radiology, COLORS.blueLight, COLORS.slate];
+
+    sortedCats.forEach((cat, idx) => {
+      const yValues = units.map(u => {
+        const d = unitDataMap[u];
+        if(!d) return 0;
+        const i = d.labels.indexOf(cat);
+        return i > -1 ? parseValue(d.values[i]) : 0;
+      });
+
+      traces.push({
+        x: units, y: yValues, name: cat, type: 'bar',
+        marker: { color: catColors[idx % catColors.length], line: { width: 1, color: 'rgba(255,255,255,0.6)' } },
+        width: 0.5,
+        hoverlabel: { bgcolor: "#ffffff", bordercolor: "rgba(0,0,0,0)", font: { family: FONT_FAMILY, size: 13, color: COLORS.text }, align: 'left' },
+        hovertemplate: `<span style="color:#64748b;font-size:11px;">${cat}</span><br><b style="font-size:14px;">%{customdata}</b><extra></extra>`,
+        customdata: yValues.map(v => INR_FMT.format(v))
+      });
+    });
+
+    if(traces.length === 0) {
+        traces.push({ x: units, y: values, type: 'bar', marker: { color: COLORS.lab }, customdata: values.map(v => INR_FMT.format(v)) });
+    }
+
+    traces.push({
+        x: units, y: values, mode: 'text', type: 'scatter',
+        text: units.map(u => formatCompact(parseValue(unitDataMap[u]?.trueTotal || values[units.indexOf(u)]))),
+        textposition: 'top center', hoverinfo: 'skip', showlegend: false,
+        textfont: { family: FONT_FAMILY, size: 12, color: COLORS.slate, weight: '600' }
+    });
+
+    const layout = {
+      barmode: 'stack', font: { family: FONT_FAMILY, color: COLORS.slate },
+      margin: { t: 40, l: 60, r: 20, b: 100 },
+      paper_bgcolor: 'transparent', plot_bgcolor: 'transparent',
+      showlegend: true, 
+      legend: { orientation: 'h', y: -0.25, xanchor: 'center', x: 0.5, font: { size: 12 }, itemwidth: 30 },
+      yaxis: { gridcolor: COLORS.grayGrid, zeroline: false, showline: false, tickmode: 'array', tickvals: tickVals, ticktext: tickText, range: [0, maxTotal * 1.2] },
+      xaxis: { tickfont: { weight: '600', color: '#334155' }, automargin: true, showgrid: false, showline: false },
+      hovermode: 'x' 
+    };
+
+    clearLoader('chartContainer');
+    document.getElementById('chartContainer').style.overflow = 'visible';
+
+    setTimeout(async () => {
+        Plotly.purge('chartContainer');
+        await Plotly.newPlot('chartContainer', traces, layout, {displayModeBar: false, responsive: true});
+        document.getElementById('chartContainer').on('plotly_click', function(data){
+            if(data.points.length){
+                unitSelect.value = data.points[0].x;
+                unitSelect.dispatchEvent(new Event('change'));
+                document.getElementById('splitWrap').scrollIntoView({behavior: 'smooth', block: 'center'});
+            }
+        });
+    }, 50);
+  }
+
+  async function renderSegregation(units, from, to) {
+    if(!cachedSegregationData || forceRefreshFlag) {
+      const fd = new FormData();
+      fd.append("from_date", from); fd.append("to_date", to);
+      if(forceRefreshFlag) fd.append("refresh", "1");
+      try {
+        const r = await fetch("/api/revenue_segregation", { method:"POST", body:fd });
+        const j = await r.json();
+        cachedSegregationData = j.data;
+      } catch(e) { return; }
+    }
+
+    const data = cachedSegregationData;
+    const comps = [
+      {key: "HospAmount", label: "Hospital", color: COLORS.hospital},
+      {key: "HospitalConsumables", label: "Consumables", color: COLORS.consumables},
+      {key: "PHAmount", label: "Pharmacy", color: COLORS.pharmacy},
+      {key: "LabAmount", label: "Lab", color: COLORS.lab},
+      {key: "RadioAmount", label: "Radiology", color: COLORS.radiology},
+      {key: "PHRetAmount", label: "Pharm Returns", color: COLORS.returns}, // Red
+      {key: "DiscountAmount", label: "Discount", color: COLORS.discount}   // Red
+    ];
+
+    const unitTotals = units.map(u => comps.reduce((sum, c) => sum + parseValue(data[u.toUpperCase()]?.[c.key]), 0));
+    let globalMax = Math.max(...unitTotals, 0);
+    let globalMin = Math.min(...unitTotals, 0);
+    units.forEach(u => {
+        comps.forEach(c => {
+            const val = parseValue(data[u.toUpperCase()]?.[c.key]);
+            if(val > globalMax) globalMax = val;
+            if(val < globalMin) globalMin = val;
+        });
+    });
+
+    const tickVals = []; const tickText = [];
+    const rangeSpan = globalMax - globalMin;
+    const step = rangeSpan > 0 ? rangeSpan / 6 : 100000; 
+    for(let i = 0; i >= globalMin * 1.2; i -= step) { tickVals.push(i); tickText.push(formatCompact(i)); }
+    for(let i = step; i <= globalMax * 1.2; i += step) { tickVals.push(i); tickText.push(formatCompact(i)); }
+    
+    const sortedIndices = tickVals.map((v, i) => ({v, i})).sort((a, b) => a.v - b.v);
+    const finalVals = sortedIndices.map(x => x.v);
+    const finalText = sortedIndices.map(x => tickText[x.i]);
+
+    const traces = comps.map(c => ({
+      x: units, 
+      y: units.map(u => parseValue(data[u.toUpperCase()]?.[c.key])),
+      name: c.label, 
+      type: 'bar', 
+      marker: { color: c.color, line: { width: 0 } },
+      // UNIFIED HOVER MAGIC: Clean formatting for the list
+      hovertemplate: `<b>${c.label}</b>: %{customdata}<extra></extra>`,
+      customdata: units.map(u => INR_FMT.format(parseValue(data[u.toUpperCase()]?.[c.key])))
+    }));
+
+    // Add "Net Total" Trace (Text only, floating above bars)
+    traces.push({
+        x: units, 
+        y: unitTotals.map(v => v > 0 ? v * 1.05 : 0), // Position slightly above
+        mode: 'text', 
+        type: 'scatter',
+        text: unitTotals.map(v => formatCompact(v)),
+        textposition: 'top center', 
+        hoverinfo: 'skip', 
+        showlegend: false,
+        textfont: { family: FONT_FAMILY, size: 12, color: COLORS.text, weight: 'bold' }
+    });
+
+    const layout = {
+      barmode: 'group', 
+      font: { family: FONT_FAMILY, color: COLORS.slate },
+      paper_bgcolor: 'transparent', 
+      plot_bgcolor: 'transparent',
+      // MODERNIZATION: X Unified Hover (One card for the whole column)
+      hovermode: 'x unified',
+      hoverlabel: {
+          bgcolor: COLORS.tooltipBg,
+          bordercolor: COLORS.grayGrid,
+          font: { family: FONT_FAMILY, size: 13, color: COLORS.text },
+          namelength: -1
+      },
+      yaxis: { 
+          gridcolor: COLORS.grayGrid, zeroline: true, zerolinewidth: 2, zerolinecolor: '#cbd5e1',
+          showline: false,
+          tickmode: 'array', tickvals: finalVals, ticktext: finalText,
+          range: [globalMin * 1.25, globalMax * 1.25] 
+      },
+      xaxis: { showgrid: false, showline: false, tickfont: { weight: '600', color: '#334155' } },
+      margin: { t: 40, l: 60, r: 20, b: 100 },
+      legend: { orientation: 'h', y: -0.25, xanchor: 'center', x: 0.5 }
+    };
+
+    clearLoader('chartContainer');
+    document.getElementById('chartContainer').style.overflow = 'visible';
+    
+    setTimeout(async () => {
+        Plotly.purge('chartContainer');
+        await Plotly.newPlot('chartContainer', traces, layout, {displayModeBar: false, responsive: true});
+        
+        const container = document.getElementById('chartContainer');
+        container.removeAllListeners('plotly_click'); 
+        container.on('plotly_click', function(data){
+            if(data.points.length){
+                unitSelect.value = data.points[0].x;
+                unitSelect.dispatchEvent(new Event('change'));
+                document.getElementById('splitWrap').scrollIntoView({behavior: 'smooth', block: 'center'});
+            }
+        });
+    }, 50);
+  }
+
+  // ================= DRILL DOWN CHART =================
+
+  async function loadDrillDown() {
+    if(unitSelect.options.length === 0) return;
+    const unit = unitSelect.value || unitSelect.options[0].value;
+    const from = fromInput.value;
+    const to = toInput.value;
+    
+    let label = "Breakdown";
+    if(currentMode === "department") label = "Department";
+    else if(currentMode === "category") label = "Category";
+    else if(currentMode === "corptype") label = "Corporate / TPA";
+    
+    document.getElementById('splitTitle').innerText = `${unit} - ${label} Breakdown`;
+    showLoader('splitChart', `Loading ${label}...`);
+    
+    currentDrillData = null; 
+    const isDeptSplit = (currentMode === 'department' && deptSelect.value && deptSelect.value !== 'ALL');
+
+    const fd = new FormData();
+    fd.append("from_date", from); fd.append("to_date", to);
+    fd.append("unit", unit); fd.append("mode", currentMode);
+    if(forceRefreshFlag) fd.append("refresh", "1");
+    
+    if (isDeptSplit) {
+        fd.append("pay_split", "true");
+        fd.append("department", deptSelect.value);
+    }
+
+    try {
+      const r = await fetch("/breakdown", { method:"POST", body:fd });
+      const j = await r.json();
+      
+      if(j.status !== "success") throw new Error("No data");
+      
+      if (currentMode === "department" && lastPopulatedUnit !== unit) {
+           if (!isDeptSplit) {
+              populateDepartments(j.labels);
+              lastPopulatedUnit = unit;
+           } else {
+              lastPopulatedUnit = unit; 
+           }
+      }
+
+      clearLoader('splitChart');
+      setTimeout(() => {
+          Plotly.purge('splitChart');
+          const chartHeight = 350; 
+
+          if(currentMode === "category" || isDeptSplit) {
+            
+            let labels, values, total;
+            
+            if (isDeptSplit) {
+                const idx = j.labels.indexOf(deptSelect.value);
+                if(idx === -1) {
+                     document.getElementById('splitChart').innerHTML = `<div style="padding:20px;text-align:center;color:${COLORS.slate}">No data found for ${deptSelect.value}</div>`;
+                     return;
+                }
+                const cCash = parseValue(j.cash[idx]);
+                const cCashless = parseValue(j.cashless[idx]);
+                
+                labels = ['Cash', 'Cashless'];
+                values = [cCash, cCashless];
+                total = cCash + cCashless;
+                document.getElementById('splitTitle').innerText = `${unit} - ${deptSelect.value} (Billing Split)`;
+            } else {
+                labels = j.labels;
+                values = j.values.map(v => parseValue(v));
+                total = values.reduce((a,b) => a+b, 0);
+            }
+
+            if(total === 0) {
+               document.getElementById('splitChart').innerHTML = `<div style="padding:20px;text-align:center;color:${COLORS.slate}">No revenue data found</div>`;
+               return;
+            }
+
+            const defaultCenterText = `Total<br><b>${formatCompact(total)}</b>`;
+            const formattedAmounts = values.map(v => INR_FMT.format(v));
+
+            const trace = {
+              labels: labels, values: values, type: 'pie', hole: 0.75,
+              textinfo: 'none', rotation: 0,
+              marker: { 
+                  colors: isDeptSplit ? [COLORS.emerald, COLORS.blue] : [COLORS.blue, COLORS.emerald, COLORS.amber, COLORS.rose, COLORS.violet, COLORS.cyan],
+                  line: { color: '#fff', width: 2 }
+              },
+              hoverinfo: 'none',
+              customdata: formattedAmounts
+            };
+            
+            const layout = {
+              showlegend: true, 
+              legend: { x: 1.1, y: 0.5, xanchor: 'left', yanchor: 'middle', orientation: 'v' },
+              paper_bgcolor: 'transparent', 
+              font: { family: FONT_FAMILY, color: COLORS.slate },
+              annotations: [{ 
+                  text: defaultCenterText, showarrow: false, 
+                  font: {size: 16, color: COLORS.text}, x: 0.5, y: 0.5
+              }],
+              margin: {t: 30, b: 30, l: 30, r: 120}, 
+              height: chartHeight, automargin: true
+            };
+            
+            Plotly.newPlot('splitChart', [trace], layout, {displayModeBar: false, responsive: true})
+            .then(gd => {
+                gd.on('plotly_hover', function(data){
+                    const pt = data.points[0];
+                    const name = pt.label;
+                    const amt = pt.customdata; 
+                    
+                    // Robust calculation inside event
+                    const val = pt.value || 0;
+                    const tot = total || 1;
+                    const pct = ((val / tot) * 100).toFixed(1) + '%';
+
+                    Plotly.relayout(gd, {
+                        'annotations[0].text': `${name}<br><b>${amt}</b><br><span style="font-size:12px;color:#64748b">${pct}</span>`
+                    });
+                });
+                gd.on('plotly_unhover', function(data){
+                    Plotly.relayout(gd, { 'annotations[0].text': defaultCenterText });
+                });
+            });
+
+            currentDrillData = { unit, labels, values, type: isDeptSplit ? 'billing_split' : currentMode, period: `${from} to ${to}` };
+
+          } else {
+            const cleanValues = j.values.map(v => parseValue(v));
+            const limit = 10;
+            const slicedLabels = j.labels.slice(0, limit).reverse();
+            const slicedValues = cleanValues.slice(0, limit).reverse();
+
+            const trace = {
+              y: slicedLabels, x: slicedValues,
+              type: 'bar', orientation: 'h',
+              marker: { 
+                  color: slicedValues.map((v, i) => i === limit-1 ? COLORS.blue : COLORS.blueLight), 
+                  opacity: 0.9, line: { width: 0 }
+              },
+              hoverlabel: { bgcolor: "#ffffff", bordercolor: "rgba(0,0,0,0)", font: { family: FONT_FAMILY, size: 13, color: COLORS.text }, align: 'left' },
+              hovertemplate: `<b>%{y}</b><br>%{customdata}<extra></extra>`,
+              text: slicedValues.map(v => formatCompact(v)),
+              textposition: 'auto', textfont: { color: 'white', family: FONT_FAMILY }, 
+              customdata: slicedValues.map(v => INR_FMT.format(v))
+            };
+            const layout = {
+              font: { family: FONT_FAMILY, color: COLORS.slate }, 
+              xaxis: { visible: false },
+              yaxis: { automargin: true, tickfont: { family: FONT_FAMILY, weight: '600' } }, 
+              margin: { t: 20, b: 20, l: 20, r: 20 },
+              height: chartHeight,
+              paper_bgcolor: 'transparent', plot_bgcolor: 'transparent'
+            };
+            Plotly.newPlot('splitChart', [trace], layout, {displayModeBar: false, responsive: true});
+            
+            currentDrillData = { unit, labels: j.labels, values: cleanValues, type: currentMode, period: `${from} to ${to}` };
+          }
+      }, 50);
+
+    } catch(e) {
+      console.error(e);
+      document.getElementById('splitChart').innerHTML = `<div style="padding:20px;text-align:center;color:${COLORS.slate}">No data available</div>`;
+      exportDeptBtn.disabled = true;
+    }
+  }
+
+  function renderSummaryCards(units, values) {
+    const container = document.getElementById('summaryCards');
+    container.innerHTML = '';
+    const maxVal = Math.max(...values);
+    units.forEach((u, i) => {
+      const val = values[i];
+      const percent = maxVal > 0 ? (val / maxVal) * 100 : 0;
+      const div = document.createElement('div');
+      div.className = 'summary-card';
+      if(val === maxVal && val > 0) div.style.borderColor = COLORS.emerald;
+      div.innerHTML = `<h3>${u}</h3><p style="color:${val===maxVal && val>0 ? COLORS.emerald : COLORS.text}">${formatCompact(val)}</p>
+        <div style="margin-top:10px; width:100%; background:#f1f5f9; height:6px; border-radius:3px; overflow:hidden;">
+          <div style="width:${percent}%; background:${val===maxVal && val>0 ? COLORS.emerald : COLORS.blue}; height:100%;"></div>
+        </div>
+        <span>${val===maxVal && val>0 ? 'Top Performer' : ((val/maxVal)*100).toFixed(0) + '% of Top'}</span>`;
+      container.appendChild(div);
+    });
+  }
+
+  async function ensureDepartments(from, to, unit) {
+    try {
+      const fd = new FormData();
+      fd.append("from_date", from); fd.append("to_date", to);
+      fd.append("unit", unit); fd.append("mode", "department");
+      const r = await fetch("/breakdown", { method:"POST", body:fd });
+      const j = await r.json();
+      if(j.status==="success") populateDepartments(j.labels);
+    } catch(e) {}
+  }
+
+  function populateDepartments(labels) {
+    deptSelect.innerHTML = '<option value="ALL">All Departments</option>';
+    labels.forEach(l => {
+      const opt = document.createElement('option');
+      opt.value = l; opt.innerText = l; deptSelect.appendChild(opt);
+    });
+    deptSelect.disabled = false;
+    exportDeptBtn.disabled = false;
+  }
+
+  fetchBtn.addEventListener('click', () => doFetch(false));
+  refreshTodayBtn.addEventListener('click', () => doFetch(true));
+  unitSelect.addEventListener('change', () => { 
+      lastPopulatedUnit = null; 
+      loadDrillDown(); 
+  });
+  deptSelect.addEventListener('change', loadDrillDown);
+
+  document.querySelectorAll('.pill').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('.pill').forEach(p => p.classList.remove('active'));
+      e.target.classList.add('active');
+      currentMode = e.target.dataset.mode;
+      if (currentMode !== 'department') {
+          deptSelect.value = "ALL";
+      }
+      const deptWrap = document.getElementById('deptExportWrap');
+      if(currentMode === 'category' || currentMode === 'corptype') {
+        deptWrap.style.display = 'none';
+        exportDeptBtn.querySelector('span').innerText = currentMode === 'corptype' ? "Export Multi-Sheet Excel" : "Export Data (Excel)";
+      } else {
+        deptWrap.style.display = 'block';
+        exportDeptBtn.querySelector('span').innerText = "Export Data (Excel)";
+      }
+      loadDrillDown();
+    });
+  });
+
+  document.querySelectorAll('.main-chart-tab').forEach(btn => {
+    btn.addEventListener('click', (e) => {
+      document.querySelectorAll('.main-chart-tab').forEach(t => t.classList.remove('active'));
+      e.target.classList.add('active');
+      currentMainView = e.target.dataset.view;
+      const from = fromInput.value;
+      const to = toInput.value;
+      const units = Array.from(unitSelect.options).map(o=>o.value);
+      if(currentMainView === 'typeofvisit') renderMainChart(units, from, to);
+      else renderSegregation(units, from, to);
+    });
+  });
+
+  sourceUnitScope.addEventListener('change', applyPatientSourceFilters);
+  sourceSearch.addEventListener('input', applyPatientSourceFilters);
+
+  sourceExcelBtn.addEventListener('click', () => {
+    const from = fromInput.value;
+    const to = toInput.value;
+    if (!from || !to) {
+      alert("Please select a date range.");
+      return;
+    }
+    const scope = sourceUnitScope.value || 'ALL';
+    const url = `/export_revenue_patient_source_excel?from_date=${encodeURIComponent(from)}&to_date=${encodeURIComponent(to)}&unit=${encodeURIComponent(scope)}`;
+    window.open(url, '_blank');
+  });
+
+  sourcePdfBtn.addEventListener('click', () => {
+    const from = fromInput.value;
+    const to = toInput.value;
+    if (!from || !to) {
+      alert("Please select a date range.");
+      return;
+    }
+    const scope = sourceUnitScope.value || 'ALL';
+    const url = `/export_revenue_patient_source_pdf?from_date=${encodeURIComponent(from)}&to_date=${encodeURIComponent(to)}&unit=${encodeURIComponent(scope)}`;
+    window.open(url, '_blank');
+  });
+
+  exportBtn.addEventListener('click', () => {
+     const u = `/export_revenue_excel?from_date=${fromInput.value}&to_date=${toInput.value}`;
+     window.open(u, '_blank');
+  });
+
+// exportDeptBtn.addEventListener('click', () => { ...
+
+exportDeptBtn.addEventListener('click', () => {
+    const unit = unitSelect.value;
+    const from = fromInput.value;
+    const to = toInput.value;
+
+    if (!unit || !from || !to) {
+        alert("Please fetch data first.");
+        return;
+    }
+
+    // NEW LOGIC: Use Backend for Department Export to get raw data sheets
+    if (currentMode === 'department') {
+        const url = `/export_department_excel?from_date=${from}&to_date=${to}&unit=${unit}`;
+        window.open(url, '_blank');
+        return;
+    }
+
+    // Existing logic for CorpType (which already used backend)
+    if (currentMode === 'corptype') {
+        const url = `/export_corptype_excel?from_date=${from}&to_date=${to}&unit=${unit}`;
+        window.open(url, '_blank');
+        return;
+    }
+
+    // Fallback for Category (Client-side export is fine for simple aggregates)
+    if (!currentDrillData || !currentDrillData.labels) {
+        alert("No data available to export.");
+        return;
+    }
+    const { labels, values, type, period } = currentDrillData;
+
+    let table = '<html xmlns:x="urn:schemas-microsoft-com:office:excel">';
+    table += '<head><meta http-equiv="content-type" content="text/plain; charset=UTF-8"/>';
+    table += '<style>body{font-family:Arial,sans-serif;} table{border-collapse:collapse;width:100%;} th,td{border:1px solid #ccc;padding:8px;}</style></head><body>';
+    table += '<table>';
+    table += `<tr><td colspan="2" style="background:#1e3a8a;color:#fff;font-weight:bold;font-size:14pt;text-align:center;height:40px;vertical-align:middle;">Revenue Breakdown - ${unit} (${type.toUpperCase()})</td></tr>`;
+    table += `<tr><td colspan="2" style="text-align:center;font-style:italic;">Period: ${period}</td></tr>`;
+    table += `<tr style="background:#e0f2fe;font-weight:bold;"><td>Category</td><td style="text-align:right;">Revenue (INR)</td></tr>`;
+
+    let total = 0;
+    labels.forEach((label, index) => {
+        const val = Number(values[index]) || 0;
+        total += val;
+        table += `<tr><td>${label}</td><td style="text-align:right;">${INR_FMT.format(val)}</td></tr>`;
+    });
+
+    table += `<tr style="font-weight:bold;background:#f1f5f9;"><td>Total</td><td style="text-align:right;">${INR_FMT.format(total)}</td></tr>`;
+    table += '</table></body></html>';
+
+    const blob = new Blob([table], { type: 'application/vnd.ms-excel' });
+    const url = window.URL.createObjectURL(blob);
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = `Revenue_${unit}_${type}_${period.replace(/\s/g, '_')}.xls`;
+    document.body.appendChild(link);
+    link.click();
+    document.body.removeChild(link);
+});
+  
+  printBtn.addEventListener('click', async () => {
+    const btn = document.getElementById('printBtn');
+    const origText = btn.querySelector('span').innerText;
+    btn.disabled = true;
+    btn.querySelector('span').innerText = "Preparing PDF...";
+    try {
+        document.getElementById('printMeta').innerText = `Period: ${fromInput.value} to ${toInput.value} | Generated: ${new Date().toLocaleString('en-IN')}`;
+        const img1 = await Plotly.toImage('chartContainer', {format: 'png', width: 1200, height: 600, scale: 2});
+        document.getElementById('printMainImg').innerHTML = `<img src="${img1}" style="width:100%; border-radius:8px;">`;
+        const img2 = await Plotly.toImage('splitChart', {format: 'png', width: 1200, height: 600, scale: 2});
+        document.getElementById('printSplitImg').innerHTML = `<img src="${img2}" style="width:100%; border-radius:8px;">`;
+        setTimeout(() => { window.print(); btn.disabled = false; btn.querySelector('span').innerText = origText; }, 800);
+    } catch (e) {
+        console.error("Print Error:", e);
+        alert("Could not generate PDF. Please verify charts are loaded.");
+        btn.disabled = false;
+        btn.querySelector('span').innerText = origText;
+    }
+  });
+
+  const fabToggle = document.getElementById('fabToggle');
+  const fabWrap = document.getElementById('fabWrap');
+  fabToggle.addEventListener('click', () => {
+    const isOpen = fabWrap.dataset.open === "true";
+    fabWrap.dataset.open = !isOpen;
+    fabToggle.innerText = !isOpen ? "✕" : "☰";
+  });
+
+  checkDates();
+});
+</script>
+{% endblock %}

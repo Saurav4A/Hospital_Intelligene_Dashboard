@@ -1,0 +1,708 @@
+{% extends "layout.html" %}
+{% block content %}
+<style>
+  .store-wrapper {
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: #0f172a;
+    background:
+      radial-gradient(1200px 600px at -10% -10%, #e3f2fd 0, transparent 40%),
+      radial-gradient(1400px 700px at 110% -10%, #e3f2fd 0, transparent 35%),
+      #f4f7fb;
+    min-height: 100vh;
+    width: 100%;
+    padding: 16px 0 40px;
+    box-sizing: border-box;
+  }
+  .store-wrapper * { box-sizing: border-box; }
+
+  .store-wrapper {
+    --brand: #1e3a8a;
+    --brand-2: #3b82f6;
+    --ink: #0f172a;
+    --muted: #64748b;
+    --line: #e2e8f0;
+    --card: rgba(255,255,255,0.96);
+    --shadow: 0 12px 30px rgba(15,23,42,0.08);
+    --radius: 16px;
+  }
+
+  .store-shell {
+    width: min(1200px, 96%);
+    margin: 0 auto;
+  }
+
+  .store-hero {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: center;
+    padding: 10px 6px 18px;
+  }
+  .store-hero h2 {
+    margin: 0 0 6px;
+    font-size: 24px;
+    color: var(--brand);
+    font-weight: 800;
+  }
+  .store-hero p {
+    margin: 0;
+    color: var(--muted);
+    font-size: 13px;
+  }
+  .store-hero .hero-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .hero-link {
+    text-decoration: none;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: #eff6ff;
+    color: var(--brand);
+    font-weight: 700;
+    border: 1px solid #dbeafe;
+  }
+
+  .store-alert {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    display: none;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .store-alert.show { display: flex; }
+  .store-alert.success { background: #ecfdf3; color: #166534; border: 1px solid #bbf7d0; }
+  .store-alert.error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+  .store-alert.warn { background: #fff7ed; color: #9a3412; border: 1px solid #fdba74; }
+  .store-alert.loading { background: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe; }
+  .store-alert .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+
+  .store-card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    border: 1px solid rgba(0,0,0,0.04);
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .filter-bar {
+    display: grid;
+    grid-template-columns: minmax(180px, 1.2fr) minmax(200px, 1.2fr) minmax(140px, 1fr) minmax(140px, 1fr);
+    gap: 12px;
+    align-items: end;
+  }
+  .filter-group {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+  }
+  .filter-group label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+  .form-control {
+    padding: 9px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    font-size: 14px;
+    color: var(--ink);
+    outline: none;
+  }
+  .form-control:focus { border-color: var(--brand-2); box-shadow: 0 0 0 2px rgba(59,130,246,0.1); }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--brand), var(--brand-2));
+    color: #fff;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 6px 16px rgba(30,58,138,0.2);
+  }
+  .btn-outline {
+    background: #eff6ff;
+    color: var(--brand);
+    border: 1px solid #dbeafe;
+    padding: 9px 14px;
+    border-radius: 10px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .btn-outline:disabled,
+  .btn-primary:disabled {
+    opacity: 0.6;
+    cursor: not-allowed;
+  }
+
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+  }
+  .kpi-card {
+    background: #fff;
+    border-radius: 14px;
+    border: 1px solid #f1f5f9;
+    padding: 14px;
+  }
+  .kpi-title {
+    font-size: 12px;
+    color: var(--muted);
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+  }
+  .kpi-value {
+    font-size: 20px;
+    color: #0f172a;
+    font-weight: 800;
+    margin-top: 6px;
+  }
+  .kpi-sub {
+    font-size: 12px;
+    color: #1d4ed8;
+    margin-top: 6px;
+    font-weight: 600;
+  }
+
+  .table-wrap {
+    overflow-x: auto;
+  }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th {
+    text-align: left;
+    padding: 10px;
+    background: #f8fafc;
+    color: #475569;
+    font-weight: 700;
+    border-bottom: 2px solid #e2e8f0;
+    white-space: nowrap;
+  }
+  td { padding: 10px; border-bottom: 1px solid #f1f5f9; color: #1e293b; }
+  td.num, th.num { text-align: right; }
+  td.center, th.center { text-align: center; }
+  .filter-row th { background: #eef2f7; }
+  .filter-row input {
+    width: 100%;
+    padding: 6px 8px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    font-size: 12px;
+    color: #0f172a;
+  }
+  .stock-pager {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: flex-end;
+    margin-top: 10px;
+  }
+  .stock-pager button {
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid #dbeafe;
+    background: #eff6ff;
+    color: var(--brand);
+    cursor: pointer;
+  }
+  .stock-pager button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .loader-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255,255,255,0.7);
+    backdrop-filter: blur(2px);
+    z-index: 999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  .loader-overlay.show { display: flex; }
+  .loader-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #e2e8f0;
+    border-top-color: var(--brand);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin { to { transform: rotate(360deg); } }
+
+  /* FAB user menu (consistent with MIS) */
+  .fab-user {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+  .fab-btn {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--brand), var(--brand-2));
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-size: 22px;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 8px 20px rgba(37,99,235,.3);
+  }
+  .fab-menu {
+    position: absolute;
+    top: 65px;
+    right: 0;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    padding: 10px;
+    display: none;
+    min-width: 180px;
+    border: 1px solid rgba(0,0,0,0.05);
+  }
+  .fab-menu.open { display: block; }
+  .fab-menu a {
+    display: block;
+    padding: 8px 10px;
+    color: #334155;
+    text-decoration: none;
+    font-weight: 600;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  .fab-menu a:hover { background: #eff6ff; color: var(--brand); }
+  .fab-icon span {
+    display: block;
+    width: 18px;
+    height: 3px;
+    background: #fff;
+    border-radius: 2px;
+    margin: 2px 0;
+  }
+
+  @media (max-width: 920px) {
+    .filter-bar { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+  }
+</style>
+
+<div class="store-wrapper">
+  <div class="fab-user">
+    <button class="fab-btn" id="fabToggle" title="User Menu">
+      <span class="fab-icon"><span></span><span></span><span></span></span>
+    </button>
+    <div class="fab-menu" id="fabMenu">
+      <div style="padding:6px 12px;font-weight:700;color:#1e3a8a;">
+         {{ session.get('username') or session.get('user') or 'User' }}
+      </div>
+      <a href="{{ url_for('dashboard') }}">Home</a>
+      <a href="{{ url_for('mis_dashboard') }}">MIS Home</a>
+      <a href="{{ url_for('logout') }}">Logout</a>
+    </div>
+  </div>
+
+  <div class="loader-overlay" id="storeLoader"><div class="loader-spinner"></div></div>
+
+  <div class="store-shell">
+    <div class="store-hero">
+      <div>
+        <h2>General Store Intelligence</h2>
+        <p>Focused view of stock position for AHLSTORE, CANCERUNITSTORE, and BALLIASTORE.</p>
+      </div>
+      <div class="hero-actions">
+        <a class="hero-link" href="{{ url_for('mis_dashboard') }}">Back to MIS</a>
+      </div>
+    </div>
+
+    <div class="store-alert" id="storeAlert"></div>
+
+    <div class="store-card">
+      <div class="filter-bar">
+        <div class="filter-group">
+          <label>Unit Scope</label>
+          <select id="unitSelect" class="form-control">
+            <option value="">Select unit</option>
+            {% for u in allowed_units %}
+              <option value="{{ u }}" {% if u == selected_unit %}selected{% endif %}>{{ u }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Store</label>
+          <select id="storeSelect" class="form-control">
+            <option value="">Select store</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Actions</label>
+          <button class="btn-primary" id="loadStockBtn">Load Current Stock</button>
+        </div>
+        <div class="filter-group">
+          <label>Exports</label>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn-outline" id="exportStockExcel">Export Excel</button>
+            <button class="btn-outline" id="exportStockPdf">Export PDF</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="store-card">
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-title">Total Purchase Value</div>
+          <div class="kpi-value" id="stockPurchaseTotal">0</div>
+          <div class="kpi-sub" id="stockPurchaseScope">Live</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">Total Sale Value</div>
+          <div class="kpi-value" id="stockSaleTotal">0</div>
+          <div class="kpi-sub" id="stockSaleScope">Live</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">Loaded Items</div>
+          <div class="kpi-value" id="stockItemCount">0</div>
+          <div class="kpi-sub" id="stockLastUpdated">Waiting to load</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="store-card">
+      <div class="table-wrap">
+        <table class="stock-table">
+          <thead>
+            <tr>
+              <th>Item Name</th>
+              <th>Batch</th>
+              <th class="center">Expiry</th>
+              <th class="num">Qty</th>
+              <th class="num">Rate</th>
+              <th class="num">MRP</th>
+              <th class="num">Purchase Value</th>
+              <th class="num">Sale Value</th>
+              <th>Group</th>
+            </tr>
+            <tr class="filter-row">
+              <th><input id="stockFilter0" placeholder="Item"></th>
+              <th><input id="stockFilter1" placeholder="Batch"></th>
+              <th><input id="stockFilter2" placeholder="Expiry"></th>
+              <th><input id="stockFilter3" placeholder="Qty"></th>
+              <th><input id="stockFilter4" placeholder="Rate"></th>
+              <th><input id="stockFilter5" placeholder="MRP"></th>
+              <th><input id="stockFilter6" placeholder="Purchase"></th>
+              <th><input id="stockFilter7" placeholder="Sale"></th>
+              <th><input id="stockFilter8" placeholder="Group"></th>
+            </tr>
+          </thead>
+          <tbody id="stockTableBody">
+            <tr><td colspan="9" style="text-align:center; color:#94a3b8; padding:30px;">Select unit and store to load stock.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="stock-pager">
+        <span id="stockPageInfo" style="margin-right:auto;font-size:12px;color:#475569;"></span>
+        <button id="stockPrev">Prev</button>
+        <button id="stockNext">Next</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const unitSelectEl = document.getElementById('unitSelect');
+  const storeSelectEl = document.getElementById('storeSelect');
+  const loadStockBtn = document.getElementById('loadStockBtn');
+  const stockTableBody = document.getElementById('stockTableBody');
+  const stockPageInfo = document.getElementById('stockPageInfo');
+  const stockPrev = document.getElementById('stockPrev');
+  const stockNext = document.getElementById('stockNext');
+  const exportStockExcel = document.getElementById('exportStockExcel');
+  const exportStockPdf = document.getElementById('exportStockPdf');
+  const stockPurchaseTotal = document.getElementById('stockPurchaseTotal');
+  const stockSaleTotal = document.getElementById('stockSaleTotal');
+  const stockPurchaseScope = document.getElementById('stockPurchaseScope');
+  const stockSaleScope = document.getElementById('stockSaleScope');
+  const stockItemCount = document.getElementById('stockItemCount');
+  const stockLastUpdated = document.getElementById('stockLastUpdated');
+  const storeAlert = document.getElementById('storeAlert');
+  const storeLoader = document.getElementById('storeLoader');
+  const fabToggle = document.getElementById('fabToggle');
+  const fabMenu = document.getElementById('fabMenu');
+
+  const numFmt0 = new Intl.NumberFormat('en-IN');
+  const numFmt2 = new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+
+  const STOCK_PAGE_SIZE = 20;
+  let stockRows = [];
+  let stockFilteredRows = [];
+  let stockPage = 1;
+
+  const showLoader = (on) => {
+    if (!storeLoader) return;
+    storeLoader.classList.toggle('show', !!on);
+  };
+
+  const setAlert = (message, type) => {
+    if (!storeAlert) return;
+    if (!message) {
+      storeAlert.className = 'store-alert';
+      storeAlert.innerHTML = '';
+      return;
+    }
+    const icon = type === 'loading' ? '<span class="spinner"></span>' : '';
+    storeAlert.className = `store-alert show ${type || ''}`;
+    storeAlert.innerHTML = `${icon}<span>${message}</span>`;
+  };
+
+  const formatINR = (amount) => new Intl.NumberFormat('en-IN', {
+    style: 'currency', currency: 'INR', minimumFractionDigits: 2
+  }).format(amount || 0);
+
+  const safeNum = (val) => {
+    const num = Number(val || 0);
+    return Number.isFinite(num) ? num : 0;
+  };
+
+  const fmtNum = (val, digits) => {
+    const num = Number(val);
+    if (!Number.isFinite(num)) return '0';
+    return (digits === 2 ? numFmt2 : numFmt0).format(num);
+  };
+
+  const updateTotals = (rows) => {
+    const totals = (rows || []).reduce((acc, row) => {
+      acc.purchase += safeNum(row.PurchaseValue);
+      acc.sale += safeNum(row.SaleValue);
+      return acc;
+    }, { purchase: 0, sale: 0 });
+    if (stockPurchaseTotal) stockPurchaseTotal.textContent = formatINR(totals.purchase);
+    if (stockSaleTotal) stockSaleTotal.textContent = formatINR(totals.sale);
+    if (stockPurchaseScope) stockPurchaseScope.textContent = 'Live';
+    if (stockSaleScope) stockSaleScope.textContent = 'Live';
+  };
+
+  const updateCounts = (rows) => {
+    const count = rows?.length || 0;
+    if (stockItemCount) stockItemCount.textContent = String(count);
+    if (stockLastUpdated) {
+      const stamp = count ? new Date().toLocaleString('en-IN') : 'Waiting to load';
+      stockLastUpdated.textContent = count ? `Updated ${stamp}` : stamp;
+    }
+  };
+
+  const getFilters = () => {
+    const filters = [];
+    for (let i = 0; i <= 8; i++) {
+      const input = document.getElementById(`stockFilter${i}`);
+      filters.push((input && input.value ? input.value.trim().toLowerCase() : ''));
+    }
+    return filters;
+  };
+
+  const applyFilters = () => {
+    const filters = getFilters();
+    if (!filters.some(Boolean)) {
+      stockFilteredRows = stockRows.slice();
+    } else {
+      stockFilteredRows = stockRows.filter((row) => {
+        const values = [
+          row.ItemName || '',
+          row.BatchName || '',
+          row.ExpiryDate || '',
+          String(row.Qty ?? ''),
+          String(row.Rate ?? ''),
+          String(row.MRP ?? ''),
+          String(row.PurchaseValue ?? ''),
+          String(row.SaleValue ?? ''),
+          row.GroupName || '',
+        ];
+        for (let i = 0; i < filters.length; i++) {
+          const f = filters[i];
+          if (!f) continue;
+          if (!String(values[i] || '').toLowerCase().includes(f)) {
+            return false;
+          }
+        }
+        return true;
+      });
+    }
+    stockPage = 1;
+    renderStockPage();
+  };
+
+  const renderStockPage = () => {
+    if (!stockTableBody) return;
+    if (!stockFilteredRows.length) {
+      stockTableBody.innerHTML = '<tr><td colspan="9" style="text-align:center; color:#94a3b8; padding:30px;">No stock found.</td></tr>';
+      if (stockPageInfo) stockPageInfo.textContent = '';
+      if (stockPrev) stockPrev.disabled = true;
+      if (stockNext) stockNext.disabled = true;
+      return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(stockFilteredRows.length / STOCK_PAGE_SIZE));
+    stockPage = Math.min(Math.max(1, stockPage), totalPages);
+    const start = (stockPage - 1) * STOCK_PAGE_SIZE;
+    const slice = stockFilteredRows.slice(start, start + STOCK_PAGE_SIZE);
+
+    const bodyHtml = slice.map((row) => `
+      <tr>
+        <td>${row.ItemName || ''}</td>
+        <td>${row.BatchName || ''}</td>
+        <td class="center">${row.ExpiryDate || ''}</td>
+        <td class="num">${fmtNum(row.Qty, 0)}</td>
+        <td class="num">${fmtNum(row.Rate, 2)}</td>
+        <td class="num">${fmtNum(row.MRP, 2)}</td>
+        <td class="num">${fmtNum(row.PurchaseValue, 2)}</td>
+        <td class="num">${fmtNum(row.SaleValue, 2)}</td>
+        <td>${row.GroupName || ''}</td>
+      </tr>
+    `).join('');
+
+    stockTableBody.innerHTML = bodyHtml;
+    if (stockPageInfo) {
+      const total = stockRows.length;
+      const filtered = stockFilteredRows.length;
+      const label = filtered === total ? `${total} items` : `${filtered} of ${total} items`;
+      stockPageInfo.textContent = `Page ${stockPage} of ${totalPages} (${label})`;
+    }
+    if (stockPrev) stockPrev.disabled = stockPage <= 1;
+    if (stockNext) stockNext.disabled = stockPage >= totalPages;
+  };
+
+  const loadStores = async () => {
+    const unit = unitSelectEl?.value || '';
+    if (!unit) {
+      setAlert('Select a unit to load stores.', 'warn');
+      return;
+    }
+    try {
+      setAlert('Loading stores... Please wait.', 'loading');
+      showLoader(true);
+      const res = await fetch(`/api/mis/store/stores?unit=${encodeURIComponent(unit)}`);
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || 'Failed to load stores');
+      }
+      const stores = data.stores || [];
+      storeSelectEl.innerHTML = '<option value="">Select store</option>';
+      stores.forEach((store) => {
+        const opt = document.createElement('option');
+        opt.value = store.id;
+        opt.textContent = store.name || `Store ${store.id}`;
+        storeSelectEl.appendChild(opt);
+      });
+      setAlert(`Loaded ${stores.length} stores for ${unit}.`, 'success');
+    } catch (err) {
+      setAlert(err.message || 'Failed to load stores.', 'error');
+    } finally {
+      showLoader(false);
+    }
+  };
+
+  const loadStock = async () => {
+    const unit = unitSelectEl?.value || '';
+    const storeId = storeSelectEl?.value || '';
+    if (!unit || !storeId) {
+      setAlert('Select both unit and store before loading.', 'warn');
+      return;
+    }
+    try {
+      setAlert('Loading current stock... This may take a few seconds.', 'loading');
+      showLoader(true);
+      stockTableBody.innerHTML = '<tr><td colspan="9" style="text-align:center; color:#94a3b8; padding:30px;">Loading...</td></tr>';
+      const res = await fetch(`/api/mis/store/current_stock?unit=${encodeURIComponent(unit)}&store_id=${encodeURIComponent(storeId)}`);
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || 'Failed to load stock');
+      }
+      const rows = data.rows || [];
+      stockRows = rows;
+      stockFilteredRows = rows.slice();
+      stockPage = 1;
+      updateTotals(rows);
+      updateCounts(rows);
+      renderStockPage();
+      setAlert(`Loaded ${rows.length} items from ${data.store_name || 'selected store'}.`, 'success');
+    } catch (err) {
+      stockRows = [];
+      stockFilteredRows = [];
+      renderStockPage();
+      updateTotals([]);
+      updateCounts([]);
+      setAlert(err.message || 'Failed to load stock.', 'error');
+    } finally {
+      showLoader(false);
+    }
+  };
+
+  const exportStock = (type) => {
+    const unit = unitSelectEl?.value || '';
+    const storeId = storeSelectEl?.value || '';
+    if (!unit || !storeId) {
+      setAlert('Select both unit and store before exporting.', 'warn');
+      return;
+    }
+    const base = type === 'pdf'
+      ? '/api/mis/store/current_stock/export_pdf'
+      : '/api/mis/store/current_stock/export_excel';
+    const url = `${base}?unit=${encodeURIComponent(unit)}&store_id=${encodeURIComponent(storeId)}`;
+    window.open(url, '_blank');
+  };
+
+  unitSelectEl?.addEventListener('change', () => {
+    stockRows = [];
+    stockFilteredRows = [];
+    stockPage = 1;
+    updateTotals([]);
+    updateCounts([]);
+    renderStockPage();
+    loadStores();
+  });
+  loadStockBtn?.addEventListener('click', loadStock);
+  exportStockExcel?.addEventListener('click', () => exportStock('excel'));
+  exportStockPdf?.addEventListener('click', () => exportStock('pdf'));
+  stockPrev?.addEventListener('click', () => { stockPage -= 1; renderStockPage(); });
+  stockNext?.addEventListener('click', () => { stockPage += 1; renderStockPage(); });
+
+  for (let i = 0; i <= 8; i++) {
+    const input = document.getElementById(`stockFilter${i}`);
+    input?.addEventListener('input', applyFilters);
+  }
+
+  fabToggle?.addEventListener('click', () => fabMenu?.classList.toggle('open'));
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.fab-user')) fabMenu?.classList.remove('open');
+  });
+
+  if (unitSelectEl && unitSelectEl.value) {
+    loadStores();
+  } else {
+    setAlert('Select a unit to begin.', 'warn');
+  }
+</script>
+{% endblock %}

@@ -1,0 +1,268 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <title>Login | Asarfi Hospital HID</title>
+    <link rel="icon" href="{{ url_for('static', filename='logo/asarfi.png') }}">
+
+    <!-- Page fade transitions -->
+    <style>
+      @media (prefers-reduced-motion: reduce){
+        html.page-fade-in, html.page-fade-out { animation: none !important; }
+      }
+      @keyframes pageFadeIn { from { opacity: 0 } to { opacity: 1 } }
+      @keyframes pageFadeOut{ from { opacity: 1 } to { opacity: 0 } }
+      html.page-fade-in  { animation: pageFadeIn .28s ease both; }
+      html.page-fade-out { animation: pageFadeOut .18s ease both; }
+      body { transition: filter .12s ease; }
+      html.page-fade-out body { filter: saturate(.96) brightness(.99); }
+    </style>
+
+    <!-- Theme -->
+    <style>
+      :root{
+        --bg1:#e3f2fd;
+        --bg2:#ffffff;
+        --brand:#1e3a8a;
+        --brand-2:#3b82f6;
+        --ink:#0f172a;
+        --muted:#607d8b;
+        --radius: 18px;
+        --shadow: 0 18px 50px rgba(20, 40, 120, .18);
+        --blur: 16px;
+      }
+
+      *{box-sizing:border-box}
+      html,body{height:100%}
+      body{
+        margin:0;
+        font-family:"Segoe UI", system-ui, -apple-system, sans-serif;
+        color:var(--ink);
+        background:
+          radial-gradient(1200px 600px at -10% -10%, #e8f4ff 0, transparent 40%),
+          radial-gradient(1400px 700px at 110% -10%, #eef4ff 0, transparent 35%),
+          linear-gradient(135deg, var(--bg1), var(--bg2));
+        display:grid; place-items:center;
+        overflow:hidden;
+      }
+
+      .orb{ position:fixed; inset:auto; filter: blur(32px); opacity:.45; pointer-events:none; z-index:0;
+        will-change: transform; backface-visibility: hidden; transform: translateZ(0);
+        animation: floatY 26s cubic-bezier(.22,.61,.36,1) infinite; }
+      .orb.one{ width:420px; height:420px; right:-80px; top:-100px;
+        background: radial-gradient(circle at 30% 30%, #8ea5ff, transparent 60%); animation-duration: 28s; }
+      .orb.two{ width:520px; height:520px; left:-120px; bottom:-140px;
+        background: radial-gradient(circle at 60% 60%, #b3e5fc, transparent 60%); animation-duration: 32s; animation-delay:-6s; }
+      .orb.three{ width:360px; height:360px; right:10%; bottom:-120px;
+        background: radial-gradient(circle at 50% 40%, #c7d2fe, transparent 60%); animation-duration: 30s; animation-delay:-3s; }
+      @keyframes floatY{
+        0%{transform:translate3d(0,0,0) scale(1)}
+        25%{transform:translate3d(6px,-12px,0) scale(1.02)}
+        50%{transform:translate3d(0,-22px,0) scale(1.03)}
+        75%{transform:translate3d(-6px,-10px,0) scale(1.02)}
+        100%{transform:translate3d(0,0,0) scale(1)}
+      }
+
+      .shell{ position:relative; z-index:1; width:min(92vw, 400px); }
+
+      .glass-box{
+        background: rgba(255,255,255,.22);
+        border: 1px solid rgba(255,255,255,.45);
+        border-radius: var(--radius);
+        padding: 28px 26px 24px;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(var(--blur)) saturate(160%);
+        -webkit-backdrop-filter: blur(var(--blur)) saturate(160%);
+        transform: translateY(0);
+        transition: transform .5s cubic-bezier(.2,.8,.2,1), box-shadow .5s;
+      }
+      .glass-box:hover{ transform: translateY(-3px); box-shadow: 0 22px 60px rgba(20, 40, 120, .22); }
+
+      .brand{ display:grid; place-items:center; gap:10px; margin-bottom: 6px; text-align:center; }
+      .brand img{ width:78px;height:78px;object-fit:contain;border-radius:14px;box-shadow:0 10px 24px rgba(0,0,0,.18) }
+      h1{ margin:6px 0 2px; font-size:24px; font-weight:800; color:#1e3a8a; letter-spacing:.2px; text-shadow: 0 1px 0 #fff; }
+      .note{ margin: 0 0 12px; color: var(--muted); font-size: 13px; }
+
+      .flashes{ display:flex; flex-direction:column; gap:8px; margin: 6px 0 10px; }
+      .flash{
+        border-radius:12px; padding:10px 12px; font-size:13px; line-height:1.3;
+        border:1px solid rgba(0,0,0,.07); background: rgba(255,255,255,.7);
+        box-shadow: 0 6px 16px rgba(0,0,0,.06);
+        opacity: 0; animation: slideIn .45s ease forwards;
+      }
+      .flash.success{ border-color: rgba(34,197,94,.25); background: linear-gradient(180deg, rgba(220,252,231,.8), rgba(255,255,255,.8)); color:#065f46; }
+      .flash.warning{ border-color: rgba(245,158,11,.28); background: linear-gradient(180deg, rgba(254,243,199,.8), rgba(255,255,255,.85)); color:#7c2d12; }
+      .flash.info{ border-color: rgba(59,130,246,.25); background: linear-gradient(180deg, rgba(219,234,254,.8), rgba(255,255,255,.85)); color:#0c4a6e; }
+      .flash.danger{ border-color: rgba(239,68,68,.25); background: linear-gradient(180deg, rgba(254,226,226,.8), rgba(255,255,255,.85)); color:#7f1d1d; }
+      @keyframes slideIn{ from{opacity:0; transform: translateY(6px)} to{opacity:1; transform: translateY(0)} }
+
+      form{ margin-top: 8px; }
+      .field{ position:relative; margin: 14px 0 16px; }
+      label{
+        position:absolute; left:12px; top:10px; font-size:13px; color:#475569; background: transparent;
+        transition: all .18s ease; padding: 0 6px;
+      }
+      input{
+        width:100%; padding: 14px 12px 12px; border-radius:12px; border:1px solid rgba(0,0,0,.12);
+        background: rgba(255,255,255,.92); font-size:14px; outline:none;
+        transition: border-color .2s, box-shadow .2s, background .2s, transform .2s; box-shadow: 0 2px 0 rgba(0,0,0,.02) inset;
+      }
+      input:focus{
+        border-color: #c7d2fe; box-shadow: 0 0 0 6px rgba(99,102,241,.08); background: #fff; transform: translateY(-1px);
+      }
+      input:focus + label, input:not(:placeholder-shown) + label{
+        top:-8px; left:10px; font-size:12px; color:#1e3a8a;
+        background: linear-gradient(90deg, #fff, rgba(255,255,255,.7)); border-radius: 8px;
+      }
+
+      .btn{
+        width:100%; appearance:none; border:none; cursor:pointer; padding: 12px 14px; border-radius: 12px;
+        font-weight:800; font-size:15px; letter-spacing:.3px; color:#fff; background: linear-gradient(90deg, var(--brand), var(--brand-2));
+        box-shadow: 0 10px 24px rgba(30,64,175,.30); transition: transform .18s ease, box-shadow .25s ease, filter .2s ease;
+        position:relative; overflow:hidden;
+      }
+      .btn:hover{ transform: translateY(-1px); box-shadow: 0 14px 30px rgba(30,64,175,.34); }
+      .btn:active{ transform: translateY(0); box-shadow: 0 8px 18px rgba(30,64,175,.25); }
+      .btn::after{
+        content:""; position:absolute; inset:0;
+        background: linear-gradient(120deg, transparent 0%, rgba(255,255,255,.25) 40%, transparent 60%);
+        transform: translateX(-120%); transition: transform .6s ease; will-change: transform;
+      }
+      .btn:hover::after{ transform: translateX(120%); }
+
+      .roles{ margin-top:12px; font-size:12px; color:#475569; line-height:1.5;
+        background: rgba(255,255,255,.65); border:1px dashed rgba(99,102,241,.28);
+        border-radius: 12px; padding: 10px 12px; }
+      .roles .tag{
+        display:inline-block; padding:3px 8px; margin:2px; border-radius:999px; font-weight:700; font-size:11.5px;
+        background: linear-gradient(90deg,#eef2ff,#e0e7ff); color:#3730a3; border:1px solid rgba(79,70,229,.18);
+      }
+
+      .help{ margin-top:10px; text-align:center; font-size:12.5px; color:#475569; }
+      .help a{ color: var(--brand); font-weight:700; text-decoration:none; border-bottom: 1px dotted rgba(57,73,171,.35); }
+      .help a:hover{ color:#1e3a8a; border-color:#1e3a8a; }
+
+      .meta{ margin-top:10px; text-align:center; font-size:12px; color:#607d8b; }
+
+      @media (prefers-reduced-motion: reduce){
+        .orb{ animation: none; }
+        .glass-box, .btn, input{ transition: none; }
+      }
+    </style>
+  </head>
+
+  <body>
+    <!-- animated shapes -->
+    <div class="orb one"></div>
+    <div class="orb two"></div>
+    <div class="orb three"></div>
+
+    <div class="shell">
+      <div class="glass-box">
+        <div class="brand">
+          <img src="{{ url_for('static', filename='logo/asarfi.png') }}" alt="Asarfi Hospital Logo" loading="eager">
+          <h1>असर्फी हॉस्पिटल</h1>
+          <p class="note">HID — Secure Login</p>
+        </div>
+
+        <!-- Flash messages from Flask -->
+        {% with messages = get_flashed_messages(with_categories=true) %}
+          {% if messages %}
+            <div class="flashes" aria-live="polite">
+              {% for category, message in messages %}
+                <div class="flash {{ category }}">{{ message }}</div>
+              {% endfor %}
+            </div>
+          {% endif %}
+        {% endwith %}
+
+        <!-- Inline error from backend (e.g., error='Invalid credentials') -->
+        {% if error %}
+          <div class="flashes" aria-live="polite">
+            <div class="flash danger">{{ error }}</div>
+          </div>
+        {% endif %}
+
+        <!-- Keep names/action to match backend -->
+        <form method="post" action="{{ url_for('login') }}" novalidate>
+          <div class="field">
+            <input
+              id="username"
+              type="text"
+              name="username"
+              placeholder=" "
+              required
+              autocomplete="username"
+              spellcheck="false"
+              value="{{ request.form.get('username','') }}"
+            />
+            <label for="username">Username</label>
+          </div>
+
+          <div class="field">
+            <input
+              id="password"
+              type="password"
+              name="password"
+              placeholder=" "
+              required
+              autocomplete="current-password"
+              value="{{ request.form.get('password','') }}"
+            />
+            <label for="password">Password</label>
+          </div>
+
+          <button type="submit" class="btn">Sign in</button>
+        </form>
+
+        <div class="help">
+          Trouble logging in?
+          <a href="mailto:ahl.it@asarfihospital.com" title="Email IT Support">Contact IT Support</a>
+        </div>
+
+        <div class="meta">© Asarfi Hospital Ltd • HID</div>
+      </div>
+    </div>
+
+    <!-- Smooth page transitions -->
+    <script>
+      (function () {
+        document.documentElement.classList.add('page-fade-in');
+
+        window.addEventListener('pageshow', function (e) {
+          if (e.persisted) {
+            document.documentElement.classList.remove('page-fade-out');
+            document.documentElement.classList.add('page-fade-in');
+          }
+        });
+
+        function isSameOrigin(url) {
+          try { return new URL(url, location.href).origin === location.origin; }
+          catch { return false; }
+        }
+
+        document.addEventListener('click', function (e) {
+          const a = e.target.closest('a');
+          if (!a) return;
+          if (a.target === '_blank' || a.hasAttribute('download') || a.getAttribute('href')?.startsWith('#')) return;
+          const href = a.getAttribute('href');
+          if (!href || !isSameOrigin(href)) return;
+          e.preventDefault();
+          document.documentElement.classList.remove('page-fade-in');
+          document.documentElement.classList.add('page-fade-out');
+          setTimeout(() => { location.href = href; }, 180);
+        }, { capture: true });
+
+        document.addEventListener('submit', function (e) {
+          const form = e.target;
+          if (form.hasAttribute('data-no-transition')) return;
+          e.preventDefault();
+          document.documentElement.classList.remove('page-fade-in');
+          document.documentElement.classList.add('page-fade-out');
+          setTimeout(() => { form.submit(); }, 180);
+        }, { capture: true });
+      })();
+    </script>
+  </body>
+</html>

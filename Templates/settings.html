@@ -1,0 +1,671 @@
+{% extends "layout.html" %}
+
+{% block title %}Settings | HID{% endblock %}
+
+{% block content %}
+<style>
+  /* --- Page Wrapper & Background --- */
+  .set-wrapper {
+    font-family: "Segoe UI", "Inter", system-ui, -apple-system, sans-serif;
+    color: #0f172a;
+    /* Modern radial gradient background consistent with other modules */
+    background:
+      radial-gradient(1200px 600px at -10% -10%, #e3f2fd 0, transparent 40%),
+      radial-gradient(1400px 700px at 110% -10%, #e3f2fd 0, transparent 35%),
+      #f4f7fb;
+    min-height: 100vh;
+    width: 100%;
+    padding-bottom: 40px;
+    box-sizing: border-box;
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+  }
+  .set-wrapper * { box-sizing: border-box; }
+
+  /* --- Core Variables --- */
+  .set-wrapper {
+    --bg: #f4f7fb;
+    --card: #ffffff;
+    --ink: #0f172a;
+    --muted: #64748b;
+    --brand: #1e3a8a;
+    --brand-2: #3b82f6;
+    --success-bg: #ecfdf3;
+    --success-text: #166534;
+    --error-bg: #fef2f2;
+    --error-text: #991b1b;
+    --radius: 16px;
+    --shadow: 0 10px 30px rgba(0,0,0,.08);
+  }
+
+  /* --- Header Section --- */
+  .set-header {
+    width: 100%;
+    padding: 20px 32px;
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    margin-bottom: 40px;
+  }
+
+  .set-header-title h1 {
+    margin: 0;
+    font-size: 24px;
+    font-weight: 800;
+    color: var(--brand);
+    letter-spacing: -0.5px;
+  }
+
+  .set-header-title p {
+    margin: 4px 0 0 0;
+    font-size: 14px;
+    color: var(--muted);
+  }
+
+  .set-back-link {
+    color: var(--muted);
+    text-decoration: none;
+    font-size: 14px;
+    font-weight: 600;
+    display: flex;
+    align-items: center;
+    gap: 6px;
+    padding: 8px 16px;
+    background: rgba(255,255,255,0.6);
+    border-radius: 20px;
+    border: 1px solid #e2e8f0;
+    transition: all 0.2s ease;
+  }
+  .set-back-link:hover {
+    background: #fff;
+    color: var(--brand);
+    box-shadow: 0 4px 12px rgba(0,0,0,0.05);
+    transform: translateY(-1px);
+  }
+
+  /* --- Main Container --- */
+  .set-container {
+    width: 100%;
+    max-width: 600px; /* Focused width for settings */
+    padding: 0 20px;
+  }
+
+  /* --- Alerts --- */
+  .alert {
+    padding: 16px;
+    border-radius: 12px;
+    margin-bottom: 20px;
+    border: 1px solid transparent;
+    font-size: 14px;
+    font-weight: 500;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    animation: slideDown 0.3s ease-out;
+  }
+  @keyframes slideDown { from { opacity:0; transform:translateY(-10px); } to { opacity:1; transform:translateY(0); } }
+
+  .alert-success {
+    background: var(--success-bg);
+    border-color: #bbf7d0;
+    color: var(--success-text);
+  }
+  .alert-error {
+    background: var(--error-bg);
+    border-color: #fecaca;
+    color: var(--error-text);
+  }
+
+  /* --- Card --- */
+  .set-card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    padding: 32px;
+    border: 1px solid #edf0f5;
+  }
+
+  .card-header {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    margin-bottom: 24px;
+    border-bottom: 1px solid #f1f5f9;
+    padding-bottom: 16px;
+  }
+
+  .card-header h2 {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 700;
+    color: var(--brand);
+  }
+
+  .card-subtext {
+    font-size: 13px;
+    color: var(--muted);
+    margin-top: 4px;
+  }
+
+  .badge {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 10px;
+    border-radius: 99px;
+    font-weight: 700;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.5px;
+    background: #e0f2fe;
+    color: #0369a1;
+  }
+
+  /* --- Form Elements --- */
+  form {
+    display: flex;
+    flex-direction: column;
+    gap: 16px;
+  }
+
+  label {
+    display: block;
+    font-weight: 600;
+    font-size: 13px;
+    color: var(--ink);
+    margin-bottom: 4px;
+  }
+
+  input {
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: 1px solid #cbd5e1;
+    font-size: 14px;
+    color: var(--ink);
+    background: #f8fafc;
+    transition: all 0.2s ease;
+  }
+
+  input:focus {
+    border-color: var(--brand-2);
+    outline: none;
+    background: #fff;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+  }
+
+  input::placeholder {
+    color: #94a3b8;
+  }
+
+  button {
+    background: linear-gradient(135deg, var(--brand), var(--brand-2));
+    color: #fff;
+    border: none;
+    padding: 14px;
+    border-radius: 12px;
+    cursor: pointer;
+    font-weight: 600;
+    font-size: 14px;
+    box-shadow: 0 4px 12px rgba(37, 99, 235, 0.2);
+    transition: all 0.2s ease;
+    margin-top: 8px;
+  }
+
+  button:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 6px 16px rgba(37, 99, 235, 0.3);
+  }
+
+  button:active {
+    transform: translateY(0);
+  }
+
+  select {
+    width: 100%;
+    padding: 12px 16px;
+    border-radius: 12px;
+    border: 1px solid #cbd5e1;
+    font-size: 14px;
+    color: var(--ink);
+    background: #f8fafc;
+    transition: all 0.2s ease;
+  }
+
+  select:focus {
+    border-color: var(--brand-2);
+    outline: none;
+    background: #fff;
+    box-shadow: 0 0 0 4px rgba(59, 130, 246, 0.1);
+  }
+
+  .audit-form {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+    margin-top: 8px;
+  }
+
+  .audit-actions {
+    display: flex;
+    gap: 12px;
+    margin-top: 12px;
+    flex-wrap: wrap;
+  }
+  .audit-hint {
+    margin-top: 4px;
+    font-size: 11px;
+    color: #64748b;
+  }
+  .audit-chip-row {
+    margin-top: 8px;
+    display: flex;
+    gap: 6px;
+    flex-wrap: wrap;
+  }
+  .audit-chip {
+    border: 1px solid #dbeafe;
+    background: #eff6ff;
+    color: #1e3a8a;
+    border-radius: 999px;
+    padding: 3px 9px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .audit-chip:hover {
+    background: #dbeafe;
+  }
+
+  .btn-secondary {
+    background: #eef2ff;
+    color: #1e3a8a;
+    box-shadow: none;
+  }
+
+  .btn-secondary:hover {
+    box-shadow: 0 6px 14px rgba(30, 58, 138, 0.2);
+  }
+
+  .audit-summary {
+    margin-top: 12px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+
+  .audit-table-wrap {
+    margin-top: 16px;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    overflow: auto;
+    background: #fff;
+  }
+
+  .audit-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+  }
+
+  .audit-table th,
+  .audit-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #eef2f7;
+    text-align: left;
+    vertical-align: top;
+  }
+
+  .audit-table th {
+    background: #f8fafc;
+    color: #1e293b;
+    font-weight: 700;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+
+  .status-pill {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    text-transform: uppercase;
+  }
+
+  .status-success { background: #dcfce7; color: #166534; }
+  .status-error { background: #fee2e2; color: #991b1b; }
+  .status-partial { background: #fef9c3; color: #854d0e; }
+  .audit-details {
+    max-width: 260px;
+    white-space: pre-wrap;
+    word-break: break-word;
+    color: #475569;
+    font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, "Liberation Mono", monospace;
+    font-size: 11px;
+  }
+</style>
+
+<div class="set-wrapper">
+  
+  <div class="set-header">
+    <div class="set-header-title">
+      <h1>Settings</h1>
+      <p>Manage your profile and preferences</p>
+    </div>
+    <a href="{{ url_for('dashboard') }}" class="set-back-link">
+      <svg width="16" height="16" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M19 12H5M12 19l-7-7 7-7"></path></svg>
+      Back to Dashboard
+    </a>
+  </div>
+
+  <div class="set-container">
+    
+    {% if msg %}
+      <div class="alert alert-success">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M5 13l4 4L19 7"></path></svg>
+        {{ msg }}
+      </div>
+    {% endif %}
+    {% if err %}
+      <div class="alert alert-error">
+        <svg width="20" height="20" fill="none" stroke="currentColor" stroke-width="2" viewBox="0 0 24 24"><path d="M12 8v4m0 4h.01M21 12a9 9 0 11-18 0 9 9 0 0118 0z"></path></svg>
+        {{ err }}
+      </div>
+    {% endif %}
+
+    <div class="set-card">
+      <div class="card-header">
+        <div>
+          <h2>Change Password</h2>
+          <div class="card-subtext">Update your password securely below.</div>
+        </div>
+        <span class="badge">Security</span>
+      </div>
+      
+      <form method="post" action="{{ url_for('settings_change_password') }}">
+        <div>
+          <label>Current Password</label>
+          <input type="password" name="current_password" placeholder="Enter current password" required>
+        </div>
+        
+        <div>
+          <label>New Password</label>
+          <input type="password" name="new_password" placeholder="Enter new password" required>
+        </div>
+
+        <button type="submit">Update Password</button>
+      </form>
+    </div>
+
+    {% if is_it %}
+    <div class="set-card" style="margin-top: 20px;">
+      <div class="card-header">
+        <div>
+          <h2>Audit Logs</h2>
+          <div class="card-subtext">Purchase, MOD, and Fund Position activity logs (IT only).</div>
+        </div>
+        <span class="badge">IT</span>
+      </div>
+
+      <form id="audit-filters" class="audit-form">
+        <div>
+          <label>From Date</label>
+          <input type="date" name="from" id="audit-from">
+        </div>
+        <div>
+          <label>To Date</label>
+          <input type="date" name="to" id="audit-to">
+        </div>
+        <div>
+          <label>Module</label>
+          <select name="module" id="audit-module">
+            <option value="">All</option>
+            <option value="purchase">Purchase</option>
+            <option value="mod_reports">MOD Reports</option>
+            <option value="fund_position">Fund Position</option>
+          </select>
+        </div>
+        <div>
+          <label>Status</label>
+          <select name="status">
+            <option value="">All</option>
+            <option value="success">Success</option>
+            <option value="error">Error</option>
+            <option value="partial">Partial</option>
+          </select>
+        </div>
+        <div>
+          <label>Unit</label>
+          <input type="text" name="unit" placeholder="AHL / ACI / BALLIA">
+        </div>
+        <div>
+          <label>Username</label>
+          <input type="text" name="username" placeholder="user id">
+        </div>
+        <div>
+          <label>Action</label>
+          <input type="text" name="action" id="audit-action" list="audit-action-list" placeholder="Type or pick action">
+          <datalist id="audit-action-list"></datalist>
+          <div class="audit-hint" id="audit-action-hint">Choose a module to get action suggestions.</div>
+          <div class="audit-chip-row" id="audit-action-chips"></div>
+        </div>
+        <div>
+          <label>Entity ID</label>
+          <input type="text" name="entity_id" id="audit-entity-id" placeholder="PO ID / Unit:Date / Snapshot Date">
+        </div>
+        <div>
+          <label>Search</label>
+          <input type="text" name="q" id="audit-search" placeholder="summary, details, or request id">
+        </div>
+      </form>
+
+      <div class="audit-actions">
+        <button type="button" id="audit-load">Load Logs</button>
+        <button type="button" class="btn-secondary" id="audit-export">Export Excel</button>
+      </div>
+
+      <div class="audit-summary" id="audit-summary">No data loaded.</div>
+
+      <div class="audit-table-wrap">
+        <table class="audit-table">
+          <thead>
+            <tr>
+              <th>Time</th>
+              <th>Module</th>
+              <th>Action</th>
+              <th>Status</th>
+              <th>Entity</th>
+              <th>Unit</th>
+              <th>User</th>
+              <th>Summary</th>
+              <th>Details</th>
+            </tr>
+          </thead>
+          <tbody id="audit-table-body">
+            <tr><td colspan="9">Use filters and click Load Logs.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+    {% endif %}
+
+  </div>
+</div>
+
+{% if is_it %}
+<script>
+  (function() {
+    const form = document.getElementById("audit-filters");
+    const fromEl = document.getElementById("audit-from");
+    const toEl = document.getElementById("audit-to");
+    const moduleEl = document.getElementById("audit-module");
+    const actionEl = document.getElementById("audit-action");
+    const actionListEl = document.getElementById("audit-action-list");
+    const actionHintEl = document.getElementById("audit-action-hint");
+    const actionChipsEl = document.getElementById("audit-action-chips");
+    const entityIdEl = document.getElementById("audit-entity-id");
+    const loadBtn = document.getElementById("audit-load");
+    const exportBtn = document.getElementById("audit-export");
+    const summaryEl = document.getElementById("audit-summary");
+    const bodyEl = document.getElementById("audit-table-body");
+    const MODULE_LABELS = {
+      purchase: "Purchase",
+      mod_reports: "MOD Reports",
+      fund_position: "Fund Position",
+    };
+    const MODULE_UI = {
+      purchase: {
+        actions: ["po_create", "po_update", "po_approve", "po_resend_otp", "indent_create", "indent_update", "indent_authorize"],
+        entityPlaceholder: "PO ID / Indent ID",
+        hint: "Purchase examples: PO create/update/approve, indent create/update/authorize.",
+      },
+      mod_reports: {
+        actions: ["morning_save", "night_save"],
+        entityPlaceholder: "UNIT:YYYY-MM-DD",
+        hint: "MOD examples: morning_save, night_save (entity format UNIT:YYYY-MM-DD).",
+      },
+      fund_position: {
+        actions: ["load_snapshot", "save_snapshot", "edit_field", "master_account_upsert", "master_account_toggle", "save_mail", "edit_mail"],
+        entityPlaceholder: "YYYY-MM-DD",
+        hint: "Fund examples: load/save snapshot, edit_field, master account updates, mail dispatch.",
+      },
+      all: {
+        actions: [],
+        entityPlaceholder: "PO ID / Unit:Date / Snapshot Date",
+        hint: "Use Module filter first for targeted action suggestions.",
+      },
+    };
+
+    function formatDate(d) {
+      const yyyy = d.getFullYear();
+      const mm = String(d.getMonth() + 1).padStart(2, "0");
+      const dd = String(d.getDate()).padStart(2, "0");
+      return `${yyyy}-${mm}-${dd}`;
+    }
+
+    function truncate(text, maxLen) {
+      if (!text) return "";
+      const t = String(text);
+      if (t.length <= maxLen) return t;
+      return t.slice(0, maxLen - 3) + "...";
+    }
+
+    function statusClass(val) {
+      const v = String(val || "").toLowerCase();
+      if (v === "success") return "status-success";
+      if (v === "error") return "status-error";
+      if (v === "partial") return "status-partial";
+      return "";
+    }
+    function escapeHtml(value) {
+      return String(value || "")
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/\"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+    function moduleLabel(raw) {
+      const key = String(raw || "").trim().toLowerCase();
+      return MODULE_LABELS[key] || (raw || "");
+    }
+    function compactDetails(details) {
+      const raw = String(details || "").trim();
+      if (!raw) return "";
+      try {
+        const parsed = JSON.parse(raw);
+        return truncate(JSON.stringify(parsed), 120);
+      } catch (_) {
+        return truncate(raw, 120);
+      }
+    }
+    function applyModuleHints() {
+      const moduleKey = String(moduleEl?.value || "").trim().toLowerCase();
+      const cfg = MODULE_UI[moduleKey] || MODULE_UI.all;
+      if (entityIdEl) entityIdEl.placeholder = cfg.entityPlaceholder;
+      if (actionHintEl) actionHintEl.textContent = cfg.hint;
+      if (actionListEl) {
+        actionListEl.innerHTML = (cfg.actions || []).map(a => `<option value="${escapeHtml(a)}"></option>`).join("");
+      }
+      if (actionChipsEl) {
+        actionChipsEl.innerHTML = (cfg.actions || []).slice(0, 8).map(a => `<button type="button" class="audit-chip" data-action-chip="${escapeHtml(a)}">${escapeHtml(a)}</button>`).join("");
+      }
+    }
+
+    const today = new Date();
+    const weekAgo = new Date();
+    weekAgo.setDate(today.getDate() - 7);
+    if (fromEl && !fromEl.value) fromEl.value = formatDate(weekAgo);
+    if (toEl && !toEl.value) toEl.value = formatDate(today);
+    applyModuleHints();
+
+    async function loadLogs() {
+      const params = new URLSearchParams(new FormData(form));
+      params.set("limit", "200");
+      summaryEl.textContent = "Loading...";
+      bodyEl.innerHTML = "";
+      try {
+        const res = await fetch(`/api/audit/logs?${params.toString()}`);
+        const data = await res.json();
+        if (!res.ok || data.status !== "success") {
+          summaryEl.textContent = data.message || "Failed to load logs.";
+          bodyEl.innerHTML = "<tr><td colspan='9'>No data.</td></tr>";
+          return;
+        }
+        const counts = {};
+        (data.rows || []).forEach((row) => {
+          const key = String(row.Module || "").toLowerCase();
+          counts[key] = (counts[key] || 0) + 1;
+        });
+        const chips = Object.keys(counts)
+          .sort()
+          .map(k => `${moduleLabel(k)}: ${counts[k]}`)
+          .join(" | ");
+        summaryEl.textContent = `Loaded ${data.count} logs (${data.from} to ${data.to})${chips ? ` | ${chips}` : ""}.`;
+        if (!data.rows || data.rows.length === 0) {
+          bodyEl.innerHTML = "<tr><td colspan='9'>No data.</td></tr>";
+          return;
+        }
+        bodyEl.innerHTML = data.rows.map(row => {
+          const entity = [row.EntityType, row.EntityId].filter(Boolean).join(":");
+          const summary = truncate(row.Summary || "", 140);
+          const detailTitle = row.Details ? String(row.Details) : "";
+          const detailsPreview = compactDetails(row.Details || "");
+          return `
+            <tr>
+              <td>${escapeHtml(row.EventTime || "")}</td>
+              <td>${escapeHtml(moduleLabel(row.Module || ""))}</td>
+              <td>${escapeHtml(row.Action || "")}</td>
+              <td><span class="status-pill ${statusClass(row.Status)}">${escapeHtml(row.Status || "")}</span></td>
+              <td>${escapeHtml(entity)}</td>
+              <td>${escapeHtml(row.Unit || "")}</td>
+              <td>${escapeHtml(row.Username || "")}</td>
+              <td title="${escapeHtml(detailTitle)}">${escapeHtml(summary)}</td>
+              <td class="audit-details" title="${escapeHtml(detailTitle)}">${escapeHtml(detailsPreview)}</td>
+            </tr>
+          `;
+        }).join("");
+      } catch (err) {
+        summaryEl.textContent = "Failed to load logs.";
+        bodyEl.innerHTML = "<tr><td colspan='9'>No data.</td></tr>";
+      }
+    }
+
+    loadBtn.addEventListener("click", loadLogs);
+    moduleEl.addEventListener("change", applyModuleHints);
+    actionChipsEl.addEventListener("click", function(ev) {
+      const btn = ev.target.closest("[data-action-chip]");
+      if (!btn || !actionEl) return;
+      actionEl.value = btn.getAttribute("data-action-chip") || "";
+      actionEl.focus();
+    });
+    exportBtn.addEventListener("click", function() {
+      const params = new URLSearchParams(new FormData(form));
+      params.set("limit", "5000");
+      window.location = `/api/audit/logs/export?${params.toString()}`;
+    });
+  })();
+</script>
+{% endif %}
+{% endblock %}

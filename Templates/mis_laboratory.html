@@ -1,0 +1,799 @@
+{% extends "layout.html" %}
+{% block content %}
+<style>
+  .lab-wrapper {
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: #0f172a;
+    background:
+      radial-gradient(1200px 600px at -10% -10%, #e0f2fe 0, transparent 40%),
+      radial-gradient(1400px 700px at 110% -10%, #eef2ff 0, transparent 35%),
+      #f8fafc;
+    min-height: 100vh;
+    width: 100%;
+    padding: 16px 0 40px;
+    box-sizing: border-box;
+  }
+  .lab-wrapper * { box-sizing: border-box; }
+
+  .lab-wrapper {
+    --brand: #1e3a8a;
+    --brand-2: #2563eb;
+    --ink: #0f172a;
+    --muted: #64748b;
+    --line: #e2e8f0;
+    --card: rgba(255,255,255,0.96);
+    --shadow: 0 12px 30px rgba(15,23,42,0.08);
+    --radius: 16px;
+  }
+
+  .lab-shell { width: min(1240px, 96%); margin: 0 auto; }
+
+  .lab-hero {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: center;
+    padding: 10px 6px 18px;
+  }
+  .lab-hero h2 { margin: 0 0 6px; font-size: 24px; color: var(--brand); font-weight: 800; }
+  .lab-hero p { margin: 0; color: var(--muted); font-size: 13px; }
+  .hero-actions { display: flex; gap: 10px; flex-wrap: wrap; align-items: center; }
+  .hero-link {
+    text-decoration: none;
+    padding: 8px 12px;
+    border-radius: 10px;
+    background: #eff6ff;
+    color: var(--brand);
+    font-weight: 700;
+    border: 1px solid #dbeafe;
+  }
+
+  .lab-alert {
+    width: 100%;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    display: none;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .lab-alert.show { display: flex; }
+  .lab-alert.success { background: #ecfdf3; color: #166534; border: 1px solid #bbf7d0; }
+  .lab-alert.error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+  .lab-alert.warn { background: #fff7ed; color: #9a3412; border: 1px solid #fdba74; }
+  .lab-alert.loading { background: #eff6ff; color: #1e3a8a; border: 1px solid #bfdbfe; }
+  .lab-alert .spinner {
+    width: 14px;
+    height: 14px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 50%;
+    animation: spin 0.9s linear infinite;
+  }
+
+  .lab-card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    border: 1px solid rgba(0,0,0,0.04);
+    padding: 16px;
+    margin-bottom: 16px;
+  }
+
+  .filter-bar {
+    display: grid;
+    grid-template-columns: minmax(180px, 1.2fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(140px, 1fr) minmax(220px, 1.4fr);
+    gap: 12px;
+    align-items: end;
+  }
+  .filter-group { display: flex; flex-direction: column; gap: 6px; }
+  .filter-group label {
+    font-size: 11px;
+    font-weight: 700;
+    color: var(--muted);
+    text-transform: uppercase;
+    letter-spacing: 0.6px;
+  }
+  .form-control {
+    padding: 9px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    font-size: 14px;
+    color: var(--ink);
+    outline: none;
+  }
+  .form-control:focus { border-color: var(--brand-2); box-shadow: 0 0 0 2px rgba(59,130,246,0.1); }
+
+  .btn-primary {
+    background: linear-gradient(135deg, var(--brand), var(--brand-2));
+    color: #fff;
+    border: none;
+    padding: 10px 18px;
+    border-radius: 10px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 6px 16px rgba(30,58,138,0.2);
+  }
+  .btn-outline {
+    background: #eff6ff;
+    color: var(--brand);
+    border: 1px solid #dbeafe;
+    padding: 9px 14px;
+    border-radius: 10px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .btn-outline:disabled,
+  .btn-primary:disabled { opacity: 0.6; cursor: not-allowed; }
+
+  .kpi-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 14px;
+  }
+  .kpi-card { background: #fff; border-radius: 14px; border: 1px solid #f1f5f9; padding: 14px; }
+  .kpi-title { font-size: 12px; color: var(--muted); font-weight: 700; text-transform: uppercase; letter-spacing: 0.5px; }
+  .kpi-value { font-size: 20px; color: #0f172a; font-weight: 800; margin-top: 6px; }
+  .kpi-sub { font-size: 12px; color: #1d4ed8; margin-top: 6px; font-weight: 600; }
+
+  .summary-grid { display: grid; grid-template-columns: repeat(auto-fit, minmax(320px, 1fr)); gap: 14px; }
+  .summary-card { background: #fff; border: 1px solid #e2e8f0; border-radius: 14px; padding: 12px; }
+  .summary-card.scrollable .table-wrap { max-height: 320px; overflow-y: auto; }
+  .summary-header { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .summary-header h3 { margin: 0; font-size: 14px; color: var(--brand); font-weight: 700; }
+  .summary-meta { font-size: 11px; color: var(--muted); font-weight: 600; }
+
+  .table-wrap { overflow-x: auto; }
+  table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  th { text-align: left; padding: 10px; background: #f8fafc; color: #475569; font-weight: 700; border-bottom: 2px solid #e2e8f0; white-space: nowrap; }
+  td { padding: 10px; border-bottom: 1px solid #f1f5f9; color: #1e293b; }
+  td.num, th.num { text-align: right; }
+  td.center, th.center { text-align: center; }
+
+  .collapsible-card { padding: 0; overflow: hidden; }
+  .collapsible-header {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 16px 18px;
+    border-bottom: 1px solid #e2e8f0;
+  }
+  .collapsible-header h3 { margin: 0; font-size: 16px; color: var(--brand); font-weight: 700; }
+  .collapse-btn {
+    border: 1px solid #dbeafe;
+    background: #eff6ff;
+    color: var(--brand);
+    font-weight: 700;
+    padding: 8px 12px;
+    border-radius: 8px;
+    cursor: pointer;
+  }
+  .collapsible-body { padding: 16px 18px; }
+  .collapsible-body.collapsed { display: none; }
+
+  .detail-controls {
+    display: flex;
+    gap: 12px;
+    flex-wrap: wrap;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .detail-controls input {
+    padding: 8px 12px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    min-width: 240px;
+  }
+  .detail-meta { font-size: 12px; color: var(--muted); font-weight: 600; }
+
+  .pager {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    justify-content: flex-end;
+    margin-top: 10px;
+  }
+  .pager button {
+    padding: 6px 10px;
+    border-radius: 8px;
+    border: 1px solid #dbeafe;
+    background: #eff6ff;
+    color: var(--brand);
+    cursor: pointer;
+  }
+  .pager button:disabled { opacity: 0.5; cursor: not-allowed; }
+
+  .loader-overlay {
+    position: fixed;
+    top: 0;
+    left: 0;
+    width: 100%;
+    height: 100%;
+    background: rgba(255,255,255,0.7);
+    backdrop-filter: blur(2px);
+    z-index: 999;
+    display: none;
+    align-items: center;
+    justify-content: center;
+  }
+  .loader-overlay.show { display: flex; }
+  .loader-spinner {
+    width: 40px;
+    height: 40px;
+    border: 4px solid #e2e8f0;
+    border-top-color: var(--brand);
+    border-radius: 50%;
+    animation: spin 0.8s linear infinite;
+  }
+
+  /* FAB user menu (consistent with MIS) */
+  .fab-user {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9;
+    display: flex;
+    flex-direction: row;
+    align-items: center;
+    gap: 8px;
+  }
+  .fab-btn {
+    width: 52px;
+    height: 52px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--brand), var(--brand-2));
+    color: #fff;
+    display: grid;
+    place-items: center;
+    font-size: 22px;
+    border: none;
+    cursor: pointer;
+    box-shadow: 0 8px 20px rgba(37,99,235,.3);
+  }
+  .fab-menu {
+    position: absolute;
+    top: 65px;
+    right: 0;
+    background: #fff;
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    padding: 10px;
+    display: none;
+    min-width: 180px;
+    border: 1px solid rgba(0,0,0,0.05);
+  }
+  .fab-menu.open { display: block; }
+  .fab-menu a {
+    display: block;
+    padding: 8px 10px;
+    color: #334155;
+    text-decoration: none;
+    font-weight: 600;
+    border-radius: 8px;
+    font-size: 13px;
+  }
+  .fab-menu a:hover { background: #eff6ff; color: var(--brand); }
+  .fab-icon span {
+    display: block;
+    width: 18px;
+    height: 3px;
+    background: #fff;
+    border-radius: 2px;
+    margin: 2px 0;
+  }
+
+  @media (max-width: 980px) {
+    .filter-bar { grid-template-columns: repeat(auto-fit, minmax(180px, 1fr)); }
+  }
+</style>
+
+<div class="lab-wrapper">
+  <div class="fab-user">
+    <button class="fab-btn" id="fabToggle" title="User Menu">
+      <span class="fab-icon"><span></span><span></span><span></span></span>
+    </button>
+    <div class="fab-menu" id="fabMenu">
+      <div style="padding:6px 12px;font-weight:700;color:#1e3a8a;">
+         {{ session.get('username') or session.get('user') or 'User' }}
+      </div>
+      <a href="{{ url_for('dashboard') }}">Home</a>
+      <a href="{{ url_for('mis_dashboard') }}">MIS Home</a>
+      <a href="{{ url_for('logout') }}">Logout</a>
+    </div>
+  </div>
+
+  <div class="loader-overlay" id="labLoader"><div class="loader-spinner"></div></div>
+
+  <div class="lab-shell">
+    <div class="lab-hero">
+      <div>
+        <h2>Diagnostics &amp; Laboratory MIS</h2>
+        <p>Lab revenue and volume summary with doctor and patient type splits.</p>
+      </div>
+
+    </div>
+
+    <div class="lab-alert" id="labAlert"></div>
+
+    <div class="lab-card">
+      <div class="filter-bar">
+        <div class="filter-group">
+          <label>Unit Scope</label>
+          <select id="labUnit" class="form-control">
+            <option value="">Select unit</option>
+            {% for u in allowed_units %}
+              <option value="{{ u }}" {% if u == selected_unit %}selected{% endif %}>{{ u }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>From Date</label>
+          <input type="date" id="labFromDate" class="form-control" />
+        </div>
+        <div class="filter-group">
+          <label>To Date</label>
+          <input type="date" id="labToDate" class="form-control" />
+        </div>
+        <div class="filter-group">
+          <label>Actions</label>
+          <button class="btn-primary" id="labLoadBtn">Load Summary</button>
+        </div>
+        <div class="filter-group">
+          <label>Exports</label>
+          <div style="display:flex; gap:10px; flex-wrap:wrap;">
+            <button class="btn-outline" id="labExportExcel">Export Excel</button>
+            <button class="btn-outline" id="labExportPdf">Export PDF</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="lab-card">
+      <div class="kpi-grid">
+        <div class="kpi-card">
+          <div class="kpi-title">Total Revenue</div>
+          <div class="kpi-value" id="kpiTotalRevenue">INR 0.00</div>
+          <div class="kpi-sub" id="kpiTotalMeta">Waiting to load</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">Top Doctor Revenue</div>
+          <div class="kpi-value" id="kpiDoctorRevenue">INR 0.00</div>
+          <div class="kpi-sub" id="kpiDoctorLabel">No data</div>
+        </div>
+        <div class="kpi-card">
+          <div class="kpi-title">Top Patient Type Revenue</div>
+          <div class="kpi-value" id="kpiPatientTypeRevenue">INR 0.00</div>
+          <div class="kpi-sub" id="kpiPatientTypeLabel">No data</div>
+        </div>
+      </div>
+    </div>
+
+    <div class="lab-card">
+      <div class="summary-grid">
+        <div class="summary-card scrollable">
+          <div class="summary-header">
+            <h3>Doctor-wise Revenue</h3>
+            <div class="summary-meta" id="doctorSummaryMeta">0 doctors</div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Doctor</th>
+                  <th class="num">Records</th>
+                  <th class="num">Revenue</th>
+                  <th class="num">Share</th>
+                </tr>
+              </thead>
+              <tbody id="doctorSummaryBody">
+                <tr><td colspan="4" style="text-align:center; color:#94a3b8; padding:20px;">Load a date range to view summary.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+        <div class="summary-card">
+          <div class="summary-header">
+            <h3>Patient Type Revenue</h3>
+            <div class="summary-meta" id="patientSummaryMeta">0 categories</div>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead>
+                <tr>
+                  <th>Patient Type</th>
+                  <th class="num">Records</th>
+                  <th class="num">Revenue</th>
+                  <th class="num">Share</th>
+                </tr>
+              </thead>
+              <tbody id="patientSummaryBody">
+                <tr><td colspan="4" style="text-align:center; color:#94a3b8; padding:20px;">Load a date range to view summary.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="lab-card collapsible-card">
+      <div class="collapsible-header">
+        <h3>Detailed Laboratory Records</h3>
+        <button class="collapse-btn" id="detailCollapseBtn" data-target="labDetailBody">Expand</button>
+      </div>
+      <div class="collapsible-body collapsed" id="labDetailBody">
+        <div class="detail-controls">
+          <input type="text" id="detailSearch" placeholder="Search patient, doctor, service, or reg no" />
+          <span class="detail-meta" id="detailMeta">0 records</span>
+        </div>
+        <div class="table-wrap">
+          <table>
+            <thead>
+              <tr>
+                <th>Bill Date</th>
+                <th>Reg No</th>
+                <th>Patient</th>
+                <th>Patient Type</th>
+                <th>Visit Type</th>
+                <th>Doctor</th>
+                <th>Sub Dept</th>
+                <th>Service</th>
+                <th class="num">Qty</th>
+                <th class="num">Amount</th>
+              </tr>
+            </thead>
+            <tbody id="detailTableBody">
+              <tr><td colspan="10" style="text-align:center; color:#94a3b8; padding:30px;">Load data to view details.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="pager">
+          <span id="detailPageInfo" style="margin-right:auto;font-size:12px;color:#475569;"></span>
+          <button id="detailPrev">Prev</button>
+          <button id="detailNext">Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const unitSelectEl = document.getElementById('labUnit');
+  const fromDateEl = document.getElementById('labFromDate');
+  const toDateEl = document.getElementById('labToDate');
+  const loadBtn = document.getElementById('labLoadBtn');
+  const exportExcelBtn = document.getElementById('labExportExcel');
+  const exportPdfBtn = document.getElementById('labExportPdf');
+  const labAlert = document.getElementById('labAlert');
+  const labLoader = document.getElementById('labLoader');
+  const fabToggle = document.getElementById('fabToggle');
+  const fabMenu = document.getElementById('fabMenu');
+
+  const kpiTotalRevenue = document.getElementById('kpiTotalRevenue');
+  const kpiTotalMeta = document.getElementById('kpiTotalMeta');
+  const kpiDoctorRevenue = document.getElementById('kpiDoctorRevenue');
+  const kpiDoctorLabel = document.getElementById('kpiDoctorLabel');
+  const kpiPatientTypeRevenue = document.getElementById('kpiPatientTypeRevenue');
+  const kpiPatientTypeLabel = document.getElementById('kpiPatientTypeLabel');
+
+  const doctorSummaryBody = document.getElementById('doctorSummaryBody');
+  const patientSummaryBody = document.getElementById('patientSummaryBody');
+  const doctorSummaryMeta = document.getElementById('doctorSummaryMeta');
+  const patientSummaryMeta = document.getElementById('patientSummaryMeta');
+
+  const detailCollapseBtn = document.getElementById('detailCollapseBtn');
+  const detailBody = document.getElementById('labDetailBody');
+  const detailSearch = document.getElementById('detailSearch');
+  const detailTableBody = document.getElementById('detailTableBody');
+  const detailMeta = document.getElementById('detailMeta');
+  const detailPageInfo = document.getElementById('detailPageInfo');
+  const detailPrev = document.getElementById('detailPrev');
+  const detailNext = document.getElementById('detailNext');
+
+  const DETAIL_PAGE_SIZE = 20;
+  let detailRows = [];
+  let filteredRows = [];
+  let detailPage = 1;
+
+  const formatINR = (amount) => new Intl.NumberFormat('en-IN', {
+    style: 'currency',
+    currency: 'INR',
+    minimumFractionDigits: 2,
+    maximumFractionDigits: 2,
+  }).format(Number(amount || 0));
+
+  const formatNumber = (value, digits = 0) => new Intl.NumberFormat('en-IN', {
+    minimumFractionDigits: digits,
+    maximumFractionDigits: digits,
+  }).format(Number(value || 0));
+
+  const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+
+  const showLoader = (on) => {
+    if (!labLoader) return;
+    labLoader.classList.toggle('show', !!on);
+  };
+
+  const setAlert = (message, type) => {
+    if (!labAlert) return;
+    if (!message) {
+      labAlert.className = 'lab-alert';
+      labAlert.innerHTML = '';
+      return;
+    }
+    const icon = type === 'loading' ? '<span class="spinner"></span>' : '';
+    labAlert.className = `lab-alert show ${type || ''}`;
+    labAlert.innerHTML = `${icon}<span>${message}</span>`;
+  };
+
+  const setKpis = (payload) => {
+    const totalRevenue = payload?.total_revenue || 0;
+    const totalRecords = payload?.total_records || 0;
+    const doctorSummary = payload?.doctor_summary || [];
+    const patientSummary = payload?.patienttype_summary || [];
+
+    if (kpiTotalRevenue) kpiTotalRevenue.textContent = formatINR(totalRevenue);
+    if (kpiTotalMeta) kpiTotalMeta.textContent = totalRecords ? `${totalRecords} records loaded` : 'No records found';
+
+    if (doctorSummary.length) {
+      const top = doctorSummary[0];
+      if (kpiDoctorRevenue) kpiDoctorRevenue.textContent = formatINR(top.Revenue || 0);
+      if (kpiDoctorLabel) kpiDoctorLabel.textContent = top.Name ? `Top: ${top.Name}` : 'Top doctor';
+    } else {
+      if (kpiDoctorRevenue) kpiDoctorRevenue.textContent = formatINR(0);
+      if (kpiDoctorLabel) kpiDoctorLabel.textContent = 'No data';
+    }
+
+    if (patientSummary.length) {
+      const top = patientSummary[0];
+      if (kpiPatientTypeRevenue) kpiPatientTypeRevenue.textContent = formatINR(top.Revenue || 0);
+      if (kpiPatientTypeLabel) kpiPatientTypeLabel.textContent = top.Name ? `Top: ${top.Name}` : 'Top patient type';
+    } else {
+      if (kpiPatientTypeRevenue) kpiPatientTypeRevenue.textContent = formatINR(0);
+      if (kpiPatientTypeLabel) kpiPatientTypeLabel.textContent = 'No data';
+    }
+  };
+
+  const renderSummary = (rows, bodyEl, metaEl, totalRevenue) => {
+    if (!bodyEl) return;
+    const safeRows = rows || [];
+    if (metaEl) metaEl.textContent = `${safeRows.length} entries`;
+    if (!safeRows.length) {
+      bodyEl.innerHTML = '<tr><td colspan="4" style="text-align:center; color:#94a3b8; padding:20px;">No data found.</td></tr>';
+      return;
+    }
+    bodyEl.innerHTML = safeRows.map((row) => {
+      const share = totalRevenue ? (Number(row.Revenue || 0) / totalRevenue) * 100 : 0;
+      return `
+        <tr>
+          <td>${escapeHtml(row.Name || '')}</td>
+          <td class="num">${formatNumber(row.Records || 0)}</td>
+          <td class="num">${formatINR(row.Revenue || 0)}</td>
+          <td class="num">${share.toFixed(1)}%</td>
+        </tr>
+      `;
+    }).join('');
+  };
+
+  const buildSearchIndex = (row) => {
+    const values = Object.values(row || {}).map(v => String(v || '')).join(' ').toLowerCase();
+    return values;
+  };
+
+  const renderDetailPage = () => {
+    if (!detailTableBody) return;
+    if (!filteredRows.length) {
+      detailTableBody.innerHTML = '<tr><td colspan="10" style="text-align:center; color:#94a3b8; padding:30px;">No records found.</td></tr>';
+      if (detailMeta) detailMeta.textContent = '0 records';
+      if (detailPageInfo) detailPageInfo.textContent = '';
+      if (detailPrev) detailPrev.disabled = true;
+      if (detailNext) detailNext.disabled = true;
+      return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(filteredRows.length / DETAIL_PAGE_SIZE));
+    detailPage = Math.min(Math.max(1, detailPage), totalPages);
+    const start = (detailPage - 1) * DETAIL_PAGE_SIZE;
+    const slice = filteredRows.slice(start, start + DETAIL_PAGE_SIZE);
+
+    detailTableBody.innerHTML = slice.map((row) => `
+      <tr>
+        <td>${escapeHtml(row.BillDate || '')}</td>
+        <td>${escapeHtml(row.Registration_No || '')}</td>
+        <td>${escapeHtml(row.Patient || '')}</td>
+        <td>${escapeHtml(row.PatientType || '')}</td>
+        <td>${escapeHtml(row.TypeOfVisit || '')}</td>
+        <td>${escapeHtml(row.Doctor || '')}</td>
+        <td>${escapeHtml(row.SubDepartment_Name || '')}</td>
+        <td>${escapeHtml(row.Service_Name || '')}</td>
+        <td class="num">${formatNumber(row.Quantity || 0)}</td>
+        <td class="num">${formatINR(row.Amount || 0)}</td>
+      </tr>
+    `).join('');
+
+    if (detailMeta) detailMeta.textContent = `${filteredRows.length} records`;
+    if (detailPageInfo) detailPageInfo.textContent = `Page ${detailPage} of ${totalPages}`;
+    if (detailPrev) detailPrev.disabled = detailPage <= 1;
+    if (detailNext) detailNext.disabled = detailPage >= totalPages;
+  };
+
+  const applyDetailFilter = () => {
+    const q = detailSearch?.value?.trim().toLowerCase() || '';
+    if (!q) {
+      filteredRows = detailRows.slice();
+    } else {
+      filteredRows = detailRows.filter((row) => row.__search?.includes(q));
+    }
+    detailPage = 1;
+    renderDetailPage();
+  };
+
+  const loadLabSummary = async () => {
+    const unit = unitSelectEl?.value || '';
+    const fromDate = fromDateEl?.value || '';
+    const toDate = toDateEl?.value || '';
+
+    if (!unit || !fromDate || !toDate) {
+      setAlert('Select unit and date range before loading.', 'warn');
+      return;
+    }
+
+    try {
+      setAlert('Loading laboratory summary... Please wait.', 'loading');
+      showLoader(true);
+      const url = `/api/mis/laboratory_summary?unit=${encodeURIComponent(unit)}&from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}`;
+      const res = await fetch(url);
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to load data');
+
+      setKpis(data);
+      renderSummary(data.doctor_summary || [], doctorSummaryBody, doctorSummaryMeta, data.total_revenue || 0);
+      renderSummary(data.patienttype_summary || [], patientSummaryBody, patientSummaryMeta, data.total_revenue || 0);
+
+      detailRows = (data.details || []).map((row) => ({
+        ...row,
+        __search: buildSearchIndex(row),
+      }));
+      filteredRows = detailRows.slice();
+      detailPage = 1;
+      if (detailSearch?.value?.trim()) {
+        applyDetailFilter();
+      } else {
+        renderDetailPage();
+      }
+
+      setAlert(`Loaded ${detailRows.length} records for ${unit}.`, 'success');
+    } catch (err) {
+      setAlert(err.message || 'Failed to load data.', 'error');
+      detailRows = [];
+      filteredRows = [];
+      renderDetailPage();
+      setKpis({});
+      renderSummary([], doctorSummaryBody, doctorSummaryMeta, 0);
+      renderSummary([], patientSummaryBody, patientSummaryMeta, 0);
+    } finally {
+      showLoader(false);
+    }
+  };
+
+  const queueExcelExport = async () => {
+    const unit = unitSelectEl?.value || '';
+    const fromDate = fromDateEl?.value || '';
+    const toDate = toDateEl?.value || '';
+
+    if (!unit || !fromDate || !toDate) {
+      setAlert('Select unit and date range before exporting.', 'warn');
+      return;
+    }
+
+    if (exportExcelBtn) exportExcelBtn.disabled = true;
+    setAlert('Queuing Excel export...', 'loading');
+
+    try {
+      const res = await fetch('/api/mis/laboratory_summary/export_excel_job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unit, from: fromDate, to: toDate })
+      });
+      const data = await res.json();
+      if (!res.ok || data.status !== 'queued') throw new Error(data.message || 'Failed to queue export');
+      const jobId = data.job_id;
+      if (!jobId) throw new Error('Missing job id');
+
+      let poller = null;
+      const poll = async () => {
+        try {
+          const statusRes = await fetch(`/api/mis/laboratory_summary/export_excel_job_status?job_id=${encodeURIComponent(jobId)}`);
+          const statusData = await statusRes.json();
+          if (!statusRes.ok || statusData.status !== 'success') throw new Error(statusData.message || 'Status check failed');
+
+          if (statusData.state === 'done') {
+            if (poller) clearInterval(poller);
+            setAlert('Excel ready. Downloading...', 'success');
+            const downloadUrl = `/api/mis/laboratory_summary/export_excel_job_result?job_id=${encodeURIComponent(jobId)}`;
+            window.location.href = downloadUrl;
+            if (exportExcelBtn) exportExcelBtn.disabled = false;
+          } else if (statusData.state === 'error') {
+            if (poller) clearInterval(poller);
+            setAlert(`Export failed: ${statusData.error || 'Unknown error'}`, 'error');
+            if (exportExcelBtn) exportExcelBtn.disabled = false;
+          } else {
+            setAlert('Preparing Excel... Please wait.', 'loading');
+          }
+        } catch (err) {
+          if (poller) clearInterval(poller);
+          setAlert(`Export failed: ${err.message}`, 'error');
+          if (exportExcelBtn) exportExcelBtn.disabled = false;
+        }
+      };
+      poller = setInterval(poll, 2000);
+      poll();
+    } catch (err) {
+      setAlert(`Export failed: ${err.message}`, 'error');
+      if (exportExcelBtn) exportExcelBtn.disabled = false;
+    }
+  };
+
+  const exportPdf = () => {
+    const unit = unitSelectEl?.value || '';
+    const fromDate = fromDateEl?.value || '';
+    const toDate = toDateEl?.value || '';
+
+    if (!unit || !fromDate || !toDate) {
+      setAlert('Select unit and date range before exporting.', 'warn');
+      return;
+    }
+    setAlert('Generating PDF... Please wait.', 'loading');
+    const url = `/api/mis/laboratory_summary/export_pdf?unit=${encodeURIComponent(unit)}&from=${encodeURIComponent(fromDate)}&to=${encodeURIComponent(toDate)}`;
+    const win = window.open(url, '_blank');
+    if (win) {
+      setAlert('PDF opened in a new tab.', 'success');
+    } else {
+      setAlert('Popup blocked. Allow popups to download the PDF.', 'warn');
+    }
+  };
+
+  let searchTimer = null;
+  const debouncedSearch = () => {
+    if (searchTimer) clearTimeout(searchTimer);
+    searchTimer = setTimeout(applyDetailFilter, 300);
+  };
+
+  detailSearch?.addEventListener('input', debouncedSearch);
+  detailPrev?.addEventListener('click', () => { detailPage -= 1; renderDetailPage(); });
+  detailNext?.addEventListener('click', () => { detailPage += 1; renderDetailPage(); });
+
+  detailCollapseBtn?.addEventListener('click', () => {
+    if (!detailBody) return;
+    detailBody.classList.toggle('collapsed');
+    detailCollapseBtn.textContent = detailBody.classList.contains('collapsed') ? 'Expand' : 'Collapse';
+  });
+
+  loadBtn?.addEventListener('click', loadLabSummary);
+  exportExcelBtn?.addEventListener('click', queueExcelExport);
+  exportPdfBtn?.addEventListener('click', exportPdf);
+
+  fabToggle?.addEventListener('click', () => fabMenu?.classList.toggle('open'));
+  document.addEventListener('click', (e) => {
+    if (!e.target.closest('.fab-user')) fabMenu?.classList.remove('open');
+  });
+
+  document.addEventListener('DOMContentLoaded', () => {
+    const todayStr = new Date().toISOString().slice(0, 10);
+    if (fromDateEl && !fromDateEl.value) fromDateEl.value = todayStr;
+    if (toDateEl && !toDateEl.value) toDateEl.value = todayStr;
+    if (unitSelectEl && unitSelectEl.value) {
+      loadLabSummary();
+    } else {
+      setAlert('Select a unit to begin.', 'warn');
+    }
+  });
+</script>
+{% endblock %}

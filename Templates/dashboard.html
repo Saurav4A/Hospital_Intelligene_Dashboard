@@ -1,0 +1,1208 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Hospital Intelligence Dashboard | Asarfi Hospital Ltd</title>
+    <link rel="icon" href="{{ url_for('static', filename='logo/asarfi.png') }}">
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+    <style>
+      @media (prefers-reduced-motion: reduce){
+        html.page-fade-in, html.page-fade-out { animation: none !important; }
+      }
+      @keyframes pageFadeIn { from { opacity: 0 } to { opacity: 1 } }
+      @keyframes pageFadeOut{ from { opacity: 1 } to { opacity: 0 } }
+      html.page-fade-in  { animation: pageFadeIn .28s ease both; }
+      html.page-fade-out { animation: pageFadeOut .18s ease both; }
+      body { transition: filter .12s ease; }
+      html.page-fade-out body { filter: saturate(.96) brightness(.99); }
+    </style>
+
+    <style>
+      :root{
+        --bg: #f4f7fb;
+        --card: #ffffff;
+        --ink: #0f172a;
+        --muted: #546e7a;
+        --brand: #1e40af;
+        --brand-2:#3b82f6;
+        --ok:#22c55e;
+        --shadow: 0 10px 30px rgba(0,0,0,.08);
+        --radius: 16px;
+      }
+      *{ box-sizing:border-box }
+      
+      /* FIX: Explicitly override any 100% height locks from layout.html */
+      html, body { 
+        height: auto !important; 
+        min-height: 100vh !important; 
+        overflow-y: visible;
+      }
+      
+      body{
+        margin: 0;
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        color: var(--ink);
+        background:
+          radial-gradient(1200px 600px at -10% -10%, #e3f2fd 0, transparent 40%),
+          radial-gradient(1400px 700px at 110% -10%, #e3f2fd 0, transparent 35%),
+          var(--bg);
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+      }
+      .card-disabled{
+        opacity: .45;
+        filter: grayscale(1);
+        pointer-events: none;
+        position: relative;
+      }
+      .card-disabled::after{
+        content: "Access restricted";
+        position: absolute;
+        top: 12px;
+        right: 18px;
+        background: #f3f4f6;
+        color: #9ca3af;
+        padding: 4px 8px;
+        border-radius: 8px;
+        font-size: 12px;
+        border: 1px solid #e5e7eb;
+      }
+
+      /* ===== Header ===== */
+      header {
+        text-align: center;
+        margin-top: 72px;
+        margin-bottom: 10px;
+        position: relative;
+        z-index: 1; /* Ensure header sits above background but below menu */
+      }
+      header img {
+        width: 78px; height: 78px; object-fit: contain; border-radius: 14px;
+        box-shadow: 0 10px 24px rgba(0,0,0,.18);
+      }
+      header h1 {
+        margin: 10px 0 4px;
+        color: var(--brand);
+        font-size: 28px;
+        font-weight: 800;
+        letter-spacing: .2px;
+      }
+      header p {
+        margin: 0;
+        color: #607d8b;
+        letter-spacing: .3px;
+      }
+
+      /* ===== Top Right Actions (User Menu) ===== */
+      .top-actions {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 99; /* Highest priority */
+        display: flex;
+        align-items: flex-end;
+        gap: 12px;
+        /* FIX: Allow clicks to pass through the empty space of this container */
+        pointer-events: none;
+      }
+      .top-actions .fab-user{
+        position: relative;
+        flex-shrink: 0;
+        display: flex;
+        align-items: center;
+        gap: 12px;
+        /* FIX: Re-enable clicks for the actual button */
+        pointer-events: auto;
+      }
+
+      /* ===== Notification Badge (on FAB button) ===== */
+      .notification-badge {
+        position: absolute;
+        top: -6px;
+        right: -6px;
+        background: #ef4444;
+        color: white;
+        border-radius: 50%;
+        width: 22px;
+        height: 22px;
+        display: grid;
+        place-items: center;
+        font-size: 12px;
+        font-weight: 700;
+        border: 2px solid var(--bg);
+        animation: pulse 2s infinite;
+        pointer-events: none;
+      }
+
+      @keyframes pulse {
+        0%, 100% { transform: scale(1); }
+        50% { transform: scale(1.1); }
+      }
+
+      /* ===== FAB user button ===== */
+      .fab-user {
+        position: fixed;
+        top: 20px;
+        right: 20px;
+        z-index: 9;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+      }
+      .fab-btn {
+        width: 58px; height: 58px;
+        border-radius: 50%;
+        background: linear-gradient(135deg, var(--brand), var(--brand-2));
+        color: #fff;
+        display: grid; place-items: center;
+        font-size: 22px;
+        box-shadow: 0 8px 20px rgba(37,99,235,.3);
+        border: none;
+        cursor: pointer;
+        transition: transform .18s ease;
+      }
+      .fab-btn:hover{ transform: scale(1.06); }
+
+      .fab-menu {
+        position: absolute;
+        top: 60px; right: 0;
+        background: rgba(255,255,255,.96);
+        border-radius: 12px;
+        box-shadow: var(--shadow);
+        border: 1px solid rgba(0,0,0,.06);
+        backdrop-filter: blur(8px);
+        padding: 10px;
+        display: none;
+        min-width: 280px;
+        max-width: 320px;
+        pointer-events: auto; /* Ensure menu is clickable */
+      }
+      .fab-menu.open { display: block; animation: fadeIn .18s ease both; }
+      @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+
+      .fab-menu a {
+        display: block;
+        padding: 10px 12px;
+        border-radius: 10px;
+        color: var(--ink);
+        font-weight: 600;
+        text-decoration: none;
+        font-size: 14px;
+      }
+      .fab-menu a:hover { background: #eef2ff; color: var(--brand); }
+      
+      /* Notification styles inside menu */
+      #notificationsToggle:hover {
+        background: #eef2ff;
+      }
+      
+      .mark-read-btn {
+        background: #e0e7ff;
+        border: 1px solid #c7d2fe;
+        color: var(--brand);
+        border-radius: 6px;
+        cursor: pointer;
+        transition: .2s;
+      }
+      .mark-read-btn:hover {
+        background: #c7d2fe;
+      }
+      
+      .notification-item {
+        padding: 12px;
+        margin: 4px 8px;
+        border-radius: 8px;
+        border: 1px solid #e5e7eb;
+        transition: background .2s;
+        cursor: pointer;
+        background: white;
+      }
+      .notification-item:hover {
+        background: #f9fafb;
+      }
+      .notification-item.unread {
+        background: #eff6ff;
+        border-color: #bfdbfe;
+      }
+
+      .notification-item-header {
+        display: flex;
+        justify-content: space-between;
+        align-items: flex-start;
+        margin-bottom: 6px;
+      }
+
+      .notification-title {
+        font-weight: 700;
+        color: var(--brand);
+        font-size: 13px;
+        margin: 0;
+      }
+
+      .notification-date {
+        font-size: 10px;
+        color: #9ca3af;
+        white-space: nowrap;
+      }
+
+      .notification-message {
+        font-size: 12px;
+        color: #4b5563;
+        margin: 4px 0 0;
+        line-height: 1.4;
+      }
+
+      .notification-type {
+        display: inline-block;
+        font-size: 10px;
+        padding: 2px 6px;
+        border-radius: 4px;
+        font-weight: 600;
+        margin-top: 6px;
+      }
+      .notification-type.feature { background: #dbeafe; color: #1e40af; }
+      .notification-type.update { background: #fef3c7; color: #92400e; }
+      .notification-type.maintenance { background: #fee2e2; color: #991b1b; }
+      .notification-type.announcement { background: #e9d5ff; color: #6b21a8; }
+      
+      .fab-icon{ display:flex; flex-direction:column; gap:5px; align-items:center; }
+      .fab-icon span{ display:block; width:18px; height:3px; background:#fff; border-radius:2px; }
+      .fab-timer{
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        padding:8px 10px;
+        border-radius:12px;
+        background: #0ea5e9;
+        color:#fff;
+        font-weight:700;
+        min-width:72px;
+        box-shadow:0 6px 14px rgba(14,165,233,.25);
+      }
+
+      /* ===== Cards ===== */
+      .cards{
+        margin-top: 28px;
+        display: grid;
+        grid-template-columns: repeat(3, 340px);
+        gap: 24px;
+        width: 96%;
+        max-width: 1080px;
+        justify-content: center;
+        /* FIX: Ensure cards have their own layer */
+        position: relative;
+        z-index: 1; 
+      }
+
+      .card-link{
+        text-decoration: none;
+        display: block;
+        background: rgba(255,255,255,.9);
+        border: 1px solid rgba(0,0,0,.06);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(8px) saturate(180%);
+        padding: 18px;
+        transition: transform .2s ease, box-shadow .2s ease, background .2s ease;
+        
+        /* FIX: Force card links to be interactive and above background */
+        position: relative;
+        z-index: 2;
+      }
+      .card-link:hover{
+        transform: translateY(-4px);
+        box-shadow: 0 14px 28px rgba(0,0,0,.12);
+        background: rgba(255,255,255,.98);
+        z-index: 10; /* Bring hovered card to very top */
+      }
+
+      .card-body{
+        display: grid;
+        grid-template-columns: 72px 1fr;
+        gap: 14px;
+        align-items: center;
+      }
+      .card-icon{
+        width: 72px; height: 72px;
+        border-radius: 14px;
+        display: grid; place-items: center;
+        background: linear-gradient(180deg, #eef2ff, #ffffff);
+        border: 1px solid #e6e9f8;
+      }
+      .card-icon svg{ width: 42px; height: 42px; }
+
+      .card-title{
+        font-size: 20px; font-weight: 800; color:#1e3a8a; margin: 2px 0 4px;
+      }
+      .card-desc{
+        font-size: 14px; color:#334155; margin: 0;
+      }
+
+      .quick{
+        margin-top: 14px;
+        display: flex;
+        align-items: center;
+        gap: 10px;
+        flex-wrap: wrap;
+      }
+      .btn{
+        display:inline-flex;gap:8px;align-items:center;justify-content:center;
+        padding:11px 16px;border-radius:999px;border:none;font-weight:700;cursor:pointer;transition:.2s;
+        text-decoration: none; line-height:1; position: relative; pointer-events: auto;
+      }
+      .btn *{ pointer-events: none; }
+      .btn svg{ width:18px; height:18px }
+      .btn-blue{
+        background:linear-gradient(90deg,var(--brand),var(--brand-2)); color:#fff; box-shadow:0 8px 20px rgba(37,99,235,.22)
+      }
+      .btn-disabled{
+        background:#e2e8f0;
+        color:#475569;
+        cursor:not-allowed;
+        box-shadow:none;
+      }
+      .btn:hover{ transform: translateY(-1px); }
+
+      footer {
+        margin: 36px 0 28px;
+        text-align: center;
+        color: #64748b;
+        font-size: 13px;
+      }
+
+      /* Add this inside the <style> block in dashboard.html */
+
+      .btn-purchase {
+        background: linear-gradient(90deg, #be185d, #db2777);
+        color: #fff;
+        box-shadow: 0 8px 20px rgba(190, 24, 93, 0.22);
+      }
+      .btn-purchase:hover {
+        transform: translateY(-1px);
+      }
+
+      @media (max-width: 760px){
+        .cards{ grid-template-columns: 1fr; gap: 16px; }
+        header{ margin-top: 88px; }
+        .notification-panel { min-width: 320px; max-width: calc(100vw - 40px); }
+      }
+
+      /*-----NEW STYLE-----*/
+      .top-actions,
+      .top-actions *,
+      .fab-user,
+      .fab-btn,
+      .fab-menu {
+        -webkit-transform: translateZ(0);
+        transform: translateZ(0);
+        -webkit-backface-visibility: hidden;
+        backface-visibility: hidden;
+        -webkit-perspective: 1000;
+        perspective: 1000;
+      }
+
+      /* Ensure top-actions container never shows white */
+      .top-actions {
+        background: transparent !important;
+        will-change: transform;
+      }
+
+      /* Prevent cards from bleeding through during scroll */
+      .card-link {
+        -webkit-transform: translateZ(0);
+        transform: translateZ(0);
+        will-change: transform, box-shadow;
+        isolation: isolate; /* Create stacking context */
+      }
+
+      /* Prevent body scroll artifacts */
+      body {
+        -webkit-overflow-scrolling: touch;
+        scroll-behavior: smooth;
+      }
+
+      /* Disable backdrop-filter during scroll to prevent white flash */
+      body.scrolling .card-link {
+        backdrop-filter: none !important;
+        background: rgba(255,255,255,0.98) !important;
+      }
+
+    </style>
+  </head>
+
+  <body>
+    {% set _raw_sections = session.get('section_rights') or [] %}
+    {% if _raw_sections is string %}
+      {% set _raw_sections = _raw_sections.split(',') %}
+    {% endif %}
+    {% set _sections = [] %}
+    {% for s in _raw_sections %}
+      {% set _ = _sections.append((s|string).strip().lower()) %}
+    {% endfor %}
+    {% set _role = session.get('role') or '' %}
+    {% set allow_all = (_role == 'IT') or ('*' in _sections) %}
+    {% set allow_revenue = allow_all or ('revenue' in _sections) %}
+    {% set allow_volume = allow_all or ('volume' in _sections) %}
+    {% set allow_occupancy = allow_all or ('occupancy' in _sections) %}
+    {% set allow_comparison = allow_all or ('comparison' in _sections) %}
+    {% set allow_business = allow_all or ('business_insights' in _sections) %}
+    {% set _firm_scope = (session.get('firm_scope') or '')|string|trim %}
+    {% set has_fund_firm_access = (_role == 'IT') or (_firm_scope == '*') or (_firm_scope != '') %}
+    {% set allow_fund_position = (allow_all or ('fund_position' in _sections)) and has_fund_firm_access %}
+    {% set ns = namespace(allow_mis=allow_all or ('mis' in _sections)) %}
+    {% if not ns.allow_mis %}
+      {% for s in _sections %}
+        {% if s.startswith('mis_') %}
+          {% set ns.allow_mis = True %}
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+    {% set allow_mod_reports = allow_all or ('mod_reports' in _sections) %}
+    {% set allow_recon = allow_all or ('reconciliations' in _sections) %}
+    {% set allow_user_mgmt = allow_all or ('user_management' in _sections) %}
+    {% set allow_corporate = allow_all or ('corporate_management' in _sections) %}
+    {% set ns_service = namespace(allow_service_addition=allow_all or ('service_addition' in _sections)) %}
+    {% if not ns_service.allow_service_addition %}
+      {% for s in _sections %}
+        {% if s.startswith('service_addition_') %}
+          {% set ns_service.allow_service_addition = True %}
+        {% endif %}
+      {% endfor %}
+    {% endif %}
+    {% set allow_purchase = allow_all or ('purchase' in _sections) %}
+    {% set allow_discount = allow_all or ('discount_module' in _sections) %}
+
+    <div class="top-actions">
+      <div class="fab-user">
+        <button class="fab-btn" id="fabToggle" title="User Menu">
+          <span class="fab-icon"><span></span><span></span><span></span></span>
+          <span class="notification-badge" id="notificationBadge" style="display: none;">0</span>
+        </button>
+        <div class="fab-menu" id="fabMenu">
+          <div style="padding:6px 12px;font-weight:700;color:#1e3a8a;">
+            👤 {{ session.get('username') or session.get('user') or 'User' }}
+          </div>
+          <a href="{{ url_for('logout') }}">🚪 Logout</a>
+          <a href="{{ url_for('settings') }}">⚙️ Settings</a>
+          
+          <div style="border-top: 1px solid #e5e7eb; margin-top: 8px; padding-top: 8px;">
+            <button id="notificationsToggle" style="width: 100%; text-align: left; padding: 10px 12px; border: none; background: none; cursor: pointer; font-weight: 600; color: #1e3a8a; border-radius: 10px; display: flex; justify-content: space-between; align-items: center;">
+              <span>🔔 Notifications</span>
+              <span id="notifArrow" style="transition: transform 0.3s;">▼</span>
+            </button>
+            <div id="notificationSection" style="display: none; max-height: 400px; overflow-y: auto; margin-top: 4px;">
+              <div style="padding: 8px 12px; display: flex; justify-content: space-between; align-items: center; gap:6px;">
+                <span style="font-size: 12px; color: #64748b; font-weight: 600;">Recent Notifications</span>
+                <div style="display:flex; gap:6px;">
+                  <button class="mark-read-btn" id="markAllRead" style="padding: 4px 8px; font-size: 11px;">Mark all read</button>
+                  <button class="mark-read-btn" id="clearAll" style="padding: 4px 8px; font-size: 11px; background:#fee2e2; color:#b91c1c;">Clear</button>
+                </div>
+              </div>
+              <div id="notificationList">
+                <div class="empty-notifications" style="padding: 20px; text-align: center; color: #9ca3af; font-size: 13px;">No new notifications</div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <header>
+      <img src="{{ url_for('static', filename='logo/asarfi.png') }}" alt="Asarfi Hospital Logo">
+      <h1>Hospital Intelligence Dashboard</h1>
+      <p>Financial, Operational & Management Insights — AHL | ACI | Ballia</p>
+    </header>
+
+    <section class="cards">
+      {% if allow_revenue %}
+      <a class="card-link" href="{{ url_for('revenue_dashboard') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#1e40af" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 3v18h18"></path>
+              <path d="M18 17V9l-4 4-4-4-4 4"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">Revenue Overview</div>
+            <p class="card-desc">Compare department-wise revenue and growth trends across all units.</p>
+            <div class="quick">
+              <span class="btn btn-blue">Open Chart
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+
+      {% if allow_volume %}
+      <a class="card-link" href="{{ url_for('volume_dashboard') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#22c55e" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="12" width="4" height="8"></rect>
+              <rect x="10" y="8" width="4" height="12"></rect>
+              <rect x="17" y="4" width="4" height="16"></rect>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">Volume Tracker</div>
+            <p class="card-desc">Track OPD/IPD/Lab volumes and service category movements.</p>
+            <div class="quick">
+              <span class="btn btn-blue">View Trends
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+
+      {% if allow_occupancy %}
+      <a class="card-link" href="{{ url_for('occupancy_dashboard') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#f59e0b" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="10" width="18" height="8" rx="2"></rect>
+              <path d="M7 10V7a2 2 0 0 1 2-2h6a2 2 0 0 1 2 2v3"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">Occupancy Status</div>
+            <p class="card-desc">Visualize real-time and historical bed occupancy percentages.</p>
+            <div class="quick">
+              <span class="btn btn-blue">Check Now
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+
+      {% if allow_comparison %}
+      <a class="card-link" href="javascript:void(0)" aria-disabled="true">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#9333ea" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M21 15V6a2 2 0 0 0-2-2H5a2 2 0 0 0-2 2v9"></path>
+              <path d="M3 15h18v4a2 2 0 0 1-2 2H5a2 2 0 0 1-2-2z"></path>
+              <path d="M7 10h10"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">Comparison & Trends</div>
+            <p class="card-desc">Analyze month-over-month or year-over-year performance for all units.</p>
+            <div class="quick">
+              <span class="btn btn-disabled">Coming Soon</span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+
+      {% if allow_business %}
+      <a class="card-link" href="{{ url_for('business_insights_page') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 3h18v14H3z"></path>
+              <path d="M7 13l2-2 2 2 4-4 2 2"></path>
+              <path d="M3 21h18"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">Business Insights</div>
+            <p class="card-desc">Daily average billing split by Cash/Cashless across visit types.</p>
+            <div class="quick">
+              <span class="btn btn-blue">Open Panel
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+
+      {% if allow_fund_position %}
+      <a class="card-link" href="{{ url_for('fund_position_dashboard') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0f766e" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M3 3h18v18H3z"></path>
+              <path d="M7 8h10"></path>
+              <path d="M7 12h5"></path>
+              <path d="M7 16h10"></path>
+              <path d="M14 12l2 2 3-3"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">Fund Position Tracker</div>
+            <p class="card-desc">Track CA balances, WC limits, FDR values, and firm-wise net fund position.</p>
+            <div class="quick">
+              <span class="btn btn-blue">Open Tracker
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+
+      {% if ns.allow_mis %}
+      <a class="card-link" href="{{ url_for('mis_dashboard') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#10b981" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 4h16v16H4z"></path>
+              <path d="M8 8h8v3H8zM8 14h5v2H8z"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">MIS</div>
+            <p class="card-desc">Cross-functional MIS: radiology, labs, pharmacy, finance, ops, and more.</p>
+            <div class="quick">
+              <span class="btn btn-blue">Open MIS
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+
+      {% if allow_mod_reports %}
+      <a class="card-link" href="{{ url_for('mod_reports_dashboard') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#6366f1" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3a7 7 0 0 0 0 14"></path>
+              <path d="M12 3v4"></path>
+              <path d="M12 21h7"></path>
+              <path d="M16 14l3 3"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">MOD Reports</div>
+            <p class="card-desc">Night report exports with admissions, occupancy, and doctor counts.</p>
+            <div class="quick">
+              <span class="btn btn-blue">Open Reports
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+
+      {% if allow_recon %}
+      <a class="card-link" href="javascript:void(0)" aria-disabled="true">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#f97316" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="12" cy="12" r="9"></circle>
+              <path d="M8 12h8M12 8v8"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">Reconciliations</div>
+            <p class="card-desc">Coming soon - financial reconciliation workflows.</p>
+            <div class="quick">
+              <span class="btn btn-disabled">Coming Soon</span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+
+      {% if allow_user_mgmt %}
+      <a class="card-link" href="{{ url_for('user_management') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <circle cx="8" cy="8" r="3"></circle>
+              <circle cx="16" cy="8" r="3"></circle>
+              <path d="M3 20c0-3 3-5 5-5s5 2 5 5"></path>
+              <path d="M11 20c0-3 3-5 5-5s5 2 5 5"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">User Management</div>
+            <p class="card-desc">Submit and approve user creation requests with section/unit rights.</p>
+            <div class="quick">
+              <span class="btn btn-blue">Manage Users
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+
+      {% if allow_corporate %}
+      <a class="card-link" href="{{ url_for('corporate_management') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="8" width="18" height="10" rx="2"></rect>
+              <path d="M7 8V6a4 4 0 0 1 4-4h2a4 4 0 0 1 4 4v2"></path>
+              <path d="M9 13h6"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">Corporate Section</div>
+            <p class="card-desc">Centralized corporate view to monitor bills submitted patient & corporate wise. </p>
+            <div class="quick">
+              <span class="btn {% if allow_corporate %}btn-blue{% else %}btn-disabled{% endif %}">Open Corporate
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+      {% if ns_service.allow_service_addition %}
+      <a class="card-link" href="{{ url_for('service_addition') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#1e40af" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="3" y="4" width="18" height="16" rx="2"></rect>
+              <path d="M8 10h8"></path>
+              <path d="M12 7v6"></path>
+              <path d="M8 16h8"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">Service Management</div>
+            <p class="card-desc">Create new services, map departments, and define tariffs in minutes.</p>
+            <div class="quick">
+              <span class="btn btn-blue">Manage Services
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+      {% if allow_purchase %}
+      <a class="card-link" href="{{ url_for('purchase_module') }}">
+      <div class="card-body">
+        <div class="card-icon">
+          <svg viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M6 2L3 6v14a2 2 0 0 0 2 2h14a2 2 0 0 0 2-2V6l-3-4z"></path>
+            <line x1="3" y1="6" x2="21" y2="6"></line>
+            <path d="M16 10a4 4 0 0 1-8 0"></path>
+          </svg>
+        </div>
+        <div>
+          <div class="card-title">Purchase Module</div>
+          <p class="card-desc">Manage purchase orders, vendor analysis, and procurement insights.</p>
+          <div class="quick">
+            <span class="btn {% if allow_purchase %}btn-purchase{% else %}btn-disabled{% endif %}">Open Purchase
+              <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                <path d="M5 12h14"></path>
+                <path d="M12 5l7 7-7 7"></path>
+              </svg>
+            </span>
+          </div>
+        </div>
+      </div>
+    </a>
+      {% endif %}
+      {% if allow_discount %}
+          <a class="card-link"
+         href="{{ url_for('discount_module') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0ea5e9" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="5" y="3" width="14" height="18" rx="2"></rect>
+              <path d="M9 8h6"></path>
+              <path d="M9 12h3.5"></path>
+              <circle cx="15.5" cy="14.5" r="1.2"></circle>
+              <circle cx="11" cy="18" r="1.2"></circle>
+              <path d="M12 17l3-3"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">Modifications</div>
+            <p class="card-desc">
+              OTP-based approval workflow for modifications.
+            </p>
+            <div class="quick">
+              <span class="btn {% if allow_discount %}btn-blue{% else %}btn-disabled{% endif %}">
+                Open Module
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"
+                     stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path>
+                  <path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+    </section>
+
+    <footer>
+      &copy; 2025 Asarfi Hospital Ltd. All Rights Reserved.
+    </footer>
+    {% include '_session_keepalive.html' %}
+    <script>
+      // User Menu Toggle
+      const fabToggle = document.getElementById('fabToggle');
+      const fabMenu = document.getElementById('fabMenu');
+      const fabTimer = document.getElementById('fabTimer');
+      fabToggle.addEventListener('click', () => fabMenu.classList.toggle('open'));
+
+      // Notifications Toggle inside menu
+      const notificationsToggle = document.getElementById('notificationsToggle');
+      const notificationSection = document.getElementById('notificationSection');
+      const notifArrow = document.getElementById('notifArrow');
+      
+      notificationsToggle.addEventListener('click', (e) => {
+        e.stopPropagation();
+        loadNotifications();
+        const isOpen = notificationSection.style.display === 'block';
+        notificationSection.style.display = isOpen ? 'none' : 'block';
+        notifArrow.style.transform = isOpen ? 'rotate(0deg)' : 'rotate(180deg)';
+      });
+
+      // Session timer
+      function fmtSecs(s){
+        s = Math.max(0, Math.floor(s||0));
+        const m = Math.floor(s/60).toString().padStart(2,'0');
+        const sec = (s%60).toString().padStart(2,'0');
+        return `${m}:${sec}`;
+      }
+      let remainingSec = 0;
+      function updateTimerDisplay(){ if(fabTimer) fabTimer.textContent = fmtSecs(remainingSec); }
+      async function refreshSessionTimer(){
+        try{
+          const res = await fetch('/session_remaining');
+          const data = await res.json();
+          if(res.ok && typeof data.remaining_seconds !== 'undefined'){
+            remainingSec = Math.max(0, Math.floor(data.remaining_seconds));
+            updateTimerDisplay();
+          }
+        }catch(e){}
+      }
+      setInterval(()=>{ if(remainingSec>0){ remainingSec -= 1; updateTimerDisplay(); } }, 1000);
+      setInterval(refreshSessionTimer, 20000);
+      refreshSessionTimer();
+
+      window.addEventListener('sessionRefreshed', () => {
+        refreshSessionTimer();
+      });
+      
+      // Close menu when clicking outside
+      document.addEventListener('click', (e) => {
+        if (!e.target.closest('.fab-user')) {
+          fabMenu.classList.remove('open');
+          notificationSection.style.display = 'none';
+          notifArrow.style.transform = 'rotate(0deg)';
+        }
+      });
+
+      // Notification System
+      const notificationList = document.getElementById('notificationList');
+      const notificationBadge = document.getElementById('notificationBadge');
+      const markAllReadBtn = document.getElementById('markAllRead');
+      let lastUnread = 0;
+
+      // Fetch notifications from server
+      async function loadNotifications() {
+        try {
+          const response = await fetch('/api/notifications', { cache: 'no-store' });
+          const data = await response.json();
+          const unread = Array.isArray(data.notifications)
+            ? data.notifications.filter(n => !n.read).length
+            : Number(data.unreadCount || 0);
+          
+          if (data.notifications && data.notifications.length > 0) {
+            renderNotifications(data.notifications);
+            updateBadge(unread);
+          } else {
+            notificationList.innerHTML = '<div class="empty-notifications" style="padding: 20px; text-align: center; color: #9ca3af; font-size: 13px;">No new notifications</div>';
+            updateBadge(unread);
+          }
+        } catch (error) {
+          console.error('Error loading notifications:', error);
+          // do not hide badge on error
+        }
+      }
+
+      function renderNotifications(notifications) {
+        notificationList.innerHTML = notifications.map(notif => `
+          <div class="notification-item ${notif.read ? '' : 'unread'}" data-id="${notif.id}" data-link="${notif.link || ''}">
+            <div class="notification-item-header">
+              <h4 class="notification-title">${notif.title}</h4>
+              <span class="notification-date">${notif.date}</span>
+            </div>
+            <p class="notification-message">${notif.message}</p>
+            <span class="notification-type ${notif.type}">${notif.type.toUpperCase()}</span>
+          </div>
+        `).join('');
+
+        // Add click handlers to mark as read and redirect
+        document.querySelectorAll('.notification-item').forEach(item => {
+          item.addEventListener('click', function() {
+            const notifId = this.dataset.id;
+            const link = this.dataset.link;
+            
+            // Mark as read
+            if (this.classList.contains('unread')) {
+              markAsRead(notifId);
+              this.classList.remove('unread');
+              updateBadge();
+            }
+            
+            // Redirect if link exists
+            if (link && link.trim() !== '') {
+              window.location.href = link;
+            }
+          });
+        });
+      }
+
+      function updateBadge(count) {
+        const unreadCount = count !== undefined ? count : document.querySelectorAll('.notification-item.unread').length;
+        lastUnread = unreadCount;
+        if (unreadCount > 0) {
+          notificationBadge.textContent = unreadCount > 9 ? '9+' : unreadCount;
+          notificationBadge.style.display = 'grid';
+        } else {
+          notificationBadge.style.display = 'none';
+        }
+      }
+
+      async function markAsRead(notificationId) {
+        try {
+          await fetch(`/api/notifications/${notificationId}/read`, { method: 'POST' });
+        } catch (error) {
+          console.error('Error marking notification as read:', error);
+        }
+      }
+
+      markAllReadBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+          await fetch('/api/notifications/mark-all-read', { method: 'POST' });
+          document.querySelectorAll('.notification-item').forEach(item => {
+            item.classList.remove('unread');
+          });
+          updateBadge(0);
+        } catch (error) {
+          console.error('Error marking all as read:', error);
+        }
+      });
+
+      const clearAllBtn = document.getElementById('clearAll');
+      clearAllBtn.addEventListener('click', async (e) => {
+        e.stopPropagation();
+        try {
+          await fetch('/api/notifications/clear', { method: 'POST' });
+          notificationList.innerHTML = '<div class="empty-notifications" style="padding: 20px; text-align: center; color: #9ca3af; font-size: 13px;">No new notifications</div>';
+          updateBadge(0);
+        } catch (error) {
+          console.error('Error clearing notifications:', error);
+        }
+      });
+
+      // Load notifications on page load
+      loadNotifications();
+
+      // Refresh notifications more frequently and on panel open
+      notificationsToggle.addEventListener('click', () => {
+        if (notificationSection.style.display === 'block') {
+          loadNotifications();
+        }
+      });
+      setInterval(loadNotifications, 15 * 1000); // every 15s
+      window.addEventListener('focus', loadNotifications);
+      document.addEventListener('visibilitychange', () => {
+        if (document.visibilityState === 'visible') {
+          loadNotifications();
+        }
+      });
+
+      // Lightweight badge-only poll to catch new items even when panel is closed
+      async function pollUnreadCount() {
+        try {
+          const res = await fetch('/api/notifications/unread_count', { cache: 'no-store' });
+          const data = await res.json();
+          const unread = Number(data.unread || 0);
+          updateBadge(unread);
+        } catch (e) {
+          // ignore polling errors
+        }
+      }
+      setInterval(pollUnreadCount, 10000);
+      pollUnreadCount();
+    </script>
+
+    <script>
+      (function () {
+        document.documentElement.classList.add('page-fade-in');
+        window.addEventListener('pageshow', e => {
+          if (e.persisted) {
+            document.documentElement.classList.remove('page-fade-out');
+            document.documentElement.classList.add('page-fade-in');
+          }
+        });
+        function isSameOrigin(url) {
+          try { return new URL(url, location.href).origin === location.origin; }
+          catch { return false; }
+        }
+        document.addEventListener('click', e => {
+          const a = e.target.closest('a');
+          if (!a || a.target === '_blank' || a.hasAttribute('download') || a.getAttribute('href')?.startsWith('#')) return;
+          const href = a.getAttribute('href');
+          if (!href || !isSameOrigin(href)) return;
+          e.preventDefault();
+          document.documentElement.classList.remove('page-fade-in');
+          document.documentElement.classList.add('page-fade-out');
+          setTimeout(() => { location.href = href; }, 180);
+        }, { capture: true });
+      })();
+
+     
+// (function() {
+//   console.log('🎯 Layout shift catcher active - will log DOM snapshots on scroll');
+  
+//   let isScrolling = false;
+//   let scrollTimeout;
+//   let snapshotCount = 0;
+  
+//   function captureDOM() {
+//     // Get all elements with position fixed or absolute
+//     const positioned = document.querySelectorAll('[style*="position"]');
+//     const snapshot = {
+//       timestamp: Date.now(),
+//       elements: []
+//     };
+    
+//     document.querySelectorAll('*').forEach(el => {
+//       const style = window.getComputedStyle(el);
+//       const pos = style.position;
+      
+//       // Only log positioned elements that could be overlays
+//       if ((pos === 'fixed' || pos === 'absolute') && 
+//           (el.offsetWidth > 0 || el.offsetHeight > 0)) {
+        
+//         const rect = el.getBoundingClientRect();
+        
+//         snapshot.elements.push({
+//           tag: el.tagName,
+//           id: el.id,
+//           class: el.className,
+//           position: pos,
+//           zIndex: style.zIndex,
+//           display: style.display,
+//           visibility: style.visibility,
+//           opacity: style.opacity,
+//           background: style.backgroundColor,
+//           top: rect.top,
+//           left: rect.left,
+//           width: rect.width,
+//           height: rect.height,
+//           inViewport: (rect.top >= 0 && rect.left >= 0 && 
+//                        rect.bottom <= window.innerHeight && 
+//                        rect.right <= window.innerWidth),
+//           element: el
+//         });
+//       }
+//     });
+    
+//     return snapshot;
+//   }
+  
+//   let beforeSnapshot = null;
+//   let afterSnapshot = null;
+  
+//   window.addEventListener('scroll', () => {
+//     if (!isScrolling) {
+//       // Capture before scroll
+//       beforeSnapshot = captureDOM();
+//       console.log('📸 Before scroll snapshot:', beforeSnapshot);
+//       isScrolling = true;
+//     }
+    
+//     clearTimeout(scrollTimeout);
+//     scrollTimeout = setTimeout(() => {
+//       // Capture after scroll
+//       afterSnapshot = captureDOM();
+//       console.log('📸 After scroll snapshot:', afterSnapshot);
+      
+//       // Compare snapshots
+//       const newElements = afterSnapshot.elements.filter(after => 
+//         !beforeSnapshot.elements.some(before => before.element === after.element)
+//       );
+      
+//       if (newElements.length > 0) {
+//         console.error('🚨 NEW ELEMENTS APPEARED DURING SCROLL:', newElements);
+//         newElements.forEach(el => {
+//           if (el.element) {
+//             el.element.style.outline = '5px solid lime !important';
+//             console.log('Element details:', el);
+//           }
+//         });
+//       }
+      
+//       isScrolling = false;
+//       snapshotCount++;
+      
+//       if (snapshotCount > 20) {
+//         console.log('🛑 Stopping after 20 scroll events');
+//         window.removeEventListener('scroll', arguments.callee);
+//       }
+//     }, 100);
+//   }, true);
+  
+//   console.log('💡 Now scroll violently! Any new positioned elements will be highlighted in LIME GREEN.');
+// })();
+
+
+    (function() {
+  let scrollTimeout;
+  window.addEventListener('scroll', function() {
+    document.body.classList.add('scrolling');
+    clearTimeout(scrollTimeout);
+    scrollTimeout = setTimeout(function() {
+      document.body.classList.remove('scrolling');
+    }, 150);
+    }, { passive: true });
+    })();
+
+    </script>
+
+  
+    
+  </body>
+
+  
+</html>

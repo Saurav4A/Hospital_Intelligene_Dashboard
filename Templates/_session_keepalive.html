@@ -1,0 +1,315 @@
+<script>
+  (function () {
+    if (window.__SESSION_KEEPALIVE_INIT__) return;
+    window.__SESSION_KEEPALIVE_INIT__ = true;
+
+    const overlayHtml = `
+      <div class="session-keepalive__card">
+        <div class="session-keepalive__title">Session expiring soon</div>
+        <p class="session-keepalive__message" data-status>
+          Click anywhere on this page (or use the button) within <span data-countdown>05:00</span> to stay signed in.
+        </p>
+        <button type="button" class="session-keepalive__btn" data-action="stay">Stay Signed In</button>
+      </div>
+    `;
+    const overlayCss = `
+      .session-keepalive {
+        display: none !important;
+        position: fixed;
+        inset: 0;
+        z-index: -9999;
+        align-items: flex-end;
+        justify-content: center;
+        padding: 16px;
+        background: transparent;
+        visibility: hidden;
+        opacity: 0;
+        pointer-events: none;
+        will-change: opacity, visibility;
+      }
+      .session-keepalive.session-keepalive--active {
+        display: flex !important;
+        z-index: 9999;
+        visibility: visible;
+        opacity: 1;
+        background: rgba(15, 23, 42, 0.6);
+        pointer-events: auto;
+        animation: fadeIn 0.3s ease-out forwards;
+      }
+      @keyframes fadeIn {
+        from { opacity: 0; background: transparent; }
+        to { opacity: 1; background: rgba(15, 23, 42, 0.6); }
+      }
+      .session-keepalive__card {
+        background: transparent;
+        color: #0f172a;
+        border-radius: 18px;
+        box-shadow: none;
+        padding: 18px 22px;
+        width: min(420px, 90vw);
+        text-align: left;
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        transform: translateY(100px);
+        opacity: 0;
+        animation: none;
+        will-change: transform, opacity, background;
+      }
+      .session-keepalive--active .session-keepalive__card {
+        background: #ffffff;
+        box-shadow: 0 12px 40px rgba(15, 23, 42, 0.35);
+        animation: slideUp 0.3s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+      }
+      @keyframes slideUp {
+        from { transform: translateY(100px); opacity: 0; }
+        to { transform: translateY(0); opacity: 1; }
+      }
+      .session-keepalive__title {
+        font-size: 18px;
+        font-weight: 700;
+        color: #b91c1c;
+        margin: 0 0 6px;
+      }
+      .session-keepalive__message {
+        margin: 0 0 12px;
+        font-size: 15px;
+        line-height: 1.4;
+      }
+      .session-keepalive__message span[data-countdown] {
+        font-weight: 700;
+        color: #0f172a;
+      }
+      .session-keepalive__btn {
+        background: linear-gradient(120deg, #1e3a8a, #3b82f6);
+        border: none;
+        border-radius: 999px;
+        color: #fff;
+        font-weight: 600;
+        padding: 10px 22px;
+        cursor: pointer;
+        font-size: 14px;
+        box-shadow: 0 10px 20px rgba(30, 58, 138, 0.35);
+      }
+      .session-keepalive__btn:disabled {
+        opacity: 0.7;
+        cursor: not-allowed;
+      }
+      .session-keepalive__card::after {
+        content: 'Tap anywhere to confirm';
+        display: block;
+        margin-top: 10px;
+        font-size: 12px;
+        color: #475569;
+      }
+    `;
+
+    let overlay = null;
+    let styleEl = null;
+    let countdownEl = null;
+    let stayBtn = null;
+    let statusEl = null;
+
+    const WARNING_THRESHOLD = 300; // 5 minutes
+    const POLL_INTERVAL = 30000;   // 30 seconds
+
+    let pollTimer = null;
+    let countdownTimer = null;
+    let promptVisible = false;
+    let disabled = false;
+    let pending = false;
+
+    function fmt(secs) {
+      secs = Math.max(0, Math.floor(secs || 0));
+      const m = String(Math.floor(secs / 60)).padStart(2, '0');
+      const s = String(secs % 60).padStart(2, '0');
+      return `${m}:${s}`;
+    }
+
+    function ensureStyle() {
+      if (styleEl) return;
+      styleEl = document.getElementById('sessionKeepAliveStyle');
+      if (styleEl) return;
+      styleEl = document.createElement('style');
+      styleEl.id = 'sessionKeepAliveStyle';
+      styleEl.textContent = overlayCss;
+      document.head.appendChild(styleEl);
+    }
+
+    function ensureOverlay() {
+      if (overlay) return true;
+      ensureStyle();
+      overlay = document.createElement('div');
+      overlay.id = 'sessionKeepAlive';
+      overlay.className = 'session-keepalive';
+      overlay.setAttribute('aria-hidden', 'true');
+      // Set inline styles BEFORE setting innerHTML to prevent any flash
+      overlay.style.cssText = 'display: none !important; visibility: hidden !important; opacity: 0 !important;';
+      overlay.innerHTML = overlayHtml;
+      // DON'T append to body yet - will be done in showPrompt
+      countdownEl = overlay.querySelector('[data-countdown]');
+      stayBtn = overlay.querySelector('[data-action="stay"]');
+      statusEl = overlay.querySelector('[data-status]');
+      stayBtn && stayBtn.addEventListener('click', (event) => {
+        event.preventDefault();
+        keepAlive();
+      });
+      return true;
+    }
+
+    function ensureCountdownMessage() {
+      if (!statusEl) return;
+      if (!countdownEl || !countdownEl.isConnected) {
+        statusEl.innerHTML = 'Click anywhere on this page (or use the button) within <span data-countdown></span> to stay signed in.';
+        countdownEl = statusEl.querySelector('[data-countdown]');
+      }
+    }
+
+    function updateCountdownDisplay(secs) {
+      if (countdownEl) countdownEl.textContent = fmt(secs);
+    }
+
+    function clearCountdown() {
+      clearInterval(countdownTimer);
+      countdownTimer = null;
+    }
+
+    function startCountdown(secs) {
+      clearCountdown();
+      ensureCountdownMessage();
+      updateCountdownDisplay(secs);
+      countdownTimer = setInterval(() => {
+        secs -= 1;
+        if (secs <= 0) {
+          updateCountdownDisplay(0);
+          statusEl.textContent = 'Session will close soon unless you click.';
+          clearCountdown();
+          return;
+        }
+        updateCountdownDisplay(secs);
+      }, 1000);
+    }
+
+    function showPrompt() {
+      if (disabled || promptVisible) return;
+      
+      // Ensure overlay exists before showing
+      if (!overlay && !ensureOverlay()) return;
+      
+      // Append to body only when we're ready to show it
+      if (!overlay.parentNode) {
+        document.body.appendChild(overlay);
+      }
+      
+      // Use requestAnimationFrame to ensure DOM is ready
+      requestAnimationFrame(() => {
+        if (!overlay) return;
+        
+        // Clear all inline styles and add active class
+        overlay.style.cssText = '';
+        overlay.setAttribute('aria-hidden', 'false');
+        overlay.classList.add('session-keepalive--active');
+        
+        promptVisible = true;
+        ensureCountdownMessage();
+        if (countdownEl && !countdownEl.textContent) {
+          countdownEl.textContent = fmt(WARNING_THRESHOLD);
+        }
+      });
+    }
+
+    function hidePrompt() {
+      if (!promptVisible) return;
+      if (!overlay) return;
+      
+      // Instantly remove the active class and hide
+      overlay.classList.remove('session-keepalive--active');
+      overlay.style.cssText = 'display: none !important;';
+      overlay.setAttribute('aria-hidden', 'true');
+      
+      promptVisible = false;
+      clearCountdown();
+      
+      // Remove from DOM immediately - don't wait
+      if (overlay.parentNode) {
+        overlay.parentNode.removeChild(overlay);
+      }
+    }
+
+    async function fetchRemaining() {
+      if (disabled) return;
+      try {
+        const res = await fetch('/session_remaining', { cache: 'no-store' });
+        if (!res.ok) {
+          if (res.status === 401) {
+            disabled = true;
+            hidePrompt();
+          }
+          return;
+        }
+        const data = await res.json();
+        const secs = Number(data.remaining_seconds) || 0;
+        
+        // CRITICAL: Only act if session is actually expiring
+        if (secs <= WARNING_THRESHOLD && secs > 0) {
+          showPrompt();
+          startCountdown(secs);
+        } else {
+          // If prompt is visible and time increased, hide it
+          if (promptVisible) {
+            hidePrompt();
+          }
+          // IMPORTANT: Don't create overlay if not needed
+        }
+      } catch (err) {
+        // ignore fetch errors
+      }
+    }
+
+    async function keepAlive() {
+      if (disabled || pending) return;
+      pending = true;
+      stayBtn && (stayBtn.disabled = true);
+      try {
+        const res = await fetch('/session_keepalive', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: '{}'
+        });
+        if (!res.ok) {
+          if (res.status === 401) {
+            disabled = true;
+            hidePrompt();
+          }
+          return;
+        }
+        const data = await res.json().catch(() => ({}));
+        hidePrompt();
+        if (data.remaining_seconds) {
+          updateCountdownDisplay(data.remaining_seconds);
+        }
+        window.dispatchEvent(new CustomEvent('sessionRefreshed'));
+      } catch (err) {
+        // ignore
+      } finally {
+        pending = false;
+        stayBtn && (stayBtn.disabled = false);
+        fetchRemaining();
+      }
+    }
+
+    function globalClickHandler() {
+      if (promptVisible && !disabled) {
+        keepAlive();
+      }
+    }
+
+    document.addEventListener('click', globalClickHandler, true);
+    document.addEventListener('visibilitychange', () => {
+      if (!document.hidden) {
+        fetchRemaining();
+      }
+    });
+
+    fetchRemaining();
+    pollTimer = setInterval(fetchRemaining, POLL_INTERVAL);
+  })();
+</script>

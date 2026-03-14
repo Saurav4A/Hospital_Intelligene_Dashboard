@@ -1,0 +1,2245 @@
+{% extends 'layout.html' %}
+{% block content %}
+<style>
+  .page-shell{
+    width:min(1200px,96%);
+    margin:24px auto;
+  }
+  .card{
+    background: var(--card-bg);
+    border-radius: 18px;
+    box-shadow: var(--shadow);
+    border: 1px solid rgba(0,0,0,.05);
+    padding: 18px 20px 18px;
+  }
+  .cards-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(240px, 1fr));
+    gap:16px;
+    margin:12px 0 18px;
+  }
+  .mini-card{
+    background: var(--card-bg);
+    border-radius: 16px;
+    box-shadow: var(--shadow);
+    border:1px solid #e2e8f0;
+    padding:16px 18px;
+  }
+  .mini-card--actionable{
+    cursor:pointer;
+    transition: transform .18s ease, box-shadow .18s ease;
+  }
+  .mini-card--actionable:hover{
+    transform: translateY(-2px);
+    box-shadow: 0 16px 34px rgba(15,23,42,.12);
+  }
+  .mini-card.active{
+    outline:2px solid rgba(59,130,246,.45);
+  }
+  .mini-card h3{
+    margin:0;
+    color: var(--primary);
+    font-size:18px;
+  }
+  .mini-card p{
+    margin:6px 0 0;
+    color: var(--muted);
+    font-size:13px;
+    line-height:1.5;
+  }
+  .mis-panel{ display:none; }
+  .mis-panel.open{ display:block; }
+  .header-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    justify-content:space-between;
+    align-items:center;
+    margin-bottom:12px;
+  }
+  h2{ margin:0; color: var(--primary); font-size:22px; }
+  .subtext{ margin:6px 0 0; color: var(--muted); font-size:14px; }
+  .controls{ display:flex; gap:10px; align-items:center; flex-wrap:wrap; }
+  .controls select, .controls button{
+    padding:10px 12px;
+    border-radius:12px;
+    border:1px solid rgba(0,0,0,.08);
+    font-size:14px;
+    background:#fff;
+  }
+  .controls button{
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    color:#fff;
+    border:none;
+    cursor:pointer;
+    box-shadow:0 8px 18px rgba(59,130,246,.3);
+    font-weight:700;
+  }
+  .note{ color: var(--muted); font-size:13px; margin: 8px 0 12px; }
+  .section-title{ margin:16px 0 8px; font-size:16px; color: var(--primary); }
+  .table-wrap{ overflow:auto; border:1px solid #e5e7eb; border-radius:14px; }
+  table{ width:100%; border-collapse:collapse; font-size:13px; }
+  th, td{ padding:8px 10px; border:1px solid #e5e7eb; text-align:left; }
+  thead{ background:#eef2ff; }
+  th{ color: var(--primary); font-weight:700; }
+
+  /* FAB user menu (reuse style from MIS) */
+  .fab-user {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    z-index: 9;
+    display:flex;
+    align-items:center;
+    gap:10px;
+  }
+  .fab-btn {
+    width: 58px; height: 58px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, var(--primary), var(--secondary));
+    color: #fff;
+    display: grid; place-items: center;
+    font-size: 22px;
+    box-shadow: 0 8px 20px rgba(37,99,235,.3);
+    border: none;
+    cursor: pointer;
+    transition: transform .18s ease;
+  }
+  .fab-btn:hover{ transform: scale(1.06); }
+  .fab-menu {
+    position: absolute;
+    top: 60px; right: 0;
+    background: rgba(255,255,255,.96);
+    border-radius: 12px;
+    box-shadow: var(--shadow);
+    border: 1px solid rgba(0,0,0,.06);
+    backdrop-filter: blur(8px);
+    padding: 10px;
+    display: none;
+    min-width: 190px;
+  }
+  .fab-menu.open { display: block; animation: fadeIn .18s ease both; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  .fab-menu a {
+    display: block;
+    padding: 8px 12px;
+    border-radius: 8px;
+    color: var(--ink);
+    font-weight: 600;
+    text-decoration: none;
+    font-size: 14px;
+  }
+  .fab-menu a:hover { background: #eef2ff; color: var(--primary); }
+
+  .fab-icon{
+    display:flex;
+    flex-direction:column;
+    gap:5px;
+    align-items:center;
+    justify-content:center;
+  }
+  .fab-icon span{
+    display:block;
+    width:18px;
+    height:3px;
+    background:#fff;
+    border-radius:2px;
+  }
+
+  .fab-timer{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding:8px 12px;
+    margin-right:0;
+    border-radius:12px;
+    background: #0ea5e9;
+    color:#fff;
+    font-weight:700;
+    min-width:72px;
+    box-shadow:0 6px 14px rgba(14,165,233,.25);
+  }
+
+  /* History grouped accordion */
+  .hist-group{
+    border:1px solid #e5e7eb;
+    border-radius:12px;
+    margin-bottom:8px;
+    overflow:hidden;
+    background:#fff;
+  }
+  .hist-head{
+    display:flex;
+    justify-content:flex-start;
+    align-items:center;
+    padding:10px 12px;
+    cursor:pointer;
+    background:linear-gradient(90deg,#f8fafc,#eef2ff);
+    font-weight:700;
+    color: var(--primary);
+  }
+  .hist-head .reg{ font-weight:800; color: var(--primary); }
+  .hist-head .pname{ margin-left:12px; color: var(--primary); font-weight:800; }
+  .stale-6 { background: linear-gradient(90deg,#fef3c7,#fde68a); }
+  .stale-12 { background: linear-gradient(90deg,#ffedd5,#fdba74); }
+  .stale-12plus { background: linear-gradient(90deg,#fee2e2,#fca5a5); }
+  .hist-body{ display:none; padding:8px 12px 12px; }
+  .hist-body.open{ display:block; }
+  .hist-table{ width:100%; border-collapse:collapse; font-size:12.5px; }
+  .hist-table th, .hist-table td{
+    border:1px solid #e5e7eb;
+    padding:6px 8px;
+    text-align:left;
+  }
+  .hist-table thead{ background:#f1f5f9; }
+
+  .section-shell{
+    border:1px solid #e5e7eb;
+    border-radius:14px;
+    overflow:hidden;
+    margin-top:8px;
+    background:#fff;
+  }
+  .section-head{
+    padding:12px 14px;
+    background:linear-gradient(90deg,#f8fafc,#eef2ff);
+    cursor:pointer;
+    font-weight:700;
+    color: var(--primary);
+  }
+  .section-body{ display:none; padding:10px 12px 14px; }
+  .section-body.open{ display:block; }
+
+  .hist-search{
+    display:flex;
+    gap:10px;
+    align-items:center;
+    margin-bottom:10px;
+  }
+  .hist-search input{
+    flex:1;
+    padding:10px 12px;
+    border:1px solid #e5e7eb;
+    border-radius:12px;
+    font-size:14px;
+  }
+  .hist-pager{
+    display:flex;
+    gap:10px;
+    align-items:center;
+    justify-content:flex-end;
+    margin-top:10px;
+  }
+  .hist-pager button{
+    padding:8px 12px;
+    border-radius:10px;
+    border:1px solid #dbeafe;
+    background:#eff6ff;
+    color: var(--primary);
+    cursor:pointer;
+  }
+  .hist-pager button:disabled{
+    opacity:0.5;
+    cursor:default;
+  }
+
+  .hist-note{
+    margin:6px 0 12px;
+    padding:10px 12px;
+    border-radius:10px;
+    background: #f8fafc;
+    border:1px solid #e2e8f0;
+    color:#1f2937;
+    font-size:13px;
+    line-height:1.4;
+  }
+
+  /* ensure guide never shows inside FAB menu */
+  .fab-menu .hist-note{ display:none !important; }
+
+  .inline-btn{
+    padding:8px 12px;
+    border-radius:10px;
+    border:1px solid #e5e7eb;
+    background:#fff;
+    cursor:pointer;
+    transition: all .15s ease;
+  }
+  .controls .inline-btn{
+    background:#fff;
+    color: var(--primary);
+    border:1px solid #e5e7eb;
+    box-shadow:none;
+    font-weight:600;
+  }
+  .inline-btn:hover{ background:#eef2ff; }
+  .inline-btn:disabled{
+    opacity:0.6;
+    cursor:not-allowed;
+    background:#f8fafc;
+  }
+  .inline-btn.is-loading,
+  .controls button.is-loading{
+    position:relative;
+    padding-right:32px;
+    color:#0f172a;
+  }
+  .inline-btn.is-loading::after,
+  .controls button.is-loading::after{
+    content:'';
+    position:absolute;
+    right:10px;
+    top:50%;
+    width:16px; height:16px;
+    margin-top:-8px;
+    border:2px solid #cbd5e1;
+    border-top-color: var(--primary);
+    border-radius:50%;
+    animation: spin .8s linear infinite;
+  }
+  @keyframes spin{ to { transform: rotate(360deg); } }
+  .adm-summary-table td.num,
+  .adm-summary-table th.num{
+    text-align:right;
+  }
+  .adm-summary-table td.center{
+    text-align:center;
+  }
+  .adm-summary-table tbody tr.group-total{
+    background:#f8fafc;
+    font-weight:700;
+  }
+  .adm-summary-table tbody tr.grand-total{
+    background:#e2e8f0;
+    font-weight:800;
+  }
+
+  .process-banner{
+    margin:4px 0 8px;
+    padding:10px 12px;
+    border-radius:10px;
+    border:1px solid #cbd5e1;
+    font-size:13px;
+    line-height:1.4;
+  }
+  .process-banner.info{
+    background:#eff6ff;
+    border-color:#bfdbfe;
+    color:#1d4ed8;
+  }
+  .process-banner.success{
+    background:#ecfdf5;
+    border-color:#86efac;
+    color:#047857;
+  }
+  .process-banner.warn{
+    background:#fffbeb;
+    border-color:#fcd34d;
+    color:#92400e;
+  }
+  .process-banner.error{
+    background:#fef2f2;
+    border-color:#fca5a5;
+    color:#b91c1c;
+  }
+
+  .decision-notes{
+    border:1px solid #e2e8f0;
+    background:#f8fafc;
+    border-radius:10px;
+    padding:10px 12px;
+    margin:8px 0 10px;
+    font-size:13px;
+    color:#334155;
+  }
+  .decision-notes ul{
+    margin:6px 0 0 18px;
+    padding:0;
+  }
+  .decision-notes li{
+    margin:4px 0;
+  }
+
+  .trace-wrap{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(220px, 1fr));
+    gap:8px;
+    margin:0 0 6px;
+  }
+  .trace-item{
+    border-radius:10px;
+    border:1px solid #e2e8f0;
+    padding:8px 10px;
+    background:#fff;
+    font-size:12px;
+    color:#334155;
+    line-height:1.35;
+  }
+  .trace-item.ok{ border-color:#86efac; background:#f0fdf4; }
+  .trace-item.warning{ border-color:#fcd34d; background:#fffbeb; }
+  .trace-item.error{ border-color:#fca5a5; background:#fef2f2; }
+
+  .oldnew-info-backdrop{
+    position:fixed;
+    inset:0;
+    background:rgba(15,23,42,.22);
+    z-index:18;
+    display:none;
+  }
+  .oldnew-info-backdrop.open{
+    display:block;
+  }
+  .oldnew-info-rail{
+    position:fixed;
+    top:86px;
+    right:14px;
+    width:min(460px, 94vw);
+    max-height:80vh;
+    overflow:auto;
+    background:#ffffff;
+    border:1px solid #cbd5e1;
+    border-radius:14px;
+    box-shadow:0 20px 44px rgba(15,23,42,.22);
+    padding:10px 12px 12px;
+    z-index:19;
+    transform: translateX(calc(100% + 16px));
+    transition: transform .2s ease;
+  }
+  .oldnew-info-rail.open{
+    transform: translateX(0);
+  }
+  .oldnew-info-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    margin-bottom:8px;
+  }
+  .oldnew-info-title{
+    color:#1e3a8a;
+    font-size:14px;
+    font-weight:800;
+    line-height:1.3;
+  }
+  .oldnew-info-close{
+    border:1px solid #cbd5e1;
+    border-radius:8px;
+    background:#fff;
+    color:#334155;
+    width:28px;
+    height:28px;
+    cursor:pointer;
+    font-weight:700;
+  }
+  .oldnew-info-close:hover{
+    background:#eff6ff;
+    color:#1e3a8a;
+  }
+  .oldnew-info-rail .note{
+    margin:6px 0 8px;
+  }
+  .oldnew-info-rail .decision-notes{
+    margin-top:6px;
+  }
+  .oldnew-info-rail .trace-wrap{
+    grid-template-columns:1fr;
+    margin-top:8px;
+  }
+
+  .kpi-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));
+    gap:10px;
+    margin-bottom:10px;
+  }
+  .kpi-card{
+    border:1px solid #e2e8f0;
+    border-radius:12px;
+    padding:10px 12px;
+    background:#fff;
+  }
+  .kpi-card .kpi-label{
+    font-size:12px;
+    font-weight:700;
+    color:#475569;
+    margin-bottom:4px;
+  }
+  .kpi-card .kpi-value{
+    font-size:20px;
+    font-weight:800;
+    color:#0f172a;
+    line-height:1.2;
+  }
+  .kpi-card.summary{ border-top:4px solid #0ea5e9; }
+  .kpi-card.details{ border-top:4px solid #2563eb; }
+  .kpi-card.source{ border-top:4px solid #06b6d4; }
+  .kpi-card.good{ box-shadow:0 0 0 2px rgba(34,197,94,.15) inset; }
+  .kpi-card.warn{ box-shadow:0 0 0 2px rgba(245,158,11,.2) inset; }
+  .kpi-card.bad{ box-shadow:0 0 0 2px rgba(239,68,68,.2) inset; }
+
+  .grid-shell{
+    border:1px solid #e2e8f0;
+    border-radius:12px;
+    padding:10px 10px 12px;
+    margin:12px 0;
+    background:#fff;
+  }
+  .grid-head{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:10px;
+    margin-bottom:8px;
+    flex-wrap:wrap;
+  }
+  .grid-head h4{
+    margin:0;
+    color:#1e3a8a;
+    font-size:14px;
+  }
+  .grid-tools{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex-wrap:wrap;
+  }
+  .grid-tools input{
+    padding:8px 10px;
+    border-radius:10px;
+    border:1px solid #e2e8f0;
+    min-width:220px;
+    font-size:13px;
+  }
+  .count-chip{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    background:#eff6ff;
+    border:1px solid #bfdbfe;
+    border-radius:999px;
+    color:#1d4ed8;
+    padding:4px 10px;
+    font-size:12px;
+    font-weight:700;
+    white-space:nowrap;
+  }
+  .oldnew-empty{
+    padding:10px 12px;
+    color:#64748b;
+    font-size:13px;
+  }
+
+  .oldnew-th-btn{
+    width:100%;
+    background:transparent;
+    border:none;
+    padding:0;
+    margin:0;
+    font-size:12px;
+    font-weight:700;
+    color:#1e3a8a;
+    text-align:left;
+    cursor:pointer;
+  }
+  .oldnew-th-btn:hover{
+    text-decoration:underline;
+  }
+  .oldnew-table td.num,
+  .oldnew-table th.num{
+    text-align:right;
+  }
+  .oldnew-table td.center,
+  .oldnew-table th.center{
+    text-align:center;
+  }
+
+  .grid-pager{
+    display:flex;
+    align-items:center;
+    justify-content:flex-end;
+    gap:8px;
+    margin-top:8px;
+  }
+  .pager-info{
+    margin-right:auto;
+    color:#475569;
+    font-size:12px;
+  }
+
+  @media (max-width: 900px){
+    .grid-tools input{
+      min-width:160px;
+      width:100%;
+    }
+    .grid-head{
+      align-items:flex-start;
+    }
+    .controls{
+      width:100%;
+    }
+    .controls input,
+    .controls select,
+    .controls button{
+      flex:1 1 130px;
+    }
+    .oldnew-info-rail{
+      top:72px;
+      right:8px;
+      left:8px;
+      width:auto;
+      max-height:82vh;
+    }
+  }
+</style>
+
+<script>
+  document.addEventListener('click', (e)=>{
+    const menu = document.getElementById('fabMenu');
+    if(!e.target.closest('.fab-user')) menu?.classList.remove('open');
+  });
+</script>
+
+<!-- FAB user menu -->
+<div class="fab-user">
+  <div class="fab-timer" id="fabTimer">--:--</div>
+  <button class="fab-btn" id="fabToggle" title="User Menu">
+    <span class="fab-icon"><span></span><span></span><span></span></span>
+  </button>
+  <div class="fab-menu" id="fabMenu">
+    <div style="padding:6px 12px;font-weight:700;color:#1e3a8a;">
+       {{ session.get('username') or session.get('user') or 'User' }}
+    </div>
+    <div class="hist-note">
+      <strong>Color filter guide:</strong>
+      Yellow = last package ≥ 6 months old; Orange = last package ≥ 12 months; Red = last package > 12 months.
+      “All colors” shows every patient group.
+    </div>
+    <a href="{{ url_for('mis_dashboard') }}">Back to MIS</a>
+    <a href="{{ url_for('dashboard') }}">Home</a>
+    <a href="{{ url_for('logout') }}">Logout</a>
+  </div>
+</div>
+
+<div class="page-shell">
+  <div class="cards-grid">
+    <div class="mini-card mini-card--actionable" id="hcvJourneyCard" role="button" tabindex="0" aria-expanded="false" aria-controls="hcvJourneyPanel">
+      <h3>HCV Journey</h3>
+      <p>HCV → IPD pairs and full visit history for preventive checkups.</p>
+    </div>
+    <div class="mini-card mini-card--actionable" id="admDiscCard" role="button" tabindex="0" aria-expanded="false" aria-controls="admDiscPanel">
+      <h3>Admission &amp; Discharge Summary</h3>
+      <p>Department-wise admissions and discharges grouped by patient type.</p>
+    </div>
+    <div class="mini-card mini-card--actionable" id="oldNewVisitsCard" role="button" tabindex="0" aria-expanded="false" aria-controls="oldNewVisitsPanel">
+      <h3>Old vs New Patient Visits</h3>
+      <p>Department summary, visit-level drilldown, and patient source comparison.</p>
+    </div>
+  </div>
+
+  <div class="card mis-panel" id="hcvJourneyPanel">
+    <div class="header-row">
+      <div>
+        <h2>Department of Preventive Health Checkup (HCV Journey)</h2>
+        <p class="subtext"> First set shows HCV → next IPD pairs (with gap in days); second set lists the full visit history for every patient who had an HCV visit.</p>
+      </div>
+      <div class="controls">
+        <select id="hcvUnit">
+          {% if allowed_units %}
+            {% for u in allowed_units %}
+              <option value="{{ u }}">{{ u }}</option>
+            {% endfor %}
+          {% else %}
+            <option value="">No unit access</option>
+          {% endif %}
+        </select>
+        <button id="loadHcv" {% if not allowed_units %}disabled{% endif %}>Load</button>
+      </div>
+    </div>
+
+    <div id="hcvStatus" class="note">Select a unit and click Load to fetch the latest journey data.</div>
+
+    <div class="section-shell">
+      <div class="section-head" id="pairsToggle">HCV → IPD Pairs</div>
+      <div class="section-body" id="pairsBody">
+        <div id="hcvPairTable" class="table-wrap"></div>
+      </div>
+    </div>
+
+    <div class="section-shell" style="margin-top:12px;">
+      <div class="section-head" id="histToggle">Complete Visit History (patients with an HCV visit)</div>
+      <div class="section-body" id="histBody">
+    <div class="hist-search">
+      <input type="date" id="histDateFrom" />
+      <input type="date" id="histDateTo" />
+      <input type="text" id="histSearch" placeholder="Search by RegNo, Patient, Package, Subtype">
+      <select id="histColorFilter" style="padding:8px 10px;border-radius:10px;border:1px solid #e5e7eb;background:#fff;">
+        <option value="">All colors</option>
+        <option value="stale-12plus">Red (12m+)</option>
+        <option value="stale-12">Orange (≥12m)</option>
+        <option value="stale-6">Yellow (≥6m)</option>
+      </select>
+      <button id="histApply" class="inline-btn">Filter</button>
+      <button id="histReset" class="inline-btn">Reset</button>
+      <button id="histExportCsv" class="inline-btn">Export Excel</button>
+      <button id="histExportPdf" class="inline-btn">Export PDF</button>
+    </div>
+    <div class="hist-note">
+      <strong>Color guide:</strong> Yellow = last package > 1 month and &lt; 3 months; Orange = last package &gt; 6 months and ≤ 12 months; Red = last package &gt; 12 months. “All colors” shows every patient.
+    </div>
+        <div id="hcvHistoryTable"></div>
+        <div class="hist-pager">
+          <span id="histPageInfo" style="margin-right:auto;font-size:13px;color:#475569;"></span>
+          <button id="histPrev">Prev</button>
+          <button id="histNext">Next</button>
+        </div>
+      </div>
+    </div>
+  </div>
+
+  <div class="card mis-panel" id="admDiscPanel">
+    <div class="header-row">
+      <div>
+        <h2>Admission and Discharge Summary (Dept Wise)</h2>
+        <p class="subtext">Admissions vs discharges grouped by patient type and department.</p>
+      </div>
+      <div class="controls">
+        <input type="date" id="admFrom" />
+        <input type="date" id="admTo" />
+        <select id="admUnit">
+          {% if allowed_units %}
+            {% for u in allowed_units %}
+              <option value="{{ u }}">{{ u }}</option>
+            {% endfor %}
+          {% else %}
+            <option value="">No unit access</option>
+          {% endif %}
+        </select>
+        <button id="loadAdmDisc" {% if not allowed_units %}disabled{% endif %}>Load</button>
+        <button id="exportAdmDiscPdf" class="inline-btn" {% if not allowed_units %}disabled{% endif %}>Export PDF</button>
+      </div>
+    </div>
+
+    <div id="admStatus" class="note">Select unit and date range, then click Load to fetch summary.</div>
+    <div id="admTable" class="table-wrap"></div>
+  </div>
+
+  <div class="card mis-panel" id="oldNewVisitsPanel">
+    <div class="header-row">
+      <div>
+        <h2>Old vs New Patient Visits</h2>
+        <p class="subtext">Department summary, visit-level details, and patient source comparison (Source x Department x Doctor).</p>
+      </div>
+      <div class="controls">
+        <input type="date" id="oldNewFrom" />
+        <input type="date" id="oldNewTo" />
+        <select id="oldNewUnit">
+          {% if allowed_units %}
+            {% for u in allowed_units %}
+              <option value="{{ u }}">{{ u }}</option>
+            {% endfor %}
+          {% else %}
+            <option value="">No unit access</option>
+          {% endif %}
+        </select>
+        <select id="oldNewVisitType">
+          <option value="2" selected>OPD (2)</option>
+          <option value="1">IPD (1)</option>
+          <option value="3">DPV (3)</option>
+          <option value="6">HCV (6)</option>
+        </select>
+        <button id="loadOldNewVisits" {% if not allowed_units %}disabled{% endif %}>Load</button>
+        <button id="exportOldNewExcel" class="inline-btn" {% if not allowed_units %}disabled{% endif %}>Export Excel</button>
+        <button id="exportOldNewPdf" class="inline-btn" {% if not allowed_units %}disabled{% endif %}>Export PDF</button>
+        <button id="oldNewInfoToggle" class="inline-btn" {% if not allowed_units %}disabled{% endif %}>Process Info</button>
+      </div>
+    </div>
+
+    <div id="oldNewInfoBackdrop" class="oldnew-info-backdrop"></div>
+    <aside id="oldNewInfoRail" class="oldnew-info-rail" aria-hidden="true">
+      <div class="oldnew-info-head">
+        <div class="oldnew-info-title">Backend Process & Decision Trace</div>
+        <button id="oldNewInfoClose" class="oldnew-info-close" type="button" aria-label="Close process info">x</button>
+      </div>
+      <div id="oldNewStatusBanner" class="process-banner info">Select filters and click Load to fetch Old/New visit data.</div>
+      <div id="oldNewLastLoaded" class="note">No data loaded.</div>
+      <div id="oldNewDecisionNotes" class="decision-notes"></div>
+      <div id="oldNewTrace" class="trace-wrap"></div>
+    </aside>
+
+    <h3 class="section-title">Summary KPI Block</h3>
+    <div id="oldNewSummaryKpis" class="kpi-grid"></div>
+
+    <h3 class="section-title">Detail KPI Block</h3>
+    <div id="oldNewDetailKpis" class="kpi-grid"></div>
+
+    <h3 class="section-title">Source KPI Block</h3>
+    <div id="oldNewSourceKpis" class="kpi-grid"></div>
+
+    <div class="grid-shell">
+      <div class="grid-head">
+        <h4>Department Summary Grid</h4>
+        <div class="grid-tools">
+          <input type="text" id="oldNewSummarySearch" placeholder="Search department summary" />
+          <span class="count-chip" id="oldNewSummaryCount">0 rows</span>
+        </div>
+      </div>
+      <div id="oldNewSummaryGrid" class="table-wrap"></div>
+    </div>
+
+    <div class="grid-shell">
+      <div class="grid-head">
+        <h4>Visit Details Grid</h4>
+        <div class="grid-tools">
+          <input type="text" id="oldNewDetailSearch" placeholder="Search details by patient, regno, doctor, dept, source" />
+          <span class="count-chip" id="oldNewDetailCount">0 rows</span>
+        </div>
+      </div>
+      <div id="oldNewDetailGrid" class="table-wrap"></div>
+      <div class="grid-pager">
+        <span id="oldNewDetailPageInfo" class="pager-info"></span>
+        <button id="oldNewDetailPrev" class="inline-btn">Prev</button>
+        <button id="oldNewDetailNext" class="inline-btn">Next</button>
+      </div>
+    </div>
+
+    <div class="grid-shell">
+      <div class="grid-head">
+        <h4>Patient Source Comparison Grid</h4>
+        <div class="grid-tools">
+          <input type="text" id="oldNewSourceSummarySearch" placeholder="Search source comparison" />
+          <span class="count-chip" id="oldNewSourceSummaryCount">0 rows</span>
+        </div>
+      </div>
+      <div id="oldNewSourceSummaryGrid" class="table-wrap"></div>
+    </div>
+
+    <div class="grid-shell">
+      <div class="grid-head">
+        <h4>Source x Department Grid</h4>
+        <div class="grid-tools">
+          <input type="text" id="oldNewSourceDeptSearch" placeholder="Search source x department" />
+          <span class="count-chip" id="oldNewSourceDeptCount">0 rows</span>
+        </div>
+      </div>
+      <div id="oldNewSourceDeptGrid" class="table-wrap"></div>
+    </div>
+
+    <div class="grid-shell">
+      <div class="grid-head">
+        <h4>Source x Doctor Grid</h4>
+        <div class="grid-tools">
+          <input type="text" id="oldNewSourceDoctorSearch" placeholder="Search source x doctor" />
+          <span class="count-chip" id="oldNewSourceDoctorCount">0 rows</span>
+        </div>
+      </div>
+      <div id="oldNewSourceDoctorGrid" class="table-wrap"></div>
+      <div class="grid-pager">
+        <span id="oldNewSourceDoctorPageInfo" class="pager-info"></span>
+        <button id="oldNewSourceDoctorPrev" class="inline-btn">Prev</button>
+        <button id="oldNewSourceDoctorNext" class="inline-btn">Next</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const allowedUnits = JSON.parse('{{ (allowed_units or []) | tojson | safe }}');
+  const unitSel = document.getElementById('hcvUnit');
+  const loadBtn = document.getElementById('loadHcv');
+  const hcvCard = document.getElementById('hcvJourneyCard');
+  const hcvPanel = document.getElementById('hcvJourneyPanel');
+  const statusEl = document.getElementById('hcvStatus');
+  const pairTableEl = document.getElementById('hcvPairTable');
+  const histTableEl = document.getElementById('hcvHistoryTable');
+  const fabToggle = document.getElementById('fabToggle');
+  const fabMenu = document.getElementById('fabMenu');
+  const fabTimer = document.getElementById('fabTimer');
+  const pairsToggle = document.getElementById('pairsToggle');
+  const pairsBody = document.getElementById('pairsBody');
+  const histToggle = document.getElementById('histToggle');
+  const histBody = document.getElementById('histBody');
+  const histSearch = document.getElementById('histSearch');
+  const histPrev = document.getElementById('histPrev');
+  const histNext = document.getElementById('histNext');
+  const histPageInfo = document.getElementById('histPageInfo');
+  const histDateFrom = document.getElementById('histDateFrom');
+  const histDateTo = document.getElementById('histDateTo');
+  const histApply = document.getElementById('histApply');
+  const histReset = document.getElementById('histReset');
+  const histColorFilter = document.getElementById('histColorFilter');
+  const histExportCsv = document.getElementById('histExportCsv');
+  const histExportPdf = document.getElementById('histExportPdf');
+  const admCard = document.getElementById('admDiscCard');
+  const admPanel = document.getElementById('admDiscPanel');
+  const admUnit = document.getElementById('admUnit');
+  const admFrom = document.getElementById('admFrom');
+  const admTo = document.getElementById('admTo');
+  const admLoadBtn = document.getElementById('loadAdmDisc');
+  const admExportPdf = document.getElementById('exportAdmDiscPdf');
+  const admStatus = document.getElementById('admStatus');
+  const admTable = document.getElementById('admTable');
+  const oldNewCard = document.getElementById('oldNewVisitsCard');
+  const oldNewPanel = document.getElementById('oldNewVisitsPanel');
+  const oldNewUnit = document.getElementById('oldNewUnit');
+  const oldNewFrom = document.getElementById('oldNewFrom');
+  const oldNewTo = document.getElementById('oldNewTo');
+  const oldNewVisitType = document.getElementById('oldNewVisitType');
+  const oldNewLoadBtn = document.getElementById('loadOldNewVisits');
+  const oldNewExportExcelBtn = document.getElementById('exportOldNewExcel');
+  const oldNewExportPdfBtn = document.getElementById('exportOldNewPdf');
+  const oldNewInfoToggle = document.getElementById('oldNewInfoToggle');
+  const oldNewInfoClose = document.getElementById('oldNewInfoClose');
+  const oldNewInfoRail = document.getElementById('oldNewInfoRail');
+  const oldNewInfoBackdrop = document.getElementById('oldNewInfoBackdrop');
+  const oldNewStatusBanner = document.getElementById('oldNewStatusBanner');
+  const oldNewLastLoaded = document.getElementById('oldNewLastLoaded');
+  const oldNewDecisionNotes = document.getElementById('oldNewDecisionNotes');
+  const oldNewTrace = document.getElementById('oldNewTrace');
+  const oldNewSummaryKpis = document.getElementById('oldNewSummaryKpis');
+  const oldNewDetailKpis = document.getElementById('oldNewDetailKpis');
+  const oldNewSourceKpis = document.getElementById('oldNewSourceKpis');
+  const oldNewSummarySearch = document.getElementById('oldNewSummarySearch');
+  const oldNewDetailSearch = document.getElementById('oldNewDetailSearch');
+  const oldNewSourceSummarySearch = document.getElementById('oldNewSourceSummarySearch');
+  const oldNewSourceDeptSearch = document.getElementById('oldNewSourceDeptSearch');
+  const oldNewSourceDoctorSearch = document.getElementById('oldNewSourceDoctorSearch');
+  const oldNewSummaryCount = document.getElementById('oldNewSummaryCount');
+  const oldNewDetailCount = document.getElementById('oldNewDetailCount');
+  const oldNewSourceSummaryCount = document.getElementById('oldNewSourceSummaryCount');
+  const oldNewSourceDeptCount = document.getElementById('oldNewSourceDeptCount');
+  const oldNewSourceDoctorCount = document.getElementById('oldNewSourceDoctorCount');
+  const oldNewSummaryGrid = document.getElementById('oldNewSummaryGrid');
+  const oldNewDetailGrid = document.getElementById('oldNewDetailGrid');
+  const oldNewSourceSummaryGrid = document.getElementById('oldNewSourceSummaryGrid');
+  const oldNewSourceDeptGrid = document.getElementById('oldNewSourceDeptGrid');
+  const oldNewSourceDoctorGrid = document.getElementById('oldNewSourceDoctorGrid');
+  const oldNewDetailPrev = document.getElementById('oldNewDetailPrev');
+  const oldNewDetailNext = document.getElementById('oldNewDetailNext');
+  const oldNewDetailPageInfo = document.getElementById('oldNewDetailPageInfo');
+  const oldNewSourceDoctorPrev = document.getElementById('oldNewSourceDoctorPrev');
+  const oldNewSourceDoctorNext = document.getElementById('oldNewSourceDoctorNext');
+  const oldNewSourceDoctorPageInfo = document.getElementById('oldNewSourceDoctorPageInfo');
+
+  let historyRaw = [];
+  let historyGroups = [];
+  let histPage = 1;
+  const HIST_PAGE_SIZE = 20;
+  let hcvLoaded = false;
+  let hcvLastUnit = '';
+  let admLoaded = false;
+  let admLastKey = '';
+  let oldNewLoaded = false;
+  let oldNewLastKey = '';
+  const oldNewState = {
+    payload: null,
+    sort: {
+      summary: { key: 'Dept', dir: 'asc' },
+      detail: { key: 'VisitDate', dir: 'desc' },
+      sourceSummary: { key: 'TotalVisits', dir: 'desc' },
+      sourceDept: { key: 'TotalVisits', dir: 'desc' },
+      sourceDoctor: { key: 'TotalVisits', dir: 'desc' },
+    },
+    page: {
+      detail: 1,
+      sourceDoctor: 1,
+    },
+    pageSize: {
+      detail: 20,
+      sourceDoctor: 20,
+    },
+  };
+  const oldNewSourceColorCache = {};
+
+  function setBtnLoading(btn, on=true, busyText='Processing...'){
+    if(!btn) return;
+    if(on){
+      if(!btn.dataset.origText) btn.dataset.origText = btn.textContent;
+      btn.classList.add('is-loading');
+      btn.disabled = true;
+      btn.textContent = busyText;
+    } else {
+      btn.classList.remove('is-loading');
+      btn.disabled = false;
+      btn.textContent = btn.dataset.origText || btn.textContent;
+    }
+  }
+
+  function escapeHtml(value){
+    return String(value || '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  const _numFmt = new Intl.NumberFormat('en-IN');
+  function fmtNum(value){
+    const num = Number(value);
+    if(!Number.isFinite(num)) return '0';
+    return _numFmt.format(Math.round(num));
+  }
+
+  fabToggle?.addEventListener('click', ()=> fabMenu?.classList.toggle('open'));
+  document.addEventListener('click', (e)=>{
+    if(!e.target.closest('.fab-user')) fabMenu?.classList.remove('open');
+  });
+
+  function fmtSecs(s){
+    s = Math.max(0, Math.floor(s||0));
+    const m = Math.floor(s/60).toString().padStart(2,'0');
+    const sec = (s%60).toString().padStart(2,'0');
+    return `${m}:${sec}`;
+  }
+  let remainingSec = 0;
+  function updateTimerDisplay(){ if(fabTimer) fabTimer.textContent = fmtSecs(remainingSec); }
+  async function refreshSessionTimer(){
+    try{
+      const res = await fetch('/session_remaining');
+      const data = await res.json();
+      if(res.ok && typeof data.remaining_seconds !== 'undefined'){
+        remainingSec = Math.max(0, Math.floor(data.remaining_seconds));
+        updateTimerDisplay();
+      }
+    }catch(e){}
+  }
+  setInterval(()=>{ if(remainingSec>0){ remainingSec -= 1; updateTimerDisplay(); } }, 1000);
+  setInterval(refreshSessionTimer, 20000);
+  refreshSessionTimer();
+
+  // Collapsible handlers
+  pairsToggle?.addEventListener('click', ()=> pairsBody?.classList.toggle('open'));
+  histToggle?.addEventListener('click',  ()=> histBody?.classList.toggle('open'));
+
+  function renderTable(rows, target, emptyText){
+    if(!rows || !rows.length){
+      target.innerHTML = `<div class="note" style="padding:10px;">${emptyText}</div>`;
+      return;
+    }
+    const cols = Object.keys(rows[0]);
+    const thead = cols.map(c=>`<th>${c}</th>`).join('');
+    const tbody = rows.map(r=>{
+      const tds = cols.map(c=>`<td>${r[c] === null || r[c] === undefined ? '' : r[c]}</td>`).join('');
+      return `<tr>${tds}</tr>`;
+    }).join('');
+    target.innerHTML = `<table><thead><tr>${thead}</tr></thead><tbody>${tbody}</tbody></table>`;
+  }
+
+  function applyHistoryFilters(){
+    const from = histDateFrom?.value ? new Date(histDateFrom.value + 'T00:00:00') : null;
+    const to   = histDateTo?.value ? new Date(histDateTo.value + 'T23:59:59') : null;
+    const rows = historyRaw || [];
+    if(!rows.length){ historyGroups=[]; return; }
+    const cols = Object.keys(rows[0]);
+    const regKey = cols.find(c=>c.toLowerCase().includes('reg')) || 'Regno';
+    const nameCandidates = ['PatientName','Patient','Patient_Name','Name'];
+    const nameKey = nameCandidates.find(c=>cols.includes(c)) || cols.find(c=>c.toLowerCase().includes('patient'));
+    const pkgKey = cols.find(c=>c.toLowerCase().includes('package')) || 'Package';
+    const subtypeKey = cols.find(c=>c.toLowerCase().includes('subtype')) || 'PatientSubType';
+    const dateCandidates = ['VisitDate','HCV Visit Date','IPD Visit Date','IPD_VisitDate'];
+    const dateKey = dateCandidates.find(c=>cols.includes(c)) || cols.find(c=>c.toLowerCase().includes('visitdate')) || 'VisitDate';
+
+    const parseDate = (v)=>{
+      if(v === null || v === undefined) return null;
+      const s = String(v).trim();
+      if(!s) return null;
+      let d = new Date(s.replace(' ', 'T'));
+      if(Number.isNaN(d.getTime())){
+        d = new Date(s.slice(0,10));
+      }
+      return Number.isNaN(d.getTime()) ? null : d;
+    };
+
+    const hasRange = !!(from || to);
+    const filteredRows = rows.filter(r=>{
+      let ok = true;
+      const d = parseDate(r[dateKey]);
+      if(from && d) ok = ok && (d >= from);
+      if(to && d)   ok = ok && (d <= to);
+      // If date range is applied, restrict to HCV; otherwise keep all visits
+      if(hasRange){
+        const vtId = r['VisitTypeID'];
+        const vtName = (r['TypeOfVisit'] || r['TypeOfVisitID'] || '').toString().toUpperCase();
+        const isHcv = (vtId === 6 || vtName.includes('HCV'));
+        ok = ok && isHcv;
+      }
+      return ok;
+    });
+
+    const map = {};
+    filteredRows.forEach(r=>{
+      const reg = r[regKey] || 'Unknown';
+      (map[reg] = map[reg] || []).push(r);
+    });
+    historyGroups = Object.entries(map).map(([reg, items])=>{
+      const name = nameKey ? (items[0][nameKey] || '') : '';
+      return {reg, name, rows: items, pkgKey, subtypeKey, nameKey, regKey};
+    });
+  }
+
+  function computeStaleClass(g){
+    const now = new Date();
+    let lastPkgDate = null;
+    const cols = Object.keys(g.rows?.[0] || {});
+    const dateKey = cols.find(c=>c.toLowerCase().includes('date')) || 'VisitDate';
+    (g.rows||[]).forEach(it=>{
+      if(!it.Package) return;
+      const dStr = it[dateKey];
+      if(!dStr) return;
+      const d = new Date(String(dStr).replace(' ','T'));
+      if(!isNaN(d.getTime())){
+        if(!lastPkgDate || d > lastPkgDate) lastPkgDate = d;
+      }
+    });
+    let staleClass = '';
+    if(lastPkgDate){
+      const diffMonths = (now - lastPkgDate)/(1000*60*60*24*30.44);
+      if(diffMonths > 12) staleClass = 'stale-12plus';          // Red: > 12 months
+      else if(diffMonths > 6 && diffMonths <= 12) staleClass = 'stale-12'; // Orange: >6 and <=12 months
+      else if(diffMonths > 1 && diffMonths < 3) staleClass = 'stale-6'; // Yellow: >1 and <3 months
+    }
+    return staleClass;
+  }
+
+  function getFilteredGroups(){
+    const term = (histSearch?.value || '').trim().toLowerCase();
+    const colorSel = histColorFilter?.value || '';
+    let filtered = historyGroups;
+    if(term){
+      filtered = historyGroups.filter(g=>{
+        const name = (g.name || '').toLowerCase();
+        const reg = (g.reg || '').toLowerCase();
+        const hasRowMatch = (g.rows||[]).some(r=>{
+          const pkg = (g.pkgKey && r[g.pkgKey]) ? String(r[g.pkgKey]).toLowerCase() : '';
+          const st  = (g.subtypeKey && r[g.subtypeKey]) ? String(r[g.subtypeKey]).toLowerCase() : '';
+          return pkg.includes(term) || st.includes(term);
+        });
+        return reg.includes(term) || name.includes(term) || hasRowMatch;
+      });
+    }
+    if(colorSel){
+      filtered = filtered.filter(g=> computeStaleClass(g) === colorSel);
+    }
+    return filtered;
+  }
+
+  function renderHistoryPage(){
+    const filtered = getFilteredGroups();
+
+    const total = filtered.length;
+    const totalPages = Math.max(1, Math.ceil(total / HIST_PAGE_SIZE));
+    if(histPage > totalPages) histPage = totalPages;
+    const start = (histPage - 1) * HIST_PAGE_SIZE;
+    const slice = filtered.slice(start, start + HIST_PAGE_SIZE);
+
+    if(!slice.length){
+      histTableEl.innerHTML = `<div class="note" style="padding:10px;">No visit history available.</div>`;
+      histPageInfo.textContent = '';
+      histPrev.disabled = true;
+      histNext.disabled = true;
+      return;
+    }
+
+    const firstGroupCols = Object.keys(slice[0].rows[0] || {}).filter(c=>!['PatientID','VisitTypeID'].includes(c));
+
+    const thead = firstGroupCols.map(c=>`<th>${c}</th>`).join('');
+
+    const html = slice.map(g=>{
+      const staleClass = computeStaleClass(g);
+      const tbody = g.rows.map(it=>{
+        const tds = firstGroupCols.map(c=>`<td>${it[c] === null || it[c] === undefined ? '' : it[c]}</td>`).join('');
+        return `<tr>${tds}</tr>`;
+      }).join('');
+      return `
+        <div class="hist-group">
+          <div class="hist-head ${staleClass}" data-reg="${g.reg}">
+            <span class="reg">${g.reg || 'Unknown'}</span>
+            <span class="pname">${g.name || '-'}</span>
+          </div>
+          <div class="hist-body">
+            <table class="hist-table">
+              <thead><tr>${thead}</tr></thead>
+              <tbody>${tbody}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+    }).join('');
+
+    histTableEl.innerHTML = html;
+    histTableEl.querySelectorAll('.hist-head').forEach(head=>{
+      head.addEventListener('click', ()=>{
+        head.nextElementSibling.classList.toggle('open');
+      });
+    });
+
+    histPageInfo.textContent = `Page ${histPage} of ${totalPages} (${total} patients)`;
+    histPrev.disabled = histPage <= 1;
+    histNext.disabled = histPage >= totalPages;
+  }
+
+  async function loadHcvJourney(){
+    const unit = (unitSel?.value || '').trim();
+    if(!unit){
+      statusEl.textContent = 'Please select a unit to load HCV journey data.';
+      return;
+    }
+    setBtnLoading(loadBtn, true, 'Loading...');
+    statusEl.textContent = 'Loading...';
+    pairTableEl.innerHTML = '';
+    histTableEl.innerHTML = '';
+    try{
+      const res = await fetch(`/api/mis/hcv_journey?unit=${encodeURIComponent(unit)}`);
+      const data = await res.json();
+      if(!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to load data');
+      renderTable(data.pairs || [], pairTableEl, 'No HCV → IPD pairs available.');
+      historyRaw = data.history || [];
+      applyHistoryFilters();
+      histPage = 1;
+      renderHistoryPage();
+      pairsBody?.classList.add('open');
+      histBody?.classList.add('open');
+      hcvLoaded = true;
+      hcvLastUnit = unit;
+      statusEl.textContent = `Loaded for ${data.unit}`;
+    }catch(err){
+      statusEl.textContent = `Error: ${err.message}`;
+      pairTableEl.innerHTML = '';
+      histTableEl.innerHTML = '';
+    }finally{
+      setBtnLoading(loadBtn, false);
+    }
+  }
+
+  loadBtn?.addEventListener('click', loadHcvJourney);
+  if(allowedUnits.length === 1 && unitSel){ unitSel.value = allowedUnits[0]; }
+
+  function toggleHcvPanel(forceOpen){
+    if(!hcvPanel || !hcvCard) return;
+    const nextOpen = typeof forceOpen === 'boolean' ? forceOpen : !hcvPanel.classList.contains('open');
+    hcvPanel.classList.toggle('open', nextOpen);
+    hcvCard.classList.toggle('active', nextOpen);
+    hcvCard.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+    if(nextOpen){
+      const unit = (unitSel?.value || '').trim();
+      if(unit && (!hcvLoaded || hcvLastUnit !== unit)) loadHcvJourney();
+    }
+  }
+
+  hcvCard?.addEventListener('click', ()=> toggleHcvPanel());
+  hcvCard?.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter' || e.key === ' '){
+      e.preventDefault();
+      toggleHcvPanel();
+    }
+  });
+
+  function initAdmDates(){
+    if(!admFrom || !admTo) return;
+    const today = new Date();
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    admFrom.value = start.toISOString().slice(0,10);
+    admTo.value = today.toISOString().slice(0,10);
+  }
+
+  function currentAdmKey(){
+    const unit = (admUnit?.value || '').trim();
+    const fromDate = admFrom?.value || '';
+    const toDate = admTo?.value || '';
+    return `${unit}|${fromDate}|${toDate}`;
+  }
+
+  function renderAdmissionSummary(rows){
+    if(!admTable) return;
+    if(!rows || !rows.length){
+      admTable.innerHTML = '<div class="note">No data available for the selected range.</div>';
+      return;
+    }
+    const groups = new Map();
+    rows.forEach((row)=>{
+      const pt = (row.PatientType || '').trim() || 'Unknown';
+      if(!groups.has(pt)) groups.set(pt, []);
+      groups.get(pt).push(row);
+    });
+
+    const sortedGroups = Array.from(groups.entries()).sort((a,b)=> a[0].localeCompare(b[0]));
+    let sno = 1;
+    let totalAdm = 0;
+    let totalDis = 0;
+    let bodyHtml = '';
+
+    sortedGroups.forEach(([pt, items])=>{
+      items.sort((a,b)=> String(a.DepartmentName || '').localeCompare(String(b.DepartmentName || '')));
+      const rowSpan = items.length + 1;
+      let groupAdm = 0;
+      let groupDis = 0;
+      items.forEach((row, idx)=>{
+        const adm = Number(row.Admission) || 0;
+        const dis = Number(row.Discharge) || 0;
+        groupAdm += adm;
+        groupDis += dis;
+        totalAdm += adm;
+        totalDis += dis;
+        bodyHtml += '<tr>';
+        if(idx === 0){
+          bodyHtml += `<td rowspan="${rowSpan}">${escapeHtml(pt)}</td>`;
+        }
+        bodyHtml += `<td class="center">${sno}</td>`;
+        bodyHtml += `<td>${escapeHtml(row.DepartmentName || '')}</td>`;
+        bodyHtml += `<td class="num">${fmtNum(adm)}</td>`;
+        bodyHtml += `<td class="num">${fmtNum(dis)}</td>`;
+        bodyHtml += '</tr>';
+        sno += 1;
+      });
+      bodyHtml += '<tr class="group-total">';
+      bodyHtml += '<td class="center"></td>';
+      bodyHtml += '<td>Total :</td>';
+      bodyHtml += `<td class="num">${fmtNum(groupAdm)}</td>`;
+      bodyHtml += `<td class="num">${fmtNum(groupDis)}</td>`;
+      bodyHtml += '</tr>';
+    });
+
+    bodyHtml += '<tr class="grand-total">';
+    bodyHtml += '<td colspan="3">Grand Total :</td>';
+    bodyHtml += `<td class="num">${fmtNum(totalAdm)}</td>`;
+    bodyHtml += `<td class="num">${fmtNum(totalDis)}</td>`;
+    bodyHtml += '</tr>';
+
+    admTable.innerHTML = `
+      <table class="adm-summary-table">
+        <thead>
+          <tr>
+            <th>Patient Type</th>
+            <th class="center">SNo</th>
+            <th>Department Name</th>
+            <th class="num">Admission</th>
+            <th class="num">Discharge</th>
+          </tr>
+        </thead>
+        <tbody>${bodyHtml}</tbody>
+      </table>
+    `;
+  }
+
+  async function loadAdmissionSummary(){
+    if(!admStatus) return;
+    const unit = (admUnit?.value || '').trim();
+    const fromDate = admFrom?.value || '';
+    const toDate = admTo?.value || '';
+    if(!unit){
+      admStatus.textContent = 'Please select a unit to load the summary.';
+      return;
+    }
+    if(!fromDate || !toDate){
+      admStatus.textContent = 'Please select a valid date range.';
+      return;
+    }
+    setBtnLoading(admLoadBtn, true, 'Loading...');
+    admStatus.textContent = 'Loading...';
+    admTable.innerHTML = '';
+    try{
+      const res = await fetch(`/api/mis/admission_discharge_summary?unit=${encodeURIComponent(unit)}&from=${fromDate}&to=${toDate}`);
+      const data = await res.json();
+      if(!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to load data');
+      renderAdmissionSummary(data.rows || []);
+      admLoaded = true;
+      admLastKey = currentAdmKey();
+      admStatus.textContent = `Loaded for ${data.unit || unit}`;
+    }catch(err){
+      admStatus.textContent = `Error: ${err.message}`;
+      admTable.innerHTML = '';
+    }finally{
+      setBtnLoading(admLoadBtn, false);
+    }
+  }
+
+  function toggleAdmPanel(forceOpen){
+    if(!admPanel || !admCard) return;
+    const nextOpen = typeof forceOpen === 'boolean' ? forceOpen : !admPanel.classList.contains('open');
+    admPanel.classList.toggle('open', nextOpen);
+    admCard.classList.toggle('active', nextOpen);
+    admCard.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+    if(nextOpen){
+      const key = currentAdmKey();
+      if(key.split('|')[0] && (!admLoaded || admLastKey !== key)) loadAdmissionSummary();
+    }
+  }
+
+  admCard?.addEventListener('click', ()=> toggleAdmPanel());
+  admCard?.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter' || e.key === ' '){
+      e.preventDefault();
+      toggleAdmPanel();
+    }
+  });
+  admLoadBtn?.addEventListener('click', loadAdmissionSummary);
+  admExportPdf?.addEventListener('click', ()=>{
+    const unit = (admUnit?.value || '').trim();
+    const fromDate = admFrom?.value || '';
+    const toDate = admTo?.value || '';
+    if(!unit || !fromDate || !toDate){
+      admStatus.textContent = 'Please select unit and date range before exporting.';
+      return;
+    }
+    admStatus.textContent = 'Generating PDF...';
+    window.open(`/api/mis/admission_discharge_summary/export_pdf?unit=${encodeURIComponent(unit)}&from=${fromDate}&to=${toDate}`, '_blank');
+  });
+
+  if(allowedUnits.length === 1 && admUnit){ admUnit.value = allowedUnits[0]; }
+  initAdmDates();
+
+  function initOldNewDates(){
+    if(!oldNewFrom || !oldNewTo) return;
+    const today = new Date();
+    const start = new Date(today.getFullYear(), today.getMonth(), 1);
+    oldNewFrom.value = start.toISOString().slice(0,10);
+    oldNewTo.value = today.toISOString().slice(0,10);
+  }
+
+  function oldNewCurrentKey(){
+    const unit = (oldNewUnit?.value || '').trim();
+    const fromDate = oldNewFrom?.value || '';
+    const toDate = oldNewTo?.value || '';
+    const visitTypeId = oldNewVisitType?.value || '2';
+    return `${unit}|${fromDate}|${toDate}|${visitTypeId}`;
+  }
+
+  function debounce(fn, wait=250){
+    let timer = null;
+    return (...args)=>{
+      clearTimeout(timer);
+      timer = setTimeout(()=> fn(...args), wait);
+    };
+  }
+
+  function fmtPct(value){
+    const num = Number(value);
+    if(!Number.isFinite(num)) return '0.00%';
+    return `${num.toFixed(2)}%`;
+  }
+
+  function setOldNewInfoOpen(open=true){
+    const on = !!open;
+    if(oldNewInfoRail) {
+      oldNewInfoRail.classList.toggle('open', on);
+      oldNewInfoRail.setAttribute('aria-hidden', on ? 'false' : 'true');
+    }
+    oldNewInfoBackdrop?.classList.toggle('open', on);
+  }
+
+  function setOldNewStatus(kind, message){
+    if(!oldNewStatusBanner) return;
+    oldNewStatusBanner.classList.remove('info', 'success', 'warn', 'error');
+    oldNewStatusBanner.classList.add(kind || 'info');
+    oldNewStatusBanner.textContent = message || '';
+    if(oldNewInfoToggle){
+      const label = kind === 'error' ? 'Process Info (Error)' : (kind === 'warn' ? 'Process Info (Warning)' : 'Process Info');
+      oldNewInfoToggle.textContent = label;
+    }
+  }
+
+  function setOldNewExportEnabled(enabled){
+    if(oldNewExportExcelBtn) oldNewExportExcelBtn.disabled = !enabled;
+    if(oldNewExportPdfBtn) oldNewExportPdfBtn.disabled = !enabled;
+  }
+
+  function oldNewEmptyGrid(target, message='No data available for selected filters.'){
+    if(!target) return;
+    target.innerHTML = `<div class="oldnew-empty">${escapeHtml(message)}</div>`;
+  }
+
+  function resetOldNewWidgets(){
+    oldNewState.payload = null;
+    oldNewState.page.detail = 1;
+    oldNewState.page.sourceDoctor = 1;
+    setOldNewInfoOpen(false);
+    oldNewSummaryKpis && (oldNewSummaryKpis.innerHTML = '');
+    oldNewDetailKpis && (oldNewDetailKpis.innerHTML = '');
+    oldNewSourceKpis && (oldNewSourceKpis.innerHTML = '');
+    oldNewDecisionNotes && (oldNewDecisionNotes.innerHTML = '');
+    oldNewTrace && (oldNewTrace.innerHTML = '');
+    oldNewEmptyGrid(oldNewSummaryGrid);
+    oldNewEmptyGrid(oldNewDetailGrid);
+    oldNewEmptyGrid(oldNewSourceSummaryGrid);
+    oldNewEmptyGrid(oldNewSourceDeptGrid);
+    oldNewEmptyGrid(oldNewSourceDoctorGrid);
+    if(oldNewSummaryCount) oldNewSummaryCount.textContent = '0 rows';
+    if(oldNewDetailCount) oldNewDetailCount.textContent = '0 rows';
+    if(oldNewSourceSummaryCount) oldNewSourceSummaryCount.textContent = '0 rows';
+    if(oldNewSourceDeptCount) oldNewSourceDeptCount.textContent = '0 rows';
+    if(oldNewSourceDoctorCount) oldNewSourceDoctorCount.textContent = '0 rows';
+    if(oldNewDetailPageInfo) oldNewDetailPageInfo.textContent = '';
+    if(oldNewSourceDoctorPageInfo) oldNewSourceDoctorPageInfo.textContent = '';
+    if(oldNewDetailPrev) oldNewDetailPrev.disabled = true;
+    if(oldNewDetailNext) oldNewDetailNext.disabled = true;
+    if(oldNewSourceDoctorPrev) oldNewSourceDoctorPrev.disabled = true;
+    if(oldNewSourceDoctorNext) oldNewSourceDoctorNext.disabled = true;
+    setOldNewExportEnabled(false);
+    if(oldNewInfoToggle) oldNewInfoToggle.textContent = 'Process Info';
+  }
+
+  function renderOldNewDecisionNotes(notes){
+    if(!oldNewDecisionNotes) return;
+    const rows = Array.isArray(notes) ? notes : [];
+    if(!rows.length){
+      oldNewDecisionNotes.innerHTML = '';
+      return;
+    }
+    const items = rows.map((n)=> `<li>${escapeHtml(n)}</li>`).join('');
+    oldNewDecisionNotes.innerHTML = `
+      <strong>Decision Rules Used by Backend</strong>
+      <ul>${items}</ul>
+    `;
+  }
+
+  function renderOldNewTrace(traceRows){
+    if(!oldNewTrace) return;
+    const rows = Array.isArray(traceRows) ? traceRows : [];
+    if(!rows.length){
+      oldNewTrace.innerHTML = '';
+      return;
+    }
+    oldNewTrace.innerHTML = rows.map((row)=>{
+      const status = String(row.status || 'ok').toLowerCase();
+      const cls = (status === 'warning' || status === 'warn') ? 'warning' : (status === 'error' ? 'error' : 'ok');
+      const detail = Object.keys(row || {})
+        .filter((k)=> !['step', 'status'].includes(k))
+        .map((k)=> `${k}: ${row[k]}`)
+        .join(' | ');
+      return `
+        <div class="trace-item ${cls}">
+          <div><strong>${escapeHtml(row.step || 'step')}</strong></div>
+          <div>${escapeHtml(status.toUpperCase())}</div>
+          <div>${escapeHtml(detail || 'No extra detail')}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  function oldNewKpiTone(group, key, value){
+    const num = Number(value);
+    if(!Number.isFinite(num)) return '';
+    if(group === 'source' && key === 'mapped_pct'){
+      if(num >= 85) return 'good';
+      if(num >= 60) return 'warn';
+      return 'bad';
+    }
+    if((group === 'details' && key === 'old_pct_loyalty_index') || (group === 'source' && key === 'top_source_old_pct')){
+      if(num >= 60) return 'good';
+      if(num >= 35) return 'warn';
+      return 'bad';
+    }
+    return '';
+  }
+
+  function renderOldNewKpis(target, group, rows){
+    if(!target) return;
+    if(!rows || !rows.length){
+      target.innerHTML = `<div class="oldnew-empty">No KPI values available.</div>`;
+      return;
+    }
+    target.innerHTML = rows.map((row)=>{
+      const tone = oldNewKpiTone(group, row.key, row.value);
+      return `
+        <div class="kpi-card ${group} ${tone}">
+          <div class="kpi-label">${escapeHtml(row.label)}</div>
+          <div class="kpi-value">${escapeHtml(row.display)}</div>
+        </div>
+      `;
+    }).join('');
+  }
+
+  const oldNewGridDefs = {
+    summary: {
+      columns: [
+        { key: 'Dept', label: 'Department', type: 'text' },
+        { key: 'TotalVisits', label: 'Total Visits', type: 'num', align: 'right' },
+        { key: 'NewPatientVisits', label: 'New Visits', type: 'num', align: 'right' },
+        { key: 'OldPatientVisits', label: 'Old Visits', type: 'num', align: 'right' },
+        { key: 'NewPct', label: 'New %', type: 'pct', align: 'right' },
+        { key: 'OldPct', label: 'Old %', type: 'pct', align: 'right' },
+      ],
+      empty: 'No department summary rows.',
+    },
+    detail: {
+      columns: [
+        { key: 'VisitDate', label: 'Visit Date', type: 'text' },
+        { key: 'Visit_ID', label: 'Visit ID', type: 'id', align: 'right' },
+        { key: 'RegNo', label: 'Reg No', type: 'text' },
+        { key: 'PatientName', label: 'Patient Name', type: 'text' },
+        { key: 'Dept', label: 'Department', type: 'text' },
+        { key: 'SubDept', label: 'SubDept', type: 'text' },
+        { key: 'Doctor', label: 'Doctor', type: 'text' },
+        { key: 'PatientType', label: 'Patient Type', type: 'text', align: 'center' },
+        { key: 'SourceName', label: 'Source', type: 'text' },
+      ],
+      empty: 'No visit detail rows.',
+    },
+    sourceSummary: {
+      columns: [
+        { key: 'SourceID', label: 'Source ID', type: 'num', align: 'right' },
+        { key: 'SourceName', label: 'Source', type: 'text' },
+        { key: 'TotalVisits', label: 'Total Visits', type: 'num', align: 'right' },
+        { key: 'NewVisits', label: 'New Visits', type: 'num', align: 'right' },
+        { key: 'OldVisits', label: 'Old Visits', type: 'num', align: 'right' },
+        { key: 'VisitSharePct', label: 'Share %', type: 'pct', align: 'right' },
+        { key: 'OldPct', label: 'Old %', type: 'pct', align: 'right' },
+        { key: 'UniquePatients', label: 'Unique Patients', type: 'num', align: 'right' },
+        { key: 'UniqueDoctors', label: 'Unique Doctors', type: 'num', align: 'right' },
+        { key: 'UniqueDepartments', label: 'Unique Depts', type: 'num', align: 'right' },
+      ],
+      empty: 'No source comparison rows.',
+    },
+    sourceDept: {
+      columns: [
+        { key: 'SourceID', label: 'Source ID', type: 'num', align: 'right' },
+        { key: 'SourceName', label: 'Source', type: 'text' },
+        { key: 'Dept', label: 'Department', type: 'text' },
+        { key: 'TotalVisits', label: 'Total Visits', type: 'num', align: 'right' },
+        { key: 'NewVisits', label: 'New Visits', type: 'num', align: 'right' },
+        { key: 'OldVisits', label: 'Old Visits', type: 'num', align: 'right' },
+        { key: 'ShareWithinSourcePct', label: 'Share %', type: 'pct', align: 'right' },
+        { key: 'OldPct', label: 'Old %', type: 'pct', align: 'right' },
+      ],
+      empty: 'No source x department rows.',
+    },
+    sourceDoctor: {
+      columns: [
+        { key: 'SourceID', label: 'Source ID', type: 'num', align: 'right' },
+        { key: 'SourceName', label: 'Source', type: 'text' },
+        { key: 'Dept', label: 'Department', type: 'text' },
+        { key: 'SubDept', label: 'SubDept', type: 'text' },
+        { key: 'Doctor', label: 'Doctor', type: 'text' },
+        { key: 'TotalVisits', label: 'Total Visits', type: 'num', align: 'right' },
+        { key: 'NewVisits', label: 'New Visits', type: 'num', align: 'right' },
+        { key: 'OldVisits', label: 'Old Visits', type: 'num', align: 'right' },
+        { key: 'ShareWithinSourcePct', label: 'Share %', type: 'pct', align: 'right' },
+        { key: 'OldPct', label: 'Old %', type: 'pct', align: 'right' },
+      ],
+      empty: 'No source x doctor rows.',
+    },
+  };
+
+  function oldNewSummaryExtraDefs(){
+    const rows = oldNewState.payload?.summary_extra_columns;
+    return Array.isArray(rows) ? rows.filter((row)=> row && row.key) : [];
+  }
+
+  function oldNewColumnsForGrid(gridKey){
+    const def = oldNewGridDefs[gridKey];
+    if(!def) return [];
+    const cols = Array.isArray(def.columns) ? [...def.columns] : [];
+    if(gridKey !== 'summary') return cols;
+    oldNewSummaryExtraDefs().forEach((item)=>{
+      cols.push({
+        key: item.key,
+        label: item.label || item.key,
+        type: 'num',
+        align: 'right',
+      });
+    });
+    return cols;
+  }
+
+  function oldNewFormatValue(type, value){
+    if(type === 'id'){
+      const num = Number(value);
+      if(Number.isFinite(num)) return String(Math.trunc(num));
+      return String(value ?? '');
+    }
+    if(type === 'num') return fmtNum(value);
+    if(type === 'pct') return fmtPct(value);
+    return String(value ?? '');
+  }
+
+  function oldNewSourceTint(sourceName){
+    const key = String(sourceName || '').trim().toLowerCase();
+    if(!key || key === 'unknown') return '';
+    if(oldNewSourceColorCache[key]) return oldNewSourceColorCache[key];
+    let hash = 0;
+    for(let i = 0; i < key.length; i++){
+      hash = ((hash << 5) - hash) + key.charCodeAt(i);
+      hash |= 0;
+    }
+    const hue = Math.abs(hash) % 360;
+    const color = `hsl(${hue}, 58%, 96%)`;
+    oldNewSourceColorCache[key] = color;
+    return color;
+  }
+
+  function oldNewRowStyle(gridKey, row){
+    if(!row || gridKey === 'summary') return '';
+    const source = row.SourceName || row.Source || '';
+    const tint = oldNewSourceTint(source);
+    if(!tint) return '';
+    return ` style="background:${tint};"`;
+  }
+
+  function oldNewSortRows(rows, sortState){
+    const arr = [...(rows || [])];
+    if(!sortState || !sortState.key) return arr;
+    const key = sortState.key;
+    const dir = sortState.dir === 'desc' ? -1 : 1;
+    arr.sort((a, b)=>{
+      const av = a?.[key];
+      const bv = b?.[key];
+      const an = Number(av);
+      const bn = Number(bv);
+      const aNum = Number.isFinite(an);
+      const bNum = Number.isFinite(bn);
+      if(aNum && bNum) return (an - bn) * dir;
+      return String(av ?? '').localeCompare(String(bv ?? ''), undefined, { sensitivity: 'base' }) * dir;
+    });
+    return arr;
+  }
+
+  function oldNewFilterRows(rows, searchTerm, columns){
+    const term = (searchTerm || '').trim().toLowerCase();
+    if(!term) return [...(rows || [])];
+    return (rows || []).filter((row)=>{
+      return columns.some((col)=> String(row?.[col.key] ?? '').toLowerCase().includes(term));
+    });
+  }
+
+  function oldNewBuildTable(gridKey, rows){
+    const def = oldNewGridDefs[gridKey];
+    const columns = oldNewColumnsForGrid(gridKey);
+    if(!def || !rows?.length){
+      return `<div class="oldnew-empty">${escapeHtml(def?.empty || 'No rows available.')}</div>`;
+    }
+    const sortState = oldNewState.sort[gridKey];
+    const head = columns.map((col)=>{
+      const active = sortState?.key === col.key;
+      const arrow = active ? (sortState.dir === 'asc' ? ' ^' : ' v') : '';
+      const cls = col.align === 'right' ? 'num' : (col.align === 'center' ? 'center' : '');
+      return `<th class="${cls}"><button class="oldnew-th-btn" data-oldnew-grid="${gridKey}" data-oldnew-key="${col.key}" type="button">${escapeHtml(col.label)}${arrow}</button></th>`;
+    }).join('');
+    const body = rows.map((row)=>{
+      const rowStyle = oldNewRowStyle(gridKey, row);
+      const cells = columns.map((col)=>{
+        const cls = col.align === 'right' ? 'num' : (col.align === 'center' ? 'center' : '');
+        const val = oldNewFormatValue(col.type, row?.[col.key]);
+        return `<td class="${cls}">${escapeHtml(val)}</td>`;
+      }).join('');
+      return `<tr${rowStyle}>${cells}</tr>`;
+    }).join('');
+    return `<table class="oldnew-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+
+  function renderOldNewSummaryGrid(){
+    const rows = oldNewState.payload?.summary_rows || [];
+    const summaryColumns = oldNewColumnsForGrid('summary');
+    if(!summaryColumns.some((col)=> col.key === oldNewState.sort.summary.key)){
+      oldNewState.sort.summary = { key: 'Dept', dir: 'asc' };
+    }
+    const filtered = oldNewFilterRows(rows, oldNewSummarySearch?.value || '', summaryColumns);
+    const sorted = oldNewSortRows(filtered, oldNewState.sort.summary);
+    if(oldNewSummaryCount) oldNewSummaryCount.textContent = `${sorted.length} rows`;
+    if(oldNewSummaryGrid) oldNewSummaryGrid.innerHTML = oldNewBuildTable('summary', sorted);
+  }
+
+  function renderOldNewDetailGrid(){
+    const rows = oldNewState.payload?.detail_rows || [];
+    const filtered = oldNewFilterRows(rows, oldNewDetailSearch?.value || '', oldNewGridDefs.detail.columns);
+    const sorted = oldNewSortRows(filtered, oldNewState.sort.detail);
+    if(oldNewDetailCount) oldNewDetailCount.textContent = `${sorted.length} rows`;
+
+    const pageSize = oldNewState.pageSize.detail;
+    const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+    if(oldNewState.page.detail > totalPages) oldNewState.page.detail = totalPages;
+    const start = (oldNewState.page.detail - 1) * pageSize;
+    const pageRows = sorted.slice(start, start + pageSize);
+
+    if(oldNewDetailGrid) oldNewDetailGrid.innerHTML = oldNewBuildTable('detail', pageRows);
+    if(oldNewDetailPageInfo){
+      oldNewDetailPageInfo.textContent = sorted.length
+        ? `Page ${oldNewState.page.detail} of ${totalPages} (${sorted.length} rows)`
+        : 'No rows';
+    }
+    if(oldNewDetailPrev) oldNewDetailPrev.disabled = oldNewState.page.detail <= 1;
+    if(oldNewDetailNext) oldNewDetailNext.disabled = oldNewState.page.detail >= totalPages;
+  }
+
+  function renderOldNewSourceSummaryGrid(){
+    const rows = oldNewState.payload?.source_summary_rows || [];
+    const filtered = oldNewFilterRows(rows, oldNewSourceSummarySearch?.value || '', oldNewGridDefs.sourceSummary.columns);
+    const sorted = oldNewSortRows(filtered, oldNewState.sort.sourceSummary);
+    if(oldNewSourceSummaryCount) oldNewSourceSummaryCount.textContent = `${sorted.length} rows`;
+    if(oldNewSourceSummaryGrid) oldNewSourceSummaryGrid.innerHTML = oldNewBuildTable('sourceSummary', sorted);
+  }
+
+  function renderOldNewSourceDeptGrid(){
+    const rows = oldNewState.payload?.source_dept_rows || [];
+    const filtered = oldNewFilterRows(rows, oldNewSourceDeptSearch?.value || '', oldNewGridDefs.sourceDept.columns);
+    const sorted = oldNewSortRows(filtered, oldNewState.sort.sourceDept);
+    if(oldNewSourceDeptCount) oldNewSourceDeptCount.textContent = `${sorted.length} rows`;
+    if(oldNewSourceDeptGrid) oldNewSourceDeptGrid.innerHTML = oldNewBuildTable('sourceDept', sorted);
+  }
+
+  function renderOldNewSourceDoctorGrid(){
+    const rows = oldNewState.payload?.source_doctor_rows || [];
+    const filtered = oldNewFilterRows(rows, oldNewSourceDoctorSearch?.value || '', oldNewGridDefs.sourceDoctor.columns);
+    const sorted = oldNewSortRows(filtered, oldNewState.sort.sourceDoctor);
+    if(oldNewSourceDoctorCount) oldNewSourceDoctorCount.textContent = `${sorted.length} rows`;
+
+    const pageSize = oldNewState.pageSize.sourceDoctor;
+    const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
+    if(oldNewState.page.sourceDoctor > totalPages) oldNewState.page.sourceDoctor = totalPages;
+    const start = (oldNewState.page.sourceDoctor - 1) * pageSize;
+    const pageRows = sorted.slice(start, start + pageSize);
+
+    if(oldNewSourceDoctorGrid) oldNewSourceDoctorGrid.innerHTML = oldNewBuildTable('sourceDoctor', pageRows);
+    if(oldNewSourceDoctorPageInfo){
+      oldNewSourceDoctorPageInfo.textContent = sorted.length
+        ? `Page ${oldNewState.page.sourceDoctor} of ${totalPages} (${sorted.length} rows)`
+        : 'No rows';
+    }
+    if(oldNewSourceDoctorPrev) oldNewSourceDoctorPrev.disabled = oldNewState.page.sourceDoctor <= 1;
+    if(oldNewSourceDoctorNext) oldNewSourceDoctorNext.disabled = oldNewState.page.sourceDoctor >= totalPages;
+  }
+
+  function renderOldNewGridByKey(gridKey){
+    if(gridKey === 'summary') return renderOldNewSummaryGrid();
+    if(gridKey === 'detail') return renderOldNewDetailGrid();
+    if(gridKey === 'sourceSummary') return renderOldNewSourceSummaryGrid();
+    if(gridKey === 'sourceDept') return renderOldNewSourceDeptGrid();
+    if(gridKey === 'sourceDoctor') return renderOldNewSourceDoctorGrid();
+  }
+
+  function renderAllOldNewGrids(){
+    renderOldNewSummaryGrid();
+    renderOldNewDetailGrid();
+    renderOldNewSourceSummaryGrid();
+    renderOldNewSourceDeptGrid();
+    renderOldNewSourceDoctorGrid();
+  }
+
+  function renderOldNewPayload(payload){
+    oldNewState.payload = payload || null;
+    oldNewState.page.detail = 1;
+    oldNewState.page.sourceDoctor = 1;
+
+    renderOldNewDecisionNotes(payload?.decision_notes || []);
+    renderOldNewTrace(payload?.trace || []);
+
+    const sk = payload?.kpis?.summary || {};
+    const dk = payload?.kpis?.details || {};
+    const src = payload?.kpis?.source || {};
+    const summaryExtraDefs = Array.isArray(payload?.summary_extra_columns) ? payload.summary_extra_columns : [];
+
+    const summaryKpiRows = [
+      { key: 'total_visits', label: 'Total Visits', value: sk.total_visits || 0, display: fmtNum(sk.total_visits || 0) },
+      { key: 'new_visits', label: 'New Visits', value: sk.new_visits || 0, display: fmtNum(sk.new_visits || 0) },
+      { key: 'old_visits', label: 'Old Visits', value: sk.old_visits || 0, display: fmtNum(sk.old_visits || 0) },
+      { key: 'new_pct', label: 'New %', value: sk.new_pct || 0, display: fmtPct(sk.new_pct || 0) },
+      { key: 'old_pct', label: 'Old %', value: sk.old_pct || 0, display: fmtPct(sk.old_pct || 0) },
+      { key: 'department_count', label: 'Departments', value: sk.department_count || 0, display: fmtNum(sk.department_count || 0) },
+    ];
+    summaryExtraDefs.forEach((item)=>{
+      const kpiKey = item?.kpi_key || item?.key || '';
+      const label = item?.kpi_label || item?.label || kpiKey;
+      const rawValue = Number(sk?.[kpiKey] ?? 0);
+      summaryKpiRows.push({
+        key: kpiKey,
+        label,
+        value: Number.isFinite(rawValue) ? rawValue : 0,
+        display: fmtNum(Number.isFinite(rawValue) ? rawValue : 0),
+      });
+    });
+    renderOldNewKpis(oldNewSummaryKpis, 'summary', summaryKpiRows);
+
+    renderOldNewKpis(oldNewDetailKpis, 'details', [
+      { key: 'detail_rows', label: 'Rows', value: dk.detail_rows || 0, display: fmtNum(dk.detail_rows || 0) },
+      { key: 'unique_patients', label: 'Unique Patients', value: dk.unique_patients || 0, display: fmtNum(dk.unique_patients || 0) },
+      { key: 'unique_doctors', label: 'Unique Doctors', value: dk.unique_doctors || 0, display: fmtNum(dk.unique_doctors || 0) },
+      { key: 'unique_departments', label: 'Unique Departments', value: dk.unique_departments || 0, display: fmtNum(dk.unique_departments || 0) },
+      { key: 'old_pct_loyalty_index', label: 'Old % Loyalty Index', value: dk.old_pct_loyalty_index || 0, display: fmtPct(dk.old_pct_loyalty_index || 0) },
+    ]);
+
+    renderOldNewKpis(oldNewSourceKpis, 'source', [
+      { key: 'mapped_pct', label: 'Mapped Source %', value: src.mapped_pct || 0, display: fmtPct(src.mapped_pct || 0) },
+      { key: 'unmapped_count', label: 'Unmapped Count', value: src.unmapped_count || 0, display: fmtNum(src.unmapped_count || 0) },
+      { key: 'top_source', label: 'Top Source', value: src.top_source || '', display: String(src.top_source || 'N/A') },
+      { key: 'top_source_old_pct', label: 'Top Source Old %', value: src.top_source_old_pct || 0, display: fmtPct(src.top_source_old_pct || 0) },
+    ]);
+
+    renderAllOldNewGrids();
+    setOldNewExportEnabled(!!payload?.has_data);
+  }
+
+  async function loadOldNewVisits(){
+    const unit = (oldNewUnit?.value || '').trim();
+    const fromDate = oldNewFrom?.value || '';
+    const toDate = oldNewTo?.value || '';
+    const visitTypeId = oldNewVisitType?.value || '2';
+
+    if(!unit){
+      setOldNewStatus('error', 'Please select a unit.');
+      return;
+    }
+    if(!fromDate || !toDate){
+      setOldNewStatus('error', 'Please select from/to dates.');
+      return;
+    }
+    if(fromDate > toDate){
+      setOldNewStatus('error', `Invalid date range: from (${fromDate}) must be <= to (${toDate}).`);
+      return;
+    }
+
+    setBtnLoading(oldNewLoadBtn, true, 'Loading...');
+    setOldNewExportEnabled(false);
+    setOldNewStatus('info', 'Step 1/3: validating filters and requesting backend procedure...');
+
+    try{
+      const qs = new URLSearchParams({
+        unit,
+        from: fromDate,
+        to: toDate,
+        visit_type_id: visitTypeId,
+      }).toString();
+      setOldNewStatus('info', 'Step 2/3: fetching summary/details and source mappings...');
+      const res = await fetch(`/api/mis/old_new_patient_visits?${qs}`);
+      const data = await res.json();
+      if(!res.ok || data.status !== 'success'){
+        throw new Error(data.message || 'Failed to fetch old/new patient visits');
+      }
+
+      oldNewLoaded = true;
+      oldNewLastKey = oldNewCurrentKey();
+      renderOldNewPayload(data);
+
+      const summaryCount = (data.summary_rows || []).length;
+      const detailCount = (data.detail_rows || []).length;
+      const sourceCount = (data.source_summary_rows || []).length;
+      const now = new Date();
+      if(oldNewLastLoaded){
+        oldNewLastLoaded.textContent = `Loaded ${detailCount} detail rows, ${summaryCount} summary rows, ${sourceCount} source rows at ${now.toLocaleString()}.`;
+      }
+      if(detailCount === 0){
+        setOldNewStatus('warn', 'Step 3/3: load complete. No rows found for selected filters. Export is disabled.');
+      }else{
+        setOldNewStatus('success', `Step 3/3: load complete. ${detailCount} detail rows ready with searchable grids and KPI cards.`);
+      }
+    }catch(err){
+      resetOldNewWidgets();
+      setOldNewStatus('error', `Load failed: ${err.message}`);
+      if(oldNewLastLoaded) oldNewLastLoaded.textContent = 'Load failed. Review filter inputs and retry.';
+    }finally{
+      setBtnLoading(oldNewLoadBtn, false);
+    }
+  }
+
+  function toggleOldNewPanel(forceOpen){
+    if(!oldNewPanel || !oldNewCard) return;
+    const nextOpen = typeof forceOpen === 'boolean' ? forceOpen : !oldNewPanel.classList.contains('open');
+    oldNewPanel.classList.toggle('open', nextOpen);
+    oldNewCard.classList.toggle('active', nextOpen);
+    oldNewCard.setAttribute('aria-expanded', nextOpen ? 'true' : 'false');
+    if(!nextOpen){
+      setOldNewInfoOpen(false);
+    }
+  }
+
+  async function exportOldNewExcelJob(){
+    const unit = (oldNewUnit?.value || '').trim();
+    const fromDate = oldNewFrom?.value || '';
+    const toDate = oldNewTo?.value || '';
+    const visitTypeId = oldNewVisitType?.value || '2';
+    if(!unit || !fromDate || !toDate){
+      setOldNewStatus('error', 'Select unit, from, and to dates before exporting.');
+      return;
+    }
+    if(fromDate > toDate){
+      setOldNewStatus('error', `Invalid date range: from (${fromDate}) must be <= to (${toDate}).`);
+      return;
+    }
+    if(!oldNewState.payload?.has_data){
+      setOldNewStatus('warn', 'No data loaded for export. Load records first.');
+      return;
+    }
+    if(oldNewLastKey !== oldNewCurrentKey()){
+      setOldNewStatus('warn', 'Filters changed since last load. Click Load before exporting.');
+      return;
+    }
+
+    setBtnLoading(oldNewExportExcelBtn, true, 'Queueing...');
+    try{
+      setOldNewStatus('info', 'Queueing Excel export job...');
+      const res = await fetch('/api/mis/old_new_patient_visits/export_excel_job', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({
+          unit,
+          from: fromDate,
+          to: toDate,
+          visit_type_id: Number(visitTypeId),
+        }),
+      });
+      const data = await res.json();
+      if(!res.ok || data.status !== 'queued' || !data.job_id){
+        throw new Error(data.message || 'Failed to queue Excel export job');
+      }
+
+      const jobId = data.job_id;
+      setOldNewStatus('info', `Excel export queued (${jobId.slice(0, 8)}...). Waiting for completion...`);
+
+      const maxPoll = 150;
+      let attempts = 0;
+      while(attempts < maxPoll){
+        await new Promise((resolve)=> setTimeout(resolve, 1500));
+        attempts += 1;
+        const stRes = await fetch(`/api/mis/old_new_patient_visits/export_excel_job_status?job_id=${encodeURIComponent(jobId)}`);
+        const stData = await stRes.json();
+        if(!stRes.ok || stData.status !== 'success'){
+          throw new Error(stData.message || 'Failed to read export job status');
+        }
+        const state = String(stData.state || '').toLowerCase();
+        if(state === 'done'){
+          const dlUrl = `/api/mis/old_new_patient_visits/export_excel_job_result?job_id=${encodeURIComponent(jobId)}`;
+          window.location.href = dlUrl;
+          setOldNewStatus('success', 'Excel export generated. Download should start automatically.');
+          return;
+        }
+        if(state === 'error'){
+          throw new Error(stData.error || 'Excel export failed on server');
+        }
+        setOldNewStatus('info', `Excel export ${state || 'running'}...`);
+      }
+      throw new Error('Excel export timed out. Please retry.');
+    }catch(err){
+      setOldNewStatus('error', `Excel export failed: ${err.message}`);
+    }finally{
+      setBtnLoading(oldNewExportExcelBtn, false);
+    }
+  }
+
+  function exportOldNewPdf(){
+    const unit = (oldNewUnit?.value || '').trim();
+    const fromDate = oldNewFrom?.value || '';
+    const toDate = oldNewTo?.value || '';
+    const visitTypeId = oldNewVisitType?.value || '2';
+    if(!unit || !fromDate || !toDate){
+      setOldNewStatus('error', 'Select unit, from, and to dates before exporting.');
+      return;
+    }
+    if(fromDate > toDate){
+      setOldNewStatus('error', `Invalid date range: from (${fromDate}) must be <= to (${toDate}).`);
+      return;
+    }
+    if(!oldNewState.payload?.has_data){
+      setOldNewStatus('warn', 'No data loaded for export. Load records first.');
+      return;
+    }
+    if(oldNewLastKey !== oldNewCurrentKey()){
+      setOldNewStatus('warn', 'Filters changed since last load. Click Load before exporting.');
+      return;
+    }
+    setOldNewStatus('info', 'Generating PDF export...');
+    const qs = new URLSearchParams({
+      unit,
+      from: fromDate,
+      to: toDate,
+      visit_type_id: visitTypeId,
+    }).toString();
+    window.open(`/api/mis/old_new_patient_visits/export_pdf?${qs}`, '_blank');
+    setOldNewStatus('success', 'PDF export opened in a new tab.');
+  }
+
+  oldNewCard?.addEventListener('click', ()=> toggleOldNewPanel());
+  oldNewCard?.addEventListener('keydown', (e)=>{
+    if(e.key === 'Enter' || e.key === ' '){
+      e.preventDefault();
+      toggleOldNewPanel();
+    }
+  });
+  oldNewLoadBtn?.addEventListener('click', loadOldNewVisits);
+  oldNewExportExcelBtn?.addEventListener('click', exportOldNewExcelJob);
+  oldNewExportPdfBtn?.addEventListener('click', exportOldNewPdf);
+  oldNewInfoToggle?.addEventListener('click', ()=> setOldNewInfoOpen(!(oldNewInfoRail?.classList.contains('open'))));
+  oldNewInfoClose?.addEventListener('click', ()=> setOldNewInfoOpen(false));
+  oldNewInfoBackdrop?.addEventListener('click', ()=> setOldNewInfoOpen(false));
+  document.addEventListener('keydown', (e)=>{
+    if(e.key === 'Escape' && oldNewInfoRail?.classList.contains('open')){
+      setOldNewInfoOpen(false);
+    }
+  });
+
+  oldNewDetailPrev?.addEventListener('click', ()=>{ if(oldNewState.page.detail > 1){ oldNewState.page.detail -= 1; renderOldNewDetailGrid(); }});
+  oldNewDetailNext?.addEventListener('click', ()=>{ oldNewState.page.detail += 1; renderOldNewDetailGrid(); });
+  oldNewSourceDoctorPrev?.addEventListener('click', ()=>{ if(oldNewState.page.sourceDoctor > 1){ oldNewState.page.sourceDoctor -= 1; renderOldNewSourceDoctorGrid(); }});
+  oldNewSourceDoctorNext?.addEventListener('click', ()=>{ oldNewState.page.sourceDoctor += 1; renderOldNewSourceDoctorGrid(); });
+
+  const oldNewSearchDebounce = debounce((gridKey)=>{
+    if(gridKey === 'detail') oldNewState.page.detail = 1;
+    if(gridKey === 'sourceDoctor') oldNewState.page.sourceDoctor = 1;
+    renderOldNewGridByKey(gridKey);
+  }, 220);
+  oldNewSummarySearch?.addEventListener('input', ()=> oldNewSearchDebounce('summary'));
+  oldNewDetailSearch?.addEventListener('input', ()=> oldNewSearchDebounce('detail'));
+  oldNewSourceSummarySearch?.addEventListener('input', ()=> oldNewSearchDebounce('sourceSummary'));
+  oldNewSourceDeptSearch?.addEventListener('input', ()=> oldNewSearchDebounce('sourceDept'));
+  oldNewSourceDoctorSearch?.addEventListener('input', ()=> oldNewSearchDebounce('sourceDoctor'));
+
+  document.addEventListener('click', (e)=>{
+    const btn = e.target.closest('.oldnew-th-btn');
+    if(!btn) return;
+    const gridKey = btn.getAttribute('data-oldnew-grid');
+    const key = btn.getAttribute('data-oldnew-key');
+    if(!gridKey || !key || !oldNewState.sort[gridKey]) return;
+    const sort = oldNewState.sort[gridKey];
+    if(sort.key === key){
+      sort.dir = sort.dir === 'asc' ? 'desc' : 'asc';
+    }else{
+      sort.key = key;
+      sort.dir = 'asc';
+    }
+    if(gridKey === 'detail') oldNewState.page.detail = 1;
+    if(gridKey === 'sourceDoctor') oldNewState.page.sourceDoctor = 1;
+    renderOldNewGridByKey(gridKey);
+  });
+
+  if(allowedUnits.length === 1 && oldNewUnit){ oldNewUnit.value = allowedUnits[0]; }
+  initOldNewDates();
+  resetOldNewWidgets();
+
+  histSearch?.addEventListener('input', ()=>{ histPage = 1; renderHistoryPage(); });
+  histPrev?.addEventListener('click', ()=>{ if(histPage>1){ histPage--; renderHistoryPage(); }});
+  histNext?.addEventListener('click', ()=>{ histPage++; renderHistoryPage(); });
+  histApply?.addEventListener('click', ()=>{ histPage = 1; applyHistoryFilters(); renderHistoryPage(); });
+  histReset?.addEventListener('click', ()=>{ histDateFrom.value=''; histDateTo.value=''; histSearch.value=''; histColorFilter.value=''; histPage=1; applyHistoryFilters(); renderHistoryPage(); });
+  histColorFilter?.addEventListener('change', ()=>{ histPage = 1; renderHistoryPage(); });
+
+  function flattenFilteredRows(){
+    // Rebuild groups from current filters (date/search/color) before exporting
+    applyHistoryFilters();
+    const filtered = getFilteredGroups();
+    const rows = [];
+    filtered.forEach(g=>{
+      rows.push(...(g.rows || []));
+    });
+    return rows;
+  }
+
+  let pdfLibPromise = null;
+  function ensurePdfLibs(){
+    // autoTable attaches to jsPDF.API; treat that as ready signal
+    const hasLib = () => (window.jspdf && window.jspdf.jsPDF && window.jspdf.jsPDF.API && window.jspdf.jsPDF.API.autoTable);
+    if(hasLib()) return Promise.resolve();
+    if(pdfLibPromise) return pdfLibPromise;
+    pdfLibPromise = new Promise((resolve, reject)=>{
+      const s1 = document.createElement('script');
+      s1.src = "https://cdn.jsdelivr.net/npm/jspdf@2.5.1/dist/jspdf.umd.min.js";
+      s1.onload = ()=>{
+        const s2 = document.createElement('script');
+        s2.src = "https://cdn.jsdelivr.net/npm/jspdf-autotable@3.8.2/dist/jspdf.plugin.autotable.min.js";
+        s2.onload = ()=>{
+          if(hasLib()){
+            resolve();
+          }else{
+            reject(new Error('autoTable missing'));
+          }
+        };
+        s2.onerror = reject;
+        document.body.appendChild(s2);
+      };
+      s1.onerror = reject;
+      document.body.appendChild(s1);
+    });
+    return pdfLibPromise;
+  }
+
+  function exportCsv(){
+    const btn = histExportCsv;
+    setBtnLoading(btn, true, 'Exporting...');
+    const rows = flattenFilteredRows();
+    if(!rows.length){ alert('No data to export'); setBtnLoading(btn, false); return; }
+    const cols = Object.keys(rows[0]).filter(c=>!['PatientID','VisitTypeID'].includes(c));
+    const header = cols.join(',');
+    const body = rows.map(r=> cols.map(c=>{
+      const val = r[c] === null || r[c] === undefined ? '' : String(r[c]).replace(/"/g,'""');
+      return `"${val}"`;
+    }).join(',')).join('\n');
+    const csv = header + '\n' + body;
+    const blob = new Blob([csv], {type:'text/csv;charset=utf-8;'});
+    const url = URL.createObjectURL(blob);
+    const a = document.createElement('a');
+    a.href = url;
+    a.download = `HCV_History_${new Date().toISOString().slice(0,10)}.csv`;
+    a.click();
+    URL.revokeObjectURL(url);
+    setBtnLoading(btn, false);
+  }
+
+  async function exportPdf(){
+    const btn = histExportPdf;
+    setBtnLoading(btn, true, 'Exporting...');
+    const rows = flattenFilteredRows();
+    if(!rows.length){ alert('No data to export'); setBtnLoading(btn, false); return; }
+    try{
+      await ensurePdfLibs();
+    }catch(e){
+      alert('PDF library not loaded');
+      setBtnLoading(btn, false);
+      return;
+    }
+    const jsPDF = window.jspdf?.jsPDF;
+    if(!jsPDF || !window.jspdf?.jsPDF?.API?.autoTable){
+      alert('PDF library not loaded');
+      setBtnLoading(btn, false);
+      return;
+    }
+    const doc = new jsPDF({orientation:'landscape'});
+
+    // meta / header
+    const today = new Date();
+    const dateStr = today.toLocaleString();
+    let logoData = null;
+    try{
+      const res = await fetch('/static/logo/asarfi.png');
+      const blob = await res.blob();
+      const reader = new FileReader();
+      logoData = await new Promise(resolve=>{
+        reader.onloadend = ()=> resolve(reader.result);
+        reader.readAsDataURL(blob);
+      });
+    }catch(e){}
+
+    if(logoData){
+      try{ doc.addImage(logoData, 'PNG', 10, 6, 30, 30); }catch(e){}
+    }
+    doc.setFontSize(16);
+    doc.text('HCV Journey – Patient History', 50, 18);
+    doc.setFontSize(10);
+    doc.text(`Printed on: ${dateStr}`, 50, 26);
+    const filtersInfo = [
+      `From: ${histDateFrom.value || 'All'}`,
+      `To: ${histDateTo.value || 'All'}`,
+      `Search: ${histSearch.value || 'None'}`,
+      `Color: ${histColorFilter.value || 'All'}`
+    ].join(' | ');
+    doc.text(filtersInfo, 50, 32);
+
+    const cols = Object.keys(rows[0]).filter(c=>!['PatientID','VisitTypeID'].includes(c));
+    const dataRows = rows.map(r=> cols.map(c=> r[c] === null || r[c] === undefined ? '' : String(r[c])));
+
+    doc.autoTable({
+      head: [cols],
+      body: dataRows,
+      startY: 38,
+      styles:{ fontSize:8, cellPadding:2 },
+      headStyles:{ fillColor:[30,64,175], textColor:255 },
+      alternateRowStyles:{ fillColor:[245,247,250] },
+      didDrawPage:(data)=>{
+        doc.setFontSize(9);
+        doc.text('© Asarfi Hospital Ltd', data.settings.margin.left, doc.internal.pageSize.height - 6);
+      }
+    });
+
+    doc.save(`HCV_History_${new Date().toISOString().slice(0,10)}.pdf`);
+    setBtnLoading(btn, false);
+  }
+
+  histExportCsv?.addEventListener('click', exportCsv);
+  histExportPdf?.addEventListener('click', exportPdf);
+</script>
+{% endblock %}

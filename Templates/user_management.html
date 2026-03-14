@@ -1,0 +1,2931 @@
+{% extends "layout.html" %}
+
+{% block title %}User Management | HID{% endblock %}
+{% block page_header %}{% endblock %}
+{% block page_footer %}{% endblock %}
+
+{% block content %}
+<style>
+  .um-wrapper {
+    font-family: "Segoe UI", "Inter", system-ui, -apple-system, sans-serif;
+    background-color: #f4f7fb;
+    color: #1e293b;
+    box-sizing: border-box;
+    width: 100%;
+    min-height: 100vh;
+    padding-bottom: 40px;
+    overflow-x: clip;
+  }
+  .um-wrapper *, .um-wrapper *::before, .um-wrapper *::after { box-sizing: border-box; }
+
+  /* Header */
+  .um-header {
+    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+    color: #fff;
+    padding: 20px 32px;
+    display: flex; justify-content: space-between; align-items: center;
+    box-shadow: 0 4px 12px rgba(30, 58, 138, 0.15);
+    margin: 0 auto 30px;
+    width: min(1280px, calc(100% - 24px));
+    border-radius: 12px;
+  }
+  .um-header-content h1 { margin: 0; font-size: 22px; font-weight: 700; color: #fff; }
+  .um-header-content p { margin: 4px 0 0 0; font-size: 13px; opacity: 0.85; color: #e0e7ff; }
+  .um-back-link {
+    color: rgba(255, 255, 255, 0.9); text-decoration: none; font-size: 14px; font-weight: 600;
+    display: flex; align-items: center; gap: 6px; background: rgba(255,255,255,0.1);
+    padding: 8px 12px; border-radius: 6px; transition: background 0.2s;
+  }
+  .um-back-link:hover { background: rgba(255,255,255,0.2); color: #fff; }
+
+  /* Layout */
+  .um-container {
+    width: min(1280px, 100%);
+    margin: 0 auto;
+    padding: 0 24px;
+    display: grid;
+    grid-template-columns: minmax(290px, 340px) minmax(0, 1fr);
+    gap: 24px;
+    align-items: start;
+  }
+  .um-container > * { min-width: 0; }
+
+  /* Cards */
+  .um-card {
+    background: #ffffff; border-radius: 12px;
+    box-shadow: 0 2px 8px rgba(0,0,0,0.04), 0 1px 2px rgba(0,0,0,0.02);
+    border: 1px solid #e2e8f0; padding: 24px; margin-bottom: 24px;
+    transition: box-shadow 0.2s ease;
+    min-width: 0;
+  }
+  .um-card:hover { box-shadow: 0 10px 20px rgba(15,23,42,0.08), 0 2px 6px rgba(15,23,42,0.04); }
+  .um-section-head { display: flex; justify-content: space-between; align-items: center; margin-bottom: 8px; }
+  .um-title { margin: 0; font-size: 18px; font-weight: 700; color: #1e3a8a; }
+  .um-subtitle { font-size: 13px; color: #64748b; margin-bottom: 20px; line-height: 1.4; }
+
+  /* Forms */
+  .um-form label { display: block; margin-top: 16px; margin-bottom: 6px; font-weight: 600; font-size: 13px; color: #334155; }
+  .um-form input[type="text"], .um-form input[type="password"], .um-form select, .um-form textarea {
+    width: 100%; padding: 10px 12px; border: 1px solid #cbd5e1; border-radius: 8px;
+    font-size: 14px; background-color: #fff; color: #0f172a; transition: border-color 0.15s, box-shadow 0.15s; font-family: inherit;
+  }
+  .um-form input:focus, .um-form select:focus, .um-form textarea:focus {
+    outline: none; border-color: #3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1);
+  }
+  .um-form textarea { min-height: 80px; resize: vertical; }
+  /* Disabled state for hierarchy locking */
+  .um-form input:disabled, .um-form select:disabled { background-color: #f1f5f9; color: #94a3b8; cursor: not-allowed; }
+  .um-form-block { background:#f8fafc; border:1px solid #e2e8f0; border-radius:12px; padding:14px; }
+  .um-edit-grid { display:grid; grid-template-columns: minmax(180px, 0.9fr) minmax(240px, 1.25fr) minmax(240px, 1.25fr) minmax(110px, 0.55fr); gap:16px; align-items:start; }
+  .um-edit-grid > * { min-width: 0; }
+  .um-field-card { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:12px; box-shadow:0 1px 3px rgba(15,23,42,.06); }
+  .um-field-card label { margin-top:0; }
+  .um-field-card .um-switch { width:100%; justify-content:center; }
+  .um-field-card--active { display:flex; flex-direction:column; align-items:center; }
+  .um-field-card--active label { text-align:center; width:100%; margin-bottom:8px; }
+  .um-units-panel { background:#fff; border:1px solid #e2e8f0; border-radius:12px; padding:12px; min-width:0; }
+  .um-units-header { display:flex; align-items:center; justify-content:space-between; margin-bottom:8px; }
+  .um-units-header span { font-size:11px; color:#64748b; font-weight:700; text-transform:uppercase; letter-spacing:.06em; }
+  .um-units-scroll { max-height:220px; overflow:auto; overflow-x:hidden; padding-right:4px; }
+  .um-units-scroll .um-chips-grid { grid-template-columns: repeat(auto-fit, minmax(170px, 1fr)); }
+  .um-switch {
+    display:flex; align-items:center; justify-content:center; height:auto;
+    border-radius:10px; border:1px solid transparent; background:transparent;
+    position:relative; padding:4px 0;
+  }
+  .um-switch input {
+    position:absolute; opacity:0; width:1px; height:1px; pointer-events:none;
+  }
+  .um-switch-slider {
+    display:inline-block; width:54px; height:28px; border-radius:999px;
+    background:#e2e8f0; position:relative; transition:all .2s ease;
+    border:1px solid #cbd5e1; box-shadow:inset 0 1px 2px rgba(15,23,42,.12);
+  }
+  .um-switch-slider::before {
+    content:""; position:absolute; inset:1px; border-radius:inherit;
+    background:linear-gradient(180deg, rgba(255,255,255,0.7), rgba(255,255,255,0));
+    pointer-events:none;
+  }
+  .um-switch-slider::after {
+    content:""; position:absolute; top:3px; left:3px; width:22px; height:22px; border-radius:50%;
+    background:#ffffff; box-shadow:0 6px 12px rgba(15,23,42,.18); transition:transform .2s ease;
+  }
+  .um-switch input:checked + .um-switch-slider {
+    background:linear-gradient(135deg, #22c55e, #16a34a); border-color:#16a34a;
+  }
+  .um-switch input:checked + .um-switch-slider::after { transform:translateX(26px); }
+  .um-switch input:focus-visible + .um-switch-slider {
+    box-shadow:0 0 0 3px rgba(59,130,246,.25), inset 0 1px 2px rgba(15,23,42,.12);
+  }
+  .um-edit-help { font-size:11px; color:#64748b; margin:6px 2px 0; font-style:italic; }
+  @media (max-width: 1400px) {
+    .um-edit-grid {
+      grid-template-columns: minmax(180px, 1fr) minmax(240px, 1.3fr) minmax(240px, 1.3fr);
+    }
+    .um-field-card--active {
+      grid-column: 1 / -1;
+      max-width: 240px;
+    }
+  }
+  @media (max-width: 1100px) {
+    .um-edit-grid { grid-template-columns: 1fr; }
+    .um-units-scroll { max-height:180px; }
+  }
+
+  /* Chips */
+  .um-chips-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(150px, 1fr)); gap: 8px; margin-top: 8px; }
+  .um-chips-grid--tight { grid-template-columns: repeat(auto-fill, minmax(140px, 1fr)); }
+  .um-sections { display: grid; gap: 12px; margin-top: 6px; }
+  .um-section-group { background: #f8fafc; border: 1px dashed #e2e8f0; border-radius: 10px; padding: 10px; }
+  .um-section-group-title {
+    font-size: 11px; font-weight: 700; letter-spacing: 0.08em; text-transform: uppercase;
+    color: #94a3b8; margin-bottom: 6px;
+  }
+  .um-chip {
+    display: flex; align-items: center; gap: 10px; padding: 8px 12px;
+    background: #f8fafc; border: 1px solid #e2e8f0; border-radius: 8px;
+    cursor: pointer; font-size: 13px; font-weight: 600; color: #475569;
+    transition: border-color 0.2s, background 0.2s, box-shadow 0.2s, transform 0.08s; user-select: none; min-width: 0;
+  }
+  .um-chip span { min-width: 0; overflow-wrap: anywhere; line-height: 1.2; }
+  .um-chip:hover { border-color: #94a3b8; background: #fff; }
+  .um-chip input { margin: 0; width: 16px; height: 16px; accent-color: #2563eb; }
+  .um-chip:has(input:checked) { background: #eff6ff; border-color: #93c5fd; color: #1e40af; box-shadow: inset 0 0 0 1px #bfdbfe; }
+  .um-chip:active { transform: translateY(1px); }
+  .um-chip--all { background: #eef2ff; border-color: #c7d2fe; color: #1e3a8a; }
+
+  /* Buttons */
+  .um-btn-primary {
+    width: 100%; background: linear-gradient(to right, #1e40af, #3b82f6); color: white;
+    border: none; padding: 12px; border-radius: 8px; font-weight: 600; font-size: 14px;
+    cursor: pointer; margin-top: 20px; box-shadow: 0 4px 6px -1px rgba(37, 99, 235, 0.2); transition: transform 0.1s;
+  }
+  .um-btn-primary:hover { transform: translateY(-1px); box-shadow: 0 6px 8px -1px rgba(37, 99, 235, 0.3); }
+  .um-btn-primary:disabled { background: #94a3b8; cursor: not-allowed; box-shadow: none; transform: none; }
+
+  /* Table */
+  .um-table-wrapper { overflow-x: auto; border: 1px solid #e2e8f0; border-radius: 8px; background: #ffffff; }
+  .um-table { width: 100%; border-collapse: collapse; font-size: 13px; }
+  .um-table th {
+    background: #f1f5f9; text-align: left; padding: 12px 16px; font-weight: 600;
+    color: #64748b; text-transform: uppercase; font-size: 11px; letter-spacing: 0.05em; border-bottom: 1px solid #e2e8f0;
+  }
+  .um-table td { padding: 14px 16px; border-bottom: 1px solid #e2e8f0; color: #334155; vertical-align: middle; }
+  .um-table tr:last-child td { border-bottom: none; }
+  .um-table tr:hover td { background: #f8fafc; }
+  .um-table tbody tr:nth-child(odd) td { background: #fbfdff; }
+  .um-contact-name { font-weight: 700; color: #0f172a; line-height: 1.2; }
+  .um-contact-email { font-size: 12px; color: #64748b; margin-top: 4px; word-break: break-all; }
+  .um-profile-line { font-size: 12px; color: #475569; margin: 2px 0; line-height: 1.35; }
+  .um-profile-line b { color: #0f172a; font-weight: 700; }
+  .um-rights-cell { display: flex; flex-wrap: wrap; gap: 6px; }
+  .um-scope-chip {
+    display: inline-flex; align-items: center; gap: 5px;
+    font-size: 11px; font-weight: 700; color: #1e3a8a;
+    background: #eff6ff; border: 1px solid #bfdbfe; border-radius: 999px; padding: 4px 10px;
+  }
+  .um-action-row { display: flex; align-items: center; gap: 8px; flex-wrap: wrap; }
+  .um-link-btn {
+    border: none; background: transparent; cursor: pointer;
+    color: #2563eb; font-weight: 700; font-size: 12px; padding: 0;
+  }
+  .um-link-btn:hover { color: #1d4ed8; text-decoration: underline; }
+  .um-secret {
+    font-family: "Consolas", "Courier New", monospace;
+    font-size: 12px;
+    color: #0f172a;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 6px;
+    padding: 4px 8px;
+    display: inline-block;
+    max-width: 240px;
+    overflow-x: auto;
+    white-space: nowrap;
+  }
+  .um-rights-stack { display: grid; gap: 4px; }
+  .um-rights-line { font-size: 12px; color: #475569; line-height: 1.3; }
+  .um-rights-line b { color: #0f172a; }
+  .um-muted-small { font-size: 11px; color: #94a3b8; }
+  .um-btn-outline {
+    border: 1px solid #bfdbfe; background: #eff6ff; color: #1e3a8a;
+    border-radius: 8px; font-weight: 700; font-size: 12px; padding: 8px 12px; cursor: pointer;
+  }
+  .um-btn-outline:hover { background: #dbeafe; }
+  .um-table-tools {
+    display:flex; align-items:center; justify-content:space-between; gap:12px; flex-wrap:wrap;
+    margin: 6px 0 12px; background:#f8fafc; border:1px solid #e2e8f0; border-radius:10px; padding:10px;
+  }
+  .um-search { flex:1; min-width:220px; }
+  .um-search input {
+    width:100%; padding:10px 12px; border:1px solid #cbd5e1; border-radius:8px; font-size:13px;
+    background:#fff; color:#0f172a; font-family:inherit;
+  }
+  .um-search input:focus { outline:none; border-color:#3b82f6; box-shadow:0 0 0 3px rgba(59,130,246,.1); }
+  .um-pager { display:flex; align-items:center; gap:8px; font-size:12px; color:#64748b; }
+  .um-pager button {
+    border:1px solid #dbeafe; background:#eff6ff; color:#1e3a8a; padding:6px 10px; border-radius:6px; cursor:pointer;
+    font-weight:700; font-size:12px;
+  }
+  .um-pager button:disabled { opacity:.5; cursor:not-allowed; }
+  .um-pager select {
+    border: 1px solid #dbeafe;
+    background: #eff6ff;
+    color: #1e3a8a;
+    padding: 6px 8px;
+    border-radius: 6px;
+    font-weight: 700;
+    font-size: 12px;
+    font-family: inherit;
+  }
+  .um-table-tools-meta { display:flex; align-items:center; gap:10px; flex-wrap:wrap; justify-content:flex-end; }
+  .um-table-wrapper--it { max-height: 620px; overflow: auto; border-radius: 12px; }
+  .um-table--it th, .um-table--it td { vertical-align: top; }
+  .um-table--it th:nth-child(1), .um-table--it td:nth-child(1) { min-width: 190px; }
+  .um-table--it th:nth-child(2), .um-table--it td:nth-child(2) { min-width: 150px; }
+  .um-table--it th:nth-child(3), .um-table--it td:nth-child(3) { min-width: 150px; }
+  .um-table--it th:nth-child(4), .um-table--it td:nth-child(4) { min-width: 340px; }
+  .um-table--it th:nth-child(6), .um-table--it td:nth-child(6) { min-width: 170px; }
+  .um-col-action {
+    position: sticky;
+    right: 0;
+    z-index: 4;
+    min-width: 150px;
+    text-align: right;
+    box-shadow: -10px 0 14px -14px rgba(15, 23, 42, 0.55);
+  }
+  .um-table thead .um-col-action { background: #f1f5f9; }
+  .um-table tbody tr .um-col-action { background: #ffffff; }
+  .um-table tbody tr:nth-child(odd) .um-col-action { background: #fbfdff; }
+  .um-table tbody tr:hover .um-col-action { background: #f8fafc; }
+  .um-rights-ellipsis {
+    display: inline-block;
+    max-width: min(540px, 44vw);
+    overflow: hidden;
+    text-overflow: ellipsis;
+    white-space: nowrap;
+    vertical-align: bottom;
+  }
+  .um-modal-scope {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #f8fafc;
+    padding: 10px;
+  }
+  .um-modal-scope-grid {
+    margin-top: 0;
+    grid-template-columns: repeat(auto-fill, minmax(160px, 1fr));
+    max-height: 190px;
+    overflow: auto;
+    padding-right: 4px;
+  }
+  .um-modal-scope-help {
+    margin-top: 8px;
+    font-size: 11px;
+    color: #64748b;
+    font-style: italic;
+  }
+  .um-modal-scope--sections {
+    max-height: 260px;
+    overflow: auto;
+    padding-right: 4px;
+  }
+  .um-modal-scope--sections .um-chips-grid {
+    grid-template-columns: repeat(auto-fill, minmax(180px, 1fr));
+  }
+
+  /* Status Pills & Badges */
+  .um-badge { padding: 4px 10px; border-radius: 20px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .badge-submit { background: #e0f2fe; color: #0369a1; }
+  .badge-review { background: #ffedd5; color: #9a3412; }
+  .um-pill { display: inline-block; padding: 2px 8px; border-radius: 12px; font-size: 11px; font-weight: 700; text-transform: uppercase; }
+  .pill-pending { background: #fff7ed; color: #ea580c; border: 1px solid #ffedd5; }
+  .pill-approved { background: #f0fdf4; color: #16a34a; border: 1px solid #dcfce7; }
+  .pill-hold { background: #eff6ff; color: #2563eb; border: 1px solid #dbeafe; }
+
+  /* Notifications & History */
+  .um-notif {
+    padding: 12px 16px; background: #fff; border-left: 4px solid #3b82f6;
+    border-radius: 4px; box-shadow: 0 2px 4px rgba(0,0,0,0.05); margin-bottom: 8px;
+    font-size: 13px; display: flex; justify-content: space-between; align-items: center;
+  }
+  .history-link {
+    font-size: 11px; color: #3b82f6; font-weight: 600; text-decoration: none;
+    background: #eff6ff; padding: 2px 6px; border-radius: 4px; display: inline-block; margin-top: 4px;
+  }
+  .history-link:hover { background: #dbeafe; }
+
+  /* Warning Box */
+  .hierarchy-warning {
+    display: none; padding: 10px; background: #fef2f2; color: #991b1b;
+    font-size: 12px; border-radius: 6px; margin-top: 10px; border: 1px solid #fee2e2;
+  }
+  .um-modal-backdrop {
+    display: none;
+    position: fixed;
+    top: 0;
+    right: 0;
+    bottom: 0;
+    left: 0;
+    width: 100vw;
+    height: 100vh;
+    margin: 0;
+    z-index: 10000;
+    background: rgba(15, 23, 42, 0.45);
+    -webkit-backdrop-filter: none;
+    backdrop-filter: none;
+    align-items: center;
+    justify-content: center;
+    padding: 16px;
+    overflow-y: auto;
+  }
+  .um-modal-card {
+    width: min(780px, 100%); max-height: 90vh; overflow: auto;
+    background: #fff; border: 1px solid #e2e8f0; border-radius: 12px;
+    box-shadow: 0 16px 40px rgba(15, 23, 42, 0.2); padding: 18px;
+  }
+  .um-modal-head {
+    display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-bottom: 8px;
+  }
+  .um-modal-head h3 { margin: 0; font-size: 17px; color: #1e3a8a; }
+  .um-modal-close {
+    border: 1px solid #cbd5e1; background: #fff; color: #334155;
+    border-radius: 8px; padding: 8px 10px; font-weight: 700; cursor: pointer;
+  }
+  .um-modal-grid { display: grid; grid-template-columns: repeat(2, minmax(180px, 1fr)); gap: 12px; }
+  .um-modal-grid .um-field-full { grid-column: 1 / -1; }
+  .um-modal-actions { margin-top: 14px; display: flex; justify-content: flex-end; gap: 10px; }
+
+  .um-toast-viewport {
+    position: fixed;
+    top: 20px;
+    right: 20px;
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    width: min(360px, calc(100vw - 24px));
+    z-index: 11000;
+    pointer-events: none;
+  }
+  .um-toast {
+    pointer-events: auto;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    background: #ffffff;
+    color: #0f172a;
+    box-shadow: 0 16px 36px rgba(15, 23, 42, 0.16);
+    padding: 10px 12px;
+    transform: translateX(24px);
+    opacity: 0;
+    transition: transform 0.22s ease, opacity 0.22s ease;
+  }
+  .um-toast.show {
+    transform: translateX(0);
+    opacity: 1;
+  }
+  .um-toast.hiding {
+    transform: translateX(24px);
+    opacity: 0;
+  }
+  .um-toast--success { border-color: #bbf7d0; background: #ecfdf3; }
+  .um-toast--warn { border-color: #fde68a; background: #fffbeb; }
+  .um-toast--error { border-color: #fecaca; background: #fef2f2; }
+  .um-toast--loading { border-color: #bfdbfe; background: #eff6ff; }
+  .um-toast__body { display: inline-flex; align-items: center; gap: 10px; min-width: 0; }
+  .um-toast__message {
+    font-size: 13px;
+    font-weight: 600;
+    line-height: 1.3;
+    word-break: break-word;
+  }
+  .um-toast--success .um-toast__message { color: #166534; }
+  .um-toast--warn .um-toast__message { color: #92400e; }
+  .um-toast--error .um-toast__message { color: #991b1b; }
+  .um-toast--loading .um-toast__message { color: #1e3a8a; }
+  .um-toast__spinner {
+    width: 14px;
+    height: 14px;
+    border-radius: 50%;
+    border: 2px solid rgba(37, 99, 235, 0.25);
+    border-top-color: #2563eb;
+    animation: um-toast-spin 0.8s linear infinite;
+    flex: 0 0 auto;
+  }
+  .um-toast__close {
+    border: none;
+    background: transparent;
+    color: #64748b;
+    font-size: 16px;
+    font-weight: 700;
+    line-height: 1;
+    cursor: pointer;
+    padding: 0 2px;
+  }
+  .um-toast__close:hover { color: #334155; }
+  .um-toast__close:focus {
+    outline: 2px solid #93c5fd;
+    outline-offset: 1px;
+    border-radius: 4px;
+  }
+  @keyframes um-toast-spin { to { transform: rotate(360deg); } }
+
+  @media (max-width: 1024px) {
+    .um-header { width: calc(100% - 16px); padding: 14px 16px; }
+    .um-container { grid-template-columns: 1fr; padding: 0 8px; gap: 14px; }
+    .um-card { padding: 16px; }
+    .um-modal-grid { grid-template-columns: 1fr; }
+    .um-rights-ellipsis { max-width: 72vw; }
+    .um-col-action { min-width: 130px; }
+    .um-toast-viewport { top: 12px; right: 12px; left: 12px; width: auto; }
+  }
+</style>
+
+<div class="um-wrapper">
+  <input type="hidden" id="currentUserRole" value="{{ role }}">
+
+  <div class="um-header">
+    <div class="um-header-content">
+      <h1>User Management</h1>
+      <p>Create users and manage access rights</p>
+    </div>
+    <a href="{{ url_for('dashboard') }}" class="um-back-link">
+      <span>&#8592;</span> Back to Dashboard
+    </a>
+  </div>
+
+  <div class="um-container">
+    
+    <div class="um-card">
+      <div class="um-section-head">
+        <h2 class="um-title">New User Request</h2>
+        <span class="um-badge badge-submit">Create</span>
+      </div>
+      <p class="um-subtitle">Define role, unit, and section rights. IT will review.</p>
+
+      <form method="post" action="{{ url_for('user_management_request') }}" class="um-form" id="createForm">
+        <label>New Username</label>
+        <input type="text" name="new_username" placeholder="e.g. john.doe" required>
+
+        <label>Password</label>
+        <input type="text" name="password" placeholder="Initial password" required>
+
+        <label>Role</label>
+        <select name="role" id="createRole" required>
+          <option value="Management">Management</option>
+          <option value="Departmental Head">Departmental Head</option>
+          <option value="Executive">Executive</option>
+        </select>
+
+        <label>Unit Scope</label>
+        <div class="um-chips-grid" id="unitScopeGrid">
+          {% if allowed_units %}
+            {% for u in allowed_units %}
+              <label class="um-chip">
+                <input type="checkbox" name="unit_option" value="{{ u }}">
+                <span>{{ u }}</span>
+              </label>
+            {% endfor %}
+          {% else %}
+            <div style="font-size:12px; color:#94a3b8;">No units available.</div>
+          {% endif %}
+        </div>
+        <input type="hidden" name="unit_scope" id="unitScopeInput" value="{{ unit_scope }}">
+        <p style="font-size:11px; color:#64748b; margin-top:6px; font-style:italic;">Select one or more units.</p>
+
+        <label>Purchase Unit Scope (optional)</label>
+        <div class="um-chips-grid" id="purchaseUnitScopeGrid">
+          <label class="um-chip um-chip--all">
+            <input type="checkbox" name="purchase_unit_option" value="*">
+            <span>All Units</span>
+          </label>
+          {% if allowed_units %}
+            {% for u in allowed_units %}
+              <label class="um-chip">
+                <input type="checkbox" name="purchase_unit_option" value="{{ u }}">
+                <span>{{ u }}</span>
+              </label>
+            {% endfor %}
+          {% endif %}
+        </div>
+        <input type="hidden" name="purchase_unit_scope" id="purchaseUnitScopeInput" value="">
+        <p style="font-size:11px; color:#64748b; margin-top:6px; font-style:italic;">Leave blank to inherit Unit Scope, or choose specific purchase units.</p>
+
+        <label>Firm Scope</label>
+        <div class="um-chips-grid" id="firmScopeGrid">
+          {% if can_assign_all_firms %}
+            <label class="um-chip um-chip--all">
+              <input type="checkbox" name="firm_option" value="*">
+              <span>All Firms (*)</span>
+            </label>
+          {% endif %}
+          {% if allowed_firms %}
+            {% for f in allowed_firms %}
+              <label class="um-chip">
+                <input type="checkbox" name="firm_option" value="{{ f }}">
+                <span>{{ f }}</span>
+              </label>
+            {% endfor %}
+          {% else %}
+            <div style="font-size:12px; color:#94a3b8;">No firms available.</div>
+          {% endif %}
+        </div>
+        <input type="hidden" name="firm_scope" id="firmScopeInput" value="{{ firm_scope }}">
+        <p style="font-size:11px; color:#64748b; margin-top:6px; font-style:italic;">Select one or more firms. Use "All Firms" for unrestricted access.</p>
+
+        <label>Section Rights</label>
+        {% set _pre = (creator_sections or '').split(',') %}
+        <div class="um-sections" id="sectionsGrid">
+          <div class="um-section-group">
+            <div class="um-section-group-title">Global</div>
+            <div class="um-chips-grid um-chips-grid--tight">
+              <label class="um-chip um-chip--all">
+                <input type="checkbox" name="section_option" value="*" {% if '*' in _pre %}checked{% endif %}>
+                <span>All Sections (*)</span>
+              </label>
+            </div>
+          </div>
+          <div class="um-section-group">
+            <div class="um-section-group-title">MIS Routes</div>
+            <div class="um-chips-grid um-chips-grid--tight">
+              {% for sec in section_choices %}
+                {% if sec.startswith('mis_') or sec == 'mis' %}
+                  {% set label = sec.replace('_',' ').title() %}
+                  {% if sec == 'mis' %}
+                    {% set label = 'MIS (All)' %}
+                  {% else %}
+                    {% set label = 'MIS ' ~ sec[4:].replace('_',' ').title() %}
+                  {% endif %}
+                  <label class="um-chip">
+                    <input type="checkbox" name="section_option" value="{{ sec }}" {% if sec in _pre or '*' in _pre %}checked{% endif %}>
+                    <span>{{ label }}</span>
+                  </label>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+          <div class="um-section-group">
+            <div class="um-section-group-title">Other Sections</div>
+            <div class="um-chips-grid um-chips-grid--tight">
+              {% for sec in section_choices %}
+                {% if not sec.startswith('mis_') and sec != 'mis' %}
+                  {% set label = sec.replace('_',' ').title() %}
+                  {% if sec == 'user_management' %}
+                    {% set label = 'User Management (Admin)' %}
+                  {% elif sec == 'fund_position' %}
+                    {% set label = 'Fund Position Tracker' %}
+                  {% elif sec == 'fund_position_admin' %}
+                    {% set label = 'Fund Position Admin' %}
+                  {% elif sec == 'service_addition' %}
+                    {% set label = 'Service Addition (All)' %}
+                  {% elif sec == 'mod_reports' %}
+                    {% set label = 'MOD Reports' %}
+                  {% elif sec == 'service_addition_master' %}
+                    {% set label = 'Service Addition - Service Master' %}
+                  {% elif sec == 'service_addition_health_package' %}
+                    {% set label = 'Service Addition - Health Package' %}
+                  {% elif sec == 'service_addition_ip_package' %}
+                    {% set label = 'Service Addition - IP Package' %}
+                  {% elif sec == 'corporate_writeoff' %}
+                    {% set label = 'Corporate - Write-off Permission' %}
+                  {% endif %}
+                  <label class="um-chip">
+                    <input type="checkbox" name="section_option" value="{{ sec }}" {% if sec in _pre or '*' in _pre %}checked{% endif %}>
+                    <span>{{ label }}</span>
+                  </label>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+        </div>
+        <input type="hidden" name="sections" id="sectionsInput" value="{{ creator_sections }}">
+        <p style="font-size:11px; color:#64748b; margin-top:6px; font-style:italic;">Grant "MIS (All)" or "Service Addition (All)" for full access, or pick individual routes. Selecting "*" grants access to all current and future sections.</p>
+
+        <label>Note (optional)</label>
+        <textarea name="note" placeholder="Add context for IT (e.g. 'Replacement for...')"></textarea>
+
+        <button type="submit" class="um-btn-primary">Submit Request</button>
+      </form>
+    </div>
+
+    <div style="display:flex; flex-direction:column; gap:24px;">
+      
+      <div class="um-card">
+        <div class="um-section-head">
+          <h2 class="um-title">Historical Data Access</h2>
+          {% if historical_allowed %}
+            <span class="um-badge badge-submit">Active this session</span>
+          {% else %}
+            <span class="um-badge badge-review">Locked</span>
+          {% endif %}
+        </div>
+        <p class="um-subtitle">Data before {{ historical_cutoff }} is locked for non-IT users. Request session-scoped access.</p>
+        <div style="display:flex; gap:12px; align-items:center; margin-bottom:12px;">
+          <span class="um-pill {% if historical_allowed %}pill-approved{% else %}pill-hold{% endif %}">
+            {% if historical_allowed %}Allowed{% else %}Needs Approval{% endif %}
+          </span>
+          <span style="font-size:12px; color:#64748b;">Cutoff: {{ historical_cutoff }}</span>
+        </div>
+
+        {% if role != "IT" %}
+          {% if hist_requests %}
+            <div class="um-table-wrapper" style="margin-bottom:14px;">
+              <table class="um-table">
+                <thead>
+                  <tr><th>Requested At</th><th>Status</th><th>Note</th></tr>
+                </thead>
+                <tbody>
+                  {% for r in hist_requests %}
+                    <tr>
+                      <td>{{ r.RequestedAt }}</td>
+                      <td>
+                        {% if r.Status == "Approved" %}
+                          <span class="um-pill pill-approved">Approved</span>
+                        {% elif r.Status == "Pending" %}
+                          <span class="um-pill pill-pending">Pending</span>
+                        {% elif r.Status == "Hold" %}
+                          <span class="um-pill pill-hold">Hold</span>
+                        {% else %}
+                          {{ r.Status }}
+                        {% endif %}
+                      </td>
+                      <td>{{ r.Note or "-" }}</td>
+                    </tr>
+                  {% endfor %}
+                </tbody>
+              </table>
+            </div>
+          {% endif %}
+          <form method="post" action="{{ url_for('historical_request') }}" class="um-form" id="histRequestForm">
+            <label>Reason (optional)</label>
+            <textarea name="reason" placeholder="Why do you need historical data?"></textarea>
+            <button type="submit" class="um-btn-primary">Request Historical Access</button>
+          </form>
+        {% else %}
+          <p class="um-subtitle" style="margin-top:-8px;">Approve or hold session-scoped requests below.</p>
+          <div class="um-table-wrapper">
+            <table class="um-table">
+              <thead>
+                <tr><th>User</th><th>Requested At</th><th>Status</th><th>Action</th></tr>
+              </thead>
+              <tbody>
+                {% for r in hist_requests %}
+                  <tr>
+                    <td>{{ r.NewUserName }}</td>
+                    <td>{{ r.RequestedAt }}</td>
+                    <td>{{ r.Status }}</td>
+                    <td>
+                      {% if r.Status in ("Pending","Hold") %}
+                        <div style="display:flex; gap:6px;">
+                          <form method="post" action="{{ url_for('user_management_decision') }}">
+                            <input type="hidden" name="request_id" value="{{ r.RequestId }}">
+                            <input type="hidden" name="action" value="approve">
+                            <button style="border:none; background:none; cursor:pointer; color:#16a34a; font-weight:bold; font-size:16px;" title="Approve">&#10003;</button>
+                          </form>
+                          <form method="post" action="{{ url_for('user_management_decision') }}">
+                            <input type="hidden" name="request_id" value="{{ r.RequestId }}">
+                            <input type="hidden" name="action" value="hold">
+                            <button style="border:none; background:none; cursor:pointer; color:#d97706; font-weight:bold; font-size:16px;" title="Hold">!</button>
+                          </form>
+                        </div>
+                      {% else %}{{ r.Status }}{% endif %}
+                    </td>
+                  </tr>
+                {% else %}
+                  <tr><td colspan="4" style="text-align:center; padding:14px; color:#94a3b8;">No historical requests.</td></tr>
+                {% endfor %}
+              </tbody>
+            </table>
+          </div>
+        {% endif %}
+      </div>
+      
+      <div class="um-card">
+        <div class="um-section-head">
+          <h2 class="um-title">Request History</h2>
+          {% if role == "IT" %}<span class="um-badge badge-review">IT Review</span>{% endif %}
+        </div>
+        <p class="um-subtitle">Track status of pending and approved accounts.</p>
+        <div class="um-table-tools">
+          <div class="um-search">
+            <input type="text" id="requestHistorySearch" placeholder="Search username, unit, firm, role, status..." autocomplete="off">
+          </div>
+          <div class="um-pager" id="requestHistoryPager">
+            <button type="button" id="requestHistoryPrev">Prev</button>
+            <span id="requestHistoryPageInfo">Page 1 of 1</span>
+            <button type="button" id="requestHistoryNext">Next</button>
+          </div>
+        </div>
+
+        <div class="um-table-wrapper">
+          <table class="um-table" id="requestHistoryTable">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Role</th>
+                <th>Sections / Firms</th>
+                <th>Status</th>
+                {% if role == "IT" %}<th>Action</th>{% endif %}
+              </tr>
+            </thead>
+            <tbody>
+              {% for uname, reqs in grouped_requests.items() %}
+                {% set r = reqs[0] %}
+                <tr class="request-row" data-search="{{ (r.NewUserName ~ ' ' ~ (r.RequestedUnit or '') ~ ' ' ~ (r.RequestedPurchaseUnits or '') ~ ' ' ~ (r.RequestedFirms or '') ~ ' ' ~ (r.RequestedRole or '') ~ ' ' ~ (r.Status or '') ~ ' ' ~ (r.RequestedSections or '') ~ ' ' ~ (r.ActionType or '')) | e }}">
+                  <td>
+                    <strong>{{ r.NewUserName }}</strong>
+                    <div style="font-size:11px; color:#94a3b8;">{{ r.RequestedUnit or "No Unit" }}</div>
+                    <div style="font-size:11px; color:#94a3b8;">{{ r.RequestedPurchaseUnits or "Use Unit Scope" }}</div>
+                    <div style="font-size:11px; color:#94a3b8;">{{ r.RequestedFirms or "No Firm Scope" }}</div>
+                    {% if reqs|length > 1 %}
+                      <a href="javascript:void(0);" class="history-link toggle-history" data-target="hist-{{ loop.index }}">
+                        &#8634; History ({{ reqs|length - 1 }})
+                      </a>
+                    {% endif %}
+                  </td>
+                  <td>{{ r.RequestedRole }}</td>
+                  <td>
+                    {% set sec_list = (r.RequestedSections or "").split(",") | map('trim') | select('string') | list %}
+                    {% if "*" in sec_list %}
+                      All
+                    {% else %}
+                      <div>{{ sec_list|length }} Sections</div>
+                    {% endif %}
+                    {% set firm_list = (r.RequestedFirms or "").split(",") | map('trim') | select('string') | list %}
+                    <div style="font-size:11px; color:#64748b; margin-top:4px;">
+                      {% if "*" in firm_list %}
+                        All Firms
+                      {% elif firm_list and firm_list[0] %}
+                        {{ firm_list|length }} Firms
+                      {% else %}
+                        No Firm Scope
+                      {% endif %}
+                    </div>
+                  </td>
+                  <td>
+                    {% if r.Status == "Pending" %}<span class="um-pill pill-pending">Pending</span>
+                    {% elif r.Status == "Approved" %}<span class="um-pill pill-approved">Approved</span>
+                    {% elif r.Status == "Hold" %}<span class="um-pill pill-hold">Hold</span>
+                    {% else %}{{ r.Status }}{% endif %}
+                  </td>
+                  {% if role == "IT" %}
+                  <td>
+                    {% if r.Status in ("Pending","Hold") %}
+                    <div style="display:flex; gap:4px;">
+                      <form method="post" action="{{ url_for('user_management_decision') }}">
+                        <input type="hidden" name="request_id" value="{{ r.RequestId }}">
+                        <input type="hidden" name="action" value="approve">
+                        <button style="border:none; background:none; cursor:pointer; color:#16a34a; font-weight:bold; font-size:18px;" title="Approve">&#10003;</button>
+                      </form>
+                      <form method="post" action="{{ url_for('user_management_decision') }}">
+                        <input type="hidden" name="request_id" value="{{ r.RequestId }}">
+                        <input type="hidden" name="action" value="hold">
+                        <button style="border:none; background:none; cursor:pointer; color:#d97706; font-weight:bold; font-size:18px;" title="Hold">!</button>
+                      </form>
+                    </div>
+                    {% endif %}
+                  </td>
+                  {% endif %}
+                </tr>
+                {% if reqs|length > 1 %}
+                  <tr id="hist-{{ loop.index }}" class="request-history" data-open="0" style="display:none; background:#f8fafc;">
+                    <td colspan="{{ 5 if role == 'IT' else 4 }}" style="padding:10px;">
+                      <div style="font-size:11px; font-weight:700; color:#64748b; margin-bottom:4px;">CHANGE LOG (Newest First)</div>
+                      {% for h in reqs[1:] %}
+                        <div style="font-size:11px; color:#475569; border-bottom:1px solid #e2e8f0; padding:4px 0; display:flex; justify-content:space-between;">
+                          <span>{{ h.RequestedRole }} ({{ h.ActionType }})</span>
+                          <span>{{ h.Status }}</span>
+                        </div>
+                      {% endfor %}
+                    </td>
+                  </tr>
+                {% endif %}
+              {% else %}
+                <tr><td colspan="{{ 5 if role == 'IT' else 4 }}" style="text-align:center; padding:20px; color:#94a3b8;">No requests found.</td></tr>
+              {% endfor %}
+              <tr id="requestHistoryEmpty" style="display:none;">
+                <td colspan="{{ 5 if role == 'IT' else 4 }}" style="text-align:center; padding:20px; color:#94a3b8;">No matching requests.</td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+
+      <div class="um-card">
+        <div class="um-section-head">
+          <h2 class="um-title">Modify Existing User</h2>
+        </div>
+        <p class="um-subtitle">Update roles or deactivate users.</p>
+        
+        <form method="post" action="{{ url_for('user_management_update_user') }}" class="um-form" id="editForm">
+          <div class="um-form-block" style="margin-bottom:12px;">
+            <label style="margin-top:0;">Select User</label>
+            <select name="target_username" id="editTarget" required style="font-weight:600;">
+            <option value="">-- Select User to Edit --</option>
+            {% for u in existing_users %}
+              <option value="{{ u.UserName }}"
+                data-role="{{ u.RoleName or '' }}"
+                data-unit="{{ u.UnitScope or '' }}"
+                data-purchase-units="{{ u.PurchaseUnitScope or '' }}"
+                data-firms="{{ u.FirmScope or '' }}"
+                data-sections="{{ u.SectionRights or '' }}"
+                data-active="{{ 1 if u.IsActive else 0 }}"
+              >
+                {{ u.UserName }} ({{ u.RoleName }})
+              </option>
+            {% endfor %}
+            </select>
+          </div>
+
+          <div id="hierarchyWarning" class="hierarchy-warning">
+            <strong>Access Denied:</strong> You cannot edit users with the 'Management' role.
+          </div>
+
+          <div id="editFields">
+            <div class="um-edit-grid">
+              <div class="um-field-card">
+                <label>Role</label>
+                <select name="role" id="editRole">
+                  <option value="Management">Management</option>
+                  <option value="Departmental Head">Dept Head</option>
+                  <option value="Executive">Executive</option>
+                  <option value="IT">IT</option>
+                </select>
+              </div>
+              <div class="um-units-panel">
+                <div class="um-units-header">
+                  <span>Unit Scope</span>
+                </div>
+                <div class="um-units-scroll">
+                  <div class="um-chips-grid" id="unitScopeGridEdit">
+                    {% if allowed_units %}
+                      {% for u in allowed_units %}
+                        <label class="um-chip">
+                          <input type="checkbox" name="unit_option_edit" value="{{ u }}">
+                          <span>{{ u }}</span>
+                        </label>
+                      {% endfor %}
+                    {% else %}
+                      <div style="font-size:12px; color:#94a3b8;">No units available.</div>
+                    {% endif %}
+                  </div>
+                </div>
+                <input type="hidden" name="unit_scope" id="unitScopeInputEdit">
+                <div class="um-edit-help">Select one or more units.</div>
+              </div>
+              <div class="um-units-panel">
+                <div class="um-units-header">
+                  <span>Purchase Unit Scope</span>
+                </div>
+                <div class="um-units-scroll">
+                  <div class="um-chips-grid" id="purchaseUnitScopeGridEdit">
+                    <label class="um-chip um-chip--all">
+                      <input type="checkbox" name="purchase_unit_option_edit" value="*">
+                      <span>All Units</span>
+                    </label>
+                    {% if allowed_units %}
+                      {% for u in allowed_units %}
+                        <label class="um-chip">
+                          <input type="checkbox" name="purchase_unit_option_edit" value="{{ u }}">
+                          <span>{{ u }}</span>
+                        </label>
+                      {% endfor %}
+                    {% else %}
+                      <div style="font-size:12px; color:#94a3b8;">No units available.</div>
+                    {% endif %}
+                  </div>
+                </div>
+                <input type="hidden" name="purchase_unit_scope" id="purchaseUnitScopeInputEdit">
+                <div class="um-edit-help">Leave blank to inherit Unit Scope, or choose specific purchase units.</div>
+              </div>
+              <div class="um-units-panel">
+                <div class="um-units-header">
+                  <span>Firm Scope</span>
+                </div>
+                <div class="um-units-scroll">
+                  <div class="um-chips-grid" id="firmScopeGridEdit">
+                    {% if can_assign_all_firms %}
+                      <label class="um-chip um-chip--all">
+                        <input type="checkbox" name="firm_option_edit" value="*">
+                        <span>All Firms (*)</span>
+                      </label>
+                    {% endif %}
+                    {% if allowed_firms %}
+                      {% for f in allowed_firms %}
+                        <label class="um-chip">
+                          <input type="checkbox" name="firm_option_edit" value="{{ f }}">
+                          <span>{{ f }}</span>
+                        </label>
+                      {% endfor %}
+                    {% else %}
+                      <div style="font-size:12px; color:#94a3b8;">No firms available.</div>
+                    {% endif %}
+                  </div>
+                </div>
+                <input type="hidden" name="firm_scope" id="firmScopeInputEdit">
+                <div class="um-edit-help">Assign one or more firms.</div>
+              </div>
+              <div class="um-field-card um-field-card--active">
+                 <label>Active</label>
+                 <label class="um-switch" style="margin-top:6px;">
+                   <input type="checkbox" name="is_active" id="editActive" value="1" checked>
+                   <span class="um-switch-slider"></span>
+                 </label>
+              </div>
+            </div>
+
+            <label>Section Rights</label>
+            <div class="um-sections" id="sectionsGridEdit">
+              <div class="um-section-group">
+                <div class="um-section-group-title">Global</div>
+                <div class="um-chips-grid um-chips-grid--tight">
+                  <label class="um-chip um-chip--all">
+                    <input type="checkbox" name="section_option_edit" value="*">
+                    <span>All Sections (*)</span>
+                  </label>
+                </div>
+              </div>
+              <div class="um-section-group">
+                <div class="um-section-group-title">MIS Routes</div>
+                <div class="um-chips-grid um-chips-grid--tight">
+                  {% for sec in section_choices %}
+                    {% if sec.startswith('mis_') or sec == 'mis' %}
+                      {% set label = sec.replace('_',' ').title() %}
+                      {% if sec == 'mis' %}
+                        {% set label = 'MIS (All)' %}
+                      {% else %}
+                        {% set label = 'MIS ' ~ sec[4:].replace('_',' ').title() %}
+                      {% endif %}
+                      <label class="um-chip">
+                        <input type="checkbox" name="section_option_edit" value="{{ sec }}">
+                        <span>{{ label }}</span>
+                      </label>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              </div>
+              <div class="um-section-group">
+                <div class="um-section-group-title">Other Sections</div>
+                <div class="um-chips-grid um-chips-grid--tight">
+                  {% for sec in section_choices %}
+                {% if not sec.startswith('mis_') and sec != 'mis' %}
+                  {% set label = sec.replace('_',' ').title() %}
+                  {% if sec == 'user_management' %}
+                    {% set label = 'User Management (Admin)' %}
+                  {% elif sec == 'fund_position' %}
+                    {% set label = 'Fund Position Tracker' %}
+                  {% elif sec == 'fund_position_admin' %}
+                    {% set label = 'Fund Position Admin' %}
+                  {% elif sec == 'service_addition' %}
+                    {% set label = 'Service Addition (All)' %}
+                  {% elif sec == 'mod_reports' %}
+                    {% set label = 'MOD Reports' %}
+                  {% elif sec == 'service_addition_master' %}
+                    {% set label = 'Service Addition - Service Master' %}
+                  {% elif sec == 'service_addition_health_package' %}
+                    {% set label = 'Service Addition - Health Package' %}
+                  {% elif sec == 'service_addition_ip_package' %}
+                    {% set label = 'Service Addition - IP Package' %}
+                  {% elif sec == 'corporate_writeoff' %}
+                    {% set label = 'Corporate - Write-off Permission' %}
+                  {% endif %}
+                      <label class="um-chip">
+                        <input type="checkbox" name="section_option_edit" value="{{ sec }}">
+                        <span>{{ label }}</span>
+                      </label>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              </div>
+            </div>
+            <input type="hidden" name="sections" id="sectionsInputEdit">
+
+            <button type="submit" class="um-btn-primary" id="editSubmitBtn" style="background:#334155; margin-top:16px;">Update User</button>
+          </div>
+        </form>
+      </div>
+
+      {% if role == "IT" %}
+      <div class="um-card">
+        <div class="um-section-head">
+          <h2 class="um-title">IT Direct User Control</h2>
+          <span class="um-badge badge-submit">Direct</span>
+        </div>
+        <p class="um-subtitle">Complete user snapshot for IT: credentials, rights and status. Edits here are saved directly without approval workflow.</p>
+
+        <div class="um-table-tools">
+          <div class="um-search">
+            <input type="text" id="itUserSearch" placeholder="Search by username, role, unit, firm, section or status">
+          </div>
+          <div class="um-table-tools-meta">
+            <div class="um-muted-small" id="itUserCountInfo">Users: {{ (it_direct_users or [])|length }}</div>
+            <div class="um-pager" id="itUserPager">
+              <span>Rows</span>
+              <select id="itUserPageSize" aria-label="Rows per page">
+                <option value="8">8</option>
+                <option value="12" selected>12</option>
+                <option value="20">20</option>
+              </select>
+              <button type="button" id="itUserPrev">Prev</button>
+              <span id="itUserPageInfo">Page 1 of 1</span>
+              <button type="button" id="itUserNext">Next</button>
+            </div>
+          </div>
+        </div>
+
+        <div class="um-table-wrapper um-table-wrapper--it">
+          <table class="um-table um-table--it" id="itUserAdminTable">
+            <thead>
+              <tr>
+                <th>User</th>
+                <th>Password</th>
+                <th>Role</th>
+                <th>Rights</th>
+                <th>Status</th>
+                <th>Updated</th>
+                <th class="um-col-action">Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if it_direct_users %}
+                {% for u in it_direct_users %}
+                  <tr data-search="{{ (u.UserName ~ ' ' ~ (u.RoleName or '') ~ ' ' ~ (u.UnitScope or '') ~ ' ' ~ (u.PurchaseUnitScope or '') ~ ' ' ~ (u.FirmScope or '') ~ ' ' ~ (u.SectionRights or '') ~ ' ' ~ ('active' if u.IsActive else 'inactive')) | e }}">
+                    <td>
+                      <div class="um-contact-name">{{ u.UserName }}</div>
+                      <div class="um-contact-email">Acct ID: {{ u.AccountId or '-' }}</div>
+                    </td>
+                    <td><span class="um-secret">{{ u.PasswordW or '-' }}</span></td>
+                    <td>{{ u.RoleName or '-' }}</td>
+                    <td>
+                      <div class="um-rights-stack">
+                        <div class="um-rights-line"><b>Units:</b> {{ u.UnitScope or '-' }}</div>
+                        <div class="um-rights-line"><b>Purchase Units:</b> {{ u.PurchaseUnitScope or 'Use Unit Scope' }}</div>
+                        <div class="um-rights-line"><b>Firms:</b> {{ u.FirmScope or '-' }}</div>
+                        <div class="um-rights-line">
+                          <b>Sections:</b>
+                          <span class="um-rights-ellipsis" title="{{ u.SectionRights or '-' }}">{{ u.SectionRights or '-' }}</span>
+                        </div>
+                      </div>
+                    </td>
+                    <td>
+                      {% if u.IsActive %}
+                        <span class="um-pill pill-approved">Active</span>
+                      {% else %}
+                        <span class="um-pill pill-hold">Inactive</span>
+                      {% endif %}
+                    </td>
+                    <td>{{ u.UpdatedAt or u.CreatedAt or '-' }}</td>
+                    <td class="um-col-action">
+                      <button
+                        type="button"
+                        class="um-btn-outline js-it-user-edit"
+                        data-user-index="{{ loop.index0 }}"
+                      >
+                        Edit Directly
+                      </button>
+                    </td>
+                  </tr>
+                {% endfor %}
+              {% endif %}
+              <tr id="itUserEmptyRow" style="{% if it_direct_users %}display:none;{% endif %}">
+                <td colspan="7" style="text-align:center; padding:16px; color:#94a3b8;">
+                  {% if it_direct_users %}No matching users.{% else %}No users found in HID_User_Mst.{% endif %}
+                </td>
+              </tr>
+            </tbody>
+          </table>
+        </div>
+        <script type="application/json" id="itUserAdminPayload">{{ (it_direct_users or [])|tojson }}</script>
+
+        <div id="itUserAdminModal" class="um-modal-backdrop">
+          <div class="um-modal-card">
+            <div class="um-modal-head">
+              <h3>Direct User Edit (IT)</h3>
+              <button type="button" class="um-modal-close" data-close-it-user-modal>Close</button>
+            </div>
+            <p class="um-subtitle" style="margin-bottom:10px;">Update role, rights and status directly. Fill new password only when you want to change it.</p>
+            <form method="post" action="{{ url_for('user_management_it_user_update') }}" class="um-form" id="itUserAdminForm">
+              <input type="hidden" name="target_username" id="itUserTargetUsername">
+              <div class="um-modal-grid">
+                <div class="um-field-full">
+                  <label>Username</label>
+                  <input type="text" id="itUserUsernameView" readonly>
+                </div>
+                <div>
+                  <label>Current Password</label>
+                  <input type="text" id="itUserCurrentPassword" readonly>
+                </div>
+                <div>
+                  <label>New Password (optional)</label>
+                  <input type="text" name="new_password" id="itUserNewPassword" placeholder="Leave blank to keep existing password">
+                </div>
+                <div>
+                  <label>Role</label>
+                  <select name="role" id="itUserRole" required>
+                    <option value="Management">Management</option>
+                    <option value="Departmental Head">Departmental Head</option>
+                    <option value="Executive">Executive</option>
+                    <option value="IT">IT</option>
+                  </select>
+                </div>
+                <div>
+                  <label>Status</label>
+                  <select name="is_active" id="itUserActive">
+                    <option value="1">Active</option>
+                    <option value="0">Inactive</option>
+                  </select>
+                </div>
+                <div class="um-field-full">
+                  <label>Unit Scope</label>
+                  <div class="um-modal-scope">
+                    <div class="um-chips-grid um-chips-grid--tight um-modal-scope-grid" id="itUserUnitScopeGrid">
+                      <label class="um-chip um-chip--all">
+                        <input type="checkbox" value="*">
+                        <span>All Units</span>
+                      </label>
+                      {% for u in allowed_units or [] %}
+                        <label class="um-chip">
+                          <input type="checkbox" value="{{ (u or '')|upper }}">
+                          <span>{{ u }}</span>
+                        </label>
+                      {% endfor %}
+                    </div>
+                    <div class="um-modal-scope-help">Choose one, many, or all units. Free typing is disabled to avoid errors.</div>
+                  </div>
+                  <input type="hidden" name="unit_scope" id="itUserUnitScope">
+                </div>
+                <div class="um-field-full">
+                  <label>Purchase Unit Scope (optional)</label>
+                  <div class="um-modal-scope">
+                    <div class="um-chips-grid um-chips-grid--tight um-modal-scope-grid" id="itUserPurchaseUnitScopeGrid">
+                      <label class="um-chip um-chip--all">
+                        <input type="checkbox" value="__USE_UNIT_SCOPE__">
+                        <span>Use Unit Scope</span>
+                      </label>
+                      <label class="um-chip um-chip--all">
+                        <input type="checkbox" value="*">
+                        <span>All Units</span>
+                      </label>
+                      {% for u in allowed_units or [] %}
+                        <label class="um-chip">
+                          <input type="checkbox" value="{{ (u or '')|upper }}">
+                          <span>{{ u }}</span>
+                        </label>
+                      {% endfor %}
+                    </div>
+                    <div class="um-modal-scope-help">Leave on "Use Unit Scope" to inherit Unit Scope, or choose specific purchase units.</div>
+                  </div>
+                  <input type="hidden" name="purchase_unit_scope" id="itUserPurchaseUnitScope">
+                </div>
+                <div class="um-field-full">
+                  <label>Firm Scope</label>
+                  <div class="um-modal-scope">
+                    <div class="um-chips-grid um-chips-grid--tight um-modal-scope-grid" id="itUserFirmScopeGrid">
+                      <label class="um-chip um-chip--all">
+                        <input type="checkbox" value="*">
+                        <span>All Firms (*)</span>
+                      </label>
+                      {% for f in allowed_firms or [] %}
+                        <label class="um-chip">
+                          <input type="checkbox" value="{{ f }}">
+                          <span>{{ f }}</span>
+                        </label>
+                      {% endfor %}
+                    </div>
+                    <div class="um-modal-scope-help">Choose one, many, or all firms. Free typing is disabled to avoid errors.</div>
+                  </div>
+                  <input type="hidden" name="firm_scope" id="itUserFirmScope">
+                </div>
+                <div class="um-field-full">
+                  <label>Section Rights</label>
+                  <div class="um-modal-scope">
+                    <div class="um-modal-scope--sections">
+                      <div class="um-sections" id="itUserSectionsGrid">
+                        <div class="um-section-group">
+                          <div class="um-section-group-title">Global</div>
+                          <div class="um-chips-grid um-chips-grid--tight">
+                            <label class="um-chip um-chip--all">
+                              <input type="checkbox" value="*">
+                              <span>All Sections (*)</span>
+                            </label>
+                          </div>
+                        </div>
+                        <div class="um-section-group">
+                          <div class="um-section-group-title">MIS Routes</div>
+                          <div class="um-chips-grid um-chips-grid--tight">
+                            {% for sec in section_choices %}
+                              {% if sec.startswith('mis_') or sec == 'mis' %}
+                                {% set label = sec.replace('_',' ').title() %}
+                                {% if sec == 'mis' %}
+                                  {% set label = 'MIS (All)' %}
+                                {% else %}
+                                  {% set label = 'MIS ' ~ sec[4:].replace('_',' ').title() %}
+                                {% endif %}
+                                <label class="um-chip">
+                                  <input type="checkbox" value="{{ sec }}">
+                                  <span>{{ label }}</span>
+                                </label>
+                              {% endif %}
+                            {% endfor %}
+                          </div>
+                        </div>
+                        <div class="um-section-group">
+                          <div class="um-section-group-title">Other Sections</div>
+                          <div class="um-chips-grid um-chips-grid--tight">
+                            {% for sec in section_choices %}
+                              {% if not sec.startswith('mis_') and sec != 'mis' %}
+                                {% set label = sec.replace('_',' ').title() %}
+                                {% if sec == 'user_management' %}
+                                  {% set label = 'User Management (Admin)' %}
+                                {% elif sec == 'fund_position' %}
+                                  {% set label = 'Fund Position Tracker' %}
+                                {% elif sec == 'fund_position_admin' %}
+                                  {% set label = 'Fund Position Admin' %}
+                                {% elif sec == 'service_addition' %}
+                                  {% set label = 'Service Addition (All)' %}
+                                {% elif sec == 'mod_reports' %}
+                                  {% set label = 'MOD Reports' %}
+                                {% elif sec == 'service_addition_master' %}
+                                  {% set label = 'Service Addition - Service Master' %}
+                                {% elif sec == 'service_addition_health_package' %}
+                                  {% set label = 'Service Addition - Health Package' %}
+                                {% elif sec == 'service_addition_ip_package' %}
+                                  {% set label = 'Service Addition - IP Package' %}
+                                {% elif sec == 'corporate_writeoff' %}
+                                  {% set label = 'Corporate - Write-off Permission' %}
+                                {% endif %}
+                                <label class="um-chip">
+                                  <input type="checkbox" value="{{ sec }}">
+                                  <span>{{ label }}</span>
+                                </label>
+                              {% endif %}
+                            {% endfor %}
+                          </div>
+                        </div>
+                      </div>
+                    </div>
+                    <div class="um-modal-scope-help">Choose one, many, or all section rights. Free typing is disabled to avoid errors.</div>
+                  </div>
+                  <input type="hidden" name="sections" id="itUserSections">
+                </div>
+              </div>
+              <div class="um-modal-actions">
+                <button type="button" class="um-btn-outline" data-close-it-user-modal>Cancel</button>
+                <button type="submit" class="um-btn-primary" style="width:auto; margin-top:0; padding:10px 16px;">Save Direct Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if role == "IT" %}
+      <div class="um-card">
+        <div class="um-section-head">
+          <h2 class="um-title">Purchase Incharge</h2>
+        </div>
+        <p class="um-subtitle">PO approval OTPs will be emailed to these contacts. Each row below is one right mapping: <b>which contact</b> can approve for <b>which department and unit</b>.</p>
+
+        <form method="post" action="{{ url_for('user_management_purchase_incharge_add') }}" class="um-form">
+          <label>Name</label>
+          <input type="text" name="incharge_name" placeholder="Full name" required>
+
+          <label>Email</label>
+          <input type="text" name="incharge_email" placeholder="name@example.com" required>
+
+          <label>Degree / Qualification</label>
+          <input type="text" name="incharge_degree" placeholder="e.g. MBA (Supply Chain)">
+
+          <label>Designation</label>
+          <input type="text" name="incharge_designation" placeholder="e.g. AGM Purchase">
+
+          <label>Phone</label>
+          <input type="text" name="incharge_phone" placeholder="e.g. 8227996500">
+
+          <label>Signature File</label>
+          <input type="text" name="incharge_signature_file" placeholder="e.g. shantonu_agasti.png">
+          <div class="um-edit-help">Place signature image in <b>static/signatures/</b> and enter filename.</div>
+
+          <label>Purchasing Dept</label>
+          <div class="um-chips-grid um-chips-grid--tight" id="inchargeDeptGrid">
+            <label class="um-chip um-chip--all">
+              <input type="checkbox" id="inchargeDeptGeneric" name="incharge_include_generic" value="1" checked>
+              <span>All / Generic</span>
+            </label>
+            {% for d in purchasing_departments or [] %}
+              <label class="um-chip">
+                <input type="checkbox" name="incharge_purchasing_dept_ids" value="{{ d.Id }}">
+                <span>{{ d.PurchasingDeptName }}</span>
+              </label>
+            {% endfor %}
+          </div>
+          <div class="um-edit-help">For specific routing, uncheck <b>All / Generic</b> and choose one or more departments.</div>
+
+          <label>Unit</label>
+          <div class="um-chips-grid um-chips-grid--tight" id="inchargeUnitGrid">
+            <label class="um-chip um-chip--all">
+              <input type="checkbox" id="inchargeAllUnits" name="incharge_include_all_units" value="1" checked>
+              <span>All Units</span>
+            </label>
+            {% for u in allowed_units or [] %}
+              <label class="um-chip">
+                <input type="checkbox" name="incharge_units" value="{{ u }}">
+                <span>{{ u }}</span>
+              </label>
+            {% endfor %}
+          </div>
+          <div class="um-edit-help">For specific routing, uncheck <b>All Units</b> and choose one or more units.</div>
+
+          <button type="submit" class="um-btn-primary" style="margin-top:14px;">Add Incharge</button>
+        </form>
+
+        <div class="um-table-wrapper" style="margin-top:16px;">
+          <table class="um-table">
+            <thead>
+              <tr>
+                <th>Contact</th>
+                <th>Profile</th>
+                <th>Approval Rights</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if purchase_incharges %}
+                {% for p in purchase_incharges %}
+                  <tr>
+                    <td>
+                      <div class="um-contact-name">{{ p.Name }}</div>
+                      <div class="um-contact-email">{{ p.Email }}</div>
+                    </td>
+                    <td>
+                      <div class="um-profile-line"><b>Designation:</b> {{ p.ApproverDesignation or '-' }}</div>
+                      <div class="um-profile-line"><b>Degree:</b> {{ p.ApproverDegree or '-' }}</div>
+                      <div class="um-profile-line"><b>Phone:</b> {{ p.ApproverPhone or '-' }}</div>
+                      <div class="um-profile-line"><b>Signature:</b> {{ p.ApproverSignatureFile or '-' }}</div>
+                    </td>
+                    <td>
+                      <div class="um-rights-cell">
+                        <span class="um-scope-chip">Dept: {{ p.PurchasingDeptName or 'All / Generic' }}</span>
+                        <span class="um-scope-chip">Unit: {{ p.Unit or 'All Units' }}</span>
+                      </div>
+                    </td>
+                    <td>
+                      {% if p.IsActive %}
+                        <span class="um-pill pill-approved">Active</span>
+                      {% else %}
+                        <span class="um-pill pill-hold">Inactive</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <div class="um-action-row">
+                        <button
+                          type="button"
+                          class="um-btn-outline js-incharge-edit"
+                          data-id="{{ p.Id }}"
+                          data-name="{{ p.Name }}"
+                          data-email="{{ p.Email }}"
+                          data-degree="{{ p.ApproverDegree or '' }}"
+                          data-designation="{{ p.ApproverDesignation or '' }}"
+                          data-phone="{{ p.ApproverPhone or '' }}"
+                          data-signature="{{ p.ApproverSignatureFile or '' }}"
+                          data-dept-id="{{ p.PurchasingDeptId or '' }}"
+                          data-unit="{{ p.Unit or '' }}"
+                          data-active="{{ 1 if p.IsActive else 0 }}"
+                        >
+                          Edit Rights
+                        </button>
+                        <form method="post" action="{{ url_for('user_management_purchase_incharge_toggle') }}">
+                          <input type="hidden" name="incharge_id" value="{{ p.Id }}">
+                          <input type="hidden" name="is_active" value="{{ 0 if p.IsActive else 1 }}">
+                          <button type="submit" class="um-link-btn">
+                            {% if p.IsActive %}Deactivate{% else %}Activate{% endif %}
+                          </button>
+                        </form>
+                      </div>
+                    </td>
+                  </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="5" style="text-align:center; padding:16px; color:#94a3b8;">No purchase incharge configured.</td>
+                </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+
+        <div id="inchargeEditModal" class="um-modal-backdrop">
+          <div class="um-modal-card">
+            <div class="um-modal-head">
+              <h3>Edit Purchase Incharge Rights</h3>
+              <button type="button" class="um-modal-close" data-close-incharge-modal>Close</button>
+            </div>
+            <p class="um-subtitle" style="margin-bottom:10px;">Update contact details and rights scope. This update access is available to IT only.</p>
+            <form method="post" action="{{ url_for('user_management_purchase_incharge_update') }}" class="um-form" id="inchargeEditForm">
+              <input type="hidden" name="incharge_id" id="inchargeEditId">
+              <div class="um-modal-grid">
+                <div class="um-field-full">
+                  <label>Name</label>
+                  <input type="text" name="incharge_name" id="inchargeEditName" required>
+                </div>
+                <div class="um-field-full">
+                  <label>Email</label>
+                  <input type="text" name="incharge_email" id="inchargeEditEmail" required>
+                </div>
+                <div>
+                  <label>Degree / Qualification</label>
+                  <input type="text" name="incharge_degree" id="inchargeEditDegree">
+                </div>
+                <div>
+                  <label>Designation</label>
+                  <input type="text" name="incharge_designation" id="inchargeEditDesignation">
+                </div>
+                <div>
+                  <label>Phone</label>
+                  <input type="text" name="incharge_phone" id="inchargeEditPhone">
+                </div>
+                <div>
+                  <label>Signature File</label>
+                  <input type="text" name="incharge_signature_file" id="inchargeEditSignature">
+                </div>
+                <div>
+                  <label>Purchasing Dept</label>
+                  <select name="incharge_edit_purchasing_dept_id" id="inchargeEditDept">
+                    <option value="">All / Generic</option>
+                    {% for d in purchasing_departments or [] %}
+                      <option value="{{ d.Id }}">{{ d.PurchasingDeptName }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label>Unit</label>
+                  <select name="incharge_edit_unit" id="inchargeEditUnit">
+                    <option value="">All Units</option>
+                    {% for u in allowed_units or [] %}
+                      <option value="{{ u }}">{{ u }}</option>
+                    {% endfor %}
+                  </select>
+                </div>
+                <div>
+                  <label>Status</label>
+                  <select name="incharge_edit_is_active" id="inchargeEditActive">
+                    <option value="1">Active</option>
+                    <option value="0">Inactive</option>
+                  </select>
+                </div>
+              </div>
+              <div class="um-modal-actions">
+                <button type="button" class="um-btn-outline" data-close-incharge-modal>Cancel</button>
+                <button type="submit" class="um-btn-primary" style="width:auto; margin-top:0; padding:10px 16px;">Save Changes</button>
+              </div>
+            </form>
+          </div>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if role == "IT" %}
+      <div class="um-card">
+        <div class="um-section-head">
+          <h2 class="um-title">PO Approval Mail Recipients</h2>
+        </div>
+        <p class="um-subtitle">Approved PO PDF will be emailed to these contacts based on unit and purchasing department.</p>
+
+        <form method="post" action="{{ url_for('user_management_purchase_approval_recipient_add') }}" class="um-form">
+          <label>Name</label>
+          <input type="text" name="recipient_name" placeholder="Full name" required>
+
+          <label>Email</label>
+          <input type="text" name="recipient_email" placeholder="name@example.com" required>
+
+          <label>Unit</label>
+          <select name="recipient_unit">
+            <option value="">All Units</option>
+            {% for u in allowed_units or [] %}
+              <option value="{{ u }}">{{ u }}</option>
+            {% endfor %}
+          </select>
+
+          <label>Purchasing Department</label>
+          <select name="recipient_purchasing_dept_id">
+            <option value="">All Departments</option>
+            {% for dept in purchasing_departments or [] %}
+              <option value="{{ dept.Id }}">{{ dept.PurchasingDeptName }}</option>
+            {% endfor %}
+          </select>
+
+          <button type="submit" class="um-btn-primary" style="margin-top:14px;">Add Recipient</button>
+        </form>
+
+        <div class="um-table-wrapper" style="margin-top:16px;">
+          <table class="um-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Unit</th>
+                <th>Purchasing Dept</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if purchase_approval_recipients %}
+                {% for r in purchase_approval_recipients %}
+                  <tr>
+                    <td>{{ r.Name }}</td>
+                    <td>{{ r.Email }}</td>
+                    <td>{{ r.Unit or 'All' }}</td>
+                    <td>{{ r.PurchasingDeptName or 'All' }}</td>
+                    <td>
+                      {% if r.IsActive %}
+                        <span class="um-pill pill-approved">Active</span>
+                      {% else %}
+                        <span class="um-pill pill-hold">Inactive</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <form method="post" action="{{ url_for('user_management_purchase_approval_recipient_toggle') }}">
+                        <input type="hidden" name="recipient_id" value="{{ r.Id }}">
+                        <input type="hidden" name="is_active" value="{{ 0 if r.IsActive else 1 }}">
+                        <button type="submit" style="border:none; background:none; cursor:pointer; color:#2563eb; font-weight:700;">
+                          {% if r.IsActive %}Deactivate{% else %}Activate{% endif %}
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="6" style="text-align:center; padding:16px; color:#94a3b8;">No approval recipients configured.</td>
+                </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if role == "IT" %}
+      <div class="um-card">
+        <div class="um-section-head">
+          <h2 class="um-title">Fund Position Mail Recipients</h2>
+        </div>
+        <p class="um-subtitle">Fund position edits/saves will be emailed to these contacts.</p>
+
+        <form method="post" action="{{ url_for('user_management_fund_position_recipient_add') }}" class="um-form">
+          <label>Name</label>
+          <input type="text" name="fund_recipient_name" placeholder="Full name" required>
+
+          <label>Email</label>
+          <input type="text" name="fund_recipient_email" placeholder="name@example.com" required>
+
+          <label>Firm</label>
+          <select name="fund_recipient_firm">
+            <option value="">All Firms</option>
+            {% for f in allowed_firms or [] %}
+              <option value="{{ f }}">{{ f }}</option>
+            {% endfor %}
+          </select>
+
+          <button type="submit" class="um-btn-primary" style="margin-top:14px;">Add Recipient</button>
+        </form>
+
+        <div class="um-table-wrapper" style="margin-top:16px;">
+          <table class="um-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Firm</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if fund_position_recipients %}
+                {% for r in fund_position_recipients %}
+                  <tr>
+                    <td>{{ r.Name }}</td>
+                    <td>{{ r.Email }}</td>
+                    <td>{{ r.FirmName or 'All' }}</td>
+                    <td>
+                      {% if r.IsActive %}
+                        <span class="um-pill pill-approved">Active</span>
+                      {% else %}
+                        <span class="um-pill pill-hold">Inactive</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <form method="post" action="{{ url_for('user_management_fund_position_recipient_toggle') }}">
+                        <input type="hidden" name="fund_recipient_id" value="{{ r.Id }}">
+                        <input type="hidden" name="is_active" value="{{ 0 if r.IsActive else 1 }}">
+                        <button type="submit" style="border:none; background:none; cursor:pointer; color:#2563eb; font-weight:700;">
+                          {% if r.IsActive %}Deactivate{% else %}Activate{% endif %}
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="5" style="text-align:center; padding:16px; color:#94a3b8;">No fund-position recipients configured.</td>
+                </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if role == "IT" %}
+      <div class="um-card">
+        <div class="um-section-head">
+          <h2 class="um-title">Bill Edit OTP Recipients</h2>
+        </div>
+        <p class="um-subtitle">Director OTPs for bill edits will be emailed to these contacts.</p>
+
+        <form method="post" action="{{ url_for('user_management_bill_edit_director_add') }}" class="um-form">
+          <label>Name</label>
+          <input type="text" name="director_name" placeholder="Full name" required>
+
+          <label>Email</label>
+          <input type="text" name="director_email" placeholder="name@example.com" required>
+
+          <label>Unit</label>
+          <select name="director_unit">
+            <option value="">All Units</option>
+            {% for u in allowed_units or [] %}
+              <option value="{{ u }}">{{ u }}</option>
+            {% endfor %}
+          </select>
+
+          <button type="submit" class="um-btn-primary" style="margin-top:14px;">Add Director</button>
+        </form>
+
+        <div class="um-table-wrapper" style="margin-top:16px;">
+          <table class="um-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Unit</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if bill_edit_directors %}
+                {% for d in bill_edit_directors %}
+                  <tr>
+                    <td>{{ d.Name }}</td>
+                    <td>{{ d.Email }}</td>
+                    <td>{{ d.Unit or 'All' }}</td>
+                    <td>
+                      {% if d.IsActive %}
+                        <span class="um-pill pill-approved">Active</span>
+                      {% else %}
+                        <span class="um-pill pill-hold">Inactive</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <form method="post" action="{{ url_for('user_management_bill_edit_director_toggle') }}">
+                        <input type="hidden" name="director_id" value="{{ d.Id }}">
+                        <input type="hidden" name="is_active" value="{{ 0 if d.IsActive else 1 }}">
+                        <button type="submit" style="border:none; background:none; cursor:pointer; color:#2563eb; font-weight:700;">
+                          {% if d.IsActive %}Deactivate{% else %}Activate{% endif %}
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="5" style="text-align:center; padding:16px; color:#94a3b8;">No bill edit directors configured.</td>
+                </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+      
+      {% if role == "IT" and notifications %}
+        <div style="margin-top:10px;">
+          {% for n in notifications %}
+             <div class="um-notif">
+                <div><strong>{{ n.NewUserName }}</strong>: {{ n.Status }}</div>
+                <span style="font-size:11px; color:#64748b;">By {{ n.RequestedBy }}</span>
+             </div>
+          {% endfor %}
+        </div>
+      {% endif %}
+
+    </div> </div> </div>
+
+ <script>
+  // 1. Reusable Checkbox Logic (Your previous requested logic + All/One toggle)
+  function setupSectionLogic(gridId, hiddenInputId) {
+    const grid = document.getElementById(gridId);
+    const hidden = document.getElementById(hiddenInputId);
+    
+    if (!grid || !hidden) return;
+
+    const allCheckbox = grid.querySelector('input[value="*"]');
+    const specificCheckboxes = Array.from(grid.querySelectorAll('input[type="checkbox"]:not([value="*"])'));
+    const misAllCheckbox = grid.querySelector('input[value="mis"]');
+    const misSpecificCheckboxes = Array.from(grid.querySelectorAll('input[value^="mis_"]'));
+    const svcAllCheckbox = grid.querySelector('input[value="service_addition"]');
+    const svcSpecificCheckboxes = Array.from(grid.querySelectorAll('input[value^="service_addition_"]'));
+
+    function syncMisRoutes(clearOnUncheck) {
+      if (!misAllCheckbox || !misSpecificCheckboxes.length) return;
+      if (misAllCheckbox.checked) {
+        misSpecificCheckboxes.forEach(cb => cb.checked = true);
+        return;
+      }
+      if (clearOnUncheck) {
+        misSpecificCheckboxes.forEach(cb => cb.checked = false);
+      }
+    }
+
+    function syncServiceAdditions(clearOnUncheck) {
+      if (!svcAllCheckbox || !svcSpecificCheckboxes.length) return;
+      if (svcAllCheckbox.checked) {
+        svcSpecificCheckboxes.forEach(cb => cb.checked = true);
+        return;
+      }
+      if (clearOnUncheck) {
+        svcSpecificCheckboxes.forEach(cb => cb.checked = false);
+      }
+    }
+
+    function updateHiddenInput() {
+      hidden.value = Array.from(grid.querySelectorAll('input:checked')).map(cb => cb.value).join(',');
+    }
+
+    grid.addEventListener('change', function(e) {
+      const target = e.target;
+      if (target === allCheckbox) {
+        const isChecked = allCheckbox.checked;
+        specificCheckboxes.forEach(cb => cb.checked = isChecked);
+      } else if (target === misAllCheckbox) {
+        syncMisRoutes(true);
+      } else if (target === svcAllCheckbox) {
+        syncServiceAdditions(true);
+      }
+      syncMisRoutes(false);
+      syncServiceAdditions(false);
+      if (allCheckbox) {
+        // If any specific box is unchecked, uncheck "All". 
+        // If ALL specific boxes are checked, check "All".
+        const allSelected = specificCheckboxes.every(cb => cb.checked);
+        allCheckbox.checked = allSelected;
+      }
+      if (svcAllCheckbox && svcSpecificCheckboxes.length) {
+        const svcAllSelected = svcSpecificCheckboxes.every(cb => cb.checked);
+        svcAllCheckbox.checked = svcAllSelected;
+      }
+      updateHiddenInput();
+    });
+    syncMisRoutes(false);
+    syncServiceAdditions(false);
+    updateHiddenInput();
+  }
+
+  function parseUnitScope(raw) {
+    if (raw === null || raw === undefined) return [];
+    let text = String(raw).trim();
+    if (!text) return [];
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) {
+        text = parsed.join(",");
+      }
+    } catch (err) {
+      // ignore JSON parse errors
+    }
+    return text
+      .split(/[,\|/]+/)
+      .map(v => v.trim().toUpperCase())
+      .filter(Boolean);
+  }
+
+  function applyUnitSelection(grid, hidden, rawUnits) {
+    if (!grid || !hidden) return;
+    const units = parseUnitScope(rawUnits);
+    const boxes = Array.from(grid.querySelectorAll('input[type="checkbox"]'));
+    const allBox = boxes.find(cb => String(cb.value || '').trim() === '*');
+    const specific = boxes.filter(cb => cb !== allBox);
+    const hasAll = units.includes('*');
+    const selected = new Set(units.map(v => String(v || '').toUpperCase()));
+
+    specific.forEach(cb => {
+      const value = String(cb.value || '').trim().toUpperCase();
+      cb.checked = hasAll || selected.has(value);
+    });
+    if (allBox) {
+      allBox.checked = hasAll || (specific.length > 0 && specific.every(cb => cb.checked));
+    }
+    hidden.value = specific
+      .filter(cb => cb.checked)
+      .map(cb => String(cb.value || '').trim().toUpperCase())
+      .filter(Boolean)
+      .join(', ');
+  }
+
+  function setupUnitLogic(gridId, hiddenInputId) {
+    const grid = document.getElementById(gridId);
+    const hidden = document.getElementById(hiddenInputId);
+    if (!grid || !hidden) return;
+    const boxes = Array.from(grid.querySelectorAll('input[type="checkbox"]'));
+    const allBox = boxes.find(cb => String(cb.value || '').trim() === '*');
+    const specific = boxes.filter(cb => cb !== allBox);
+    if (!boxes.length) {
+      applyUnitSelection(grid, hidden, hidden.value);
+      return;
+    }
+
+    function syncHidden() {
+      const checked = specific
+        .filter(cb => cb.checked)
+        .map(cb => String(cb.value || '').trim())
+        .filter(Boolean);
+      const deduped = [];
+      const seen = new Set();
+      checked.forEach(val => {
+        const up = val.toUpperCase();
+        if (seen.has(up)) return;
+        seen.add(up);
+        deduped.push(up);
+      });
+      hidden.value = deduped.join(', ');
+    }
+
+    grid.addEventListener('change', function(e) {
+      const target = e.target;
+      if (allBox && target === allBox) {
+        specific.forEach(cb => cb.checked = allBox.checked);
+      } else if (allBox) {
+        allBox.checked = specific.length > 0 && specific.every(cb => cb.checked);
+      }
+      syncHidden();
+    });
+    applyUnitSelection(grid, hidden, hidden.value);
+    syncHidden();
+  }
+
+  function parseFirmScope(raw) {
+    if (raw === null || raw === undefined) return [];
+    let text = String(raw).trim();
+    if (!text) return [];
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) text = parsed.join(",");
+    } catch (err) {
+      // ignore JSON parse errors
+    }
+    const values = text
+      .split(/[,\|/\n;]+/)
+      .map(v => v.trim().toUpperCase())
+      .filter(Boolean);
+    if (values.includes('*')) return ['*'];
+    return Array.from(new Set(values));
+  }
+
+  function parseSectionScope(raw) {
+    if (raw === null || raw === undefined) return [];
+    let text = String(raw).trim();
+    if (!text) return [];
+    try {
+      const parsed = JSON.parse(text);
+      if (Array.isArray(parsed)) text = parsed.join(",");
+    } catch (err) {
+      // ignore JSON parse errors
+    }
+    return Array.from(new Set(
+      text
+        .split(/[,\|/\n;]+/)
+        .map(v => v.trim())
+        .filter(Boolean)
+    ));
+  }
+
+  function applyFirmSelection(grid, hidden, rawFirms) {
+    if (!grid || !hidden) return;
+    const firms = parseFirmScope(rawFirms);
+    const hasAll = firms.includes('*');
+    const boxes = Array.from(grid.querySelectorAll('input[type="checkbox"]'));
+    const allBox = boxes.find(cb => cb.value === '*');
+    const specific = boxes.filter(cb => cb.value !== '*');
+    const selected = new Set(firms);
+
+    if (allBox) allBox.checked = hasAll;
+    specific.forEach(cb => {
+      cb.checked = hasAll || selected.has(String(cb.value || '').toUpperCase());
+    });
+    hidden.value = hasAll ? '*' : specific
+      .filter(cb => cb.checked)
+      .map(cb => String(cb.value || '').trim().toUpperCase())
+      .filter(Boolean)
+      .join(', ');
+  }
+
+  function setupFirmLogic(gridId, hiddenInputId) {
+    const grid = document.getElementById(gridId);
+    const hidden = document.getElementById(hiddenInputId);
+    if (!grid || !hidden) return;
+
+    const boxes = Array.from(grid.querySelectorAll('input[type="checkbox"]'));
+    const allBox = boxes.find(cb => cb.value === '*');
+    const specific = boxes.filter(cb => cb.value !== '*');
+
+    function syncHidden() {
+      if (allBox && allBox.checked) {
+        hidden.value = '*';
+        return;
+      }
+      const values = specific
+        .filter(cb => cb.checked)
+        .map(cb => String(cb.value || '').trim().toUpperCase())
+        .filter(Boolean);
+      hidden.value = Array.from(new Set(values)).join(', ');
+    }
+
+    grid.addEventListener('change', function(e) {
+      const target = e.target;
+      if (target === allBox && allBox) {
+        specific.forEach(cb => cb.checked = allBox.checked);
+      } else if (allBox) {
+        const allSpecificChecked = specific.length > 0 && specific.every(cb => cb.checked);
+        allBox.checked = allSpecificChecked;
+      }
+      syncHidden();
+    });
+
+    applyFirmSelection(grid, hidden, hidden.value);
+    syncHidden();
+  }
+
+  function setupRequestHistoryTable() {
+    const table = document.getElementById('requestHistoryTable');
+    const searchInput = document.getElementById('requestHistorySearch');
+    const pager = document.getElementById('requestHistoryPager');
+    const prevBtn = document.getElementById('requestHistoryPrev');
+    const nextBtn = document.getElementById('requestHistoryNext');
+    const pageInfo = document.getElementById('requestHistoryPageInfo');
+    const emptyRow = document.getElementById('requestHistoryEmpty');
+
+    if (!table || !searchInput || !pager) return;
+
+    const groups = Array.from(table.querySelectorAll('tbody tr.request-row')).map(row => {
+      const detail = (row.nextElementSibling && row.nextElementSibling.classList.contains('request-history'))
+        ? row.nextElementSibling
+        : null;
+      const raw = row.dataset.search || row.textContent || '';
+      return { row, detail, searchText: raw.toLowerCase() };
+    });
+
+    let page = 1;
+    const pageSize = 10;
+
+    function setGroupVisible(group, visible) {
+      group.row.style.display = visible ? '' : 'none';
+      if (!group.detail) return;
+      if (!visible) {
+        group.detail.style.display = 'none';
+        return;
+      }
+      const open = group.detail.dataset.open === '1';
+      group.detail.style.display = open ? 'table-row' : 'none';
+    }
+
+    function render() {
+      const q = (searchInput.value || '').trim().toLowerCase();
+      const filtered = q ? groups.filter(g => g.searchText.includes(q)) : groups;
+      const totalPages = Math.max(1, Math.ceil(filtered.length / pageSize));
+      if (page > totalPages) page = totalPages;
+      const start = (page - 1) * pageSize;
+      const end = start + pageSize;
+      const current = new Set(filtered.slice(start, end));
+
+      groups.forEach(g => setGroupVisible(g, current.has(g)));
+
+      if (pageInfo) pageInfo.textContent = `Page ${page} of ${totalPages}`;
+      if (prevBtn) prevBtn.disabled = page <= 1;
+      if (nextBtn) nextBtn.disabled = page >= totalPages;
+      if (emptyRow) emptyRow.style.display = (groups.length && !filtered.length) ? 'table-row' : 'none';
+    }
+
+    searchInput.addEventListener('input', function() {
+      page = 1;
+      render();
+    });
+    prevBtn?.addEventListener('click', function() {
+      if (page > 1) {
+        page -= 1;
+        render();
+      }
+    });
+    nextBtn?.addEventListener('click', function() {
+      const q = (searchInput.value || '').trim().toLowerCase();
+      const filteredCount = q ? groups.filter(g => g.searchText.includes(q)).length : groups.length;
+      const totalPages = Math.max(1, Math.ceil(filteredCount / pageSize));
+      if (page < totalPages) {
+        page += 1;
+        render();
+      }
+    });
+
+    render();
+  }
+
+  function setupInchargeDeptPicker() {
+    const grid = document.getElementById('inchargeDeptGrid');
+    const generic = document.getElementById('inchargeDeptGeneric');
+    if (!grid || !generic) return;
+    const specific = Array.from(grid.querySelectorAll('input[name="incharge_purchasing_dept_ids"]'));
+
+    function sync(trigger) {
+      const anySpecific = specific.some(cb => cb.checked);
+      if (trigger === 'generic' && generic.checked) {
+        specific.forEach(cb => cb.checked = false);
+      } else if (trigger === 'specific' && anySpecific) {
+        generic.checked = false;
+      }
+      if (!generic.checked && !specific.some(cb => cb.checked)) {
+        generic.checked = true;
+      }
+    }
+
+    generic.addEventListener('change', function() { sync('generic'); });
+    specific.forEach(cb => cb.addEventListener('change', function() { sync('specific'); }));
+    sync('');
+  }
+
+  function setupInchargeUnitPicker() {
+    const grid = document.getElementById('inchargeUnitGrid');
+    const allUnits = document.getElementById('inchargeAllUnits');
+    if (!grid || !allUnits) return;
+    const specific = Array.from(grid.querySelectorAll('input[name="incharge_units"]'));
+
+    function sync(trigger) {
+      const anySpecific = specific.some(cb => cb.checked);
+      if (trigger === 'all' && allUnits.checked) {
+        specific.forEach(cb => cb.checked = false);
+      } else if (trigger === 'specific' && anySpecific) {
+        allUnits.checked = false;
+      }
+      if (!allUnits.checked && !specific.some(cb => cb.checked)) {
+        allUnits.checked = true;
+      }
+    }
+
+    allUnits.addEventListener('change', function() { sync('all'); });
+    specific.forEach(cb => cb.addEventListener('change', function() { sync('specific'); }));
+    sync('');
+  }
+
+  function setupInchargeEditModal() {
+    const modal = document.getElementById('inchargeEditModal');
+    const form = document.getElementById('inchargeEditForm');
+    const triggerButtons = Array.from(document.querySelectorAll('.js-incharge-edit'));
+    if (!modal || !form || !triggerButtons.length) return;
+    if (modal.dataset.boundInchargeModal === '1') return;
+    modal.dataset.boundInchargeModal = '1';
+    if (modal.parentElement !== document.body) {
+      document.body.appendChild(modal);
+    }
+
+    const fields = {
+      id: document.getElementById('inchargeEditId'),
+      name: document.getElementById('inchargeEditName'),
+      email: document.getElementById('inchargeEditEmail'),
+      degree: document.getElementById('inchargeEditDegree'),
+      designation: document.getElementById('inchargeEditDesignation'),
+      phone: document.getElementById('inchargeEditPhone'),
+      signature: document.getElementById('inchargeEditSignature'),
+      dept: document.getElementById('inchargeEditDept'),
+      unit: document.getElementById('inchargeEditUnit'),
+      active: document.getElementById('inchargeEditActive'),
+    };
+    const closeButtons = Array.from(modal.querySelectorAll('[data-close-incharge-modal]'));
+
+    function closeModal() {
+      modal.style.display = 'none';
+      document.body.style.overflow = '';
+    }
+
+    function openModal(btn) {
+      fields.id.value = btn.dataset.id || '';
+      fields.name.value = btn.dataset.name || '';
+      fields.email.value = btn.dataset.email || '';
+      fields.degree.value = btn.dataset.degree || '';
+      fields.designation.value = btn.dataset.designation || '';
+      fields.phone.value = btn.dataset.phone || '';
+      fields.signature.value = btn.dataset.signature || '';
+
+      const deptValue = btn.dataset.deptId || '';
+      if (fields.dept.querySelector(`option[value="${deptValue}"]`)) {
+        fields.dept.value = deptValue;
+      } else {
+        fields.dept.value = '';
+      }
+
+      const unitValue = (btn.dataset.unit || '').toUpperCase();
+      if (fields.unit.querySelector(`option[value="${unitValue}"]`)) {
+        fields.unit.value = unitValue;
+      } else {
+        fields.unit.value = '';
+      }
+
+      fields.active.value = (btn.dataset.active === '0') ? '0' : '1';
+      modal.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+    }
+
+    triggerButtons.forEach(btn => {
+      btn.addEventListener('click', function() {
+        openModal(btn);
+      });
+    });
+    closeButtons.forEach(btn => btn.addEventListener('click', closeModal));
+    modal.addEventListener('click', function(e) {
+      if (e.target === modal) closeModal();
+    });
+    if (!window.__umInchargeEscBound) {
+      window.__umInchargeEscBound = true;
+      document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Escape') return;
+        const inchargeModal = document.getElementById('inchargeEditModal');
+        if (!inchargeModal || inchargeModal.style.display !== 'flex') return;
+        inchargeModal.style.display = 'none';
+        document.body.style.overflow = '';
+      });
+    }
+  }
+
+  function setupItUserAdmin() {
+    const table = document.getElementById('itUserAdminTable');
+    const searchInput = document.getElementById('itUserSearch');
+    const pager = document.getElementById('itUserPager');
+    const prevBtn = document.getElementById('itUserPrev');
+    const nextBtn = document.getElementById('itUserNext');
+    const pageInfo = document.getElementById('itUserPageInfo');
+    const pageSizeSelect = document.getElementById('itUserPageSize');
+    const countInfo = document.getElementById('itUserCountInfo');
+    const emptyRow = document.getElementById('itUserEmptyRow');
+    const modal = document.getElementById('itUserAdminModal');
+    const form = document.getElementById('itUserAdminForm');
+    const editButtons = Array.from(document.querySelectorAll('.js-it-user-edit'));
+    const payloadNode = document.getElementById('itUserAdminPayload');
+    let itUserRecords = [];
+    if (payloadNode) {
+      try {
+        const parsed = JSON.parse(payloadNode.textContent || '[]');
+        if (Array.isArray(parsed)) {
+          itUserRecords = parsed;
+        }
+      } catch (err) {
+        console.warn('Failed to parse IT user payload', err);
+      }
+    }
+
+    if (table && searchInput) {
+      const rows = Array.from(table.querySelectorAll('tbody tr')).filter(row => row.querySelector('.js-it-user-edit'));
+      let page = 1;
+
+      function getPageSize() {
+        const raw = parseInt((pageSizeSelect && pageSizeSelect.value) ? pageSizeSelect.value : '12', 10);
+        return Number.isFinite(raw) && raw > 0 ? raw : 12;
+      }
+
+      function renderTable() {
+        const q = (searchInput.value || '').trim().toLowerCase();
+        const filtered = q
+          ? rows.filter(row => {
+              const hay = (row.dataset.search || row.textContent || '').toLowerCase();
+              return hay.includes(q);
+            })
+          : rows;
+
+        const totalRows = rows.length;
+        const pageSize = getPageSize();
+        const totalPages = filtered.length ? Math.ceil(filtered.length / pageSize) : 0;
+        if (totalPages === 0) {
+          page = 1;
+        } else if (page > totalPages) {
+          page = totalPages;
+        }
+
+        const start = (page - 1) * pageSize;
+        const end = start + pageSize;
+        const visibleRows = new Set(filtered.slice(start, end));
+
+        rows.forEach(row => {
+          row.style.display = visibleRows.has(row) ? '' : 'none';
+        });
+
+        if (emptyRow) {
+          emptyRow.style.display = filtered.length ? 'none' : '';
+        }
+        if (pageInfo) {
+          pageInfo.textContent = filtered.length ? `Page ${page} of ${totalPages}` : 'Page 0 of 0';
+        }
+        if (prevBtn) {
+          prevBtn.disabled = !filtered.length || page <= 1;
+        }
+        if (nextBtn) {
+          nextBtn.disabled = !filtered.length || page >= totalPages;
+        }
+        if (pager) {
+          pager.style.display = totalRows ? 'flex' : 'none';
+        }
+        if (countInfo) {
+          countInfo.textContent = q
+            ? `Filtered: ${filtered.length} of ${totalRows}`
+            : `Users: ${totalRows}`;
+        }
+      }
+
+      searchInput.addEventListener('input', function() {
+        page = 1;
+        renderTable();
+      });
+      pageSizeSelect?.addEventListener('change', function() {
+        page = 1;
+        renderTable();
+      });
+      prevBtn?.addEventListener('click', function() {
+        page -= 1;
+        renderTable();
+      });
+      nextBtn?.addEventListener('click', function() {
+        page += 1;
+        renderTable();
+      });
+      renderTable();
+    }
+
+    if (!modal || !form || !editButtons.length) return;
+    if (modal.dataset.boundItUserModal === '1') return;
+    modal.dataset.boundItUserModal = '1';
+    if (modal.parentElement !== document.body) {
+      document.body.appendChild(modal);
+    }
+
+    const fields = {
+      targetUsername: document.getElementById('itUserTargetUsername'),
+      usernameView: document.getElementById('itUserUsernameView'),
+      currentPassword: document.getElementById('itUserCurrentPassword'),
+      newPassword: document.getElementById('itUserNewPassword'),
+      role: document.getElementById('itUserRole'),
+      active: document.getElementById('itUserActive'),
+      unitScope: document.getElementById('itUserUnitScope'),
+      unitScopeGrid: document.getElementById('itUserUnitScopeGrid'),
+      purchaseUnitScope: document.getElementById('itUserPurchaseUnitScope'),
+      purchaseUnitScopeGrid: document.getElementById('itUserPurchaseUnitScopeGrid'),
+      firmScope: document.getElementById('itUserFirmScope'),
+      firmScopeGrid: document.getElementById('itUserFirmScopeGrid'),
+      sections: document.getElementById('itUserSections'),
+      sectionsGrid: document.getElementById('itUserSectionsGrid'),
+    };
+    const closeButtons = Array.from(modal.querySelectorAll('[data-close-it-user-modal]'));
+    const setValue = (field, value = '') => {
+      if (!field) return;
+      field.value = value;
+    };
+    const unitBoxes = fields.unitScopeGrid
+      ? Array.from(fields.unitScopeGrid.querySelectorAll('input[type="checkbox"]'))
+      : [];
+    const unitAllBox = unitBoxes.find(cb => String(cb.value || '').trim() === '*');
+    const unitSpecific = unitBoxes.filter(cb => cb !== unitAllBox);
+
+    const purchaseBoxes = fields.purchaseUnitScopeGrid
+      ? Array.from(fields.purchaseUnitScopeGrid.querySelectorAll('input[type="checkbox"]'))
+      : [];
+    const purchaseUseUnitBox = purchaseBoxes.find(cb => String(cb.value || '').trim() === '__USE_UNIT_SCOPE__');
+    const purchaseAllBox = purchaseBoxes.find(cb => String(cb.value || '').trim() === '*');
+    const purchaseSpecific = purchaseBoxes.filter(cb => cb !== purchaseUseUnitBox && cb !== purchaseAllBox);
+
+    function selectedUnitsFrom(boxes) {
+      return boxes
+        .filter(cb => cb.checked)
+        .map(cb => String(cb.value || '').trim().toUpperCase())
+        .filter(Boolean);
+    }
+
+    function syncUnitScopeHidden() {
+      if (!fields.unitScope) return;
+      const values = Array.from(new Set(selectedUnitsFrom(unitSpecific)));
+      fields.unitScope.value = values.join(', ');
+    }
+
+    function applyUnitScope(rawUnits) {
+      const parsed = parseUnitScope(rawUnits);
+      if (!fields.unitScopeGrid) {
+        const fallback = parsed.filter(v => String(v || '').trim() !== '*');
+        setValue(fields.unitScope, Array.from(new Set(fallback)).join(', '));
+        return;
+      }
+      const hasAll = parsed.includes('*');
+      const selected = new Set(parsed.map(v => String(v || '').toUpperCase()));
+
+      unitSpecific.forEach(cb => {
+        const value = String(cb.value || '').trim().toUpperCase();
+        cb.checked = hasAll || selected.has(value);
+      });
+      if (unitAllBox) {
+        unitAllBox.checked = hasAll || (unitSpecific.length > 0 && unitSpecific.every(cb => cb.checked));
+      }
+      syncUnitScopeHidden();
+    }
+
+    function syncPurchaseScopeHidden() {
+      if (!fields.purchaseUnitScope) return;
+      if (purchaseUseUnitBox && purchaseUseUnitBox.checked) {
+        fields.purchaseUnitScope.value = '';
+        return;
+      }
+      const values = Array.from(new Set(selectedUnitsFrom(purchaseSpecific)));
+      fields.purchaseUnitScope.value = values.join(', ');
+    }
+
+    function applyPurchaseScope(rawUnits) {
+      const parsed = parseUnitScope(rawUnits);
+      if (!fields.purchaseUnitScopeGrid) {
+        const fallback = parsed.filter(v => String(v || '').trim() !== '*');
+        setValue(fields.purchaseUnitScope, Array.from(new Set(fallback)).join(', '));
+        return;
+      }
+      const hasAll = parsed.includes('*');
+      const selected = new Set(parsed.map(v => String(v || '').toUpperCase()));
+      const hasSpecific = parsed.some(v => String(v || '').trim() && String(v || '').trim() !== '*');
+
+      if (purchaseUseUnitBox) {
+        purchaseUseUnitBox.checked = !hasAll && !hasSpecific;
+      }
+      purchaseSpecific.forEach(cb => {
+        const value = String(cb.value || '').trim().toUpperCase();
+        cb.checked = hasAll || selected.has(value);
+      });
+      if (purchaseAllBox) {
+        purchaseAllBox.checked = hasAll || (purchaseSpecific.length > 0 && purchaseSpecific.every(cb => cb.checked));
+      }
+      if (purchaseUseUnitBox && purchaseUseUnitBox.checked) {
+        if (purchaseAllBox) purchaseAllBox.checked = false;
+        purchaseSpecific.forEach(cb => cb.checked = false);
+      }
+      syncPurchaseScopeHidden();
+    }
+
+    function applySectionScope(rawSections) {
+      const parsed = parseSectionScope(rawSections);
+      if (!fields.sectionsGrid) {
+        setValue(fields.sections, parsed.join(','));
+        return;
+      }
+      const selected = new Set(parsed);
+      const allBox = fields.sectionsGrid.querySelector('input[value="*"]');
+      const specific = Array.from(fields.sectionsGrid.querySelectorAll('input[type="checkbox"]:not([value="*"])'));
+
+      if (selected.has('*')) {
+        if (allBox) allBox.checked = true;
+        specific.forEach(cb => cb.checked = true);
+      } else {
+        if (allBox) allBox.checked = false;
+        specific.forEach(cb => {
+          const key = String(cb.value || '').trim();
+          cb.checked = selected.has(key);
+        });
+      }
+      fields.sectionsGrid.dispatchEvent(new Event('change', { bubbles: true }));
+    }
+
+    fields.unitScopeGrid?.addEventListener('change', function(e) {
+      const target = e.target;
+      if (unitAllBox && target === unitAllBox) {
+        unitSpecific.forEach(cb => cb.checked = unitAllBox.checked);
+      } else if (unitAllBox) {
+        unitAllBox.checked = unitSpecific.length > 0 && unitSpecific.every(cb => cb.checked);
+      }
+      syncUnitScopeHidden();
+    });
+
+    fields.purchaseUnitScopeGrid?.addEventListener('change', function(e) {
+      const target = e.target;
+
+      if (purchaseUseUnitBox && target === purchaseUseUnitBox) {
+        if (purchaseUseUnitBox.checked) {
+          if (purchaseAllBox) purchaseAllBox.checked = false;
+          purchaseSpecific.forEach(cb => cb.checked = false);
+        } else if (!purchaseSpecific.some(cb => cb.checked)) {
+          purchaseUseUnitBox.checked = true;
+        }
+      } else if (purchaseAllBox && target === purchaseAllBox) {
+        if (purchaseAllBox.checked) {
+          if (purchaseUseUnitBox) purchaseUseUnitBox.checked = false;
+          purchaseSpecific.forEach(cb => cb.checked = true);
+        } else {
+          purchaseSpecific.forEach(cb => cb.checked = false);
+          if (purchaseUseUnitBox) purchaseUseUnitBox.checked = true;
+        }
+      } else {
+        if (purchaseUseUnitBox) purchaseUseUnitBox.checked = false;
+        if (purchaseAllBox) {
+          purchaseAllBox.checked = purchaseSpecific.length > 0 && purchaseSpecific.every(cb => cb.checked);
+        }
+        if (!purchaseSpecific.some(cb => cb.checked) && purchaseUseUnitBox) {
+          purchaseUseUnitBox.checked = true;
+        }
+      }
+
+      syncPurchaseScopeHidden();
+    });
+
+    form.addEventListener('submit', function(e) {
+      if (fields.firmScopeGrid) {
+        fields.firmScopeGrid.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      if (fields.sectionsGrid) {
+        fields.sectionsGrid.dispatchEvent(new Event('change', { bubbles: true }));
+      }
+      syncUnitScopeHidden();
+      syncPurchaseScopeHidden();
+      if (!String(fields.unitScope?.value || '').trim()) {
+        e.preventDefault();
+        showUserToast('Select at least one unit in Unit Scope.', 'warn');
+      }
+    });
+
+    function closeModal() {
+      if (modal.style.display !== 'flex') return;
+      modal.style.display = 'none';
+      document.body.style.overflow = '';
+    }
+
+    function isTruthyUserActive(rawValue) {
+      if (rawValue === true || rawValue === 1) return true;
+      const text = String(rawValue ?? '').trim().toLowerCase();
+      return text === '1' || text === 'true' || text === 'yes' || text === 'on' || text === 'active';
+    }
+
+    function openModal(btn) {
+      const rawIndex = parseInt(btn.dataset.userIndex || '', 10);
+      const user = Number.isInteger(rawIndex) && rawIndex >= 0 && rawIndex < itUserRecords.length
+        ? (itUserRecords[rawIndex] || {})
+        : {};
+
+      const username = String(user.UserName || '').trim();
+      const rawRole = String(user.RoleName || '').trim();
+      let roleValue = rawRole;
+      if (rawRole.toLowerCase().startsWith('departmental head')) {
+        roleValue = 'Departmental Head';
+      }
+      if (!fields.role || !fields.role.querySelector(`option[value="${roleValue}"]`)) {
+        roleValue = 'Executive';
+      }
+      setValue(fields.targetUsername, username);
+      setValue(fields.usernameView, username);
+      setValue(fields.currentPassword, String(user.PasswordW || ''));
+      setValue(fields.newPassword, '');
+      setValue(fields.role, roleValue);
+      setValue(fields.active, isTruthyUserActive(user.IsActive) ? '1' : '0');
+      applyUnitScope(String(user.UnitScope || ''));
+      applyPurchaseScope(String(user.PurchaseUnitScope || ''));
+      if (fields.firmScopeGrid) {
+        applyFirmSelection(fields.firmScopeGrid, fields.firmScope, String(user.FirmScope || ''));
+      } else {
+        setValue(fields.firmScope, String(user.FirmScope || ''));
+      }
+      applySectionScope(String(user.SectionRights || ''));
+      modal.style.display = 'flex';
+      document.body.style.overflow = 'hidden';
+    }
+
+    editButtons.forEach(btn => {
+      btn.addEventListener('click', function(e) {
+        e.preventDefault();
+        e.stopPropagation();
+        openModal(btn);
+      });
+    });
+    closeButtons.forEach(btn => btn.addEventListener('click', closeModal));
+    modal.addEventListener('click', function(e) {
+      if (e.target === e.currentTarget) closeModal();
+    });
+    if (!window.__umItUserEscBound) {
+      window.__umItUserEscBound = true;
+      document.addEventListener('keydown', function(e) {
+        if (e.key !== 'Escape') return;
+        const itModal = document.getElementById('itUserAdminModal');
+        if (!itModal || itModal.style.display !== 'flex') return;
+        itModal.style.display = 'none';
+        document.body.style.overflow = '';
+      });
+    }
+  }
+
+  const userToastState = {
+    viewport: null,
+    sequence: 0,
+    timers: new Map(),
+  };
+
+  function normalizeUserToastType(type) {
+    const key = String(type || '').trim().toLowerCase();
+    if (key === 'success' || key === 'warn' || key === 'error' || key === 'loading') return key;
+    return 'warn';
+  }
+
+  function ensureUserToastViewport() {
+    if (userToastState.viewport && document.body.contains(userToastState.viewport)) {
+      return userToastState.viewport;
+    }
+    let viewport = document.getElementById('umToastViewport');
+    if (!viewport) {
+      viewport = document.createElement('div');
+      viewport.id = 'umToastViewport';
+      viewport.className = 'um-toast-viewport';
+      viewport.setAttribute('aria-live', 'polite');
+      viewport.setAttribute('aria-atomic', 'false');
+      document.body.appendChild(viewport);
+    }
+    userToastState.viewport = viewport;
+    return viewport;
+  }
+
+  function removeUserToast(toastId, immediate = false) {
+    if (!toastId) return;
+    const timer = userToastState.timers.get(toastId);
+    if (timer) {
+      window.clearTimeout(timer);
+      userToastState.timers.delete(toastId);
+    }
+    const viewport = userToastState.viewport;
+    const toast = viewport?.querySelector(`[data-toast-id="${toastId}"]`);
+    if (!toast) return;
+    if (immediate) {
+      toast.remove();
+      return;
+    }
+    toast.classList.remove('show');
+    toast.classList.add('hiding');
+    window.setTimeout(() => toast.remove(), 220);
+  }
+
+  function showUserToast(message, type = 'success', options = {}) {
+    const text = String(message || '').trim();
+    if (!text) return '';
+    const toastType = normalizeUserToastType(type);
+    const viewport = ensureUserToastViewport();
+    const toastId = `um-toast-${++userToastState.sequence}`;
+    const toast = document.createElement('div');
+    toast.className = `um-toast um-toast--${toastType}`;
+    toast.dataset.toastId = toastId;
+    toast.setAttribute('role', toastType === 'error' ? 'alert' : 'status');
+    toast.setAttribute('aria-live', toastType === 'error' ? 'assertive' : 'polite');
+
+    const body = document.createElement('div');
+    body.className = 'um-toast__body';
+    if (toastType === 'loading') {
+      const spinner = document.createElement('span');
+      spinner.className = 'um-toast__spinner';
+      spinner.setAttribute('aria-hidden', 'true');
+      body.appendChild(spinner);
+    }
+    const msg = document.createElement('span');
+    msg.className = 'um-toast__message';
+    msg.textContent = text;
+    body.appendChild(msg);
+
+    const closeBtn = document.createElement('button');
+    closeBtn.type = 'button';
+    closeBtn.className = 'um-toast__close';
+    closeBtn.setAttribute('aria-label', 'Dismiss notification');
+    closeBtn.textContent = '\u00d7';
+    closeBtn.addEventListener('click', function() {
+      removeUserToast(toastId);
+    });
+
+    toast.appendChild(body);
+    toast.appendChild(closeBtn);
+    viewport.appendChild(toast);
+    window.requestAnimationFrame(() => toast.classList.add('show'));
+
+    const sticky = !!options.sticky || toastType === 'loading';
+    if (!sticky) {
+      const dismissMs = options.duration || (toastType === 'error' ? 7600 : toastType === 'warn' ? 5600 : 4200);
+      const timer = window.setTimeout(() => removeUserToast(toastId), dismissMs);
+      userToastState.timers.set(toastId, timer);
+    }
+    return toastId;
+  }
+
+  function closeModalById(modalId) {
+    const modal = document.getElementById(modalId);
+    if (!modal) return;
+    modal.style.display = 'none';
+    document.body.style.overflow = '';
+  }
+
+  function bindHistoryToggles() {
+    document.querySelectorAll('.toggle-history').forEach(btn => {
+      if (btn.dataset.umHistoryBound === '1') return;
+      btn.dataset.umHistoryBound = '1';
+      btn.addEventListener('click', function(e) {
+        e.preventDefault();
+        const row = document.getElementById(this.dataset.target);
+        if (!row) return;
+        const isHidden = row.style.display === 'none' || row.style.display === '';
+        row.style.display = isHidden ? 'table-row' : 'none';
+        row.dataset.open = isHidden ? '1' : '0';
+      });
+    });
+  }
+
+  async function refreshUserManagementView() {
+    const currentWrapper = document.querySelector('.um-wrapper');
+    if (!currentWrapper) return;
+    const scrollY = window.scrollY || 0;
+    const refreshPaths = [];
+    const pathRaw = String(window.location.pathname || "").trim() || "/user_management";
+    const pathTrimmed = pathRaw.replace(/\/+$/, "") || "/";
+    refreshPaths.push(pathRaw);
+    if (pathTrimmed !== pathRaw) refreshPaths.push(pathTrimmed);
+    if (!refreshPaths.includes("/user_management")) refreshPaths.push("/user_management");
+
+    let response = null;
+    let refreshError = null;
+    for (const p of refreshPaths) {
+      const refreshUrl = `${p}?_um_refresh=${Date.now()}`;
+      try {
+        const res = await fetch(refreshUrl, {
+          method: 'GET',
+          headers: { 'X-Requested-With': 'XMLHttpRequest', 'Accept': 'text/html' },
+          credentials: 'same-origin'
+        });
+        if (res.ok) {
+          response = res;
+          break;
+        }
+        refreshError = new Error(`Refresh failed (${res.status}) at ${p}`);
+      } catch (err) {
+        refreshError = err;
+      }
+    }
+    if (!response) {
+      throw refreshError || new Error('Saved, but failed to refresh user management view.');
+    }
+    if (!response.ok) {
+      throw new Error('Saved, but failed to refresh user management view.');
+    }
+    const html = await response.text();
+    const doc = new DOMParser().parseFromString(html, 'text/html');
+    const nextWrapper = doc.querySelector('.um-wrapper');
+    if (!nextWrapper) {
+      throw new Error('Saved, but failed to refresh user management view.');
+    }
+    currentWrapper.replaceWith(nextWrapper);
+    window.requestAnimationFrame(() => {
+      window.scrollTo({ top: scrollY, behavior: 'auto' });
+    });
+    initializeUserManagementPage();
+  }
+
+  function getAsyncSubmitLabel(form) {
+    const submit = form.querySelector('button[type="submit"], input[type="submit"]');
+    const raw = String(submit?.textContent || submit?.value || '').trim();
+    if (!raw) return 'Saving changes';
+    return raw.replace(/\s+/g, ' ').replace(/\.{2,}$/g, '').trim();
+  }
+
+  function bindAsyncPostForms() {
+    const forms = Array.from(document.querySelectorAll('.um-wrapper form[method="post"], .um-wrapper form[method="POST"]'));
+    forms.forEach(form => {
+      if (form.dataset.umAsyncBound === '1') return;
+      const action = String(form.getAttribute('action') || '').trim();
+      if (!action) return;
+      const isUserManagementAction = action.includes('/user_management/') || action.includes('/api/historical_access/request');
+      if (!isUserManagementAction) return;
+
+      form.dataset.umAsyncBound = '1';
+      form.addEventListener('submit', async function(e) {
+        if (e.defaultPrevented) return;
+        e.preventDefault();
+        if (form.dataset.umSubmitting === '1') return;
+        form.dataset.umSubmitting = '1';
+
+        const submitControls = Array.from(form.querySelectorAll('button[type="submit"], input[type="submit"]'));
+        submitControls.forEach(el => { el.disabled = true; });
+        const loadingId = showUserToast(`${getAsyncSubmitLabel(form)}...`, 'loading', { sticky: true });
+
+        try {
+          const headers = {
+            'X-Requested-With': 'XMLHttpRequest',
+            'Accept': 'application/json'
+          };
+          const requestOptions = {
+            method: 'POST',
+            headers,
+            credentials: 'same-origin'
+          };
+
+          if (form.id === 'histRequestForm') {
+            const reason = String(new FormData(form).get('reason') || '').trim();
+            headers['Content-Type'] = 'application/json';
+            requestOptions.body = JSON.stringify({ reason });
+          } else {
+            requestOptions.body = new FormData(form);
+          }
+
+          const actionAttr = String(form.getAttribute('action') || "").trim();
+          const actionUrl = actionAttr ? new URL(actionAttr, window.location.origin).toString() : "";
+          const attemptUrls = [actionUrl];
+          if (actionUrl && actionUrl.includes('/user_management/')) {
+            const stripped = actionUrl.replace(/\/+$/, '');
+            const withSlash = stripped + '/';
+            if (stripped && !attemptUrls.includes(stripped)) attemptUrls.push(stripped);
+            if (withSlash && !attemptUrls.includes(withSlash)) attemptUrls.push(withSlash);
+          }
+
+          let response = null;
+          let lastErr = null;
+          for (const url of attemptUrls) {
+            try {
+              const res = await fetch(url, requestOptions);
+              if (res.status === 404) {
+                lastErr = new Error(`Route not found (${res.status}) at ${url}`);
+                continue;
+              }
+              response = res;
+              break;
+            } catch (err) {
+              lastErr = err;
+            }
+          }
+          if (!response) {
+            throw lastErr || new Error('Request failed.');
+          }
+
+          const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+          let payload = {};
+          if (contentType.includes('application/json')) {
+            payload = await response.json();
+          } else {
+            const rawText = String((await response.text()) || '').trim();
+            const looksHtml = /<!doctype|<html/i.test(rawText);
+            payload = {
+              message: looksHtml
+                ? `Request failed (${response.status}). Route may be unavailable.`
+                : (rawText || 'Request failed.')
+            };
+          }
+          if (!response.ok || payload.ok === false) {
+            throw new Error(String(payload.message || 'Request failed.'));
+          }
+
+          removeUserToast(loadingId);
+          if (form.id === 'inchargeEditForm') closeModalById('inchargeEditModal');
+          if (form.id === 'itUserAdminForm') closeModalById('itUserAdminModal');
+          showUserToast(String(payload.message || 'Changes saved.'), 'success');
+
+          try {
+            await refreshUserManagementView();
+          } catch (refreshErr) {
+            showUserToast(refreshErr.message || 'Changes saved. Refresh manually to view latest data.', 'warn');
+          }
+        } catch (err) {
+          removeUserToast(loadingId);
+          showUserToast(err.message || 'Failed to save changes.', 'error', { duration: 7600 });
+        } finally {
+          form.dataset.umSubmitting = '0';
+          submitControls.forEach(el => { el.disabled = false; });
+        }
+      });
+    });
+  }
+
+  function initializeUserManagementPage() {
+    const roleInput = document.getElementById('currentUserRole');
+    const currentRole = roleInput ? roleInput.value : '';
+    const isDeptHead = (currentRole === 'Departmental Head');
+
+    // A. Apply Hierarchy to "New User" Form
+    const createRoleSelect = document.getElementById('createRole');
+    if (createRoleSelect && isDeptHead) {
+      const mgmt = createRoleSelect.querySelector('option[value="Management"]');
+      if (mgmt) mgmt.remove();
+      const it = createRoleSelect.querySelector('option[value="IT"]');
+      if (it) it.remove();
+    }
+
+    // B. Apply Hierarchy to "Edit User" Form
+    const select = document.getElementById('editTarget');
+    const grid = document.getElementById('sectionsGridEdit');
+    const roleEl = document.getElementById('editRole');
+    const unitGridEdit = document.getElementById('unitScopeGridEdit');
+    const unitInputEdit = document.getElementById('unitScopeInputEdit');
+    const purchaseGridEdit = document.getElementById('purchaseUnitScopeGridEdit');
+    const purchaseInputEdit = document.getElementById('purchaseUnitScopeInputEdit');
+    const firmGridEdit = document.getElementById('firmScopeGridEdit');
+    const firmInputEdit = document.getElementById('firmScopeInputEdit');
+    const activeEl = document.getElementById('editActive');
+    const warningEl = document.getElementById('hierarchyWarning');
+    const editFields = document.getElementById('editFields');
+    const submitBtn = document.getElementById('editSubmitBtn');
+
+    setupSectionLogic('sectionsGridEdit', 'sectionsInputEdit');
+    setupSectionLogic('sectionsGrid', 'sectionsInput');
+    setupSectionLogic('itUserSectionsGrid', 'itUserSections');
+    setupUnitLogic('unitScopeGrid', 'unitScopeInput');
+    setupUnitLogic('purchaseUnitScopeGrid', 'purchaseUnitScopeInput');
+    setupUnitLogic('unitScopeGridEdit', 'unitScopeInputEdit');
+    setupUnitLogic('purchaseUnitScopeGridEdit', 'purchaseUnitScopeInputEdit');
+    setupFirmLogic('firmScopeGrid', 'firmScopeInput');
+    setupFirmLogic('firmScopeGridEdit', 'firmScopeInputEdit');
+    setupFirmLogic('itUserFirmScopeGrid', 'itUserFirmScope');
+    setupRequestHistoryTable();
+    setupInchargeDeptPicker();
+    setupInchargeUnitPicker();
+    setupInchargeEditModal();
+    setupItUserAdmin();
+    bindHistoryToggles();
+    bindAsyncPostForms();
+
+    if (!select || !grid || !roleEl || !unitGridEdit || !unitInputEdit || !firmGridEdit || !firmInputEdit || !activeEl || !warningEl || !editFields || !submitBtn) {
+      return;
+    }
+
+    if (select.dataset.umEditBound === '1') return;
+    select.dataset.umEditBound = '1';
+
+    if (isDeptHead) {
+      const mgmt = roleEl.querySelector('option[value="Management"]');
+      if (mgmt) mgmt.remove();
+      const it = roleEl.querySelector('option[value="IT"]');
+      if (it) it.remove();
+    }
+
+    select.addEventListener('change', function() {
+      const opt = this.options[this.selectedIndex];
+
+      if (!opt.value) {
+        grid.querySelectorAll('input').forEach(cb => cb.checked = false);
+        applyUnitSelection(unitGridEdit, unitInputEdit, '');
+        applyUnitSelection(purchaseGridEdit, purchaseInputEdit, '');
+        applyFirmSelection(firmGridEdit, firmInputEdit, '');
+        return;
+      }
+
+      const targetRole = opt.dataset.role || "";
+      let canEdit = true;
+      if (isDeptHead && (targetRole === "Management" || targetRole === "IT")) {
+        canEdit = false;
+      }
+
+      if (!canEdit) {
+        warningEl.style.display = 'block';
+        editFields.style.opacity = '0.5';
+        editFields.style.pointerEvents = 'none';
+        submitBtn.disabled = true;
+      } else {
+        warningEl.style.display = 'none';
+        editFields.style.opacity = '1';
+        editFields.style.pointerEvents = 'auto';
+        submitBtn.disabled = false;
+      }
+
+      roleEl.value = targetRole;
+      if (roleEl.value === "" && targetRole) roleEl.value = "Executive";
+
+      applyUnitSelection(unitGridEdit, unitInputEdit, opt.dataset.unit || "");
+      applyUnitSelection(purchaseGridEdit, purchaseInputEdit, opt.dataset.purchaseUnits || "");
+      applyFirmSelection(firmGridEdit, firmInputEdit, opt.dataset.firms || "");
+      activeEl.checked = (opt.dataset.active == "1");
+
+      const savedSections = (opt.dataset.sections || "").split(',').map(s => s.trim());
+      const allCheckbox = grid.querySelector('input[value="*"]');
+      const specificCheckboxes = grid.querySelectorAll('input[type="checkbox"]:not([value="*"])');
+
+      if (savedSections.includes('*')) {
+        allCheckbox.checked = true;
+        specificCheckboxes.forEach(cb => cb.checked = true);
+      } else {
+        specificCheckboxes.forEach(cb => {
+          cb.checked = savedSections.includes(cb.value);
+        });
+        allCheckbox.checked = specificCheckboxes.every(cb => cb.checked);
+      }
+
+      grid.dispatchEvent(new Event('change', { bubbles: true }));
+    });
+  }
+
+  document.addEventListener('DOMContentLoaded', initializeUserManagementPage);
+</script>
+{% endblock %}

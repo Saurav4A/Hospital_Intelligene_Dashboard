@@ -1,0 +1,2722 @@
+﻿{% extends "layout.html" %}
+{% block title %}Corporate Management | HID{% endblock %}
+{% block content %}
+<style>
+  html,body{max-width:100%;overflow-x:hidden}
+  .corp{--b:#0f4c81;--b2:#2a80b9;--ink:#0f172a;--m:#5b6b80;--ln:#d9e4ef;--bg:#f3f8fc;--good:#138a52;--warn:#b45309;--bad:#c62828;--over:#5e35b1;font-family:"Segoe UI",system-ui,-apple-system,sans-serif;background:radial-gradient(1200px 520px at -10% -10%,#dcefff 0,transparent 42%),radial-gradient(1200px 520px at 110% -10%,#d6f7ff 0,transparent 36%),var(--bg);min-height:calc(100vh - 56px);padding:16px;max-width:100vw;overflow-x:hidden}
+  .corp *{box-sizing:border-box}
+  .top-actions{position:fixed;top:20px;right:20px;z-index:1200}
+  .fab-user{position:relative;display:flex;align-items:center;gap:10px}
+  .fab-timer{min-width:72px;height:36px;border-radius:10px;display:grid;place-items:center;font-weight:700;color:#fff;background:linear-gradient(135deg,#0369a1,#0ea5e9);font-size:13px}
+  .fab-btn{width:52px;height:52px;border-radius:50%;border:none;background:linear-gradient(135deg,var(--b),var(--b2));display:grid;place-items:center;cursor:pointer}
+  .fab-icon span{display:block;width:18px;height:3px;background:#fff;border-radius:2px;margin:2px 0}
+  .fab-menu{position:absolute;top:62px;right:0;background:#fff;border:1px solid #dbe5f0;border-radius:12px;box-shadow:0 16px 30px rgba(15,23,42,.16);padding:10px;min-width:220px;display:none}
+  .fab-menu.open{display:block}
+  .fab-menu .menu-title{padding:8px 10px;font-weight:700;color:#0f4c81;border-bottom:1px solid #edf3f8;margin-bottom:6px;font-size:13px}
+  .fab-menu a{display:block;text-decoration:none;color:#1f3550;font-size:13px;font-weight:600;padding:9px 10px;border-radius:8px}
+  .fab-menu a:hover{background:#eff6ff;color:#0f4c81}
+  .head{max-width:1400px;margin:0 auto 12px;padding:16px 18px 14px 18px;display:grid;grid-template-columns:minmax(0,1fr) auto;gap:14px;align-items:center;border:1px solid #d8e6f2;border-radius:16px;background:linear-gradient(110deg,#f6fbff 0%,#edf6ff 58%,#e8f9ff 100%);box-shadow:0 12px 26px rgba(15,23,42,.08)}
+  .head-main{min-width:0}
+  .head-kicker{display:inline-block;padding:4px 10px;border-radius:999px;background:#e9f2ff;color:#0f4c81;font-size:11px;font-weight:800;letter-spacing:.4px;text-transform:uppercase}
+  .head h1{margin:8px 0 0;font-size:34px;line-height:1.08;color:#12355b;letter-spacing:.1px}
+  .head p{margin:8px 0 0;color:#4f647d;font-size:15px;line-height:1.35}
+  .head-chips{margin-top:10px;display:flex;flex-wrap:wrap;gap:8px}
+  .hchip{display:inline-flex;align-items:center;gap:6px;padding:6px 10px;border-radius:999px;border:1px solid #d5e4f2;background:#fff;color:#2a4562;font-size:12px;font-weight:700}
+  .hchip .dot{width:7px;height:7px;border-radius:50%;background:#0f4c81}
+  .head-side{display:flex;flex-direction:column;align-items:flex-end;gap:8px;min-width:220px}
+  .cutoff{background:#fff;border:1px solid #dce7f1;border-radius:12px;padding:10px 14px;font-size:12px;color:#1e3a5f;font-weight:800}
+  .scope{padding:7px 12px;border-radius:10px;border:1px solid #d8e6f2;background:#f7fbff;color:#476283;font-size:11px;font-weight:700}
+  .shell{max-width:1400px;margin:0 auto;background:rgba(255,255,255,.76);border:1px solid #d8e5ef;border-radius:16px;box-shadow:0 18px 36px rgba(15,23,42,.1);overflow:hidden}
+  .tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-bottom:1px solid #dbe6f0;background:linear-gradient(180deg,#f8fcff 0,#eef5fb 100%)}
+  .tab{border:none;background:transparent;padding:14px 16px;text-align:left;cursor:pointer;font-size:13px;color:#274d72;font-weight:700;border-left:4px solid transparent}
+  .tab .tab-sub{display:block;font-weight:500;margin-top:3px;color:#5b6b80;font-size:12px}
+  .tab .tab-help{display:block;margin-top:4px;color:#6a8097;font-size:11px;font-weight:600;line-height:1.35}
+  .tab.active .tab-help{color:#3d607f}
+  .tab.active{background:#fff;border-left-color:#0f4c81;color:#0f4c81}
+  .module-prompt{padding:16px;border-bottom:1px solid #dbe6f0;background:#f8fcff;color:#355474;font-size:13px;font-weight:700}
+  .panel{display:none;padding:12px}
+  .panel.active{display:block}
+  .ctrls{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;align-items:end;padding:10px;border:1px solid #d9e6f0;border-radius:12px;background:#f8fcff}
+  .ctrl{display:flex;flex-direction:column;gap:4px;min-width:0}
+  .ctrl label{font-size:11px;text-transform:uppercase;color:#345676;font-weight:700;letter-spacing:.3px}
+  .ctrl input:not([type="checkbox"]),.ctrl select{width:100%;min-width:0;height:36px;border:1px solid #c9d7e6;border-radius:10px;background:#fff;padding:0 10px;font-size:13px;color:#132941}
+  .ctrl input:not([type="checkbox"]):focus,.ctrl select:focus{outline:none;border-color:#5a8fc2;box-shadow:0 0 0 3px rgba(90,143,194,.18)}
+  .inline{flex-direction:row;align-items:center;gap:8px;padding-top:8px}
+  .inline label{font-size:12px;text-transform:none;letter-spacing:0}
+  .inline input[type="checkbox"]{width:16px;height:16px;min-width:16px;accent-color:#0f4c81;margin:0}
+  .actions{flex-direction:row;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
+  .export-opt{display:inline-flex;align-items:center;gap:8px;color:#345676;font-size:12px;font-weight:700;white-space:nowrap;margin-right:auto}
+  .export-opt input[type="checkbox"]{width:16px;height:16px;min-width:16px;accent-color:#0f4c81;margin:0}
+  #reconPanel .ctrl.actions{grid-column:1/-1;justify-content:flex-end;flex-wrap:wrap}
+  #legacyPanel .ctrls{grid-template-columns:repeat(12,minmax(0,1fr));gap:10px 12px;padding:12px}
+  #legacyPanel .ctrl{grid-column:span 2}
+  #legacyPanel .ctrl.legacy-search{grid-column:span 8}
+  #legacyPanel .ctrl.actions{grid-column:span 4;justify-content:flex-end;align-self:end}
+  #legacyPanel .ctrl.actions .btn{min-width:190px}
+  .btn{border:none;cursor:pointer;border-radius:10px;padding:0 14px;height:36px;font-size:13px;font-weight:700;color:#fff;background:linear-gradient(135deg,#0f4c81,#2a80b9)}
+  .btn.sec{color:#113458;background:#e5f0fb;border:1px solid #bed6ee}
+  .btn.warn{color:#7c2d12;background:#fff7ed;border:1px solid #fed7aa;display:inline-flex;align-items:center;justify-content:center;gap:8px;white-space:nowrap;min-width:168px}
+  .btn .btn-count{display:inline-flex;align-items:center;justify-content:center;min-width:22px;height:22px;padding:0 8px;border-radius:999px;font-size:12px;font-weight:800;background:rgba(15,23,42,.1);color:inherit}
+  .status{margin-top:8px;color:#476283;font-size:12px;font-weight:600}
+  .sr-only{position:absolute!important;width:1px!important;height:1px!important;padding:0!important;margin:-1px!important;overflow:hidden!important;clip:rect(0,0,0,0)!important;white-space:nowrap!important;border:0!important}
+  #reconStatus.sr-only{margin-top:0}
+  .bulkbar{margin-top:8px;display:flex;justify-content:space-between;align-items:center;gap:10px;border:1px solid #d9e6f0;border-radius:10px;background:#f8fbff;padding:8px 10px}
+  .bulkmeta{font-size:12px;color:#314f6d;font-weight:700}
+  .bulk-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .recon-scope{margin-top:8px;border:1px solid #d9e6f0;border-radius:10px;background:#f8fbff;padding:8px 10px;font-size:12px;line-height:1.35;color:#2d4f70}
+  .recon-scope b{color:#113458}
+  .recon-scope .hint{display:block;margin-top:4px;color:#5f7894;font-size:11px}
+  .subtype-mini{margin-top:8px;border:1px solid #d9e6f0;border-radius:10px;background:#fff;overflow:hidden}
+  .subtype-mini-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;background:#f6fbff;border-bottom:1px solid #e1ebf5}
+  .subtype-mini-head .title{font-size:12px;font-weight:800;color:#123b61}
+  .subtype-mini-head .meta{font-size:11px;color:#56718d}
+  .subtype-mini-scroll{overflow:auto;max-width:100%}
+  .subtype-mini-table{width:max-content;min-width:100%;border-collapse:collapse}
+  .subtype-mini-table th,.subtype-mini-table td{padding:7px 9px;border-bottom:1px solid #eef3f8;font-size:11px;color:#1c3a58;text-align:left}
+  .subtype-mini-table th{background:#fbfdff;color:#33577a;font-weight:700;text-transform:uppercase;white-space:nowrap}
+  .subtype-mini-table th.num,.subtype-mini-table td.num{text-align:right}
+  .subtype-mini .foot{padding:7px 10px;font-size:11px;color:#5d7894;background:#fbfdff}
+  .kpis{margin-top:10px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+  .k{background:#fff;border:1px solid #dbe7f2;border-radius:12px;padding:10px}
+  .k.clickable{cursor:pointer;user-select:none;transition:border-color .18s ease,box-shadow .18s ease,background-color .18s ease}
+  .k.clickable:hover{border-color:#afcbe4;box-shadow:0 6px 14px rgba(15,76,129,.12)}
+  .k.active{border-color:#0f4c81;box-shadow:inset 0 0 0 1px #0f4c81;background:#eef6ff}
+  .k .l{font-size:11px;text-transform:uppercase;color:#3f617f;font-weight:700}
+  .k .v{margin-top:6px;font-size:19px;font-weight:800;color:#0f2238}
+  .table-wrap{margin-top:10px;border:1px solid #d7e3ef;border-radius:12px;background:#fff;overflow:auto;max-width:100%}
+  .recon-table{width:100%;border-collapse:collapse;min-width:1880px}
+  .recon-table th,.recon-table td{border-bottom:1px solid #e4edf5;padding:8px 9px;font-size:12px;vertical-align:top;color:#17324e;text-align:left}
+  .recon-table th{position:sticky;top:0;z-index:2;background:#f3f8fc;color:#0f4c81;font-size:11px;text-transform:uppercase;white-space:nowrap;vertical-align:middle}
+  .recon-table th.num,.recon-table td.num{text-align:right}
+  .recon-table th.center,.recon-table td.center{text-align:center}
+  .recon-table input[type="checkbox"]{width:14px;height:14px;accent-color:#0f4c81}
+  .sub{color:#536b86;font-size:11px;margin-top:2px}
+  .meta-stack{display:flex;flex-direction:column;gap:2px;min-width:0}
+  .meta-line{min-width:0}
+  .meta-line .meta-label{font-size:11px;color:#5d7389}
+  .meta-line .meta-label::after{content:":";margin-left:2px}
+  .meta-line .meta-val{font-size:11px;color:#1f3b58;font-weight:700;margin-left:4px;overflow-wrap:normal;word-break:normal}
+  .src-cell{font-weight:700;white-space:nowrap}
+  .pt-chip{display:inline-flex;align-items:flex-start;gap:6px;max-width:100%;padding:4px 8px;border:1px solid #d5e3f0;border-left:4px solid #94a3b8;border-radius:8px;background:#fff;color:#13324e;font-size:11px;font-weight:700;line-height:1.28}
+  .pt-chip .pt-text{display:block;max-width:100%;word-break:normal;overflow-wrap:anywhere}
+  .pt-chip.pt-sub{align-items:center;padding:3px 8px;border-left-width:3px;border-radius:999px;white-space:nowrap}
+  .pt-chip.pt-sub .pt-text{max-width:120px;overflow:hidden;text-overflow:ellipsis;white-space:nowrap}
+  .pt-chip.pt-cash{border-left-color:#c2410c;background:#fff7ed;color:#9a3412}
+  .pt-chip.pt-cashless{border-left-color:#0f766e;background:#f0fdfa;color:#0f766e}
+  .pt-chip.pt-opening{border-left-color:#1d4ed8;background:#eff6ff;color:#1d4ed8}
+  .pt-chip.pt-neutral{border-left-color:#64748b;background:#f8fafc;color:#334155}
+  .amt{font-variant-numeric:tabular-nums;text-align:right;font-weight:700;display:inline-block;min-width:105px}
+  .bill{color:#0f4c81}.receipt{color:#0f766e}.tds{color:#0f766e}.rebate{color:#a16207}.writeoff{color:#0f766e}.bpos{color:var(--bad)}.bover{color:var(--over)}.bok{color:var(--good)}
+  .badge{display:inline-flex;align-items:center;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:700;border:1px solid transparent}
+  .st-set{color:#166534;background:#ecfdf3;border-color:#bbf7d0}.st-par{color:#92400e;background:#fff7ed;border-color:#fed7aa}.st-un{color:#991b1b;background:#fef2f2;border-color:#fecaca}.st-over{color:#5b21b6;background:#f5f3ff;border-color:#ddd6fe}
+  .tg{border:1px solid #c9d9e9;background:#f4f9ff;color:#0f4c81;border-radius:8px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer}
+  .tg[aria-expanded="true"]{background:#0f4c81;color:#fff;border-color:#0f4c81}
+  .wo-btn{border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:8px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
+  .wo-btn:hover{background:#dbeafe}
+  .wo-btn:disabled{cursor:not-allowed;opacity:.65}
+  .drow td{background:#f8fbff;padding:10px 12px}
+  .dinner{border:1px solid #dbe7f3;border-radius:10px;background:#fff;overflow:auto}
+  .dtable{width:100%;border-collapse:collapse;min-width:900px}
+  .dtable th,.dtable td{border-bottom:1px solid #edf3f9;padding:7px 8px;font-size:11px;text-align:left}
+  .dtable th{background:#f4f8fd;color:#23507a;white-space:nowrap}
+  .dtable th.num,.dtable td.num{text-align:right}
+  .dtable th.center,.dtable td.center{text-align:center}
+  .hist-group{border:1px solid #d8e5f0;border-radius:10px;margin:0 0 10px;overflow:hidden;background:#fff;box-shadow:0 6px 14px rgba(0,0,0,.06)}
+  .hist-head{padding:10px 12px;background:#eef5ff;font-weight:800;display:flex;justify-content:space-between;cursor:pointer;color:#0f4c81}
+  .hist-body{display:none;background:#fff;overflow:auto}
+  .hist-body.open{display:block}
+  .hist-table{width:100%;border-collapse:collapse;min-width:1200px}
+  .hist-table th,.hist-table td{padding:8px 9px;border-bottom:1px solid #e4edf5;text-align:left;font-size:12px;vertical-align:top}
+  .hist-table th{background:#f4f8fd;color:#1e4f7c;font-weight:800}
+  .updates-kpis{margin-top:10px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
+  .uk{background:#fff;border:1px solid #dbe7f2;border-radius:12px;padding:10px;cursor:pointer;transition:border-color .18s ease,box-shadow .18s ease,background-color .18s ease}
+  .uk:hover{border-color:#afcbe4;box-shadow:0 6px 14px rgba(15,76,129,.12)}
+  .uk.active{border-color:#0f4c81;box-shadow:inset 0 0 0 1px #0f4c81;background:#eef6ff}
+  .uk .t{font-size:12px;color:#2a4b6b;font-weight:700}
+  .uk .v{margin-top:6px;font-size:24px;line-height:1;font-weight:800;color:#102a43}
+  .uk .m{margin-top:6px;font-size:11px;color:#5c738c;font-weight:700}
+  .updates-table{width:100%;border-collapse:collapse;min-width:1040px}
+  .updates-table th,.updates-table td{padding:8px 9px;border-bottom:1px solid #e4edf5;font-size:12px;text-align:left;vertical-align:top;color:#17324e}
+  .updates-table th{background:#f3f8fc;color:#0f4c81;font-size:11px;text-transform:uppercase;white-space:nowrap}
+  .updates-table th.center,.updates-table td.center{text-align:center}
+  .updates-pill{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:700;border:1px solid transparent}
+  .up-add{color:#166534;background:#ecfdf3;border-color:#bbf7d0}.up-upd{color:#92400e;background:#fff7ed;border-color:#fed7aa}
+  .updates-btn{border:1px solid #c9d9e9;background:#f4f9ff;color:#0f4c81;border-radius:8px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer}
+  .updates-modal{position:fixed;inset:0;z-index:2100;background:rgba(2,12,27,.52);display:none;align-items:center;justify-content:center;padding:18px}
+  .updates-modal.open{display:flex}
+  .updates-modal-card{width:min(1200px,100%);max-height:90vh;background:#fff;border:1px solid #dbe7f2;border-radius:14px;box-shadow:0 20px 44px rgba(15,23,42,.28);display:flex;flex-direction:column;overflow:hidden}
+  .updates-modal-head{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid #e6eef7;background:#f6fbff}
+  .updates-modal-head h3{margin:0;font-size:18px;color:#12355b}
+  .updates-modal-close{border:none;background:transparent;color:#425d7a;font-size:26px;line-height:1;cursor:pointer}
+  .updates-modal-tools{display:flex;gap:10px;align-items:center;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid #edf3f9;background:#fbfdff}
+  .updates-modal-tools input{height:34px;min-width:260px;border:1px solid #c9d7e6;border-radius:10px;padding:0 10px;font-size:13px;color:#132941}
+  .updates-modal-meta{font-size:12px;color:#4f647d;font-weight:700}
+  .updates-modal-body{padding:0 14px 12px;overflow:auto}
+  .updates-modal-table{width:100%;border-collapse:collapse;min-width:980px}
+  .updates-modal-table th,.updates-modal-table td{padding:8px 9px;border-bottom:1px solid #e6eef7;font-size:12px;color:#17324e;text-align:left;vertical-align:top}
+  .updates-modal-table th{background:#f4f8fd;color:#1e4f7c;font-size:11px;text-transform:uppercase;white-space:nowrap}
+  .updates-modal-table th.center,.updates-modal-table td.center{text-align:center}
+  .updates-modal-details{background:#fafcff}
+  .updates-modal-kv{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:8px}
+  .updates-modal-kv div{font-size:12px;color:#294763}
+  .updates-modal-kv b{color:#12355b}
+  .suspense-kpis{display:grid;grid-template-columns:repeat(4,minmax(0,1fr));gap:8px;margin:2px 0 10px}
+  .sk{background:#fff;border:1px solid #dbe7f2;border-radius:10px;padding:8px 9px}
+  .sk.clickable{cursor:pointer;user-select:none;transition:border-color .18s ease,box-shadow .18s ease,background-color .18s ease}
+  .sk.clickable:hover{border-color:#afcbe4;box-shadow:0 6px 14px rgba(15,76,129,.12)}
+  .sk.active{border-color:#0f4c81;box-shadow:inset 0 0 0 1px #0f4c81;background:#eef6ff}
+  .sk .l{font-size:11px;text-transform:uppercase;color:#3f617f;font-weight:700}
+  .sk .v{margin-top:5px;font-size:18px;font-weight:800;color:#0f2238}
+  .suspense-pill{display:inline-flex;align-items:center;border-radius:999px;padding:3px 8px;font-size:11px;font-weight:700;border:1px solid #fdba74;color:#9a3412;background:#fff7ed;white-space:nowrap}
+  .suspense-reason{display:flex;flex-direction:column;gap:4px;max-width:280px}
+  .suspense-reason .sub{margin:0;font-size:11px;color:#6b7280;line-height:1.3}
+  .suspense-actions{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .suspense-select-wrap{display:inline-flex;align-items:center;gap:6px;color:#335878;font-size:12px;font-weight:700}
+  .suspense-select-wrap input[type="checkbox"]{width:15px;height:15px;accent-color:#0f4c81;margin:0}
+  .audit-btn{border:1px solid #bbf7d0;background:#ecfdf3;color:#166534;border-radius:8px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
+  .audit-btn:hover{background:#dcfce7}
+  .audit-btn:disabled{cursor:not-allowed;opacity:.65}
+  .bulk-foot{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid #e6eef7;background:#fbfdff}
+  .row-final{background:#ecfdf3}
+  .legacy-st{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid transparent;white-space:nowrap}
+  .legacy-st-final{color:#166534;background:#ecfdf3;border-color:#bbf7d0}
+  .legacy-st-pending{color:#92400e;background:#fff7ed;border-color:#fed7aa}
+  .legacy-st-notworked{color:#6b7280;background:#f9fafb;border-color:#e5e7eb}
+  .empty{padding:16px;text-align:center;color:#5d7389;font-size:13px;font-weight:600}
+  .pager{margin-top:10px;display:flex;justify-content:space-between;align-items:center;gap:10px}
+  .meta{font-size:12px;color:#526a84;font-weight:600}
+  .pbtn{height:32px;min-width:72px;border:1px solid #c8d8e7;border-radius:8px;background:#fff;color:#1e3b5c;font-size:12px;font-weight:700;cursor:pointer}
+  .toast-v{position:fixed;top:84px;right:16px;width:min(380px,calc(100vw - 24px));display:flex;flex-direction:column;gap:10px;z-index:2600;pointer-events:none}
+  .toast{pointer-events:auto;display:flex;align-items:flex-start;gap:10px;border:1px solid #d9e2ef;border-left:4px solid #1d4ed8;border-radius:12px;background:#fff;box-shadow:0 10px 24px rgba(15,23,42,.16);padding:10px 10px 10px 12px;transform:translateX(calc(100% + 20px));opacity:0;transition:transform .24s ease,opacity .24s ease}
+  .toast.show{transform:translateX(0);opacity:1}.toast.h{transform:translateX(calc(100% + 20px));opacity:0}
+  .toast.s{border-left-color:#16a34a;background:#f6fff9}.toast.w{border-left-color:#d97706;background:#fffaf2}.toast.e{border-left-color:#dc2626;background:#fff8f8}.toast.l{border-left-color:#1d4ed8;background:#f8fbff}
+  .tb{flex:1;display:flex;gap:10px}.sp{width:14px;height:14px;border:2px solid rgba(29,78,216,.24);border-top-color:#1d4ed8;border-radius:50%;animation:spin .8s linear infinite;margin-top:2px}.tm{font-size:13px;font-weight:600;line-height:1.35}.tc{border:none;background:transparent;color:#64748b;font-size:18px;line-height:1;padding:0 2px;cursor:pointer}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  .recon-table th:nth-child(3),.recon-table td:nth-child(3){min-width:120px}
+  .recon-table th:nth-child(4),.recon-table td:nth-child(4){min-width:190px}
+  .recon-table th:nth-child(5),.recon-table td:nth-child(5){min-width:110px}
+  .recon-table th:nth-child(6),.recon-table td:nth-child(6){min-width:190px}
+  .recon-table th:nth-child(7),.recon-table td:nth-child(7),.recon-table th:nth-child(8),.recon-table td:nth-child(8){min-width:120px}
+  .recon-table th:nth-child(9),.recon-table td:nth-child(9){min-width:170px}
+  @media (max-width:1200px){.ctrls{grid-template-columns:repeat(4,minmax(0,1fr))}.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.updates-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.suspense-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}#reconPanel .ctrl.actions{grid-column:1/-1;justify-content:flex-end;flex-wrap:wrap}#legacyPanel .ctrls{grid-template-columns:repeat(8,minmax(0,1fr))}#legacyPanel .ctrl{grid-column:span 2}#legacyPanel .ctrl.legacy-search{grid-column:span 5}#legacyPanel .ctrl.actions{grid-column:span 3;justify-content:flex-end}#legacyPanel .ctrl.actions .btn{min-width:0}}
+  @media (max-width:900px){.head{grid-template-columns:1fr;padding:14px}.head h1{font-size:28px}.head-side{align-items:flex-start;min-width:0}.top-actions{top:12px;right:12px}.ctrls{grid-template-columns:repeat(2,minmax(0,1fr))}.actions{justify-content:flex-start}#reconPanel .ctrl.actions{grid-column:1/-1;justify-content:flex-start;flex-wrap:wrap}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.updates-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.suspense-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.updates-modal-kv{grid-template-columns:1fr}#legacyPanel .ctrls{grid-template-columns:repeat(2,minmax(0,1fr))}#legacyPanel .ctrl{grid-column:span 1}#legacyPanel .ctrl.legacy-search,#legacyPanel .ctrl.actions{grid-column:1/-1}#legacyPanel .ctrl.actions .btn{flex:1 1 180px}}
+</style>
+<div class="corp">
+  <div class="top-actions"><div class="fab-user"><div class="fab-timer" id="fabTimer">--:--</div><button class="fab-btn" id="fabToggle" type="button"><span class="fab-icon"><span></span><span></span><span></span></span></button><div class="fab-menu" id="fabMenu"><div class="menu-title">{{ session.get('username') or session.get('user') or 'User' }}</div><a href="{{ url_for('dashboard') }}">Back to Dashboard</a><a href="{{ url_for('settings') }}">Settings</a><a href="{{ url_for('logout') }}">Logout</a></div></div></div>
+  <header class="head">
+    <div class="head-main">
+      <span class="head-kicker">Corporate Section</span>
+      <h1>Corporate Management Console</h1>
+      <p>Unified workspace for corporate receipt reconciliation, corporate bill summary, and upcoming corporate operations modules.</p>
+      <div class="head-chips">
+        <span class="hchip"><span class="dot"></span><span id="headUnitChipTxt">Unit: Not Selected</span></span>
+        <span class="hchip"><span class="dot"></span><span id="headModuleChipTxt">Module: Not Selected</span></span>
+      </div>
+    </div>
+    <div class="head-side">
+      <div class="cutoff" id="headCutoffTxt">Reconciliation Cutoff Date: 2025-03-31</div>
+      <div class="scope" id="headScopeTxt">Applies to Receipt Reconciliation only (Unified bill + receipt timeline).</div>
+    </div>
+  </header>
+  <div class="shell">
+    <div class="tabs">
+      <button class="tab" type="button" data-panel="reconPanel">Receipt Reconciliation<span class="tab-sub">Dynamic KPI cards, client-side filtering and receipt drill-down.</span><span class="tab-help">Click Load Data or Refresh Data to fetch records. Filters do not auto-fetch on tab switch.</span></button>
+      <button class="tab" type="button" data-panel="legacyPanel">Corporate Bill Summary<span class="tab-sub">Existing corporate bill summary kept intact for continuity.</span><span class="tab-help">Set Unit and date range, then click Load Bill Summary. Export uses the active filter selection.</span></button>
+      <button class="tab" type="button" data-panel="updatesPanel">Updates Monitor<span class="tab-sub">Tracks additions and updates from corporate source tables.</span><span class="tab-help">Click Load Updates to fetch events. Auto Refresh runs every 60s only when enabled.</span></button>
+    </div>
+    <div class="module-prompt" id="modulePrompt">Select a module tab to begin. Data is fetched only when you use that module&apos;s load action.</div>
+    <section class="panel" id="reconPanel">
+      <div class="ctrls">
+        <div class="ctrl"><label>Unit</label><select id="reconUnit"></select></div>
+        <div class="ctrl"><label>Date From</label><input type="date" id="reconBillFrom"></div>
+        <div class="ctrl"><label>Date To</label><input type="date" id="reconBillTo"></div>
+        <div class="ctrl inline"><input type="checkbox" id="reconIncludeCancelled"><label for="reconIncludeCancelled">Include Cancelled</label></div>
+        <div class="ctrl"><label>Search</label><input type="text" id="reconSearch" placeholder="Bill / Patient / Visit / Dept"></div>
+        <div class="ctrl"><label>Source</label><select id="reconSource"><option value="">All Sources</option></select></div>
+        <div class="ctrl"><label>Patient SubType</label><select id="reconPatientSubtype"><option value="">All SubTypes</option></select></div>
+        <div class="ctrl"><label>Sort By</label><select id="reconSortBy"><option value="balance_all_time">Balance All-time</option><option value="balance_window">Balance In Window</option><option value="bill_amount">Bill Amount</option><option value="receipt_total_all_time">Receipt All-time</option><option value="tds_total_all_time">TDS All-time</option><option value="rebate_discount_all_time">Rebate/Discount All-time</option><option value="writeoff_total_all_time">Write-off All-time</option><option value="settled_total_all_time">Settled All-time</option><option value="receipt_total_window">Receipt In Window</option><option value="tds_total_window">TDS In Window</option><option value="rebate_discount_window">Rebate/Discount In Window</option><option value="writeoff_total_window">Write-off In Window</option><option value="settled_total_window">Settled In Window</option><option value="bill_date">Submit Date</option><option value="due_date">Due Date</option><option value="patient_name">Patient Name</option><option value="last_receipt_date_all_time">Last Receipt Date</option></select></div>
+        <div class="ctrl"><label>Sort Direction</label><select id="reconSortDir"><option value="desc">Descending</option><option value="asc">Ascending</option></select></div>
+        <div class="ctrl"><label>Page Size</label><select id="reconPageSize"><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="200">200</option></select></div>
+        <div class="ctrl actions"><label class="export-opt" for="reconExportSubmittedOnly"><input type="checkbox" id="reconExportSubmittedOnly"><span>Export Bills: Submitted Only</span></label><button class="btn sec" type="button" id="reconLoadBtn">Load Data</button><button class="btn sec" type="button" id="reconForceRefreshBtn">Refresh Data</button><button class="btn sec" type="button" id="reconOpeningBtn">Load Opening</button><button class="btn warn" type="button" id="reconSuspenseBtn">Review Exceptions</button><button class="btn" type="button" id="reconExportBtn">Export XLSX</button></div>
+      </div>
+      <div class="status sr-only" id="reconStatus" aria-live="polite" aria-atomic="true">Ready.</div>
+      <div class="bulkbar" id="reconBulkBar">
+        <div class="bulkmeta" id="reconBulkMeta">No bills selected for bulk write-off.</div>
+        <div class="bulk-actions">
+          <button class="btn sec" type="button" id="reconBulkPreviewBtn">Preview Bulk Write-off</button>
+          <button class="btn sec" type="button" id="reconBulkClearBtn">Clear Selection</button>
+        </div>
+      </div>
+      <div class="recon-scope" id="reconScopeSummary">Settlement summary will appear after data load.</div>
+      <div class="subtype-mini" id="reconSubtypeMini">
+        <div class="subtype-mini-head"><span class="title">Closing by SubType</span><span class="meta">Waiting for data...</span></div>
+        <div class="foot">Top subtypes will appear after reconciliation load.</div>
+      </div>
+      <div class="kpis" id="reconKpis"></div>
+      <div class="table-wrap"><table class="recon-table"><thead><tr><th class="center"><input type="checkbox" id="reconSelectAllVisible" aria-label="Select visible write-off rows"></th><th class="center">Details</th><th>Source</th><th>Bill</th><th class="center">Status All</th><th>Patient</th><th>Patient Type</th><th>Patient Sub Type</th><th>Visit</th><th class="num">Bill Amt</th><th class="num">Receipt All</th><th class="num">TDS All</th><th class="num">Rebate/Discount All</th><th class="num">Write-off All</th><th class="num">Balance All</th><th class="num">Receipt Window</th><th class="num">Rebate/Discount Window</th><th class="num">Balance Window</th><th class="center">Status Window</th><th class="center">Receipts</th><th>Last Receipt</th><th class="center">Actions</th></tr></thead><tbody id="reconBody"><tr><td colspan="22" class="empty">No data loaded.</td></tr></tbody></table></div>
+      <div class="pager"><div class="meta" id="reconPageInfo">Page 0 / 0</div><div><button class="pbtn" id="reconPrev" type="button">Prev</button><button class="pbtn" id="reconNext" type="button">Next</button></div></div>
+    </section>
+    <section class="panel" id="legacyPanel">
+      <div class="ctrls">
+        <div class="ctrl"><label>Unit</label><select id="legacyUnit"></select></div>
+        <div class="ctrl"><label>From</label><input type="date" id="legacyFrom"></div>
+        <div class="ctrl"><label>To</label><input type="date" id="legacyTo"></div>
+        <div class="ctrl"><label>Visit Type</label><select id="legacyVisitType"><option value="0">All</option><option value="1">IPD</option><option value="2">OPD</option><option value="3">DPV</option></select></div>
+        <div class="ctrl"><label>Patient SubType</label><select id="legacyPatientSubtype"><option value="">All SubTypes</option></select></div>
+        <div class="ctrl"><label>Status Filter</label><select id="legacyStatus"><option value="all">All</option><option value="final">Final Submitted</option><option value="nonfinal">Other Status</option></select></div>
+        <div class="ctrl legacy-search"><label>Search</label><input type="text" id="legacySearch" placeholder="Bill No / Registration / Patient / Bill Date"></div>
+        <div class="ctrl actions"><button class="btn sec" type="button" id="legacyLoadBtn">Load Bill Summary</button><button class="btn" type="button" id="legacyExportBtn">Export Bill Summary</button></div>
+      </div>
+      <div class="status" id="legacyStatusTxt">Corporate bill summary panel ready.</div>
+      <div class="table-wrap">
+        <div id="legacyGroups"><div class="empty">No corporate bill summary data loaded.</div></div>
+      </div>
+      <div class="pager">
+        <div class="meta" id="legacyPageInfo">Page 0 / 0</div>
+        <div>
+          <button class="pbtn" id="legacyPrev" type="button">Prev</button>
+          <button class="pbtn" id="legacyNext" type="button">Next</button>
+        </div>
+      </div>
+    </section>
+    <section class="panel" id="updatesPanel">
+      <div class="ctrls">
+        <div class="ctrl"><label>Unit</label><select id="updatesUnit"></select></div>
+        <div class="ctrl"><label>Lookback Window</label><select id="updatesLookback"><option value="6">Last 6 Hours</option><option value="24" selected>Last 24 Hours</option><option value="72">Last 72 Hours</option><option value="168">Last 7 Days</option><option value="720">Last 30 Days</option></select></div>
+        <div class="ctrl"><label>Source</label><select id="updatesSource"><option value="">All Sources</option><option value="corp_receipt">Receipt Activity</option><option value="corp_bill_mst">Bill Master</option><option value="corpopening">Opening Balance</option></select></div>
+        <div class="ctrl"><label>Event Type</label><select id="updatesEventType"><option value="">All Types</option><option value="addition">Addition</option><option value="update">Update</option></select></div>
+        <div class="ctrl"><label>Search</label><input type="text" id="updatesSearch" placeholder="Table / Event / Record / User / Summary"></div>
+        <div class="ctrl"><label>Fetch Limit</label><select id="updatesLimit"><option value="500">500</option><option value="1200" selected>1200</option><option value="2500">2500</option><option value="5000">5000</option></select></div>
+        <div class="ctrl inline"><input type="checkbox" id="updatesAutoRefresh"><label for="updatesAutoRefresh">Auto Refresh (60s)</label></div>
+        <div class="ctrl actions"><button class="btn sec" type="button" id="updatesLoadBtn">Load Updates</button></div>
+      </div>
+      <div class="status" id="updatesStatus">Load updates to monitor additions and changes in corporate tables.</div>
+      <div class="updates-kpis" id="updatesCards"><div class="empty">No updates loaded.</div></div>
+      <div class="table-wrap"><table class="updates-table"><thead><tr><th>Time</th><th>Table</th><th>Type</th><th>Record</th><th>User</th><th>Summary</th><th class="center">Details</th></tr></thead><tbody id="updatesPreviewBody"><tr><td colspan="7" class="empty">No updates loaded.</td></tr></tbody></table></div>
+    </section>
+  </div>
+  <div class="updates-modal" id="updatesModal" aria-hidden="true">
+    <div class="updates-modal-card">
+      <div class="updates-modal-head"><h3 id="updatesModalTitle">Updates Details</h3><button class="updates-modal-close" type="button" id="updatesModalClose">&times;</button></div>
+      <div class="updates-modal-tools"><input type="text" id="updatesModalSearch" placeholder="Search inside current card details"><span class="updates-modal-meta" id="updatesModalMeta">0 events</span></div>
+      <div class="updates-modal-body"><table class="updates-modal-table"><thead><tr><th>Time</th><th>Table</th><th>Type</th><th>Record</th><th>User</th><th>Summary</th><th class="center">Details</th></tr></thead><tbody id="updatesModalBody"><tr><td colspan="7" class="empty">No records.</td></tr></tbody></table></div>
+    </div>
+  </div>
+  <div class="updates-modal" id="reconBulkModal" aria-hidden="true">
+    <div class="updates-modal-card">
+      <div class="updates-modal-head">
+        <h3 id="reconBulkModalTitle">Bulk Write-off Preview</h3>
+        <button class="updates-modal-close" type="button" id="reconBulkModalClose">&times;</button>
+      </div>
+      <div class="updates-modal-tools">
+        <span class="updates-modal-meta" id="reconBulkModalMeta">0 bills selected</span>
+      </div>
+      <div class="updates-modal-body">
+        <table class="updates-modal-table">
+          <thead>
+            <tr>
+              <th>Bill</th>
+              <th>Patient</th>
+              <th>Source</th>
+              <th class="num">Current Balance</th>
+              <th class="num">Write-off Amount</th>
+            </tr>
+          </thead>
+          <tbody id="reconBulkBody">
+            <tr><td colspan="5" class="empty">No rows selected.</td></tr>
+          </tbody>
+        </table>
+      </div>
+      <div class="bulk-foot">
+        <button class="btn sec" type="button" id="reconBulkCancelBtn">Cancel</button>
+        <button class="btn" type="button" id="reconBulkApplyBtn">Apply Bulk Write-off</button>
+      </div>
+    </div>
+  </div>
+  <div class="updates-modal" id="reconSuspenseModal" aria-hidden="true">
+    <div class="updates-modal-card">
+      <div class="updates-modal-head">
+        <h3 id="reconSuspenseModalTitle">Cutoff Exception Review</h3>
+        <button class="updates-modal-close" type="button" id="reconSuspenseModalClose">&times;</button>
+      </div>
+      <div class="updates-modal-tools">
+        <input type="text" id="reconSuspenseSearch" placeholder="Search bill / patient / subtype / status">
+        <span class="updates-modal-meta" id="reconSuspenseMeta">0 anomaly bills</span>
+        <div class="suspense-actions">
+          <label class="suspense-select-wrap" for="reconSuspenseSelectAll">
+            <input type="checkbox" id="reconSuspenseSelectAll">
+            <span>Select Visible</span>
+          </label>
+          <button class="btn sec" type="button" id="reconSuspenseApproveBtn">Mark Selected OK</button>
+          <button class="btn sec" type="button" id="reconSuspenseClearBtn">Clear Selection</button>
+        </div>
+      </div>
+      <div class="updates-modal-body">
+        <div class="suspense-kpis" id="reconSuspenseKpis"></div>
+        <table class="updates-modal-table">
+          <thead>
+            <tr>
+              <th class="center">Select</th>
+              <th>Bill</th>
+              <th>Patient</th>
+              <th>Patient Type</th>
+              <th>Patient SubType</th>
+              <th>Submit Date</th>
+              <th>Bill Date</th>
+              <th class="center">Gap Days</th>
+              <th class="num">Bill Amt</th>
+              <th class="num">Receipt All</th>
+              <th class="num">Balance All</th>
+              <th class="center">Status</th>
+              <th>Approved By / At</th>
+              <th>Reason</th>
+              <th class="center">Action</th>
+              <th class="center">Details</th>
+            </tr>
+          </thead>
+          <tbody id="reconSuspenseBody">
+            <tr><td colspan="16" class="empty">No suspense records.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+<script>
+(() => {
+  const ALLOWED_UNITS = {{ (allowed_units or []) | tojson }};
+  const DEFAULT_UNIT = {{ (selected_unit or "") | tojson }};
+  const CAN_WRITEOFF = {{ (can_writeoff or False) | tojson }};
+  const fmtMoney = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  const fmtInt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
+  const state = {
+    recon: {
+      page: 1,
+      pageSize: 25,
+      sortBy: "balance_all_time",
+      sortDir: "desc",
+      rows: [],
+      details: {},
+      meta: {},
+      kpis: {},
+      baseKpis: {},
+      loading: false,
+      searchTimer: null,
+      datasetLoaded: false,
+      kpiFilter: "",
+      filteredBillKeys: [],
+      baseRows: [],
+      baseDetails: {},
+      baseMeta: {},
+      writeoffBusy: false,
+      rowIndex: {},
+      bulkSelected: {},
+      bulkPreviewRows: [],
+      baseSuspenseRows: [],
+      baseSuspenseDetails: {},
+      suspenseLoaded: false,
+      suspenseCount: 0,
+      suspenseKpiFilter: "",
+      suspenseSearchTimer: null,
+      suspenseSelected: {},
+      suspenseVisibleKeys: [],
+      suspenseAuditBusy: false,
+    },
+    updates: {
+      loading: false,
+      loaded: false,
+      autoTimer: null,
+      searchTimer: null,
+      baseEvents: [],
+      events: [],
+      cards: [],
+      activeCard: "all",
+      modalSearch: "",
+      meta: {},
+    },
+    legacy: {
+      raw: [],
+      filtered: [],
+      groups: [],
+      page: 1,
+      pageSize: 20,
+      loaded: false,
+      mode: "client",
+      serverRows: [],
+      meta: {},
+      searchTimer: null,
+    },
+    exporting: false
+  };
+  const $ = (id) => document.getElementById(id);
+  const els = {
+    modulePrompt: $("modulePrompt"),
+    tabs: Array.from(document.querySelectorAll(".tab")), panels: Array.from(document.querySelectorAll(".panel")),
+    recon: { unit: $("reconUnit"), billFrom: $("reconBillFrom"), billTo: $("reconBillTo"), includeCancelled: $("reconIncludeCancelled"), exportSubmittedOnly: $("reconExportSubmittedOnly"), search: $("reconSearch"), source: $("reconSource"), patientSubtype: $("reconPatientSubtype"), sortBy: $("reconSortBy"), sortDir: $("reconSortDir"), pageSize: $("reconPageSize"), loadBtn: $("reconLoadBtn"), forceRefreshBtn: $("reconForceRefreshBtn"), openingBtn: $("reconOpeningBtn"), suspenseBtn: $("reconSuspenseBtn"), exportBtn: $("reconExportBtn"), status: $("reconStatus"), scopeSummary: $("reconScopeSummary"), subtypeMini: $("reconSubtypeMini"), bulkMeta: $("reconBulkMeta"), bulkPreviewBtn: $("reconBulkPreviewBtn"), bulkClearBtn: $("reconBulkClearBtn"), selectAllVisible: $("reconSelectAllVisible"), kpis: $("reconKpis"), body: $("reconBody"), pageInfo: $("reconPageInfo"), prev: $("reconPrev"), next: $("reconNext"), bulkModal: $("reconBulkModal"), bulkModalTitle: $("reconBulkModalTitle"), bulkModalMeta: $("reconBulkModalMeta"), bulkModalClose: $("reconBulkModalClose"), bulkModalBody: $("reconBulkBody"), bulkModalCancel: $("reconBulkCancelBtn"), bulkModalApply: $("reconBulkApplyBtn"), suspenseModal: $("reconSuspenseModal"), suspenseModalTitle: $("reconSuspenseModalTitle"), suspenseModalClose: $("reconSuspenseModalClose"), suspenseSearch: $("reconSuspenseSearch"), suspenseMeta: $("reconSuspenseMeta"), suspenseKpis: $("reconSuspenseKpis"), suspenseBody: $("reconSuspenseBody"), suspenseSelectAll: $("reconSuspenseSelectAll"), suspenseApproveBtn: $("reconSuspenseApproveBtn"), suspenseClearBtn: $("reconSuspenseClearBtn") },
+    legacy: {
+      unit: $("legacyUnit"),
+      from: $("legacyFrom"),
+      to: $("legacyTo"),
+      visitType: $("legacyVisitType"),
+      patientSubtype: $("legacyPatientSubtype"),
+      status: $("legacyStatus"),
+      search: $("legacySearch"),
+      loadBtn: $("legacyLoadBtn"),
+      exportBtn: $("legacyExportBtn"),
+      txt: $("legacyStatusTxt"),
+      groups: $("legacyGroups"),
+      pageInfo: $("legacyPageInfo"),
+      prev: $("legacyPrev"),
+      next: $("legacyNext")
+    },
+    updates: {
+      unit: $("updatesUnit"),
+      lookback: $("updatesLookback"),
+      source: $("updatesSource"),
+      eventType: $("updatesEventType"),
+      search: $("updatesSearch"),
+      limit: $("updatesLimit"),
+      autoRefresh: $("updatesAutoRefresh"),
+      loadBtn: $("updatesLoadBtn"),
+      status: $("updatesStatus"),
+      cards: $("updatesCards"),
+      previewBody: $("updatesPreviewBody"),
+      modal: $("updatesModal"),
+      modalTitle: $("updatesModalTitle"),
+      modalClose: $("updatesModalClose"),
+      modalSearch: $("updatesModalSearch"),
+      modalMeta: $("updatesModalMeta"),
+      modalBody: $("updatesModalBody"),
+    },
+  };
+  const esc = (v) => String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
+  const money = (v) => fmtMoney.format(Number.isFinite(Number(v)) ? Number(v) : 0);
+  const integer = (v) => fmtInt.format(Number.isFinite(Number(v)) ? Number(v) : 0);
+  const setTxt = (el, msg) => { if (el) el.textContent = msg; };
+  const bClass = (n) => { const x = Number(n || 0); if (x < -1) return "bover"; if (x > 1) return "bpos"; return "bok"; };
+  const bBadge = (s) => { const k = String(s || "").toLowerCase(); let c = "st-un"; if (k === "settled") c = "st-set"; else if (k === "partial") c = "st-par"; else if (k === "overpaid") c = "st-over"; return `<span class="badge ${c}">${esc(s || "Unpaid")}</span>`; };
+  const num = (v) => {
+    const n = Number(v);
+    return Number.isFinite(n) ? n : 0;
+  };
+  const parseIsoDate = (value) => {
+    const txt = String(value || "").trim();
+    if (!txt) return null;
+    const m = txt.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!m) return null;
+    const d = new Date(Number(m[1]), Number(m[2]) - 1, Number(m[3]));
+    return Number.isNaN(d.getTime()) ? null : d;
+  };
+  const dateKey = (d) => (d ? `${d.getFullYear()}-${String(d.getMonth() + 1).padStart(2, "0")}-${String(d.getDate()).padStart(2, "0")}` : "");
+  const shortDate = (value) => {
+    const txt = String(value || "").trim();
+    if (!txt || txt === "-") return "-";
+    const d = parseIsoDate(txt);
+    if (!d) return txt;
+    const dd = String(d.getDate()).padStart(2, "0");
+    const mon = d.toLocaleString("en-IN", { month: "short" });
+    const yy = String(d.getFullYear());
+    return `${dd}-${mon}-${yy}`;
+  };
+  const billInRange = (billDate, fromDate, toDate) => {
+    if (!fromDate && !toDate) return true;
+    if (!billDate) return false;
+    if (fromDate && billDate < fromDate) return false;
+    if (toDate && billDate > toDate) return false;
+    return true;
+  };
+  const receiptInRange = (receiptDate, fromDate, toDate) => {
+    if (!fromDate && !toDate) return true;
+    if (!receiptDate) return false;
+    if (fromDate && receiptDate < fromDate) return false;
+    if (toDate && receiptDate > toDate) return false;
+    return true;
+  };
+  const reconStatusFromBalance = (balance, receipt) => {
+    const tol = 1.0;
+    const b = num(balance);
+    const r = num(receipt);
+    if (b < -tol) return "Overpaid";
+    if (Math.abs(b) <= tol) return "Settled";
+    if (r > 0) return "Partial";
+    return "Unpaid";
+  };
+
+  const toast = { viewport: null, seq: 0, timers: new Map(), loading: new Map() };
+  const ensureToast = () => {
+    if (toast.viewport && document.body.contains(toast.viewport)) return toast.viewport;
+    const v = document.createElement("div");
+    v.className = "toast-v";
+    document.body.appendChild(v);
+    toast.viewport = v;
+    return v;
+  };
+  const removeToast = (id, immediate = false) => {
+    if (!id) return;
+    const t = toast.timers.get(id); if (t) { clearTimeout(t); toast.timers.delete(id); }
+    for (const [ch, lid] of toast.loading.entries()) if (lid === id) toast.loading.delete(ch);
+    const node = toast.viewport?.querySelector(`[data-id="${id}"]`);
+    if (!node) return;
+    if (immediate) { node.remove(); return; }
+    node.classList.remove("show"); node.classList.add("h"); setTimeout(() => node.remove(), 240);
+  };
+  const clearLoading = (channel) => { const id = toast.loading.get(channel); if (id) removeToast(id); };
+  const notify = (msg, type = "w", channel = "corp") => {
+    const text = String(msg || "").trim(); if (!text) return;
+    const t = ({ success: "s", warn: "w", error: "e", loading: "l", s: "s", w: "w", e: "e", l: "l" })[String(type || "").toLowerCase()] || "w";
+    const vp = ensureToast();
+    const key = String(channel || "corp").toLowerCase();
+    if (t === "l" && toast.loading.get(key)) {
+      const ex = vp.querySelector(`[data-id="${toast.loading.get(key)}"] .tm`);
+      if (ex) { ex.textContent = text; return; }
+    }
+    const id = `t-${++toast.seq}`;
+    const d = document.createElement("div"); d.className = `toast ${t}`; d.dataset.id = id;
+    const body = document.createElement("div"); body.className = "tb";
+    if (t === "l") { const s = document.createElement("span"); s.className = "sp"; body.appendChild(s); }
+    const m = document.createElement("span"); m.className = "tm"; m.textContent = text; body.appendChild(m);
+    const c = document.createElement("button"); c.className = "tc"; c.type = "button"; c.textContent = "x"; c.onclick = () => removeToast(id);
+    d.appendChild(body); d.appendChild(c); vp.appendChild(d); requestAnimationFrame(() => d.classList.add("show"));
+    if (t === "l") { toast.loading.set(key, id); return; }
+    const ms = t === "e" ? 7600 : t === "w" ? 5600 : 4200;
+    toast.timers.set(id, setTimeout(() => removeToast(id), ms));
+  };
+
+  const headerModuleLabel = (panelId) => {
+    const p = String(panelId || "").trim();
+    if (p === "legacyPanel") return "Corporate Bill Summary";
+    if (p === "updatesPanel") return "Updates Monitor";
+    if (p === "reconPanel") return "Receipt Reconciliation";
+    return "Not Selected";
+  };
+  const refreshHeaderChips = (panelId) => {
+    const unitVal = String(els.recon.unit?.value || els.legacy.unit?.value || "").trim().toUpperCase();
+    const activePanel = panelId || document.querySelector(".tab.active")?.getAttribute("data-panel") || "";
+    setTxt($("headUnitChipTxt"), `Unit: ${unitVal || "Not Selected"}`);
+    setTxt($("headModuleChipTxt"), `Module: ${headerModuleLabel(activePanel)}`);
+    if (activePanel === "legacyPanel") {
+      setTxt($("headCutoffTxt"), "Corporate Bill Summary Context");
+      setTxt($("headScopeTxt"), "Set filters and click Load Bill Summary to fetch data. Export follows current filter scope.");
+    } else if (activePanel === "updatesPanel") {
+      setTxt($("headCutoffTxt"), "Updates Monitoring Context");
+      setTxt($("headScopeTxt"), "Click Load Updates to fetch latest events. Auto Refresh runs every 60s only when enabled.");
+    } else if (activePanel === "reconPanel") {
+      setTxt($("headCutoffTxt"), "Reconciliation Cutoff Date: 2025-03-31");
+      setTxt($("headScopeTxt"), "Set filters, then click Load Data or Refresh Data to fetch records. No automatic fetch on tab switch.");
+    } else {
+      setTxt($("headCutoffTxt"), "Corporate Management Context");
+      setTxt($("headScopeTxt"), "Choose a module tab, then use its load action to fetch data.");
+    }
+  };
+  const setActivePanel = (panelId = "") => {
+    const target = String(panelId || "").trim();
+    els.tabs.forEach((t) => {
+      const isActive = !!target && t.dataset.panel === target;
+      t.classList.toggle("active", isActive);
+    });
+    els.panels.forEach((p) => p.classList.toggle("active", !!target && p.id === target));
+    if (els.modulePrompt) els.modulePrompt.style.display = target ? "none" : "block";
+    refreshHeaderChips(target);
+    if (target === "updatesPanel" && state.updates.loaded) {
+      renderUpdatesCards();
+      renderUpdatesPreview();
+    }
+  };
+  const setUnits = (select) => {
+    if (!select) return;
+    const arr = [];
+    if (ALLOWED_UNITS.length !== 1) arr.push('<option value="">Select Unit</option>');
+    for (const u of ALLOWED_UNITS) arr.push(`<option value="${esc(u)}">${esc(u)}</option>`);
+    select.innerHTML = arr.join("");
+    const v = DEFAULT_UNIT || (ALLOWED_UNITS.length === 1 ? ALLOWED_UNITS[0] : "");
+    if (v) select.value = v;
+  };
+  const syncUnit = (v) => {
+    if (els.recon.unit) els.recon.unit.value = v || "";
+    if (els.legacy.unit) els.legacy.unit.value = v || "";
+    if (els.updates.unit) els.updates.unit.value = v || "";
+    refreshHeaderChips();
+  };
+  const isLegacyServerUnit = (unit) => {
+    const key = String(unit || "").trim().toUpperCase();
+    return key === "AHL" || key === "ACI";
+  };
+  const ensureReconSourceOption = (value, label = "") => {
+    if (!els.recon.source) return;
+    const wanted = String(value || "").trim();
+    if (!wanted) return;
+    const exists = Array.from(els.recon.source.options || []).some((opt) => String(opt?.value || "").trim().toLowerCase() === wanted.toLowerCase());
+    if (exists) return;
+    const opt = document.createElement("option");
+    opt.value = wanted;
+    opt.textContent = String(label || wanted);
+    els.recon.source.appendChild(opt);
+  };
+  const setReconSourceOptions = (rows, preserveSelection = true) => {
+    if (!els.recon.source) return;
+    const prev = preserveSelection ? String(els.recon.source.value || "").trim() : "";
+    const uniq = new Set();
+    (Array.isArray(rows) ? rows : []).forEach((r) => {
+      const t = String(r?.bill_source || "").trim();
+      if (t) uniq.add(t);
+    });
+    ["Corporate Bill", "Opening Balance"].forEach((src) => uniq.add(src));
+    const opts = ['<option value="">All Sources</option>'];
+    Array.from(uniq).sort((a, b) => a.localeCompare(b)).forEach((t) => {
+      opts.push(`<option value="${esc(t)}">${esc(t)}</option>`);
+    });
+    els.recon.source.innerHTML = opts.join("");
+    if (prev && uniq.has(prev)) els.recon.source.value = prev;
+    else els.recon.source.value = "";
+  };
+  const setReconSubtypeOptions = (rows, preserveSelection = true) => {
+    if (!els.recon.patientSubtype) return;
+    const prev = preserveSelection ? String(els.recon.patientSubtype.value || "").trim() : "";
+    const uniq = new Set();
+    (Array.isArray(rows) ? rows : []).forEach((r) => {
+      const t = String(r?.patient_subtype || "").trim();
+      if (t) uniq.add(t);
+    });
+    const opts = ['<option value="">All SubTypes</option>'];
+    Array.from(uniq).sort((a, b) => a.localeCompare(b)).forEach((t) => {
+      opts.push(`<option value="${esc(t)}">${esc(t)}</option>`);
+    });
+    els.recon.patientSubtype.innerHTML = opts.join("");
+    if (prev && uniq.has(prev)) els.recon.patientSubtype.value = prev;
+    else els.recon.patientSubtype.value = "";
+  };
+  const setLegacySubtypeOptions = (items, preserveSelection = true) => {
+    if (!els.legacy.patientSubtype) return;
+    const prev = preserveSelection ? String(els.legacy.patientSubtype.value || "").trim() : "";
+    const pickSubtype = (item) => {
+      if (typeof item === "string") return String(item || "").trim();
+      return String(item?.patient_subtype || item?.PatientSubType || "").trim();
+    };
+    const uniq = new Set();
+    (Array.isArray(items) ? items : []).forEach((it) => {
+      const txt = pickSubtype(it);
+      if (txt) uniq.add(txt);
+    });
+    const opts = ['<option value="">All SubTypes</option>'];
+    Array.from(uniq).sort((a, b) => a.localeCompare(b)).forEach((txt) => {
+      opts.push(`<option value="${esc(txt)}">${esc(txt)}</option>`);
+    });
+    els.legacy.patientSubtype.innerHTML = opts.join("");
+    if (prev && uniq.has(prev)) els.legacy.patientSubtype.value = prev;
+    else els.legacy.patientSubtype.value = "";
+  };
+  const legacyStatusBadge = (status) => {
+    const txt = String(status || "").trim();
+    const low = txt.toLowerCase();
+    if (low === "final submitted") return '<span class="legacy-st legacy-st-final">Final Submitted</span>';
+    if (low === "submission pending") return '<span class="legacy-st legacy-st-pending">Submission Pending</span>';
+    if (low === "not worked") return '<span class="legacy-st legacy-st-notworked">Not Worked</span>';
+    return `<span class="legacy-st legacy-st-pending">${esc(txt || "Submission Pending")}</span>`;
+  };
+  const legacyCellHtml = (colName, cellValue) => {
+    const col = String(colName || "").trim();
+    const raw = cellValue;
+    if (raw == null) return "";
+    if (col === "Status") return legacyStatusBadge(raw);
+    if (["CAmount", "DueAmount", "Old_Bill_Amt"].includes(col)) return money(raw);
+    if (["BillDate", "CBill_Date", "Submit_Date", "VisitDate", "DischargeDate", "Old_Bill_Date"].includes(col)) return shortDate(raw);
+    return esc(raw);
+  };
+
+  const kDefs = [
+    ["bill_count", "Bill Count", "n"], ["total_bill_amount", "Total Bill Amount", "m"], ["receipt_all_time", "Receipt All-time", "m"], ["receipt_in_window", "Receipt In Window", "m"], ["balance_all_time", "Balance All-time", "m"], ["balance_in_window", "Balance In Window", "m"], ["settled_count", "Settled Count", "n"], ["partial_count", "Partial Count", "n"], ["unpaid_count", "Unpaid Count", "n"], ["overpaid_count", "Overpaid Count", "n"]
+  ];
+  const kpiFilterable = new Set(["bill_count", "total_bill_amount", "receipt_all_time", "receipt_in_window", "balance_all_time", "balance_in_window", "settled_count", "partial_count", "unpaid_count", "overpaid_count"]);
+  const kpiFilterLabel = (key) => {
+    const map = {
+      bill_count: "All Bills",
+      total_bill_amount: "Bill Amount > 0",
+      receipt_all_time: "Receipt All-time > 0",
+      receipt_in_window: "Receipt In Window > 0",
+      balance_all_time: "Open Balance (All-time)",
+      balance_in_window: "Open Balance (Window)",
+      settled_count: "Settled",
+      partial_count: "Partial",
+      unpaid_count: "Unpaid",
+      overpaid_count: "Overpaid",
+    };
+    return map[String(key || "").trim()] || "";
+  };
+  const kpiMatchesRow = (key, row) => {
+    const k = String(key || "").trim();
+    if (!k) return true;
+    if (k === "bill_count") return true;
+    if (k === "total_bill_amount") return num(row.bill_amount) > 0;
+    if (k === "receipt_all_time") return num(row.receipt_total_all_time) > 0;
+    if (k === "receipt_in_window") return num(row.receipt_total_window) > 0;
+    if (k === "balance_all_time") return Math.abs(num(row.balance_all_time)) > 1;
+    if (k === "balance_in_window") return Math.abs(num(row.balance_window)) > 1;
+    if (k === "settled_count") return String(row.status_all_time || "") === "Settled";
+    if (k === "partial_count") return String(row.status_all_time || "") === "Partial";
+    if (k === "unpaid_count") return String(row.status_all_time || "") === "Unpaid";
+    if (k === "overpaid_count") return String(row.status_all_time || "") === "Overpaid";
+    return true;
+  };
+  const toggleKpiFilter = (key) => {
+    if (!state.recon.datasetLoaded) {
+      notify("Load reconciliation data before applying KPI filters.", "warn", "recon-kpi");
+      return;
+    }
+    const k = String(key || "").trim();
+    if (!kpiFilterable.has(k)) return;
+    if (k === "bill_count") state.recon.kpiFilter = "";
+    else if (state.recon.kpiFilter === k) state.recon.kpiFilter = "";
+    else state.recon.kpiFilter = k;
+    applyReconClientFilters({ resetPage: true });
+  };
+  const renderKpis = (k) => {
+    if (!els.recon.kpis) return;
+    els.recon.kpis.innerHTML = kDefs.map(([key, label, t]) => {
+      const v = k && Object.prototype.hasOwnProperty.call(k, key) ? k[key] : 0;
+      const clickable = kpiFilterable.has(key);
+      const active = state.recon.kpiFilter === key;
+      return `<div class="k${clickable ? " clickable" : ""}${active ? " active" : ""}" ${clickable ? `data-kpi="${esc(key)}" role="button" tabindex="0" aria-pressed="${active ? "true" : "false"}"` : ""}><div class="l">${label}</div><div class="v">${t === "m" ? money(v) : integer(v)}</div></div>`;
+    }).join("");
+    els.recon.kpis.querySelectorAll(".k.clickable[data-kpi]").forEach((card) => {
+      const key = String(card.getAttribute("data-kpi") || "").trim();
+      card.addEventListener("click", () => toggleKpiFilter(key));
+      card.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") {
+          ev.preventDefault();
+          toggleKpiFilter(key);
+        }
+      });
+    });
+  };
+
+  const suspenseKDefs = [
+    ["anomaly_count", "Anomaly Bills", "n"],
+    ["open_count", "Open (Partial + Unpaid)", "n"],
+    ["partial_count", "Partial", "n"],
+    ["unpaid_count", "Unpaid", "n"],
+    ["settled_count", "Settled", "n"],
+    ["overpaid_count", "Overpaid", "n"],
+    ["total_bill_amount", "Bill Amount", "m"],
+    ["balance_all_time", "Balance All-time", "m"],
+  ];
+  const suspenseFilterable = new Set(["anomaly_count", "open_count", "partial_count", "unpaid_count", "settled_count", "overpaid_count"]);
+  const suspenseSearchBlob = (row) => ([
+    row?.bill_no,
+    row?.bill_id,
+    row?.patient_name,
+    row?.patient_id,
+    row?.patient_type,
+    row?.patient_subtype,
+    row?.status_all_time,
+    row?.submit_date_raw,
+    row?.c_bill_date_raw,
+    row?.bill_source,
+    row?.suspense_reason,
+    row?.bill_updated_by,
+    row?.bill_updated_on,
+  ].map((v) => String(v == null ? "" : v).toLowerCase()).join(" "));
+  const suspenseMatchesRow = (key, row) => {
+    const k = String(key || "").trim();
+    const status = String(row?.status_all_time || "").trim().toLowerCase();
+    if (!k || k === "anomaly_count") return true;
+    if (k === "open_count") return status === "partial" || status === "unpaid";
+    if (k === "partial_count") return status === "partial";
+    if (k === "unpaid_count") return status === "unpaid";
+    if (k === "settled_count") return status === "settled";
+    if (k === "overpaid_count") return status === "overpaid";
+    return true;
+  };
+  const suspenseKpisFromRows = (rows) => {
+    const list = Array.isArray(rows) ? rows : [];
+    const status = (name) => list.filter((r) => String(r?.status_all_time || "").trim() === name).length;
+    return {
+      anomaly_count: list.length,
+      open_count: list.filter((r) => {
+        const s = String(r?.status_all_time || "").trim().toLowerCase();
+        return s === "partial" || s === "unpaid";
+      }).length,
+      partial_count: status("Partial"),
+      unpaid_count: status("Unpaid"),
+      settled_count: status("Settled"),
+      overpaid_count: status("Overpaid"),
+      total_bill_amount: list.reduce((acc, r) => acc + num(r?.bill_amount), 0),
+      balance_all_time: list.reduce((acc, r) => acc + num(r?.balance_all_time), 0),
+    };
+  };
+  const refreshSuspenseButton = () => {
+    if (!els.recon.suspenseBtn) return;
+    const loaded = !!state.recon.suspenseLoaded;
+    const count = loaded
+      ? Number(state.recon.suspenseCount ?? state.recon.baseSuspenseRows?.length ?? 0)
+      : 0;
+    if (loaded && count > 0) {
+      els.recon.suspenseBtn.innerHTML = `Review Exceptions <span class="btn-count">${integer(count)}</span>`;
+    } else {
+      els.recon.suspenseBtn.textContent = "Review Exceptions";
+    }
+    els.recon.suspenseBtn.disabled = !state.recon.datasetLoaded || state.recon.loading || state.recon.writeoffBusy;
+  };
+  const suspenseReasonView = (row) => {
+    const raw = String(row?.suspense_reason || "").trim();
+    if (!raw) {
+      return {
+        title: "Cutoff Timeline Mismatch",
+        subtitle: "Submit date exceeds cutoff while bill date is before cutoff.",
+        tooltip: "",
+      };
+    }
+    return {
+      title: "Cutoff Timeline Mismatch",
+      subtitle: "Submit date exceeds cutoff while bill date is before cutoff.",
+      tooltip: raw,
+    };
+  };
+  const toggleSuspenseKpiFilter = (key) => {
+    const k = String(key || "").trim();
+    if (!suspenseFilterable.has(k)) return;
+    if (k === "anomaly_count" || state.recon.suspenseKpiFilter === k) state.recon.suspenseKpiFilter = "";
+    else state.recon.suspenseKpiFilter = k;
+    renderSuspenseModalRows();
+  };
+  const renderSuspenseKpis = (kpis) => {
+    if (!els.recon.suspenseKpis) return;
+    const k = kpis || {};
+    els.recon.suspenseKpis.innerHTML = suspenseKDefs.map(([key, label, typ]) => {
+      const v = Object.prototype.hasOwnProperty.call(k, key) ? k[key] : 0;
+      const clickable = suspenseFilterable.has(key);
+      const active = String(state.recon.suspenseKpiFilter || "") === key;
+      return `<div class="sk${clickable ? " clickable" : ""}${active ? " active" : ""}" ${clickable ? `data-susp-kpi="${esc(key)}" role="button" tabindex="0" aria-pressed="${active ? "true" : "false"}"` : ""}><div class="l">${esc(label)}</div><div class="v">${typ === "m" ? money(v) : integer(v)}</div></div>`;
+    }).join("");
+    els.recon.suspenseKpis.querySelectorAll(".sk.clickable[data-susp-kpi]").forEach((card) => {
+      const key = String(card.getAttribute("data-susp-kpi") || "").trim();
+      card.addEventListener("click", () => toggleSuspenseKpiFilter(key));
+      card.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") {
+          ev.preventDefault();
+          toggleSuspenseKpiFilter(key);
+        }
+      });
+    });
+  };
+  const renderSuspenseModalRows = () => {
+    if (!els.recon.suspenseBody) return;
+    const base = Array.isArray(state.recon.baseSuspenseRows) ? state.recon.baseSuspenseRows.slice() : [];
+    const query = String(els.recon.suspenseSearch?.value || "").trim().toLowerCase();
+    let rows = base;
+    if (query) rows = rows.filter((r) => suspenseSearchBlob(r).includes(query));
+    const kpis = suspenseKpisFromRows(rows);
+    renderSuspenseKpis(kpis);
+    const filterKey = String(state.recon.suspenseKpiFilter || "").trim();
+    if (filterKey && suspenseFilterable.has(filterKey) && filterKey !== "anomaly_count") {
+      rows = rows.filter((r) => suspenseMatchesRow(filterKey, r));
+    }
+    state.recon.suspenseVisibleKeys = rows
+      .map((r) => String(r?.bill_key || "").trim())
+      .filter((k) => !!k);
+    setTxt(els.recon.suspenseMeta, `${integer(rows.length)} anomaly bill(s)`);
+    if (!rows.length) {
+      els.recon.suspenseBody.innerHTML = '<tr><td colspan="16" class="empty">No suspense bills for current search/filter.</td></tr>';
+      refreshSuspenseSelectionControls();
+      return;
+    }
+    const html = [];
+    rows.forEach((r, idx) => {
+      const rowId = `susp-row-${idx}`;
+      const billKey = String(r?.bill_key || "").trim();
+      const rowSelectable = CAN_WRITEOFF && !state.recon.suspenseAuditBusy && !!billKey;
+      const rowChecked = !!state.recon.suspenseSelected[billKey];
+      const actionDisabled = !rowSelectable ? "disabled" : "";
+      const statusLower = String(r?.status_all_time || "").trim().toLowerCase();
+      const pillClass = statusLower === "settled" ? "st-set" : statusLower === "partial" ? "st-par" : statusLower === "overpaid" ? "st-over" : "st-un";
+      const reason = suspenseReasonView(r);
+      html.push(
+        `<tr><td class="center"><input type="checkbox" class="susp-select-row" data-bill-key="${esc(billKey)}" ${rowChecked ? "checked" : ""} ${rowSelectable ? "" : "disabled"}></td><td><b>${esc(r.bill_no || "-")}</b><div class="sub">Bill ID: ${esc(r.bill_id ?? "")}</div><div class="sub">Source: ${esc(r.bill_source || "-")}</div></td><td><b>${esc(r.patient_name || r.source_patient_name || "-")}</b><div class="sub">Patient ID: ${esc(r.patient_id ?? "")}</div></td><td>${esc(r.patient_type || "-")}</td><td>${esc(r.patient_subtype || "-")}</td><td>${esc(r.submit_date_raw || "-")}</td><td>${esc(r.c_bill_date_raw || "-")}</td><td class="center">${integer(r.suspense_days_gap || 0)}</td><td class="num"><span class="amt bill">${money(r.bill_amount)}</span></td><td class="num"><span class="amt receipt">${money(r.receipt_total_all_time)}</span></td><td class="num"><span class="amt ${bClass(r.balance_all_time)}">${money(r.balance_all_time)}</span></td><td class="center"><span class="badge ${pillClass}">${esc(r.status_all_time || "-")}</span></td><td><div><b>${esc(r.bill_updated_by || r.bill_updated_by_id || "-")}</b></div><div class="sub">${esc(r.bill_updated_on || "-")}</div></td><td><div class="suspense-reason"${reason.tooltip ? ` title="${esc(reason.tooltip)}"` : ""}><span class="suspense-pill">${esc(reason.title)}</span><div class="sub">${esc(reason.subtitle)}</div></div></td><td class="center">${CAN_WRITEOFF ? `<button class="audit-btn" type="button" data-audit-key="${esc(billKey)}" ${actionDisabled}>Mark OK</button>` : '<span class="sub">No Access</span>'}</td><td class="center"><button class="updates-btn" type="button" data-toggle="${esc(rowId)}">View</button></td></tr><tr id="${esc(rowId)}" class="updates-modal-details" hidden><td colspan="16">${detailHtmlFromMap(state.recon.baseSuspenseDetails, String(r.bill_key || ""))}</td></tr>`
+      );
+    });
+    els.recon.suspenseBody.innerHTML = html.join("");
+    els.recon.suspenseBody.querySelectorAll(".updates-btn[data-toggle]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const target = document.getElementById(b.getAttribute("data-toggle"));
+        if (!target) return;
+        target.hidden = !target.hidden;
+      });
+    });
+    els.recon.suspenseBody.querySelectorAll(".susp-select-row[data-bill-key]").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        const key = String(cb.getAttribute("data-bill-key") || "").trim();
+        if (!key) return;
+        if (cb.checked) state.recon.suspenseSelected[key] = true;
+        else delete state.recon.suspenseSelected[key];
+        refreshSuspenseSelectionControls();
+      });
+    });
+    els.recon.suspenseBody.querySelectorAll(".audit-btn[data-audit-key]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const key = String(btn.getAttribute("data-audit-key") || "").trim();
+        if (!key) return;
+        await applySuspenseAudit([key]);
+      });
+    });
+    refreshSuspenseSelectionControls();
+  };
+  const suspenseSelectedKeys = () => Object.keys(state.recon.suspenseSelected || {}).filter((k) => !!state.recon.suspenseSelected[k]);
+  const suspenseSelectedVisibleKeys = () => {
+    const visible = new Set(Array.isArray(state.recon.suspenseVisibleKeys) ? state.recon.suspenseVisibleKeys : []);
+    return suspenseSelectedKeys().filter((k) => visible.has(k));
+  };
+  const suspenseRowsByKeys = (keys) => {
+    const keySet = new Set((keys || []).map((k) => String(k || "").trim()).filter((k) => !!k));
+    const rows = Array.isArray(state.recon.baseSuspenseRows) ? state.recon.baseSuspenseRows : [];
+    return rows.filter((r) => keySet.has(String(r?.bill_key || "").trim()));
+  };
+  const refreshSuspenseSelectionControls = () => {
+    const visibleKeys = Array.isArray(state.recon.suspenseVisibleKeys) ? state.recon.suspenseVisibleKeys : [];
+    const selectedVisible = suspenseSelectedVisibleKeys();
+    const selectedAll = suspenseSelectedKeys();
+    if (els.recon.suspenseSelectAll) {
+      els.recon.suspenseSelectAll.disabled = !CAN_WRITEOFF || state.recon.suspenseAuditBusy || !visibleKeys.length;
+      els.recon.suspenseSelectAll.checked = !!visibleKeys.length && selectedVisible.length === visibleKeys.length;
+      els.recon.suspenseSelectAll.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleKeys.length;
+    }
+    if (els.recon.suspenseApproveBtn) {
+      const rows = suspenseRowsByKeys(selectedAll);
+      const totalDue = rows.reduce((acc, r) => acc + Math.max(0, num(r?.balance_all_time)), 0);
+      const base = selectedAll.length > 0
+        ? `Mark Selected OK (${integer(selectedAll.length)} | Due ${money(totalDue)})`
+        : "Mark Selected OK";
+      els.recon.suspenseApproveBtn.textContent = base;
+      els.recon.suspenseApproveBtn.disabled = !CAN_WRITEOFF || state.recon.suspenseAuditBusy || !selectedAll.length;
+    }
+    if (els.recon.suspenseClearBtn) {
+      els.recon.suspenseClearBtn.disabled = state.recon.suspenseAuditBusy || !suspenseSelectedKeys().length;
+    }
+  };
+  const clearSuspenseSelection = ({ visibleOnly = false } = {}) => {
+    if (!visibleOnly) {
+      state.recon.suspenseSelected = {};
+    } else {
+      (state.recon.suspenseVisibleKeys || []).forEach((k) => delete state.recon.suspenseSelected[k]);
+    }
+    refreshSuspenseSelectionControls();
+  };
+  const postSuspenseAudit = async (billIds, audited = true) => {
+    const unit = String(els.recon.unit?.value || "").trim().toUpperCase();
+    if (!unit) throw new Error("Please select a unit before approving suspense bills.");
+    const res = await fetch("/api/corporate/reconciliation/suspense/audit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        unit,
+        bill_ids: billIds,
+        audited: audited ? 1 : 0,
+      }),
+    });
+    const d = await res.json();
+    if (!res.ok || d.status !== "success") throw new Error(d.message || "Failed to update suspense bills.");
+    return d;
+  };
+  const loadSuspense = async ({ forceRefresh = false, silent = false } = {}) => {
+    const f = reconFilters();
+    if (!f.unit) throw new Error("Please select a unit before loading suspense.");
+    const p = new URLSearchParams();
+    p.set("unit", f.unit);
+    p.set("include_cancelled", f.include_cancelled ? "1" : "0");
+    p.set("page", "1");
+    p.set("page_size", "5000");
+    p.set("sort_by", "balance_all_time");
+    p.set("sort_dir", "desc");
+    if (f.bill_from) p.set("bill_from", f.bill_from);
+    if (f.bill_to) p.set("bill_to", f.bill_to);
+    if (f.q) p.set("q", f.q);
+    if (f.bill_source) p.set("bill_source", f.bill_source);
+    if (f.patient_subtype) p.set("patient_subtype", f.patient_subtype);
+    if (forceRefresh) p.set("force_refresh", "1");
+    if (!silent) notify("Loading suspense records...", "loading", "recon-suspense");
+    const res = await fetch(`/api/corporate/reconciliation/suspense?${p.toString()}`);
+    const d = await res.json();
+    if (!res.ok || d.status !== "success") throw new Error(d.message || "Failed to load suspense data");
+    state.recon.baseSuspenseRows = Array.isArray(d.rows) ? d.rows : [];
+    state.recon.baseSuspenseDetails = d.receipt_details || {};
+    state.recon.suspenseLoaded = true;
+    state.recon.suspenseCount = Number(d?.meta?.suspense_count || d?.meta?.total_rows || state.recon.baseSuspenseRows.length || 0);
+    if (d.meta && typeof d.meta === "object") {
+      state.recon.meta = { ...(state.recon.meta || {}), suspense_count: Number(d.meta.suspense_count || d.meta.total_rows || 0) };
+    }
+    refreshSuspenseButton();
+    clearLoading("recon-suspense");
+    if (!silent) notify(`Loaded ${integer(state.recon.baseSuspenseRows.length)} suspense bill(s).`, "success", "recon-suspense");
+  };
+  const applySuspenseAudit = async (billKeys) => {
+    const keys = (billKeys || []).map((k) => String(k || "").trim()).filter((k) => !!k);
+    if (!keys.length || state.recon.suspenseAuditBusy || state.recon.loading) return;
+    if (!CAN_WRITEOFF) {
+      notify("You do not have permission to approve suspense bills.", "warn", "recon-suspense-audit");
+      return;
+    }
+    const rows = suspenseRowsByKeys(keys);
+    if (!rows.length) {
+      notify("No valid suspense bills selected.", "warn", "recon-suspense-audit");
+      return;
+    }
+    const billIds = rows.map((r) => Number(r?.bill_id)).filter((v) => Number.isFinite(v) && v > 0);
+    if (!billIds.length) {
+      notify("Selected records do not have valid bill IDs.", "warn", "recon-suspense-audit");
+      return;
+    }
+    const totalDue = rows.reduce((acc, r) => acc + Math.max(0, num(r?.balance_all_time)), 0);
+    const ask = window.confirm(`Mark ${integer(billIds.length)} suspense bill(s) as OK? Total current due in selection: ${money(totalDue)}.`);
+    if (!ask) return;
+
+    state.recon.suspenseAuditBusy = true;
+    refreshSuspenseSelectionControls();
+    notify(`Updating ${integer(billIds.length)} suspense bill(s)...`, "loading", "recon-suspense-audit");
+    try {
+      const d = await postSuspenseAudit(billIds, true);
+      clearLoading("recon-suspense-audit");
+      notify(d?.message || `Approved ${integer(billIds.length)} suspense bill(s).`, "success", "recon-suspense-audit");
+      keys.forEach((k) => delete state.recon.suspenseSelected[k]);
+      await loadRecon({ resetPage: false, forceRefresh: true });
+      if (els.recon.suspenseModal?.classList.contains("open")) {
+        await loadSuspense({ forceRefresh: true, silent: true });
+        renderSuspenseModalRows();
+      }
+    } catch (e) {
+      clearLoading("recon-suspense-audit");
+      notify(e?.message || "Failed to approve suspense bills.", "error", "recon-suspense-audit");
+    } finally {
+      state.recon.suspenseAuditBusy = false;
+      refreshSuspenseSelectionControls();
+    }
+  };
+  const openSuspenseModal = () => {
+    if (!state.recon.datasetLoaded) {
+      notify("Load reconciliation dataset before reviewing suspense bills.", "warn", "recon-suspense");
+      return;
+    }
+    if (els.recon.suspenseSearch) els.recon.suspenseSearch.value = "";
+    state.recon.suspenseKpiFilter = "";
+    state.recon.suspenseSelected = {};
+    state.recon.suspenseVisibleKeys = [];
+    setTxt(els.recon.suspenseModalTitle, "Cutoff Exception Review");
+    (async () => {
+      try {
+        await loadSuspense({ forceRefresh: false, silent: false });
+        const count = Number(state.recon.suspenseCount ?? state.recon.baseSuspenseRows?.length ?? 0);
+        if (!count) {
+          notify("No suspense bills found for current filters.", "success", "recon-suspense");
+          return;
+        }
+        renderSuspenseModalRows();
+        els.recon.suspenseModal?.classList.add("open");
+        els.recon.suspenseModal?.setAttribute("aria-hidden", "false");
+      } catch (e) {
+        clearLoading("recon-suspense");
+        notify(e?.message || "Failed to load suspense records.", "error", "recon-suspense");
+      }
+    })();
+  };
+  const closeSuspenseModal = () => {
+    els.recon.suspenseModal?.classList.remove("open");
+    els.recon.suspenseModal?.setAttribute("aria-hidden", "true");
+    state.recon.suspenseSelected = {};
+    state.recon.suspenseVisibleKeys = [];
+  };
+
+  const detailHtmlFromMap = (detailsMap, billKey) => {
+    const rows = detailsMap?.[billKey] || [];
+    if (!rows.length) return '<div class="empty" style="padding:10px;text-align:left;font-size:12px;">No receipt lines for this bill.</div>';
+    const body = rows.map((r) => `<tr><td>${esc(r.receipt_detail_id ?? "")}</td><td>${esc(r.receipt_id ?? "")}</td><td>${esc(r.receipt_no || "")}</td><td>${esc(r.receipt_date || "")}</td><td class="num">${money(r.receipt_amount)}</td><td class="num">${money(r.bill_amount)}</td><td class="num">${money(r.due_amount)}</td><td class="num"><span class="tds">${money(r.tds_amount)}</span></td><td class="num"><span class="rebate">${money(r.rebate_discount_amount)}</span></td><td class="num"><span class="writeoff">${money(r.writeoff_amount)}</span></td><td class="center">${r.in_window ? "Yes" : "No"}</td><td class="center">${esc(r.payment_mode || r.payment_mode_id || "")}</td><td>${esc(r.inserted_by || r.inserted_by_id || "-")}</td><td>${esc(r.utr_no || "")}</td><td class="center">${esc(r.cancel_status ?? "")}</td></tr>`).join("");
+    return `<div class="dinner"><table class="dtable"><thead><tr><th>RecDtl ID</th><th>Receipt ID</th><th>Receipt No</th><th>Date</th><th class="num">Receipt Amt</th><th class="num">Bill Amt (Dtl)</th><th class="num">Due Amt (Dtl)</th><th class="num">TDS Amt</th><th class="num">Rebate / Discount</th><th class="num">Write-off</th><th class="center">In Window</th><th class="center">Mode</th><th>Entry By</th><th>UTR</th><th class="center">Cancel</th></tr></thead><tbody>${body}</tbody></table></div>`;
+  };
+  const detailHtml = (billKey) => detailHtmlFromMap(state.recon.details, billKey);
+
+  const writeoffCapabilities = () => ({
+    opening: !!state.recon.baseMeta?.has_opening_writeoff_column,
+    receipt: !!state.recon.baseMeta?.has_receipt_writeoff_column,
+  });
+
+  const canWriteoffRow = (row) => {
+    if (!CAN_WRITEOFF) return false;
+    const sourceKey = String(row?.bill_source_key || "").trim().toUpperCase();
+    const bal = num(row?.balance_all_time);
+    if (!sourceKey || bal <= 1) return false;
+    const caps = writeoffCapabilities();
+    if (sourceKey === "OPENING" && !caps.opening) return false;
+    if (sourceKey === "BILL_MST_POST" && !caps.receipt) return false;
+    if (sourceKey === "BILL_MST_POST" && num(row?.writeoff_target_receipt_id) <= 0) return false;
+    const status = String(row?.status_all_time || "").trim().toLowerCase();
+    return status === "partial" || status === "unpaid";
+  };
+
+  const writeoffActionHtml = (row) => {
+    const sourceKey = String(row?.bill_source_key || "").trim().toUpperCase();
+    const caps = writeoffCapabilities();
+    if (!CAN_WRITEOFF) return '<span class="sub">No Access</span>';
+    if (sourceKey === "OPENING" && !caps.opening) return '<span class="sub">Write-off col missing</span>';
+    if (sourceKey === "BILL_MST_POST" && !caps.receipt) return '<span class="sub">Write-off col missing</span>';
+    if (sourceKey === "BILL_MST_POST" && num(row?.writeoff_target_receipt_id) <= 0) return '<span class="sub">No Receipt Link</span>';
+    if (canWriteoffRow(row)) {
+      const disabled = state.recon.loading || state.recon.writeoffBusy;
+      return `<button class="wo-btn" type="button" data-bill-key="${esc(row.bill_key || "")}" ${disabled ? "disabled" : ""}>Write-off Due</button>`;
+    }
+    return '<span class="sub">Not Required</span>';
+  };
+
+  const askWriteoffAmount = (row, { channel = "recon-writeoff", defaultAmount = null } = {}) => {
+    const balance = num(row?.balance_all_time);
+    if (balance <= 0) {
+      notify("Remaining due is zero for this bill.", "warn", channel);
+      return null;
+    }
+    const billNo = String(row?.bill_no || row?.bill_id || "").trim();
+    const suggested = Number.isFinite(Number(defaultAmount)) && Number(defaultAmount) > 0
+      ? Math.min(Number(defaultAmount), balance)
+      : balance;
+    const promptText = `Enter write-off amount for bill ${billNo} (max ${money(balance)}).`;
+    const raw = window.prompt(promptText, suggested.toFixed(2));
+    if (raw === null) return null;
+    const cleaned = String(raw || "").replace(/,/g, "").trim();
+    if (!cleaned) return balance;
+    const parsed = Number(cleaned);
+    if (!Number.isFinite(parsed) || parsed <= 0) {
+      notify("Invalid write-off amount entered.", "warn", channel);
+      return undefined;
+    }
+    if (parsed > balance) {
+      notify(`Entered amount exceeded balance. Capped to ${money(balance)}.`, "warn", channel);
+      return balance;
+    }
+    return parsed;
+  };
+
+  const applyLocalWriteoffPatch = (row, result) => {
+    const added = num(result?.writeoff_added);
+    if (added <= 0) return false;
+    const billKey = String(row?.bill_key || "").trim();
+    if (!billKey) return false;
+
+    const baseRows = Array.isArray(state.recon.baseRows) ? state.recon.baseRows : [];
+    const baseRow = baseRows.find((r) => String(r?.bill_key || "").trim() === billKey || num(r?.bill_id) === num(row?.bill_id));
+    if (!baseRow) return false;
+
+    const sourceKey = String(baseRow?.bill_source_key || result?.source_key || row?.bill_source_key || "").trim().toUpperCase();
+    if (sourceKey === "OPENING") {
+      baseRow.opening_writeoff_amount = num(baseRow.opening_writeoff_amount) + added;
+      return true;
+    }
+
+    const allDetails = state.recon.baseDetails && Array.isArray(state.recon.baseDetails[billKey])
+      ? state.recon.baseDetails[billKey]
+      : [];
+    if (!allDetails.length) return false;
+
+    const targetReceiptId = num(result?.target_receipt_id || row?.writeoff_target_receipt_id);
+    let scoped = allDetails.filter((d) => num(d?.receipt_id) === targetReceiptId);
+    if (!scoped.length) scoped = allDetails.slice();
+    if (!scoped.length) return false;
+
+    const positiveBase = scoped.reduce((acc, d) => acc + Math.max(0, num(d?.receipt_amount)), 0);
+    let remaining = added;
+    if (positiveBase > 0) {
+      scoped.forEach((d, idx) => {
+        const share = idx === scoped.length - 1
+          ? remaining
+          : (added * Math.max(0, num(d?.receipt_amount)) / positiveBase);
+        d.writeoff_amount = num(d?.writeoff_amount) + share;
+        remaining -= share;
+      });
+    } else {
+      const perLine = added / scoped.length;
+      scoped.forEach((d, idx) => {
+        const share = idx === scoped.length - 1 ? remaining : perLine;
+        d.writeoff_amount = num(d?.writeoff_amount) + share;
+        remaining -= share;
+      });
+    }
+    return true;
+  };
+
+  const postWriteoffRequest = async (row, amount) => {
+    const unit = String(els.recon.unit?.value || "").trim().toUpperCase();
+    if (!unit) throw new Error("Please select a unit before posting write-off.");
+    const res = await fetch("/api/corporate/reconciliation/writeoff", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        unit,
+        bill_id: Number(row.bill_id),
+        bill_source_key: String(row.bill_source_key || "").trim().toUpperCase(),
+        writeoff_target_receipt_id: row.writeoff_target_receipt_id ?? null,
+        writeoff_amount: Number(amount),
+      }),
+    });
+    const d = await res.json();
+    if (!res.ok || d.status !== "success") throw new Error(d.message || "Failed to post write-off entry.");
+    return d;
+  };
+
+  const selectedBillKeys = () => Object.keys(state.recon.bulkSelected || {}).filter((k) => !!state.recon.bulkSelected[k]);
+  const clearBulkSelection = () => {
+    state.recon.bulkSelected = {};
+    renderBulkBar();
+    renderReconRows();
+  };
+  const getSelectedEligibleRows = () => {
+    const idx = state.recon.rowIndex || {};
+    const rows = [];
+    selectedBillKeys().forEach((k) => {
+      const row = idx[k];
+      if (row && canWriteoffRow(row)) rows.push(row);
+    });
+    return rows;
+  };
+  const reconcileBulkSelection = () => {
+    const idx = state.recon.rowIndex || {};
+    const next = {};
+    Object.keys(state.recon.bulkSelected || {}).forEach((k) => {
+      if (!state.recon.bulkSelected[k]) return;
+      const row = idx[k];
+      if (!row) return;
+      if (!canWriteoffRow(row)) return;
+      next[k] = true;
+    });
+    state.recon.bulkSelected = next;
+  };
+  const renderBulkBar = () => {
+    if (!els.recon.bulkMeta) return;
+    const rows = getSelectedEligibleRows();
+    const count = rows.length;
+    const total = rows.reduce((acc, r) => acc + Math.max(0, num(r.balance_all_time)), 0);
+    if (!count) {
+      setTxt(els.recon.bulkMeta, "No bills selected for bulk write-off.");
+    } else {
+      setTxt(els.recon.bulkMeta, `${integer(count)} bills selected | Total due: ${money(total)}`);
+    }
+    if (els.recon.bulkPreviewBtn) els.recon.bulkPreviewBtn.disabled = !count || state.recon.loading || state.recon.writeoffBusy;
+    if (els.recon.bulkClearBtn) els.recon.bulkClearBtn.disabled = !selectedBillKeys().length || state.recon.loading || state.recon.writeoffBusy;
+  };
+  const closeBulkModal = () => {
+    if (!els.recon.bulkModal) return;
+    els.recon.bulkModal.classList.remove("open");
+    els.recon.bulkModal.setAttribute("aria-hidden", "true");
+    state.recon.bulkPreviewRows = [];
+  };
+  const renderBulkPreview = () => {
+    if (!els.recon.bulkModalBody) return;
+    const rows = Array.isArray(state.recon.bulkPreviewRows) ? state.recon.bulkPreviewRows : [];
+    if (!rows.length) {
+      els.recon.bulkModalBody.innerHTML = '<tr><td colspan="5" class="empty">No eligible rows selected.</td></tr>';
+      setTxt(els.recon.bulkModalMeta, "0 bills selected");
+      return;
+    }
+    const total = rows.reduce((acc, r) => acc + Math.max(0, num(r.balance_all_time)), 0);
+    setTxt(els.recon.bulkModalMeta, `${integer(rows.length)} bills | Total write-off: ${money(total)}`);
+    els.recon.bulkModalBody.innerHTML = rows.map((r) => (
+      `<tr><td><b>${esc(r.bill_no || "-")}</b><div class="sub">Bill ID: ${esc(r.bill_id ?? "")}</div></td><td><b>${esc(r.patient_name || "-")}</b><div class="sub">Patient ID: ${esc(r.patient_id ?? "")}</div></td><td>${esc(r.bill_source || "-")}</td><td class="num">${money(r.balance_all_time)}</td><td class="num">${money(r.balance_all_time)}</td></tr>`
+    )).join("");
+  };
+  const openBulkModal = () => {
+    const rows = getSelectedEligibleRows();
+    if (!rows.length) {
+      notify("Select one or more eligible bills for bulk write-off.", "warn", "recon-bulk");
+      return;
+    }
+    state.recon.bulkPreviewRows = rows;
+    renderBulkPreview();
+    if (!els.recon.bulkModal) return;
+    els.recon.bulkModal.classList.add("open");
+    els.recon.bulkModal.setAttribute("aria-hidden", "false");
+  };
+  const applyBulkWriteoff = async () => {
+    const rows = Array.isArray(state.recon.bulkPreviewRows) ? state.recon.bulkPreviewRows.slice() : [];
+    if (!rows.length || state.recon.writeoffBusy || state.recon.loading) return;
+    const total = rows.reduce((acc, r) => acc + Math.max(0, num(r.balance_all_time)), 0);
+    if (!window.confirm(`Apply bulk write-off for ${integer(rows.length)} bills totaling ${money(total)}?`)) return;
+
+    state.recon.writeoffBusy = true;
+    lockRecon(true);
+    notify(`Applying bulk write-off (0/${rows.length})...`, "loading", "recon-bulk");
+    let success = 0;
+    let failed = 0;
+    const errors = [];
+    try {
+      for (let i = 0; i < rows.length; i += 1) {
+        const row = rows[i];
+        notify(`Applying bulk write-off (${i + 1}/${rows.length})...`, "loading", "recon-bulk");
+        try {
+          const amount = Math.max(0, num(row.balance_all_time));
+          if (amount <= 0) throw new Error("Balance already settled.");
+          const d = await postWriteoffRequest(row, amount);
+          applyLocalWriteoffPatch(row, d);
+          success += 1;
+          delete state.recon.bulkSelected[String(row.bill_key || "").trim()];
+        } catch (err) {
+          failed += 1;
+          errors.push(`${row.bill_no || row.bill_id}: ${err?.message || "Failed"}`);
+        }
+      }
+      reconcileBulkSelection();
+      await loadRecon({ resetPage: false, forceRefresh: true });
+      closeBulkModal();
+      clearLoading("recon-bulk");
+      if (failed === 0) {
+        notify(`Bulk write-off completed for ${success} bills.`, "success", "recon-bulk");
+      } else if (success > 0) {
+        notify(`Bulk write-off done with issues. Success: ${success}, Failed: ${failed}.`, "warn", "recon-bulk");
+      } else {
+        notify(`Bulk write-off failed for all selected bills (${failed}).`, "error", "recon-bulk");
+      }
+      if (errors.length) {
+        notify(errors.slice(0, 3).join(" | "), "warn", "recon-bulk-errors");
+      }
+    } finally {
+      state.recon.writeoffBusy = false;
+      lockRecon(false);
+      renderBulkBar();
+      if (state.recon.datasetLoaded) {
+        renderReconRows();
+      }
+    }
+  };
+
+  const writeoffBill = async (row) => {
+    if (!row || state.recon.writeoffBusy || state.recon.loading) return;
+    if (!canWriteoffRow(row)) {
+      notify("Selected bill is not eligible for write-off.", "warn", "recon-writeoff");
+      return;
+    }
+
+    const chosenAmount = askWriteoffAmount(row);
+    if (chosenAmount === null) return;
+    if (!Number.isFinite(chosenAmount) || chosenAmount <= 0) return;
+
+    const billNo = String(row.bill_no || row.bill_id || "").trim();
+    const confirmMsg = `Post write-off ${money(chosenAmount)} on bill ${billNo}?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    state.recon.writeoffBusy = true;
+    lockRecon(true);
+    notify("Posting write-off entry...", "loading", "recon-writeoff");
+    try {
+      const d = await postWriteoffRequest(row, chosenAmount);
+      clearLoading("recon-writeoff");
+      notify(`Write-off posted: ${money(d.writeoff_added)}. Refreshing from database...`, "success", "recon-writeoff");
+      await loadRecon({ resetPage: false, forceRefresh: true });
+    } catch (e) {
+      clearLoading("recon-writeoff");
+      notify(e?.message || "Write-off failed.", "error", "recon-writeoff");
+    } finally {
+      state.recon.writeoffBusy = false;
+      lockRecon(false);
+      if (state.recon.datasetLoaded) {
+        renderReconRows();
+        renderBulkBar();
+      }
+    }
+  };
+
+  const renderReconRows = () => {
+    const rows = state.recon.rows || [];
+    if (!els.recon.body) return;
+    if (!rows.length) {
+      els.recon.body.innerHTML = '<tr><td colspan="22" class="empty">No records found for current filters.</td></tr>';
+      if (els.recon.selectAllVisible) {
+        els.recon.selectAllVisible.checked = false;
+        els.recon.selectAllVisible.indeterminate = false;
+        els.recon.selectAllVisible.disabled = true;
+      }
+      renderBulkBar();
+      return;
+    }
+    const html = [];
+    for (const r of rows) {
+      const key = String(r.bill_key || "");
+      const selectable = canWriteoffRow(r);
+      const selected = !!state.recon.bulkSelected[key];
+      const disabledSel = (!selectable || state.recon.loading || state.recon.writeoffBusy) ? "disabled" : "";
+      const checkedSel = selected ? "checked" : "";
+      const sourceText = String(r.bill_source || "-").trim() || "-";
+      const billNoText = String(r.bill_no || "-").trim() || "-";
+      const billIdText = String(r.bill_id ?? "").trim() || "-";
+      const submitDateText = shortDate(r.bill_date || "-");
+      const dueDateText = shortDate(r.due_date || "-");
+      const updatedByText = String(r.bill_updated_by || r.bill_updated_by_id || "-").trim() || "-";
+      const patientNameText = String(r.patient_name || r.source_patient_name || "-").trim() || "-";
+      const patientIdText = String(r.patient_id ?? "").trim() || "-";
+      const visitKindText = String(r.type_of_visit || "-").trim() || "-";
+      const visitIdText = String(r.visit_id ?? "").trim() || "-";
+      const visitDateText = shortDate(r.visit_date || "-");
+      const dischargeDateText = shortDate(r.discharge_date || "-");
+      const patientTypeText = String(r.patient_type || "").trim() || "-";
+      const patientSubtypeText = String(r.patient_subtype || "").trim() || "-";
+      const patientTone = patientTypeTone(patientTypeText, patientSubtypeText);
+      html.push(`<tr><td class="center"><input type="checkbox" class="recon-select-row" data-bill-key="${esc(key)}" ${checkedSel} ${disabledSel}></td><td class="center"><button class="tg" type="button" data-key="${esc(key)}" aria-expanded="false">Details</button></td><td class="src-cell">${esc(sourceText)}</td><td><div class="meta-stack"><div><b>${esc(billNoText)}</b></div><div class="meta-line"><span class="meta-label">Bill ID</span><span class="meta-val">${esc(billIdText)}</span></div><div class="meta-line"><span class="meta-label">Submit</span><span class="meta-val">${esc(submitDateText)}</span></div><div class="meta-line"><span class="meta-label">Due</span><span class="meta-val">${esc(dueDateText)}</span></div><div class="meta-line"><span class="meta-label">Updated By</span><span class="meta-val">${esc(updatedByText)}</span></div></div></td><td class="center">${bBadge(r.status_all_time)}</td><td><div class="meta-stack"><div><b>${esc(patientNameText)}</b></div><div class="meta-line"><span class="meta-label">Patient ID</span><span class="meta-val">${esc(patientIdText)}</span></div></div></td><td>${patientTypeChip(patientTypeText, patientTone, "Patient Type", "type")}</td><td>${patientTypeChip(patientSubtypeText, patientTone, "Patient SubType", "subtype")}</td><td><div class="meta-stack"><div><b>${esc(visitKindText)}</b></div><div class="meta-line"><span class="meta-label">Visit ID</span><span class="meta-val">${esc(visitIdText)}</span></div><div class="meta-line"><span class="meta-label">Visit</span><span class="meta-val">${esc(visitDateText)}</span></div><div class="meta-line"><span class="meta-label">Discharge</span><span class="meta-val">${esc(dischargeDateText)}</span></div></div></td><td class="num"><span class="amt bill">${money(r.bill_amount)}</span></td><td class="num"><span class="amt receipt">${money(r.receipt_total_all_time)}</span></td><td class="num"><span class="amt tds">${money(r.tds_total_all_time)}</span></td><td class="num"><span class="amt rebate">${money(r.rebate_discount_all_time)}</span></td><td class="num"><span class="amt writeoff">${money(r.writeoff_total_all_time)}</span></td><td class="num"><span class="amt ${bClass(r.balance_all_time)}">${money(r.balance_all_time)}</span></td><td class="num"><span class="amt receipt">${money(r.receipt_total_window)}</span></td><td class="num"><span class="amt rebate">${money(r.rebate_discount_window)}</span></td><td class="num"><span class="amt ${bClass(r.balance_window)}">${money(r.balance_window)}</span></td><td class="center">${bBadge(r.status_window)}</td><td class="center"><div><b>${integer(r.receipt_count_all_time)} / ${integer(r.receipt_count_window)}</b></div><div class="sub">All / Window</div></td><td><div><b>${esc(shortDate(r.last_receipt_date_all_time || "-"))}</b></div><div class="sub">Window: ${esc(shortDate(r.last_receipt_date_window || "-"))}</div></td><td class="center">${writeoffActionHtml(r)}</td></tr><tr class="drow" data-detail="${esc(key)}" hidden><td colspan="22">${detailHtml(key)}</td></tr>`);
+    }
+    els.recon.body.innerHTML = html.join("");
+    els.recon.body.querySelectorAll(".tg").forEach((b) => {
+      b.addEventListener("click", () => {
+        const k = b.dataset.key;
+        const tr = els.recon.body.querySelector(`tr[data-detail="${k}"]`);
+        if (!tr) return;
+        const ex = b.getAttribute("aria-expanded") === "true";
+        b.setAttribute("aria-expanded", ex ? "false" : "true");
+        tr.hidden = ex;
+      });
+    });
+    els.recon.body.querySelectorAll(".wo-btn[data-bill-key]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const billKey = String(btn.getAttribute("data-bill-key") || "").trim();
+        const row = (state.recon.rows || []).find((r) => String(r?.bill_key || "").trim() === billKey);
+        if (!row) return;
+        await writeoffBill(row);
+      });
+    });
+    els.recon.body.querySelectorAll(".recon-select-row[data-bill-key]").forEach((cb) => {
+      cb.addEventListener("change", () => {
+        const billKey = String(cb.getAttribute("data-bill-key") || "").trim();
+        if (!billKey) return;
+        if (cb.checked) state.recon.bulkSelected[billKey] = true;
+        else delete state.recon.bulkSelected[billKey];
+        renderBulkBar();
+        renderReconRows();
+      });
+    });
+
+    const visibleKeys = rows.map((r) => String(r.bill_key || "").trim()).filter((k) => !!k);
+    const visibleEligible = rows.filter((r) => canWriteoffRow(r)).map((r) => String(r.bill_key || "").trim()).filter((k) => !!k);
+    if (els.recon.selectAllVisible) {
+      const selectedVisible = visibleEligible.filter((k) => !!state.recon.bulkSelected[k]);
+      els.recon.selectAllVisible.disabled = !visibleEligible.length || state.recon.loading || state.recon.writeoffBusy;
+      els.recon.selectAllVisible.checked = !!visibleEligible.length && selectedVisible.length === visibleEligible.length;
+      els.recon.selectAllVisible.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleEligible.length;
+      els.recon.selectAllVisible.onchange = () => {
+        if (els.recon.selectAllVisible.checked) {
+          visibleEligible.forEach((k) => { state.recon.bulkSelected[k] = true; });
+        } else {
+          visibleKeys.forEach((k) => { delete state.recon.bulkSelected[k]; });
+        }
+        renderBulkBar();
+        renderReconRows();
+      };
+    }
+    renderBulkBar();
+  };
+
+  const renderPager = () => {
+    const m = state.recon.meta || {};
+    const p = Number(m.page || 1), t = Number(m.total_pages || 1), n = Number(m.total_rows || 0);
+    setTxt(els.recon.pageInfo, `Page ${p} / ${t} | Total Bills: ${integer(n)}`);
+    if (els.recon.prev) els.recon.prev.disabled = p <= 1 || state.recon.loading;
+    if (els.recon.next) els.recon.next.disabled = p >= t || state.recon.loading;
+  };
+
+  const reconFilters = () => ({
+    unit: String(els.recon.unit?.value || "").trim().toUpperCase(), bill_from: String(els.recon.billFrom?.value || "").trim(), bill_to: String(els.recon.billTo?.value || "").trim(), q: String(els.recon.search?.value || "").trim(), bill_source: String(els.recon.source?.value || "").trim(), patient_subtype: String(els.recon.patientSubtype?.value || "").trim(), include_cancelled: !!els.recon.includeCancelled?.checked, export_submitted_only: !!els.recon.exportSubmittedOnly?.checked, sort_by: String(els.recon.sortBy?.value || "balance_all_time"), sort_dir: String(els.recon.sortDir?.value || "desc"), page: state.recon.page, page_size: state.recon.pageSize
+  });
+
+  const renderReconScopeSummary = (kpis = {}, meta = {}, options = {}) => {
+    if (!els.recon.scopeSummary) return;
+    const f = reconFilters();
+    const sourceLabel = f.bill_source || "All Sources";
+    const subtypeLabel = f.patient_subtype || "All SubTypes";
+    const scopeMode = String(options?.scope || "").trim().toLowerCase();
+    const scopeKpiLabel = String(options?.kpiLabel || "").trim();
+    let note = "This closing summary reflects the current filter scope.";
+    if ((scopeMode === "kpi_page" || scopeMode === "kpi_filter") && scopeKpiLabel) {
+      note = `KPI filter "${scopeKpiLabel}" is active; summary reflects full filtered scope.`;
+    } else if (f.bill_source) note = "For combined closing (opening + current), set Source to All Sources.";
+    else if (f.patient_subtype) note = "Subtype closing includes mapped subtype rows; opening rows without subtype mapping remain under All SubTypes.";
+    else note = "Source = All Sources already includes current and opening records in one closing view.";
+    els.recon.scopeSummary.innerHTML = `<b>Settlement Summary</b> | Source: ${esc(sourceLabel)} | SubType: ${esc(subtypeLabel)} | Bills: ${integer(kpis.bill_count || 0)} | Settled: ${integer(kpis.settled_count || 0)} | Partial: ${integer(kpis.partial_count || 0)} | Unpaid: ${integer(kpis.unpaid_count || 0)} | Overpaid: ${integer(kpis.overpaid_count || 0)} | Closing Balance: ${money(kpis.balance_all_time || 0)}<span class="hint">${esc(note)}</span>`;
+  };
+  const patientTypeTone = (patientType, patientSubtype) => {
+    const txt = `${String(patientType || "")} ${String(patientSubtype || "")}`.toLowerCase();
+    if (txt.includes("cashless")) return "cashless";
+    if (txt.includes("cash-category") || txt.includes("(cash") || txt.includes(" cash ")) return "cash";
+    if (txt.includes("opening")) return "opening";
+    return "neutral";
+  };
+  const patientTypeChip = (value, tone, label, kind = "type") => {
+    const raw = String(value || "").trim() || "-";
+    const toneClass = tone === "cashless" ? "pt-cashless" : tone === "cash" ? "pt-cash" : tone === "opening" ? "pt-opening" : "pt-neutral";
+    const kindClass = kind === "subtype" ? "pt-sub" : "pt-type";
+    return `<span class="pt-chip ${kindClass} ${toneClass}" title="${esc(label)}: ${esc(raw)}"><span class="pt-text">${esc(raw)}</span></span>`;
+  };
+  const subtypeLabelForRow = (row) => {
+    const raw = String(row?.patient_subtype || "").trim();
+    if (raw) return raw;
+    const sourceKey = String(row?.bill_source_key || "").trim().toUpperCase();
+    if (sourceKey === "OPENING") return "Opening (Unmapped)";
+    return "Unspecified";
+  };
+  const renderSubtypeMini = ({ rows = [], summaryRows = [], scope = "page", totalRows = 0 } = {}) => {
+    if (!els.recon.subtypeMini) return;
+    const scopedSummary = Array.isArray(summaryRows) ? summaryRows.filter((r) => String(r?.subtype || "").trim()) : [];
+
+    let grouped = [];
+    if (scopedSummary.length) {
+      grouped = scopedSummary.map((r) => ({
+        subtype: String(r?.subtype || "").trim(),
+        bills: num(r?.bills),
+        corporate_bills: num(r?.corporate_bills),
+        opening_bills: num(r?.opening_bills),
+        settled: num(r?.settled_count ?? r?.settled),
+        settled_corporate: num(r?.settled_corporate_count),
+        settled_opening: num(r?.settled_opening_count),
+        partial: num(r?.partial_count ?? r?.partial),
+        partial_corporate: num(r?.partial_corporate_count),
+        partial_opening: num(r?.partial_opening_count),
+        unpaid: num(r?.unpaid_count ?? r?.unpaid),
+        unpaid_corporate: num(r?.unpaid_corporate_count),
+        unpaid_opening: num(r?.unpaid_opening_count),
+        overpaid: num(r?.overpaid_count ?? r?.overpaid),
+        overpaid_corporate: num(r?.overpaid_corporate_count),
+        overpaid_opening: num(r?.overpaid_opening_count),
+        closing_balance: num(r?.closing_balance),
+      })).filter((r) => !!r.subtype);
+    } else {
+      const list = Array.isArray(rows) ? rows : [];
+      if (!list.length) {
+        els.recon.subtypeMini.innerHTML = '<div class="subtype-mini-head"><span class="title">Closing by SubType</span><span class="meta">No rows in current scope.</span></div><div class="foot">Load data or adjust filters to populate subtype summary.</div>';
+        return;
+      }
+      const groupMap = new Map();
+      for (const row of list) {
+        const key = subtypeLabelForRow(row);
+        if (!groupMap.has(key)) {
+          groupMap.set(key, {
+            subtype: key,
+            bills: 0,
+            corporate_bills: 0,
+            opening_bills: 0,
+            settled: 0,
+            settled_corporate: 0,
+            settled_opening: 0,
+            partial: 0,
+            partial_corporate: 0,
+            partial_opening: 0,
+            unpaid: 0,
+            unpaid_corporate: 0,
+            unpaid_opening: 0,
+            overpaid: 0,
+            overpaid_corporate: 0,
+            overpaid_opening: 0,
+            closing_balance: 0,
+          });
+        }
+        const g = groupMap.get(key);
+        g.bills += 1;
+        const sourceKey = String(row?.bill_source_key || "").trim().toUpperCase();
+        const sourceLabel = String(row?.bill_source || "").trim().toLowerCase();
+        if (sourceKey === "OPENING" || sourceLabel === "opening balance") g.opening_bills += 1;
+        else g.corporate_bills += 1;
+        g.closing_balance += num(row?.balance_all_time);
+        const status = String(row?.status_all_time || "").trim().toLowerCase();
+        if (status === "settled") {
+          g.settled += 1;
+          if (sourceKey === "OPENING" || sourceLabel === "opening balance") g.settled_opening += 1;
+          else g.settled_corporate += 1;
+        } else if (status === "partial") {
+          g.partial += 1;
+          if (sourceKey === "OPENING" || sourceLabel === "opening balance") g.partial_opening += 1;
+          else g.partial_corporate += 1;
+        } else if (status === "overpaid") {
+          g.overpaid += 1;
+          if (sourceKey === "OPENING" || sourceLabel === "opening balance") g.overpaid_opening += 1;
+          else g.overpaid_corporate += 1;
+        } else {
+          g.unpaid += 1;
+          if (sourceKey === "OPENING" || sourceLabel === "opening balance") g.unpaid_opening += 1;
+          else g.unpaid_corporate += 1;
+        }
+      }
+      grouped = Array.from(groupMap.values());
+    }
+
+    grouped = grouped.sort((a, b) => {
+      if (b.bills !== a.bills) return b.bills - a.bills;
+      return Math.abs(b.closing_balance) - Math.abs(a.closing_balance);
+    });
+    const visibleRows = grouped;
+    const total = grouped.reduce((acc, g) => {
+      acc.bills += g.bills;
+      acc.corporate_bills += num(g.corporate_bills);
+      acc.opening_bills += num(g.opening_bills);
+      acc.settled += g.settled;
+      acc.settled_corporate += num(g.settled_corporate);
+      acc.settled_opening += num(g.settled_opening);
+      acc.partial += g.partial;
+      acc.partial_corporate += num(g.partial_corporate);
+      acc.partial_opening += num(g.partial_opening);
+      acc.unpaid += g.unpaid;
+      acc.unpaid_corporate += num(g.unpaid_corporate);
+      acc.unpaid_opening += num(g.unpaid_opening);
+      acc.overpaid += g.overpaid;
+      acc.overpaid_corporate += num(g.overpaid_corporate);
+      acc.overpaid_opening += num(g.overpaid_opening);
+      acc.closing_balance += g.closing_balance;
+      return acc;
+    }, {
+      bills: 0,
+      corporate_bills: 0,
+      opening_bills: 0,
+      settled: 0,
+      settled_corporate: 0,
+      settled_opening: 0,
+      partial: 0,
+      partial_corporate: 0,
+      partial_opening: 0,
+      unpaid: 0,
+      unpaid_corporate: 0,
+      unpaid_opening: 0,
+      overpaid: 0,
+      overpaid_corporate: 0,
+      overpaid_opening: 0,
+      closing_balance: 0,
+    });
+
+    const bodyRows = visibleRows.map((g) => `<tr><td>${esc(g.subtype)}</td><td class="num">${integer(g.bills)}</td><td class="num">${integer(g.corporate_bills)}</td><td class="num">${integer(g.opening_bills)}</td><td class="num">${integer(g.settled)}</td><td class="num">${integer(g.settled_corporate)}</td><td class="num">${integer(g.settled_opening)}</td><td class="num">${integer(g.partial)}</td><td class="num">${integer(g.partial_corporate)}</td><td class="num">${integer(g.partial_opening)}</td><td class="num">${integer(g.unpaid)}</td><td class="num">${integer(g.unpaid_corporate)}</td><td class="num">${integer(g.unpaid_opening)}</td><td class="num">${integer(g.overpaid)}</td><td class="num">${integer(g.overpaid_corporate)}</td><td class="num">${integer(g.overpaid_opening)}</td><td class="num">${money(g.closing_balance)}</td></tr>`).join("");
+    const shownCount = visibleRows.length;
+    const scopeText = String(scope || "").toLowerCase() === "full_filter"
+      ? `Full filter scope (${integer(totalRows || total.bills)} bills). Showing all ${integer(shownCount)} subtypes.`
+      : `Current page scope (${integer(total.bills)} rows). Showing all ${integer(shownCount)} subtypes.`;
+    const totalLabel = String(scope || "").toLowerCase() === "full_filter" ? "Total (Filter)" : "Total (Page)";
+    els.recon.subtypeMini.innerHTML = `<div class="subtype-mini-head"><span class="title">Closing by SubType</span><span class="meta">${esc(scopeText)}</span></div><div class="subtype-mini-scroll"><table class="subtype-mini-table"><thead><tr><th>Subtype</th><th class="num">Bills</th><th class="num">Corporate</th><th class="num">Opening</th><th class="num">Settled</th><th class="num">Settled (C)</th><th class="num">Settled (O)</th><th class="num">Partial</th><th class="num">Partial (C)</th><th class="num">Partial (O)</th><th class="num">Unpaid</th><th class="num">Unpaid (C)</th><th class="num">Unpaid (O)</th><th class="num">Overpaid</th><th class="num">Overpaid (C)</th><th class="num">Overpaid (O)</th><th class="num">Closing</th></tr></thead><tbody>${bodyRows}<tr><td><b>${esc(totalLabel)}</b></td><td class="num"><b>${integer(total.bills)}</b></td><td class="num"><b>${integer(total.corporate_bills)}</b></td><td class="num"><b>${integer(total.opening_bills)}</b></td><td class="num"><b>${integer(total.settled)}</b></td><td class="num"><b>${integer(total.settled_corporate)}</b></td><td class="num"><b>${integer(total.settled_opening)}</b></td><td class="num"><b>${integer(total.partial)}</b></td><td class="num"><b>${integer(total.partial_corporate)}</b></td><td class="num"><b>${integer(total.partial_opening)}</b></td><td class="num"><b>${integer(total.unpaid)}</b></td><td class="num"><b>${integer(total.unpaid_corporate)}</b></td><td class="num"><b>${integer(total.unpaid_opening)}</b></td><td class="num"><b>${integer(total.overpaid)}</b></td><td class="num"><b>${integer(total.overpaid_corporate)}</b></td><td class="num"><b>${integer(total.overpaid_opening)}</b></td><td class="num"><b>${money(total.closing_balance)}</b></td></tr></tbody></table></div><div class="foot">Computed on filtered scope without extra base-table scan.</div>`;
+  };
+
+  const lockRecon = (x) => {
+    [els.recon.loadBtn, els.recon.forceRefreshBtn, els.recon.openingBtn, els.recon.suspenseBtn, els.recon.exportBtn, els.recon.bulkPreviewBtn, els.recon.bulkClearBtn, els.recon.bulkModalApply, els.recon.unit, els.recon.billFrom, els.recon.billTo, els.recon.includeCancelled, els.recon.exportSubmittedOnly, els.recon.search, els.recon.source, els.recon.patientSubtype, els.recon.sortBy, els.recon.sortDir, els.recon.pageSize, els.recon.selectAllVisible, els.recon.suspenseApproveBtn, els.recon.suspenseClearBtn, els.recon.suspenseSelectAll].forEach((n) => { if (n) n.disabled = !!x; });
+    refreshSuspenseButton();
+    renderPager();
+  };
+
+  const applyReconServerPayload = (d) => {
+    const rows = Array.isArray(d?.rows) ? d.rows : [];
+    const details = d?.receipt_details && typeof d.receipt_details === "object" ? d.receipt_details : {};
+    const meta = d?.meta && typeof d.meta === "object" ? d.meta : {};
+    const serverKpis = d?.kpis && typeof d.kpis === "object" ? d.kpis : {};
+    const activeKpiFilter = String(state.recon.kpiFilter || "").trim();
+    const isKpiFilteredScope = !!(activeKpiFilter && activeKpiFilter !== "bill_count" && kpiFilterable.has(activeKpiFilter));
+    const viewRows = rows.slice();
+    const effectiveKpis = serverKpis;
+
+    state.recon.baseRows = rows.slice();
+    state.recon.baseDetails = details;
+    state.recon.baseMeta = { ...meta };
+    state.recon.baseKpis = { ...serverKpis };
+    state.recon.rows = viewRows;
+    state.recon.details = details;
+    state.recon.kpis = effectiveKpis;
+    state.recon.meta = { ...meta };
+    state.recon.page = Number(meta.page || state.recon.page || 1);
+    state.recon.pageSize = Number(meta.page_size || els.recon.pageSize?.value || 25);
+    state.recon.filteredBillKeys = viewRows.map((row) => String(row?.bill_key || "").trim()).filter((k) => !!k);
+
+    const rowIndex = {};
+    viewRows.forEach((r) => {
+      const key = String(r?.bill_key || "").trim();
+      if (key) rowIndex[key] = r;
+    });
+    state.recon.rowIndex = rowIndex;
+    reconcileBulkSelection();
+
+    const sources = Array.isArray(meta.available_sources)
+      ? meta.available_sources.map((s) => ({ bill_source: String(s || "") }))
+      : rows;
+    const subtypes = Array.isArray(meta.available_patient_subtypes)
+      ? meta.available_patient_subtypes.map((s) => ({ patient_subtype: String(s || "") }))
+      : rows;
+    setReconSourceOptions(sources, true);
+    setReconSubtypeOptions(subtypes, true);
+
+    renderKpis(effectiveKpis);
+    renderReconScopeSummary(effectiveKpis, meta, {
+      scope: isKpiFilteredScope ? "kpi_filter" : "full_filter",
+      kpiLabel: isKpiFilteredScope ? kpiFilterLabel(activeKpiFilter) : "",
+    });
+    const subtypeSummary = Array.isArray(meta.subtype_closing_summary) ? meta.subtype_closing_summary : [];
+    const subtypeScope = String(meta.subtype_closing_scope || (subtypeSummary.length ? "full_filter" : "page")).trim().toLowerCase();
+    renderSubtypeMini({
+      rows: viewRows,
+      summaryRows: subtypeSummary,
+      scope: subtypeScope,
+      totalRows: Number(meta.total_rows || rows.length || 0),
+    });
+    renderReconRows();
+    renderPager();
+    refreshSuspenseButton();
+    renderBulkBar();
+
+    const cacheHit = !!meta.cache_hit;
+    const cacheAge = Number(meta.cache_age_sec || 0);
+    const suspenseCount = Number(meta.suspense_count || 0);
+    const sourceText = cacheHit ? ` Source: Cache (${integer(cacheAge)}s old).` : " Source: Fresh DB.";
+    const suspenseText = suspenseCount > 0 ? ` Suspense: ${integer(suspenseCount)} bill(s).` : "";
+    const queryEngine = String(meta.query_engine || "").trim().toLowerCase();
+    const engineText = queryEngine ? ` Engine: ${queryEngine === "sql_sp" ? "SQL SP" : "Python"}.` : "";
+    const timing = meta.timings && typeof meta.timings === "object" ? meta.timings : {};
+    const totalMs = Number(timing.total_ms || 0);
+    const timeText = totalMs > 0 ? ` Time: ${(totalMs / 1000).toFixed(2)}s.` : "";
+    const totalRows = Number(meta.total_rows || rows.length || 0);
+    const kpiLabel = activeKpiFilter ? kpiFilterLabel(activeKpiFilter) : "";
+    const kpiText = kpiLabel ? ` KPI filter: ${kpiLabel} (full filter scope).` : "";
+    setTxt(els.recon.status, `Loaded ${viewRows.length} row(s) on page ${integer(meta.page || 1)} (${integer(totalRows)} total).${kpiText}${sourceText}${suspenseText}${engineText}${timeText}`);
+  };
+
+  const applyReconClientFilters = ({ resetPage = false, forceRefresh = false } = {}) => {
+    if (!state.recon.datasetLoaded) {
+      setTxt(els.recon.status, "Filters changed. Click Load Data or Refresh Data (Latest) to fetch data.");
+      return;
+    }
+    loadRecon({ resetPage: !!resetPage, forceRefresh: !!forceRefresh });
+  };
+
+  const loadRecon = async ({ resetPage = true, forceRefresh = false } = {}) => {
+    if (state.recon.loading) return;
+    if (resetPage) state.recon.page = 1;
+
+    const f = reconFilters();
+    if (!f.unit) { notify("Please select a unit before loading reconciliation.", "warn", "recon-load"); return; }
+    if (f.bill_from && f.bill_to && f.bill_from > f.bill_to) { notify("Date From cannot be after Date To.", "warn", "recon-load"); return; }
+
+    state.recon.loading = true;
+    lockRecon(true);
+    notify(forceRefresh ? "Refreshing reconciliation dataset from database..." : "Loading reconciliation dataset...", "loading", "recon-load");
+    setTxt(els.recon.status, forceRefresh ? `Refreshing ${f.unit} reconciliation from database...` : `Loading ${f.unit} reconciliation...`);
+
+    const p = new URLSearchParams();
+    p.set("unit", f.unit);
+    p.set("include_cancelled", f.include_cancelled ? "1" : "0");
+    p.set("page", String(state.recon.page || 1));
+    p.set("page_size", String(Number(els.recon.pageSize?.value || 25)));
+    p.set("sort_by", String(f.sort_by || "balance_all_time"));
+    p.set("sort_dir", String(f.sort_dir || "desc"));
+    if (f.bill_from) p.set("bill_from", f.bill_from);
+    if (f.bill_to) p.set("bill_to", f.bill_to);
+    if (f.q) p.set("q", f.q);
+    if (f.bill_source) p.set("bill_source", f.bill_source);
+    if (f.patient_subtype) p.set("patient_subtype", f.patient_subtype);
+    if (state.recon.kpiFilter) p.set("kpi_filter", String(state.recon.kpiFilter));
+    const engineOverride = String(window.localStorage?.getItem("corpReconEngine") || "").trim().toLowerCase();
+    if (engineOverride === "sp" || engineOverride === "py") p.set("engine", engineOverride);
+    if (forceRefresh) p.set("force_refresh", "1");
+
+    try {
+      const res = await fetch(`/api/corporate/reconciliation?${p.toString()}`);
+      const d = await res.json();
+      if (!res.ok || d.status !== "success") throw new Error(d.message || "Failed to load reconciliation data");
+      clearLoading("recon-load");
+
+      state.recon.datasetLoaded = true;
+      state.recon.suspenseKpiFilter = "";
+      state.recon.suspenseSelected = {};
+      state.recon.suspenseVisibleKeys = [];
+      state.recon.suspenseAuditBusy = false;
+      state.recon.baseSuspenseRows = [];
+      state.recon.baseSuspenseDetails = {};
+      state.recon.suspenseLoaded = false;
+      state.recon.suspenseCount = 0;
+      applyReconServerPayload(d);
+
+      const meta = d?.meta && typeof d.meta === "object" ? d.meta : {};
+      const resultCacheHit = !!meta.result_cache_hit;
+      const cacheHit = !!meta.cache_hit;
+      const cacheAge = Number(meta.cache_age_sec || 0);
+      const suspenseCount = Number(meta.suspense_count || 0);
+      const suspenseMsg = suspenseCount > 0 ? ` Suspense: ${integer(suspenseCount)}.` : "";
+      const queryEngine = String(meta.query_engine || "").trim().toLowerCase();
+      const engineMsg = queryEngine ? ` Engine: ${queryEngine === "sql_sp" ? "SQL SP" : "Python"}.` : "";
+      const timing = meta.timings && typeof meta.timings === "object" ? meta.timings : {};
+      const totalMs = Number(timing.total_ms || 0);
+      const timeMsg = totalMs > 0 ? ` Time: ${(totalMs / 1000).toFixed(2)}s.` : "";
+      if (forceRefresh) {
+        notify(`Fresh page loaded: ${integer(state.recon.rows.length)} rows.${suspenseMsg}${engineMsg}${timeMsg}`, "success", "recon-load");
+      } else if (resultCacheHit) {
+        notify(`Loaded from filter-cache: ${integer(state.recon.rows.length)} rows.${suspenseMsg}${engineMsg}${timeMsg}`, "success", "recon-load");
+      } else if (cacheHit) {
+        notify(`Loaded from DB cache (${integer(cacheAge)}s old): ${integer(state.recon.rows.length)} rows.${suspenseMsg}${engineMsg}${timeMsg}`, "success", "recon-load");
+      } else {
+        notify(`Loaded fresh: ${integer(state.recon.rows.length)} rows.${suspenseMsg}${engineMsg}${timeMsg}`, "success", "recon-load");
+      }
+    } catch (e) {
+      clearLoading("recon-load");
+      state.recon.datasetLoaded = false;
+      state.recon.kpiFilter = "";
+      state.recon.filteredBillKeys = [];
+      state.recon.baseRows = [];
+      state.recon.baseDetails = {};
+      state.recon.baseMeta = {};
+      state.recon.baseKpis = {};
+      state.recon.baseSuspenseRows = [];
+      state.recon.baseSuspenseDetails = {};
+      state.recon.suspenseLoaded = false;
+      state.recon.suspenseCount = 0;
+      state.recon.suspenseKpiFilter = "";
+      state.recon.suspenseSelected = {};
+      state.recon.suspenseVisibleKeys = [];
+      state.recon.suspenseAuditBusy = false;
+      state.recon.rows = [];
+      state.recon.details = {};
+      state.recon.meta = {};
+      state.recon.kpis = {};
+      state.recon.rowIndex = {};
+      state.recon.bulkSelected = {};
+      state.recon.bulkPreviewRows = [];
+      closeBulkModal();
+      closeSuspenseModal();
+      setReconSourceOptions([], false);
+      setReconSubtypeOptions([], false);
+      renderKpis({});
+      renderReconScopeSummary({}, {});
+      renderSubtypeMini({ rows: [] });
+      renderReconRows();
+      renderPager();
+      refreshSuspenseButton();
+      const msg = e?.message || "Unable to load reconciliation data.";
+      setTxt(els.recon.status, msg);
+      notify(msg, "error", "recon-load");
+    } finally {
+      state.recon.loading = false;
+      lockRecon(false);
+      if (state.recon.datasetLoaded) {
+        renderReconRows();
+        renderBulkBar();
+        refreshSuspenseButton();
+      }
+    }
+  };
+
+  const loadOpeningRecon = () => {
+    ensureReconSourceOption("Opening Balance", "Opening Balance");
+    if (els.recon.source) els.recon.source.value = "Opening Balance";
+    if (els.recon.billFrom) els.recon.billFrom.value = "";
+    if (els.recon.billTo) els.recon.billTo.value = "";
+    state.recon.page = 1;
+    loadRecon({ resetPage: true, forceRefresh: false });
+  };
+
+  const sleep = (ms) => new Promise((r) => setTimeout(r, ms));
+  const parseContentDispositionFilename = (value) => {
+    const txt = String(value || "").trim();
+    if (!txt) return "";
+    const star = txt.match(/filename\*=UTF-8''([^;]+)/i);
+    if (star && star[1]) {
+      try { return decodeURIComponent(star[1].replace(/['"]/g, "").trim()); } catch (_) {}
+    }
+    const plain = txt.match(/filename="?([^\";]+)"?/i);
+    return plain && plain[1] ? plain[1].trim() : "";
+  };
+  const downloadReconExportResult = async (jobId, fallbackFilename = "") => {
+    const url = `/api/corporate/reconciliation/export_excel_job_result?job_id=${encodeURIComponent(jobId)}`;
+    const res = await fetch(url, { method: "GET", credentials: "same-origin" });
+    if (!res.ok) {
+      let errTxt = "";
+      try { errTxt = await res.text(); } catch (_) {}
+      throw new Error(errTxt || `Download failed (${res.status})`);
+    }
+    const blob = await res.blob();
+    const serverName = parseContentDispositionFilename(res.headers.get("Content-Disposition"));
+    const filename = String(serverName || fallbackFilename || "Corporate_Reconciliation.xlsx").trim();
+    const objectUrl = URL.createObjectURL(blob);
+    const a = document.createElement("a");
+    a.href = objectUrl;
+    a.download = filename;
+    a.style.display = "none";
+    document.body.appendChild(a);
+    a.click();
+    setTimeout(() => {
+      URL.revokeObjectURL(objectUrl);
+      a.remove();
+    }, 0);
+  };
+  const pollExport = async (jobId) => {
+    for (let i = 0; i < 200; i += 1) {
+      await sleep(1400);
+      const res = await fetch(`/api/corporate/reconciliation/export_excel_job_status?job_id=${encodeURIComponent(jobId)}`);
+      const d = await res.json();
+      if (!res.ok || d.status !== "success") throw new Error(d.message || "Failed to read export status");
+      const s = String(d.state || "").toLowerCase();
+      if (s === "queued") { notify("Export queued. Waiting for worker...", "loading", "recon-export"); continue; }
+      if (s === "running") { notify("Export running. Preparing workbook...", "loading", "recon-export"); continue; }
+      if (s === "done") {
+        notify("Export ready. Starting download...", "loading", "recon-export");
+        await downloadReconExportResult(jobId, d.filename || "");
+        clearLoading("recon-export");
+        notify("Export downloaded successfully.", "success", "recon-export");
+        return;
+      }
+      if (s === "error") throw new Error(d.error || "Export failed");
+    }
+    throw new Error("Export timed out while waiting for completion");
+  };
+
+  const exportRecon = async () => {
+    if (state.exporting) return;
+    const f = reconFilters();
+    const billKeysForExport = null;
+    const pageContext = {
+      page: Number(state.recon.meta?.page || 1),
+      page_size: Number(state.recon.meta?.page_size || Number(els.recon.pageSize?.value || 25)),
+      total_rows: Number(state.recon.meta?.total_rows || 0),
+      total_pages: Number(state.recon.meta?.total_pages || 1),
+      kpi_filter: String(state.recon.kpiFilter || ""),
+    };
+    if (!f.unit) { notify("Please select a unit before export.", "warn", "recon-export"); return; }
+    if (f.bill_from && f.bill_to && f.bill_from > f.bill_to) { notify("Date From cannot be after Date To.", "warn", "recon-export"); return; }
+    state.exporting = true; notify("Queueing reconciliation export...", "loading", "recon-export");
+    try {
+      const res = await fetch("/api/corporate/reconciliation/export_excel_job", { method: "POST", headers: { "Content-Type": "application/json" }, body: JSON.stringify({ unit: f.unit, bill_from: f.bill_from || "", bill_to: f.bill_to || "", bill_source: f.bill_source || "", patient_subtype: f.patient_subtype || "", q: f.q || "", include_cancelled: f.include_cancelled ? 1 : 0, export_submitted_only: f.export_submitted_only ? 1 : 0, sort_by: f.sort_by, sort_dir: f.sort_dir, kpi_filter: String(state.recon.kpiFilter || ""), bill_keys: billKeysForExport, page_context: pageContext }) });
+      const d = await res.json();
+      if (!res.ok || d.status !== "queued" || !d.job_id) throw new Error(d.message || "Failed to queue export");
+      notify("Export queued. Background processing started.", "loading", "recon-export");
+      await pollExport(d.job_id);
+    } catch (e) {
+      clearLoading("recon-export"); notify(e?.message || "Export failed.", "error", "recon-export");
+    } finally { state.exporting = false; }
+  };
+
+  const renderLegacy = () => {
+    if (!els.legacy.groups) return;
+    if (state.legacy.mode === "server") {
+      const rows = Array.isArray(state.legacy.serverRows) ? state.legacy.serverRows : [];
+      const meta = state.legacy.meta && typeof state.legacy.meta === "object" ? state.legacy.meta : {};
+      const currentPage = Number(meta.page || state.legacy.page || 1);
+      const totalPages = Number(meta.total_pages || 1);
+      const totalRows = Number(meta.total_rows || rows.length || 0);
+      if (!rows.length) {
+        els.legacy.groups.innerHTML = '<div class="empty">No rows found for current corporate bill summary filters.</div>';
+        setTxt(els.legacy.pageInfo, `Page ${integer(currentPage)} / ${integer(totalPages)} | Total Rows: ${integer(totalRows)}`);
+        if (els.legacy.prev) els.legacy.prev.disabled = currentPage <= 1;
+        if (els.legacy.next) els.legacy.next.disabled = currentPage >= totalPages;
+        return;
+      }
+      const cols = Object.keys(rows[0] || {});
+      const ths = cols.map((c) => `<th>${esc(c)}</th>`).join("");
+      const trs = rows.map((r) => {
+        const isFinal = String(r.Status || "").trim().toLowerCase() === "final submitted";
+        const tds = cols.map((c) => `<td>${legacyCellHtml(c, r[c])}</td>`).join("");
+        return `<tr class="${isFinal ? "row-final" : ""}">${tds}</tr>`;
+      }).join("");
+      els.legacy.groups.innerHTML = `
+        <div class="hist-group">
+          <div class="hist-head" data-target="legacy-server-page">
+            <span>Page ${integer(currentPage)} Data (${rows.length} row${rows.length > 1 ? "s" : ""})</span>
+            <span style="font-size:11px;font-weight:600;color:#476283;">Click to expand</span>
+          </div>
+          <div class="hist-body open" id="legacy-server-page">
+            <table class="hist-table">
+              <thead><tr>${ths}</tr></thead>
+              <tbody>${trs}</tbody>
+            </table>
+          </div>
+        </div>
+      `;
+      els.legacy.groups.querySelectorAll(".hist-head").forEach((head) => {
+        head.addEventListener("click", () => {
+          const target = document.getElementById(head.dataset.target);
+          if (!target) return;
+          target.classList.toggle("open");
+        });
+      });
+      setTxt(els.legacy.pageInfo, `Page ${integer(currentPage)} / ${integer(totalPages)} | Rows on Page: ${integer(rows.length)} | Total Rows: ${integer(totalRows)}`);
+      if (els.legacy.prev) els.legacy.prev.disabled = currentPage <= 1;
+      if (els.legacy.next) els.legacy.next.disabled = currentPage >= totalPages;
+      return;
+    }
+
+    const groups = state.legacy.groups || [];
+    if (!groups.length) {
+      els.legacy.groups.innerHTML = '<div class="empty">No rows found for current corporate bill summary filters.</div>';
+      setTxt(els.legacy.pageInfo, "Page 0 / 0");
+      if (els.legacy.prev) els.legacy.prev.disabled = true;
+      if (els.legacy.next) els.legacy.next.disabled = true;
+      return;
+    }
+
+    const totalPages = Math.max(1, Math.ceil(groups.length / state.legacy.pageSize));
+    if (state.legacy.page > totalPages) state.legacy.page = totalPages;
+    if (state.legacy.page < 1) state.legacy.page = 1;
+    const start = (state.legacy.page - 1) * state.legacy.pageSize;
+    const pageGroups = groups.slice(start, start + state.legacy.pageSize);
+
+    const html = [];
+    for (let i = 0; i < pageGroups.length; i += 1) {
+      const g = pageGroups[i];
+      const rows = g.rows || [];
+      if (!rows.length) continue;
+      const cols = Object.keys(rows[0] || {});
+      const ths = cols.map((c) => `<th>${esc(c)}</th>`).join("");
+      const trs = rows.map((r) => {
+        const isFinal = String(r.Status || "").trim().toLowerCase() === "final submitted";
+        const tds = cols.map((c) => `<td>${legacyCellHtml(c, r[c])}</td>`).join("");
+        return `<tr class="${isFinal ? "row-final" : ""}">${tds}</tr>`;
+      }).join("");
+      const gid = `legacy-grp-${state.legacy.page}-${i}`;
+      html.push(`
+        <div class="hist-group">
+          <div class="hist-head" data-target="${gid}">
+            <span>${esc(g.reg || "Unknown")} - ${esc(g.name || "-")} (${rows.length} row${rows.length > 1 ? "s" : ""})</span>
+            <span style="font-size:11px;font-weight:600;color:#476283;">Click to expand</span>
+          </div>
+          <div class="hist-body" id="${gid}">
+            <table class="hist-table">
+              <thead><tr>${ths}</tr></thead>
+              <tbody>${trs}</tbody>
+            </table>
+          </div>
+        </div>
+      `);
+    }
+    els.legacy.groups.innerHTML = html.join("");
+
+    els.legacy.groups.querySelectorAll(".hist-head").forEach((head) => {
+      head.addEventListener("click", () => {
+        const target = document.getElementById(head.dataset.target);
+        if (!target) return;
+        target.classList.toggle("open");
+      });
+    });
+    const first = els.legacy.groups.querySelector(".hist-body");
+    if (first) first.classList.add("open");
+
+    setTxt(els.legacy.pageInfo, `Page ${state.legacy.page} / ${totalPages} | Groups: ${integer(groups.length)} | Rows: ${integer(state.legacy.filtered.length)}`);
+    if (els.legacy.prev) els.legacy.prev.disabled = state.legacy.page <= 1;
+    if (els.legacy.next) els.legacy.next.disabled = state.legacy.page >= totalPages;
+  };
+  const applyLegacyFilters = () => {
+    if (state.legacy.mode === "server") {
+      if (!state.legacy.loaded) {
+        setTxt(els.legacy.txt, "Adjust filters and click Load Bill Summary.");
+        return;
+      }
+      state.legacy.page = 1;
+      if (state.legacy.searchTimer) clearTimeout(state.legacy.searchTimer);
+      state.legacy.searchTimer = setTimeout(() => {
+        loadLegacy({ resetPage: true });
+      }, 280);
+      return;
+    }
+    const q = String(els.legacy.search?.value || "").trim().toLowerCase();
+    const sf = String(els.legacy.status?.value || "all").toLowerCase();
+    const subtype = String(els.legacy.patientSubtype?.value || "").trim().toLowerCase();
+    let rows = Array.isArray(state.legacy.raw) ? state.legacy.raw.slice() : [];
+    if (q) rows = rows.filter((r) => String(r.Registration_No || "").toLowerCase().includes(q) || String(r.PatientName || "").toLowerCase().includes(q) || String(r.BillDate || "").toLowerCase().includes(q));
+    if (subtype) rows = rows.filter((r) => String(r.PatientSubType || "").trim().toLowerCase() === subtype);
+    if (sf === "final") rows = rows.filter((r) => String(r.Status || "").trim().toLowerCase() === "final submitted");
+    else if (sf === "nonfinal") rows = rows.filter((r) => String(r.Status || "").trim().toLowerCase() !== "final submitted");
+    state.legacy.filtered = rows;
+    const map = {};
+    rows.forEach((r) => {
+      const reg = String(r.Registration_No || "").trim() || "Unknown";
+      if (!map[reg]) map[reg] = [];
+      map[reg].push(r);
+    });
+    state.legacy.groups = Object.entries(map).map(([reg, items]) => ({
+      reg,
+      name: String(items[0]?.PatientName || "").trim(),
+      rows: items
+    }));
+    state.legacy.page = 1;
+    renderLegacy();
+  };
+  const loadLegacy = async ({ resetPage = false } = {}) => {
+    const unit = String(els.legacy.unit?.value || "").trim().toUpperCase();
+    const from = String(els.legacy.from?.value || "").trim();
+    const to = String(els.legacy.to?.value || "").trim();
+    const vt = String(els.legacy.visitType?.value || "0").trim();
+    const sf = String(els.legacy.status?.value || "all").trim().toLowerCase();
+    const subtype = String(els.legacy.patientSubtype?.value || "").trim();
+    const q = String(els.legacy.search?.value || "").trim();
+    const serverMode = isLegacyServerUnit(unit);
+    if (!unit) { notify("Please select a unit before loading corporate bill summary.", "warn", "legacy-load"); return; }
+    if (resetPage) state.legacy.page = 1;
+    if (from && to && from > to) { notify("From cannot be after To for corporate bill summary.", "warn", "legacy-load"); return; }
+    if (!serverMode && (!from || !to)) { notify("Please select From and To dates for corporate bill summary.", "warn", "legacy-load"); return; }
+    notify("Loading corporate bill summary...", "loading", "legacy-load"); setTxt(els.legacy.txt, `Loading corporate bill summary for ${unit}...`);
+    try {
+      const p = new URLSearchParams();
+      p.set("unit", unit);
+      p.set("visit_type", vt);
+      if (from) p.set("from", from);
+      if (to) p.set("to", to);
+      if (serverMode) {
+        p.set("status_filter", sf || "all");
+        if (subtype) p.set("patient_subtype", subtype);
+        p.set("search_query", q || "");
+        p.set("page", String(Math.max(1, Number(state.legacy.page || 1))));
+        p.set("page_size", String(Math.max(10, Number(state.legacy.pageSize || 20))));
+      }
+      const res = await fetch(`/api/corporate/bill_summary?${p.toString()}`);
+      const d = await res.json();
+      if (!res.ok || d.status !== "success") throw new Error(d.message || "Failed to load corporate bill summary");
+      clearLoading("legacy-load");
+      state.legacy.loaded = true;
+      if (serverMode) {
+        state.legacy.mode = "server";
+        state.legacy.serverRows = Array.isArray(d.data) ? d.data : [];
+        state.legacy.meta = d?.meta && typeof d.meta === "object" ? d.meta : {};
+        state.legacy.page = Number(state.legacy.meta?.page || state.legacy.page || 1);
+        setLegacySubtypeOptions(Array.isArray(state.legacy.meta?.available_patient_subtypes) ? state.legacy.meta.available_patient_subtypes : [], true);
+        state.legacy.raw = [];
+        state.legacy.filtered = [];
+        state.legacy.groups = [];
+        renderLegacy();
+        const totalRows = Number(state.legacy.meta?.total_rows || state.legacy.serverRows.length || 0);
+        const sourceEngine = String(state.legacy.meta?.query_engine || "").trim().toLowerCase();
+        const totalMs = Number(state.legacy.meta?.timings?.total_ms || 0);
+        const engineTxt = sourceEngine ? ` Engine: ${sourceEngine === "sql_sp" ? "SQL SP" : "SQL Fallback"}.` : "";
+        const timeTxt = totalMs > 0 ? ` Time: ${(totalMs / 1000).toFixed(2)}s.` : "";
+        setTxt(
+          els.legacy.txt,
+          `Loaded ${integer(state.legacy.serverRows.length)} rows on page ${integer(state.legacy.meta?.page || 1)} (${integer(totalRows)} total) for ${unit}.${engineTxt}${timeTxt}`
+        );
+        notify(`Corporate bill summary loaded: ${integer(totalRows)} rows (${unit}).`, "success", "legacy-load");
+      } else {
+        state.legacy.mode = "client";
+        state.legacy.meta = {};
+        state.legacy.serverRows = [];
+        state.legacy.raw = Array.isArray(d.data) ? d.data : [];
+        setLegacySubtypeOptions(state.legacy.raw, true);
+        applyLegacyFilters();
+        setTxt(els.legacy.txt, `Loaded ${integer(state.legacy.raw.length)} corporate bill summary rows for ${unit}.`);
+        notify(`Corporate bill summary loaded: ${integer(state.legacy.raw.length)} rows.`, "success", "legacy-load");
+      }
+    } catch (e) {
+      clearLoading("legacy-load");
+      state.legacy.raw = [];
+      state.legacy.filtered = [];
+      state.legacy.groups = [];
+      state.legacy.serverRows = [];
+      state.legacy.meta = {};
+      setLegacySubtypeOptions([], false);
+      renderLegacy();
+      const msg = e?.message || "Failed to load corporate bill summary.";
+      setTxt(els.legacy.txt, msg);
+      notify(msg, "error", "legacy-load");
+    }
+  };
+  const exportLegacy = () => {
+    const unit = String(els.legacy.unit?.value || "").trim().toUpperCase();
+    const from = String(els.legacy.from?.value || "").trim();
+    const to = String(els.legacy.to?.value || "").trim();
+    const subtype = String(els.legacy.patientSubtype?.value || "").trim();
+    const serverMode = isLegacyServerUnit(unit);
+    if (!unit) { notify("Please select a unit before corporate bill summary export.", "warn", "legacy-export"); return; }
+    if (from && to && from > to) { notify("From cannot be after To before corporate bill summary export.", "warn", "legacy-export"); return; }
+    if (!serverMode && (!from || !to)) { notify("Please select From and To dates before corporate bill summary export.", "warn", "legacy-export"); return; }
+    const p = new URLSearchParams({ unit, visit_type: String(els.legacy.visitType?.value || "0"), status_filter: String(els.legacy.status?.value || "all"), search_query: String(els.legacy.search?.value || "") });
+    if (subtype) p.set("patient_subtype", subtype);
+    if (from) p.set("from_date", from);
+    if (to) p.set("to_date", to);
+    notify("Opening corporate bill summary export in new tab...", "success", "legacy-export"); window.open(`/api/corporate/export_excel?${p.toString()}`, "_blank");
+  };
+
+  const updatesSearchBlob = (evt) => {
+    if (!evt || typeof evt !== "object") return "";
+    const detailTokens = [];
+    (Array.isArray(evt.details) ? evt.details : []).forEach((d) => {
+      detailTokens.push(String(d?.name || ""));
+      detailTokens.push(String(d?.value || ""));
+    });
+    return [
+      evt.table_key,
+      evt.table_label,
+      evt.event_type,
+      evt.event_type_label,
+      evt.event_time,
+      evt.record_id,
+      evt.changed_by,
+      evt.summary,
+      ...detailTokens,
+    ].map((v) => String(v || "").toLowerCase()).join(" ");
+  };
+
+  const updatesEventsForCard = (cardKey, useModalSearch = false) => {
+    const k = String(cardKey || "all").trim().toLowerCase() || "all";
+    let rows = Array.isArray(state.updates.events) ? state.updates.events.slice() : [];
+    if (k !== "all") rows = rows.filter((e) => String(e.table_key || "").toLowerCase() === k);
+    if (useModalSearch) {
+      const mq = String(els.updates.modalSearch?.value || "").trim().toLowerCase();
+      if (mq) rows = rows.filter((e) => updatesSearchBlob(e).includes(mq));
+    }
+    return rows;
+  };
+
+  const renderUpdatesCards = () => {
+    if (!els.updates.cards) return;
+    const cards = Array.isArray(state.updates.cards) ? state.updates.cards : [];
+    if (!cards.length) {
+      els.updates.cards.innerHTML = '<div class="empty">No update cards available for current selection.</div>';
+      return;
+    }
+    els.updates.cards.innerHTML = cards.map((c) => {
+      const key = String(c.card_key || "");
+      const active = String(state.updates.activeCard || "all") === key;
+      return `<div class="uk${active ? " active" : ""}" data-card="${esc(key)}" role="button" tabindex="0"><div class="t">${esc(c.title || "-")}</div><div class="v">${integer(c.total)}</div><div class="m">Additions: ${integer(c.additions)} | Updates: ${integer(c.updates)}</div></div>`;
+    }).join("");
+    els.updates.cards.querySelectorAll(".uk[data-card]").forEach((card) => {
+      const key = String(card.getAttribute("data-card") || "").trim();
+      const open = () => {
+        state.updates.activeCard = key || "all";
+        renderUpdatesCards();
+        renderUpdatesPreview();
+        openUpdatesModal(state.updates.activeCard);
+      };
+      card.addEventListener("click", open);
+      card.addEventListener("keydown", (ev) => {
+        if (ev.key === "Enter" || ev.key === " ") { ev.preventDefault(); open(); }
+      });
+    });
+  };
+
+  const updatesDetailsHtml = (evt) => {
+    const pairs = Array.isArray(evt?.details) ? evt.details : [];
+    if (!pairs.length) return '<div class="sub">No detail fields captured for this event.</div>';
+    return `<div class="updates-modal-kv">${pairs.map((p) => `<div><b>${esc(p?.name || "-")}:</b> ${esc(p?.value || "-")}</div>`).join("")}</div>`;
+  };
+
+  const renderUpdatesPreview = () => {
+    if (!els.updates.previewBody) return;
+    const rows = updatesEventsForCard(state.updates.activeCard || "all", false).slice(0, 20);
+    if (!rows.length) {
+      els.updates.previewBody.innerHTML = '<tr><td colspan="7" class="empty">No matching updates for current filters.</td></tr>';
+      return;
+    }
+    const html = [];
+    rows.forEach((e, idx) => {
+      const rowId = `up-prev-${idx}`;
+      html.push(`<tr><td>${esc(e.event_time || "-")}</td><td>${esc(e.table_label || "-")}</td><td><span class="updates-pill ${String(e.event_type || "").toLowerCase() === "update" ? "up-upd" : "up-add"}">${esc(e.event_type_label || "-")}</span></td><td>${esc(e.record_id || "-")}</td><td>${esc(e.changed_by || "-")}</td><td>${esc(e.summary || "-")}</td><td class="center"><button class="updates-btn" type="button" data-toggle="${esc(rowId)}">View</button></td></tr><tr id="${esc(rowId)}" class="updates-modal-details" hidden><td colspan="7">${updatesDetailsHtml(e)}</td></tr>`);
+    });
+    els.updates.previewBody.innerHTML = html.join("");
+    els.updates.previewBody.querySelectorAll(".updates-btn[data-toggle]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const target = document.getElementById(b.getAttribute("data-toggle"));
+        if (!target) return;
+        target.hidden = !target.hidden;
+      });
+    });
+  };
+
+  const renderUpdatesModalRows = () => {
+    if (!els.updates.modalBody) return;
+    const card = state.updates.activeCard || "all";
+    const rows = updatesEventsForCard(card, true);
+    setTxt(els.updates.modalMeta, `${integer(rows.length)} events`);
+    if (!rows.length) {
+      els.updates.modalBody.innerHTML = '<tr><td colspan="7" class="empty">No events found for this selection.</td></tr>';
+      return;
+    }
+    const html = [];
+    rows.forEach((e, idx) => {
+      const rowId = `up-modal-${idx}`;
+      html.push(`<tr><td>${esc(e.event_time || "-")}</td><td>${esc(e.table_label || "-")}</td><td><span class="updates-pill ${String(e.event_type || "").toLowerCase() === "update" ? "up-upd" : "up-add"}">${esc(e.event_type_label || "-")}</span></td><td>${esc(e.record_id || "-")}</td><td>${esc(e.changed_by || "-")}</td><td>${esc(e.summary || "-")}</td><td class="center"><button class="updates-btn" type="button" data-toggle="${esc(rowId)}">View</button></td></tr><tr id="${esc(rowId)}" class="updates-modal-details" hidden><td colspan="7">${updatesDetailsHtml(e)}</td></tr>`);
+    });
+    els.updates.modalBody.innerHTML = html.join("");
+    els.updates.modalBody.querySelectorAll(".updates-btn[data-toggle]").forEach((b) => {
+      b.addEventListener("click", () => {
+        const target = document.getElementById(b.getAttribute("data-toggle"));
+        if (!target) return;
+        target.hidden = !target.hidden;
+      });
+    });
+  };
+
+  const openUpdatesModal = (cardKey = "all") => {
+    if (!els.updates.modal) return;
+    state.updates.activeCard = String(cardKey || "all").trim().toLowerCase() || "all";
+    const card = (Array.isArray(state.updates.cards) ? state.updates.cards : []).find((c) => String(c.card_key || "") === state.updates.activeCard);
+    setTxt(els.updates.modalTitle, `Updates Details - ${card?.title || "All Corporate Tables"}`);
+    if (els.updates.modalSearch) els.updates.modalSearch.value = "";
+    els.updates.modal.classList.add("open");
+    els.updates.modal.setAttribute("aria-hidden", "false");
+    renderUpdatesModalRows();
+  };
+
+  const closeUpdatesModal = () => {
+    if (!els.updates.modal) return;
+    els.updates.modal.classList.remove("open");
+    els.updates.modal.setAttribute("aria-hidden", "true");
+  };
+
+  const applyUpdatesClientFilters = () => {
+    const query = String(els.updates.search?.value || "").trim().toLowerCase();
+    const sourceFilter = String(els.updates.source?.value || "").trim().toLowerCase();
+    const typeFilter = String(els.updates.eventType?.value || "").trim().toLowerCase();
+    let rows = Array.isArray(state.updates.baseEvents) ? state.updates.baseEvents.slice() : [];
+    if (sourceFilter) rows = rows.filter((e) => String(e.table_key || "").toLowerCase() === sourceFilter);
+    if (typeFilter) rows = rows.filter((e) => String(e.event_type || "").toLowerCase() === typeFilter);
+    if (query) rows = rows.filter((e) => updatesSearchBlob(e).includes(query));
+    state.updates.events = rows;
+
+    const tableOrder = ["corp_receipt", "corp_bill_mst", "corpopening"];
+    const titleMap = {
+      corp_receipt: "Receipt Activity",
+      corp_bill_mst: "Bill Master",
+      corpopening: "Opening Balance",
+    };
+    const cards = [{
+      card_key: "all",
+      title: "All Corporate Tables",
+      total: rows.length,
+      additions: rows.filter((e) => String(e.event_type || "").toLowerCase() === "addition").length,
+      updates: rows.filter((e) => String(e.event_type || "").toLowerCase() === "update").length,
+    }];
+    tableOrder.forEach((key) => {
+      const bucket = rows.filter((e) => String(e.table_key || "").toLowerCase() === key);
+      cards.push({
+        card_key: key,
+        title: titleMap[key] || key,
+        total: bucket.length,
+        additions: bucket.filter((e) => String(e.event_type || "").toLowerCase() === "addition").length,
+        updates: bucket.filter((e) => String(e.event_type || "").toLowerCase() === "update").length,
+      });
+    });
+    state.updates.cards = cards;
+    const validKeys = new Set(cards.map((c) => String(c.card_key || "")));
+    if (!validKeys.has(String(state.updates.activeCard || "all"))) state.updates.activeCard = "all";
+    renderUpdatesCards();
+    renderUpdatesPreview();
+
+    const asOf = String(state.updates.meta?.as_of || "").trim();
+    const status = `Loaded ${integer(rows.length)} updates${asOf ? ` (as of ${asOf})` : ""}.`;
+    setTxt(els.updates.status, status);
+  };
+
+  const lockUpdates = (x) => {
+    [els.updates.loadBtn, els.updates.unit, els.updates.lookback, els.updates.source, els.updates.eventType, els.updates.search, els.updates.limit, els.updates.autoRefresh].forEach((n) => { if (n) n.disabled = !!x; });
+  };
+
+  const loadUpdates = async ({ silent = false } = {}) => {
+    if (state.updates.loading) return;
+    const unit = String(els.updates.unit?.value || "").trim().toUpperCase();
+    if (!unit) { notify("Please select a unit before loading updates.", "warn", "updates-load"); return; }
+    const lookback = Number(els.updates.lookback?.value || 24);
+    const limit = Number(els.updates.limit?.value || 1200);
+
+    state.updates.loading = true;
+    lockUpdates(true);
+    if (!silent) notify("Loading corporate updates...", "loading", "updates-load");
+    setTxt(els.updates.status, `Loading updates for ${unit}...`);
+
+    const p = new URLSearchParams();
+    p.set("unit", unit);
+    p.set("lookback_hours", String(Number.isFinite(lookback) ? lookback : 24));
+    p.set("limit", String(Number.isFinite(limit) ? limit : 1200));
+    try {
+      const res = await fetch(`/api/corporate/updates?${p.toString()}`);
+      const d = await res.json();
+      if (!res.ok || d.status !== "success") throw new Error(d.message || "Failed to load corporate updates");
+      state.updates.baseEvents = Array.isArray(d.events) ? d.events : [];
+      state.updates.meta = d.meta || {};
+      state.updates.loaded = true;
+      applyUpdatesClientFilters();
+      if (!silent) {
+        clearLoading("updates-load");
+        notify(`Updates loaded: ${integer(state.updates.baseEvents.length)} events.`, "success", "updates-load");
+      }
+    } catch (e) {
+      state.updates.baseEvents = [];
+      state.updates.events = [];
+      state.updates.cards = [];
+      state.updates.loaded = false;
+      renderUpdatesCards();
+      renderUpdatesPreview();
+      const msg = e?.message || "Failed to load corporate updates.";
+      setTxt(els.updates.status, msg);
+      if (!silent) {
+        clearLoading("updates-load");
+        notify(msg, "error", "updates-load");
+      }
+    } finally {
+      state.updates.loading = false;
+      lockUpdates(false);
+    }
+  };
+
+  const resetUpdatesAutoRefresh = () => {
+    if (state.updates.autoTimer) {
+      clearInterval(state.updates.autoTimer);
+      state.updates.autoTimer = null;
+    }
+    if (!els.updates.autoRefresh?.checked) return;
+    state.updates.autoTimer = setInterval(() => {
+      const activePanel = document.querySelector(".panel.active")?.id;
+      if (activePanel === "updatesPanel") loadUpdates({ silent: true });
+    }, 60000);
+  };
+
+  const initTimerMenu = () => {
+    const timer = $("fabTimer"), tog = $("fabToggle"), menu = $("fabMenu"); let remain = 0;
+    const fmt = (s) => { s = Math.max(0, Math.floor(s || 0)); return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
+    const paint = () => { if (timer) timer.textContent = fmt(remain); };
+    const pull = async () => { try { const r = await fetch("/session_remaining"); const d = await r.json(); if (r.ok && typeof d.remaining_seconds !== "undefined") { remain = Math.max(0, Math.floor(Number(d.remaining_seconds) || 0)); paint(); } } catch (_) {} };
+    if (tog && menu) {
+      tog.addEventListener("click", (e) => { e.stopPropagation(); menu.classList.toggle("open"); });
+      document.addEventListener("click", (e) => { if (!e.target.closest(".fab-user")) menu.classList.remove("open"); });
+    }
+    setInterval(() => { if (remain > 0) { remain -= 1; paint(); } }, 1000);
+    setInterval(pull, 20000); pull();
+  };
+
+  const initTabs = () => {
+    els.tabs.forEach((t) => t.addEventListener("click", () => {
+      setActivePanel(t.dataset.panel);
+    }));
+  };
+
+  const markReconDirty = (message = "") => {
+    setTxt(els.recon.status, message || "Filters changed. Click Load Data or Refresh Data (Latest) to fetch data.");
+  };
+
+  const init = () => {
+    setUnits(els.recon.unit); setUnits(els.legacy.unit); setUnits(els.updates.unit);
+    syncUnit(DEFAULT_UNIT || (ALLOWED_UNITS.length === 1 ? ALLOWED_UNITS[0] : ""));
+    const today = new Date().toISOString().slice(0, 10);
+    const d90 = new Date();
+    d90.setDate(d90.getDate() - 90);
+    const from90 = d90.toISOString().slice(0, 10);
+    if (els.recon.billFrom && !els.recon.billFrom.value) els.recon.billFrom.value = from90;
+    if (els.recon.billTo && !els.recon.billTo.value) els.recon.billTo.value = today;
+    const legacyUnit = String(els.legacy.unit?.value || "").trim().toUpperCase();
+    if (!isLegacyServerUnit(legacyUnit)) {
+      if (els.legacy.from && !els.legacy.from.value) els.legacy.from.value = today;
+      if (els.legacy.to && !els.legacy.to.value) els.legacy.to.value = today;
+    }
+    state.legacy.mode = isLegacyServerUnit(legacyUnit) ? "server" : "client";
+    setLegacySubtypeOptions([], false);
+
+    initTabs(); initTimerMenu(); renderKpis({}); renderReconScopeSummary({}, {}); renderSubtypeMini({ rows: [] }); renderPager(); renderLegacy(); renderBulkBar(); setTxt(els.recon.status, "Select filters and load reconciliation."); setTxt(els.legacy.txt, "Load corporate bill summary when needed."); setActivePanel("");
+
+    els.recon.search?.addEventListener("input", () => {
+      state.recon.page = 1;
+      if (state.recon.searchTimer) clearTimeout(state.recon.searchTimer);
+      if (!state.recon.datasetLoaded) {
+        markReconDirty();
+        return;
+      }
+      state.recon.searchTimer = setTimeout(() => {
+        applyReconClientFilters({ resetPage: true });
+      }, 350);
+    });
+    [els.recon.billFrom, els.recon.billTo, els.recon.source, els.recon.patientSubtype, els.recon.sortBy, els.recon.sortDir, els.recon.pageSize, els.recon.includeCancelled].forEach((n) => n?.addEventListener("change", () => {
+      state.recon.page = 1;
+      if (!state.recon.datasetLoaded) {
+        markReconDirty();
+        return;
+      }
+      applyReconClientFilters({ resetPage: true });
+    }));
+    els.recon.loadBtn?.addEventListener("click", () => { state.recon.page = 1; loadRecon({ resetPage: true, forceRefresh: false }); });
+    els.recon.forceRefreshBtn?.addEventListener("click", () => { state.recon.page = 1; loadRecon({ resetPage: true, forceRefresh: true }); });
+    els.recon.openingBtn?.addEventListener("click", loadOpeningRecon);
+    els.recon.suspenseBtn?.addEventListener("click", openSuspenseModal);
+    els.recon.exportBtn?.addEventListener("click", exportRecon);
+    els.recon.bulkPreviewBtn?.addEventListener("click", openBulkModal);
+    els.recon.bulkClearBtn?.addEventListener("click", () => {
+      if (!selectedBillKeys().length) return;
+      clearBulkSelection();
+      notify("Bulk selection cleared.", "success", "recon-bulk");
+    });
+    els.recon.bulkModalClose?.addEventListener("click", closeBulkModal);
+    els.recon.bulkModalCancel?.addEventListener("click", closeBulkModal);
+    els.recon.bulkModalApply?.addEventListener("click", applyBulkWriteoff);
+    els.recon.bulkModal?.addEventListener("click", (ev) => {
+      if (ev.target === els.recon.bulkModal) closeBulkModal();
+    });
+    els.recon.suspenseModalClose?.addEventListener("click", closeSuspenseModal);
+    els.recon.suspenseModal?.addEventListener("click", (ev) => {
+      if (ev.target === els.recon.suspenseModal) closeSuspenseModal();
+    });
+    els.recon.suspenseSearch?.addEventListener("input", () => {
+      if (state.recon.suspenseSearchTimer) clearTimeout(state.recon.suspenseSearchTimer);
+      state.recon.suspenseSearchTimer = setTimeout(() => {
+        renderSuspenseModalRows();
+      }, 220);
+    });
+    els.recon.suspenseSelectAll?.addEventListener("change", () => {
+      const checked = !!els.recon.suspenseSelectAll?.checked;
+      const visible = Array.isArray(state.recon.suspenseVisibleKeys) ? state.recon.suspenseVisibleKeys : [];
+      if (checked) {
+        visible.forEach((k) => { state.recon.suspenseSelected[k] = true; });
+      } else {
+        visible.forEach((k) => { delete state.recon.suspenseSelected[k]; });
+      }
+      renderSuspenseModalRows();
+    });
+    els.recon.suspenseApproveBtn?.addEventListener("click", async () => {
+      await applySuspenseAudit(suspenseSelectedKeys());
+    });
+    els.recon.suspenseClearBtn?.addEventListener("click", () => {
+      if (!suspenseSelectedKeys().length) return;
+      clearSuspenseSelection();
+      renderSuspenseModalRows();
+      notify("Suspense selection cleared.", "success", "recon-suspense");
+    });
+    els.recon.prev?.addEventListener("click", () => {
+      const p = Number(state.recon.meta?.page || 1);
+      if (p > 1) {
+        state.recon.page = p - 1;
+        applyReconClientFilters();
+      }
+    });
+    els.recon.next?.addEventListener("click", () => {
+      const p = Number(state.recon.meta?.page || 1), t = Number(state.recon.meta?.total_pages || 1);
+      if (p < t) {
+        state.recon.page = p + 1;
+        applyReconClientFilters();
+      }
+    });
+    els.recon.unit?.addEventListener("change", () => {
+      syncUnit(els.recon.unit.value);
+      state.recon.page = 1;
+      state.recon.datasetLoaded = false;
+      state.recon.kpiFilter = "";
+      state.recon.filteredBillKeys = [];
+      state.recon.baseRows = [];
+      state.recon.baseDetails = {};
+      state.recon.baseMeta = {};
+      state.recon.baseKpis = {};
+      state.recon.baseSuspenseRows = [];
+      state.recon.baseSuspenseDetails = {};
+      state.recon.suspenseLoaded = false;
+      state.recon.suspenseCount = 0;
+      state.recon.suspenseKpiFilter = "";
+      state.recon.suspenseSelected = {};
+      state.recon.suspenseVisibleKeys = [];
+      state.recon.suspenseAuditBusy = false;
+      state.recon.rows = [];
+      state.recon.details = {};
+      state.recon.meta = {};
+      state.recon.kpis = {};
+      state.recon.rowIndex = {};
+      state.recon.bulkSelected = {};
+      state.recon.bulkPreviewRows = [];
+      closeBulkModal();
+      closeSuspenseModal();
+      setReconSourceOptions([], false);
+      setReconSubtypeOptions([], false);
+      renderKpis({});
+      renderReconScopeSummary({}, {});
+      renderSubtypeMini({ rows: [] });
+      renderReconRows();
+      renderPager();
+      refreshSuspenseButton();
+      markReconDirty("Unit changed. Click Load Data or Refresh Data (Latest) to fetch data.");
+    });
+
+    els.legacy.loadBtn?.addEventListener("click", () => loadLegacy({ resetPage: true }));
+    els.legacy.exportBtn?.addEventListener("click", exportLegacy);
+    els.legacy.search?.addEventListener("input", applyLegacyFilters);
+    els.legacy.status?.addEventListener("change", applyLegacyFilters);
+    els.legacy.patientSubtype?.addEventListener("change", applyLegacyFilters);
+    els.legacy.prev?.addEventListener("click", () => {
+      if (state.legacy.mode === "server") {
+        const currentPage = Number(state.legacy.meta?.page || state.legacy.page || 1);
+        if (currentPage > 1) {
+          state.legacy.page = currentPage - 1;
+          loadLegacy({ resetPage: false });
+        }
+        return;
+      }
+      if (state.legacy.page > 1) {
+        state.legacy.page -= 1;
+        renderLegacy();
+      }
+    });
+    els.legacy.next?.addEventListener("click", () => {
+      if (state.legacy.mode === "server") {
+        const currentPage = Number(state.legacy.meta?.page || state.legacy.page || 1);
+        const totalPages = Number(state.legacy.meta?.total_pages || 1);
+        if (currentPage < totalPages) {
+          state.legacy.page = currentPage + 1;
+          loadLegacy({ resetPage: false });
+        }
+        return;
+      }
+      const totalPages = Math.max(1, Math.ceil((state.legacy.groups || []).length / state.legacy.pageSize));
+      if (state.legacy.page < totalPages) {
+        state.legacy.page += 1;
+        renderLegacy();
+      }
+    });
+    els.legacy.unit?.addEventListener("change", () => {
+      syncUnit(els.legacy.unit.value);
+      state.legacy.mode = isLegacyServerUnit(els.legacy.unit.value) ? "server" : "client";
+      state.legacy.loaded = false;
+      state.legacy.page = 1;
+      state.legacy.raw = [];
+      state.legacy.filtered = [];
+      state.legacy.groups = [];
+      state.legacy.serverRows = [];
+      state.legacy.meta = {};
+      setLegacySubtypeOptions([], false);
+      renderLegacy();
+      setTxt(els.legacy.txt, "Load corporate bill summary when needed.");
+    });
+
+    els.updates.loadBtn?.addEventListener("click", () => loadUpdates());
+    els.updates.search?.addEventListener("input", () => {
+      if (state.updates.searchTimer) clearTimeout(state.updates.searchTimer);
+      state.updates.searchTimer = setTimeout(() => {
+        if (!state.updates.loaded) {
+          setTxt(els.updates.status, "Filters changed. Click Load Updates to fetch data.");
+          return;
+        }
+        state.updates.activeCard = "all";
+        applyUpdatesClientFilters();
+      }, 250);
+    });
+    [els.updates.lookback, els.updates.limit].forEach((n) => n?.addEventListener("change", () => {
+      setTxt(els.updates.status, "Filters changed. Click Load Updates to refresh data.");
+    }));
+    [els.updates.source, els.updates.eventType].forEach((n) => n?.addEventListener("change", () => {
+      if (!state.updates.loaded) {
+        setTxt(els.updates.status, "Filters changed. Click Load Updates to fetch data.");
+        return;
+      }
+      state.updates.activeCard = "all";
+      applyUpdatesClientFilters();
+    }));
+    els.updates.unit?.addEventListener("change", () => {
+      syncUnit(els.updates.unit.value);
+      state.updates.loaded = false;
+      state.updates.baseEvents = [];
+      state.updates.events = [];
+      state.updates.cards = [];
+      state.updates.activeCard = "all";
+      state.updates.meta = {};
+      if (els.updates.source) els.updates.source.value = "";
+      if (els.updates.eventType) els.updates.eventType.value = "";
+      if (els.updates.search) els.updates.search.value = "";
+      renderUpdatesCards();
+      renderUpdatesPreview();
+      setTxt(els.updates.status, "Unit changed. Click Load Updates to fetch data.");
+    });
+    els.updates.autoRefresh?.addEventListener("change", () => {
+      resetUpdatesAutoRefresh();
+      if (els.updates.autoRefresh.checked && !state.updates.loaded) {
+        setTxt(els.updates.status, "Auto refresh enabled. Click Load Updates to start monitoring.");
+      }
+    });
+    els.updates.modalClose?.addEventListener("click", closeUpdatesModal);
+    els.updates.modal?.addEventListener("click", (ev) => {
+      if (ev.target === els.updates.modal) closeUpdatesModal();
+    });
+    els.updates.modalSearch?.addEventListener("input", renderUpdatesModalRows);
+    document.addEventListener("keydown", (ev) => {
+      if (ev.key === "Escape" && els.updates.modal?.classList.contains("open")) closeUpdatesModal();
+      if (ev.key === "Escape" && els.recon.bulkModal?.classList.contains("open")) closeBulkModal();
+      if (ev.key === "Escape" && els.recon.suspenseModal?.classList.contains("open")) closeSuspenseModal();
+    });
+
+    if (ALLOWED_UNITS.length === 1 || DEFAULT_UNIT) {
+      setTxt(els.recon.status, "Ready. Click Load Data or Refresh Data (Latest) to fetch reconciliation dataset.");
+    }
+    refreshSuspenseButton();
+    resetUpdatesAutoRefresh();
+  };
+
+  init();
+})();
+</script>
+{% endblock %}

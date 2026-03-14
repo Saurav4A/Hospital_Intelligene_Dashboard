@@ -1,0 +1,1942 @@
+{% extends "layout.html" %}
+{% block title %}Fund Position Tracker | HID{% endblock %}
+
+{% block content %}
+<style>
+  .fp-wrap {
+    width: min(1300px, 98vw);
+    margin: 0 auto;
+    color: #0f172a;
+  }
+  .fp-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .fp-head h2 {
+    margin: 0;
+    font-size: 26px;
+    color: #0f172a;
+  }
+  .fp-sub {
+    margin: 4px 0 0;
+    color: #64748b;
+    font-size: 13px;
+  }
+  .fp-back {
+    text-decoration: none;
+    font-weight: 700;
+    color: #1d4ed8;
+    background: #dbeafe;
+    padding: 8px 12px;
+    border-radius: 10px;
+  }
+  .fp-card {
+    background: #ffffff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    box-shadow: 0 8px 24px rgba(15, 23, 42, 0.05);
+    padding: 14px;
+    margin-bottom: 12px;
+  }
+  .fp-steps {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 12px;
+  }
+  .fp-step {
+    padding: 10px 12px;
+    border-radius: 10px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    font-size: 12px;
+    color: #475569;
+  }
+  .fp-step.active {
+    border-color: #3b82f6;
+    background: #eff6ff;
+    color: #1d4ed8;
+    font-weight: 700;
+  }
+  .fp-controls {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: end;
+  }
+  .fp-control-sections {
+    display: grid;
+    grid-template-columns: 1fr;
+    gap: 12px;
+  }
+  .fp-control-block {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    background: #f8fafc;
+    padding: 10px;
+  }
+  .fp-control-title {
+    margin: 0 0 8px;
+    font-size: 12px;
+    letter-spacing: 0.02em;
+    text-transform: uppercase;
+    color: #334155;
+    font-weight: 800;
+  }
+  .fp-control-note {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #475569;
+  }
+  .fp-export-grid {
+    display: grid;
+    grid-template-columns: 270px 270px minmax(340px, 1fr) auto;
+    gap: 10px 14px;
+    align-items: end;
+  }
+  .fp-export-field label {
+    display: block;
+    font-size: 12px;
+    color: #475569;
+    margin-bottom: 6px;
+    font-weight: 700;
+  }
+  .fp-export-field input {
+    height: 38px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 0 10px;
+    width: 100%;
+    background: #fff;
+  }
+  .fp-export-option {
+    min-height: 38px;
+    display: flex;
+    align-items: center;
+  }
+  .fp-export-option label {
+    margin: 0;
+    display: inline-flex;
+    align-items: center;
+    gap: 10px;
+    font-weight: 600;
+    font-size: 12px;
+    color: #334155;
+    white-space: nowrap;
+  }
+  .fp-export-option input[type="checkbox"] {
+    width: 16px;
+    height: 16px;
+    margin: 0;
+    min-width: 16px;
+    flex: 0 0 16px;
+  }
+  .fp-export-actions {
+    margin-top: 10px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  .fp-export-actions .fp-btn {
+    background: #dbeafe;
+    color: #1e3a8a;
+  }
+  .fp-export-option-text {
+    display: inline-block;
+    line-height: 1.2;
+  }
+  .fp-controls label {
+    display: block;
+    font-size: 12px;
+    color: #475569;
+    margin-bottom: 6px;
+    font-weight: 700;
+  }
+  .fp-controls input,
+  .fp-controls select {
+    height: 38px;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 0 10px;
+    min-width: 180px;
+    background: #fff;
+  }
+  .fp-btn {
+    border: none;
+    border-radius: 10px;
+    padding: 0 14px;
+    height: 38px;
+    font-weight: 700;
+    cursor: pointer;
+  }
+  .fp-btn.primary { background: #2563eb; color: #fff; }
+  .fp-btn.success { background: #0f766e; color: #fff; }
+  .fp-btn.ghost { background: #f1f5f9; color: #334155; }
+  .fp-btn:disabled { opacity: 0.6; cursor: not-allowed; }
+  .fp-status {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #334155;
+  }
+  .fp-summary-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fill, minmax(210px, 1fr));
+    gap: 10px;
+  }
+  .fp-summary-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 10px;
+    background: #ffffff;
+  }
+  .fp-summary-card--pos {
+    border-color: #86efac;
+    background: #f0fdf4;
+  }
+  .fp-summary-card--neg {
+    border-color: #fca5a5;
+    background: #fef2f2;
+  }
+  .fp-summary-card--zero {
+    border-color: #cbd5e1;
+    background: #f8fafc;
+  }
+  .fp-summary-card h4 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    color: #0f172a;
+  }
+  .fp-summary-line {
+    display: flex;
+    justify-content: space-between;
+    gap: 8px;
+    font-size: 12px;
+    color: #475569;
+    margin: 3px 0;
+  }
+  .fp-summary-line strong { color: #0f172a; }
+  .fp-alert {
+    color: #b91c1c;
+    font-weight: 800;
+  }
+  .fp-ok {
+    color: #166534;
+    font-weight: 800;
+  }
+  .fp-tabs {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    margin-bottom: 10px;
+  }
+  .fp-tab {
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    border-radius: 999px;
+    padding: 7px 12px;
+    cursor: pointer;
+    font-size: 12px;
+    font-weight: 700;
+    color: #334155;
+  }
+  .fp-tab.active {
+    border-color: #2563eb;
+    color: #1d4ed8;
+    background: #eff6ff;
+  }
+  .fp-table-wrap { overflow: auto; border: 1px solid #e2e8f0; border-radius: 10px; }
+  .fp-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 1060px;
+    font-size: 12px;
+  }
+  .fp-table th, .fp-table td {
+    border-bottom: 1px solid #e2e8f0;
+    padding: 6px;
+    vertical-align: top;
+  }
+  .fp-table th {
+    background: #f8fafc;
+    color: #0f172a;
+    text-align: left;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  .fp-table td input, .fp-table td select {
+    width: 100%;
+    min-width: 110px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    height: 30px;
+    padding: 0 8px;
+    font-size: 12px;
+  }
+  .fp-table td input.readonly {
+    background: #f8fafc;
+    color: #0f172a;
+    font-weight: 700;
+  }
+  .fp-table td input.fp-amt-pos {
+    background: #f0fdf4;
+    color: #166534;
+    border-color: #86efac;
+    font-weight: 700;
+  }
+  .fp-table td input.fp-amt-neg {
+    background: #fef2f2;
+    color: #b91c1c;
+    border-color: #fca5a5;
+    font-weight: 700;
+  }
+  .fp-table td input.fp-amt-zero {
+    background: #f8fafc;
+    color: #334155;
+    border-color: #cbd5e1;
+  }
+  .fp-del {
+    border: none;
+    background: #fee2e2;
+    color: #b91c1c;
+    border-radius: 8px;
+    height: 30px;
+    width: 30px;
+    cursor: pointer;
+    font-weight: 700;
+  }
+  .fp-toolbar {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin: 8px 0;
+  }
+  .fp-toast {
+    position: fixed;
+    right: 16px;
+    bottom: 16px;
+    z-index: 9999;
+    background: #0f172a;
+    color: #fff;
+    padding: 10px 12px;
+    border-radius: 10px;
+    font-size: 12px;
+    display: none;
+  }
+  .fp-admin-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 10px;
+  }
+  .fp-admin-head .fp-btn {
+    height: 34px;
+  }
+  .fp-admin-sub {
+    font-size: 12px;
+    color: #64748b;
+    margin: 4px 0 0;
+  }
+  .fp-admin-form {
+    display: grid;
+    grid-template-columns: repeat(6, minmax(120px, 1fr));
+    gap: 10px;
+    align-items: end;
+  }
+  .fp-admin-form label {
+    display: block;
+    font-size: 12px;
+    color: #334155;
+    margin-bottom: 6px;
+    font-weight: 700;
+  }
+  .fp-admin-form input,
+  .fp-admin-form select {
+    height: 34px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 0 8px;
+    width: 100%;
+  }
+  .fp-admin-actions {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    margin-top: 10px;
+  }
+  .fp-admin-table-wrap {
+    margin-top: 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    overflow: auto;
+  }
+  .fp-admin-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 820px;
+    font-size: 12px;
+  }
+  .fp-admin-table th,
+  .fp-admin-table td {
+    border-bottom: 1px solid #e2e8f0;
+    padding: 7px;
+    text-align: left;
+  }
+  .fp-admin-table th {
+    background: #f8fafc;
+    color: #0f172a;
+    position: sticky;
+    top: 0;
+    z-index: 1;
+  }
+  .fp-badge {
+    display: inline-block;
+    padding: 2px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .fp-badge.on {
+    background: #dcfce7;
+    color: #166534;
+  }
+  .fp-badge.off {
+    background: #fee2e2;
+    color: #b91c1c;
+  }
+  .fp-mini-btn {
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    color: #334155;
+    border-radius: 8px;
+    padding: 3px 8px;
+    font-size: 11px;
+    font-weight: 700;
+    cursor: pointer;
+    margin-right: 6px;
+  }
+  .fp-mini-btn:hover {
+    background: #f8fafc;
+  }
+  .fp-master-muted {
+    color: #94a3b8;
+    font-style: italic;
+  }
+  .fp-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.45);
+    backdrop-filter: blur(2px);
+    z-index: 1100;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 18px;
+  }
+  .fp-modal.open {
+    display: flex;
+  }
+  .fp-modal-card {
+    width: min(1240px, 96vw);
+    max-height: min(88vh, 900px);
+    overflow: auto;
+    background: #ffffff;
+    border: 1px solid #cbd5e1;
+    border-radius: 14px;
+    box-shadow: 0 20px 50px rgba(15, 23, 42, 0.28);
+    padding: 14px;
+  }
+  .fp-modal-close {
+    border: 1px solid #cbd5e1;
+    background: #ffffff;
+    color: #0f172a;
+    border-radius: 8px;
+    width: 34px;
+    height: 34px;
+    font-size: 20px;
+    line-height: 1;
+    cursor: pointer;
+  }
+  .fp-modal-close:hover {
+    background: #f8fafc;
+  }
+  @media (max-width: 980px) {
+    .fp-admin-form {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+    }
+    .fp-controls input,
+    .fp-controls select {
+      min-width: 160px;
+    }
+    .fp-export-grid {
+      grid-template-columns: repeat(2, minmax(0, 1fr));
+      gap: 10px;
+    }
+    .fp-export-option {
+      grid-column: 1 / -1;
+      min-height: 34px;
+    }
+    .fp-modal {
+      padding: 8px;
+    }
+    .fp-modal-card {
+      width: 100%;
+      max-height: 92vh;
+      padding: 10px;
+    }
+  }
+  @media (max-width: 640px) {
+    .fp-export-grid {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="fp-wrap">
+  <div class="fp-head">
+    <div>
+      <h2>Fund Position Tracker</h2>
+      <p class="fp-sub">Daily Fund Position, WC & Loan, FDR, and firm-wise dashboard in one workflow.</p>
+    </div>
+    <a class="fp-back" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+  </div>
+
+  <div class="fp-card">
+    <div class="fp-steps">
+      <div id="step1" class="fp-step active">1. Select date and load the latest snapshot.</div>
+      <div id="step2" class="fp-step">2. Update Daily / WC / FDR tables as needed.</div>
+      <div id="step3" class="fp-step">3. Save and verify dashboard totals.</div>
+    </div>
+    <div class="fp-control-sections">
+      <div class="fp-control-block">
+        <div class="fp-control-title">Snapshot Entry</div>
+        <div class="fp-controls">
+          <div>
+            <label for="fpDate">Date</label>
+            <input type="date" id="fpDate">
+          </div>
+          <div>
+            <label for="fpFirmFilter">Firm Filter</label>
+            <select id="fpFirmFilter">
+              <option value="ALL">All Firms</option>
+            </select>
+          </div>
+          <button class="fp-btn primary" id="fpLoadBtn" type="button">Load Snapshot</button>
+          <button class="fp-btn success" id="fpSaveBtn" type="button">Save Changes</button>
+          <button class="fp-btn ghost" id="fpAddRowBtn" type="button">Add Row</button>
+          {% if can_manage_master %}
+          <button class="fp-btn ghost" id="fpOpenMasterBtn" type="button">Account Master Admin</button>
+          {% endif %}
+        </div>
+      </div>
+      <div class="fp-control-block">
+        <div class="fp-control-title">PDF Export</div>
+        <div class="fp-export-grid">
+          <div class="fp-export-field">
+            <label for="fpFromDate">From Date</label>
+            <input type="date" id="fpFromDate">
+          </div>
+          <div class="fp-export-field">
+            <label for="fpToDate">To Date</label>
+            <input type="date" id="fpToDate">
+          </div>
+          <div class="fp-export-field">
+            <label for="fpEmailTo">Email To</label>
+            <input class="fp-email" type="text" id="fpEmailTo" placeholder="name@domain.com, team@domain.com">
+          </div>
+          <div class="fp-export-option">
+            <label for="fpUseConfiguredRecipients">
+              <input type="checkbox" id="fpUseConfiguredRecipients" checked>
+              <span class="fp-export-option-text">Use configured fund recipients</span>
+            </label>
+          </div>
+        </div>
+        <div class="fp-export-actions">
+          <button class="fp-btn ghost" id="fpExportPdfBtn" type="button">Export History PDF</button>
+          <button class="fp-btn ghost" id="fpEmailPdfBtn" type="button">Email Report</button>
+        </div>
+        <div id="fpExportStatus" class="fp-control-note">Select date range and export or email the fund history PDF.</div>
+      </div>
+    </div>
+    <div id="fpStatus" class="fp-status">Select a date, then click "Load Snapshot".</div>
+  </div>
+
+  {% if can_manage_master %}
+  <div id="fpMasterModal" class="fp-modal" aria-hidden="true">
+    <div class="fp-modal-card" role="dialog" aria-modal="true" aria-labelledby="fpMasterTitle">
+      <div class="fp-admin-head">
+        <div>
+          <h3 id="fpMasterTitle" style="margin:0; font-size:15px;">Account Master Admin</h3>
+          <p class="fp-admin-sub">Add and maintain firm account defaults used by Daily Fund autofill.</p>
+        </div>
+        <div style="display:flex; align-items:center; gap:8px;">
+          <button class="fp-btn ghost" type="button" id="fpMasterRefreshBtn">Refresh</button>
+          <button class="fp-modal-close" id="fpMasterCloseBtn" type="button" aria-label="Close">x</button>
+        </div>
+      </div>
+      <div class="fp-admin-form">
+        <div>
+          <label for="fpMasterFirm">Firm Name</label>
+          <input id="fpMasterFirm" list="fpMasterFirmList" placeholder="ASARFI HOSPITAL LTD">
+          <datalist id="fpMasterFirmList"></datalist>
+        </div>
+        <div>
+          <label for="fpMasterBank">Bank</label>
+          <input id="fpMasterBank" placeholder="SBI">
+        </div>
+        <div>
+          <label for="fpMasterType">A/c Type</label>
+          <input id="fpMasterType" placeholder="CA / OD / CC">
+        </div>
+        <div>
+          <label for="fpMasterLast4">A/c Last 4</label>
+          <input id="fpMasterLast4" maxlength="20" placeholder="4444">
+        </div>
+        <div>
+          <label for="fpMasterLimit">Limit</label>
+          <input id="fpMasterLimit" type="number" step="0.01" placeholder="0">
+        </div>
+        <div>
+          <label for="fpMasterActive">Active</label>
+          <select id="fpMasterActive">
+            <option value="1" selected>Active</option>
+            <option value="0">Inactive</option>
+          </select>
+        </div>
+      </div>
+      <div class="fp-admin-actions">
+        <button class="fp-btn primary" type="button" id="fpMasterSaveBtn">Add Account</button>
+        <button class="fp-btn ghost" type="button" id="fpMasterResetBtn">Clear</button>
+      </div>
+      <div id="fpMasterStatus" class="fp-status">Create account presets for faster entry.</div>
+
+      <div class="fp-admin-table-wrap">
+        <table class="fp-admin-table">
+          <thead>
+            <tr>
+              <th>Firm</th>
+              <th>Bank</th>
+              <th>A/c Type</th>
+              <th>A/c Last 4</th>
+              <th>Limit</th>
+              <th>Status</th>
+              <th>Updated</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="fpMasterBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+
+  <div class="fp-card">
+    <div style="display:flex; justify-content:space-between; align-items:center; gap:10px; margin-bottom:10px;">
+      <h3 style="margin:0; font-size:15px;">Firm Dashboard Summary</h3>
+      <div id="fpTotals" style="font-size:12px; color:#475569;"></div>
+    </div>
+    <div id="fpSummaryGrid" class="fp-summary-grid"></div>
+  </div>
+
+  <div class="fp-card">
+    <div class="fp-tabs">
+      <button class="fp-tab active" data-tab="daily" id="tabDaily">Daily Fund Position (0)</button>
+      <button class="fp-tab" data-tab="wc" id="tabWc">WC & Loan Position (0)</button>
+      <button class="fp-tab" data-tab="fdr" id="tabFdr">FDR Tracker (0)</button>
+    </div>
+
+    <div class="fp-toolbar">
+      <div id="fpTabHint" style="font-size:12px; color:#475569;">Edit rows and keep firm names consistent.</div>
+    </div>
+
+    <div id="panelDaily" class="fp-table-panel">
+      <div class="fp-table-wrap">
+        <table class="fp-table">
+          <thead>
+            <tr>
+              <th>Firm Name</th>
+              <th>Bank</th>
+              <th>A/c Type</th>
+              <th>A/c Last 4</th>
+              <th>Limit</th>
+              <th>Opening Balance</th>
+              <th>Receipts</th>
+              <th>Payments (Used)</th>
+              <th>Closing Balance</th>
+              <th>Remarks</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="dailyBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="panelWc" class="fp-table-panel" style="display:none;">
+      <div class="fp-table-wrap">
+        <table class="fp-table">
+          <thead>
+            <tr>
+              <th>Firm Name</th>
+              <th>Bank</th>
+              <th>Facility Type</th>
+              <th>Sanction Limit</th>
+              <th>Drawing Power</th>
+              <th>Utilised</th>
+              <th>Available Limit</th>
+              <th>ROI %</th>
+              <th>Due Date</th>
+              <th>Remarks</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="wcBody"></tbody>
+        </table>
+      </div>
+    </div>
+
+    <div id="panelFdr" class="fp-table-panel" style="display:none;">
+      <div class="fp-table-wrap">
+        <table class="fp-table">
+          <thead>
+            <tr>
+              <th>Firm Name</th>
+              <th>Bank</th>
+              <th>FDR No</th>
+              <th>FDR Amount</th>
+              <th>Start Date</th>
+              <th>Maturity Date</th>
+              <th>ROI %</th>
+              <th>Lien Y/N</th>
+              <th>Linked Loan</th>
+              <th>Remarks</th>
+              <th></th>
+            </tr>
+          </thead>
+          <tbody id="fdrBody"></tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div id="fpToast" class="fp-toast"></div>
+
+<script>
+  const state = {
+    activeTab: 'daily',
+    dailyRows: [],
+    dailyMemory: [],
+    masterAccounts: [],
+    masterEditId: 0,
+    wcRows: [],
+    fdrRows: [],
+    dashboardRows: [],
+    totals: null,
+    isEditLocked: false,
+    editLockMessage: '',
+    editLockWindowDays: 2,
+    editLockAgeDays: 0,
+    editLockCutoffDate: '',
+  };
+
+  let allowedFirms = {{ allowed_firms | tojson }};
+  const allowAllFirms = {{ 'true' if allow_all_firms else 'false' }};
+  const canManageMaster = {{ 'true' if can_manage_master else 'false' }};
+
+  const el = {
+    date: document.getElementById('fpDate'),
+    fromDate: document.getElementById('fpFromDate'),
+    toDate: document.getElementById('fpToDate'),
+    firmFilter: document.getElementById('fpFirmFilter'),
+    loadBtn: document.getElementById('fpLoadBtn'),
+    saveBtn: document.getElementById('fpSaveBtn'),
+    exportPdfBtn: document.getElementById('fpExportPdfBtn'),
+    emailPdfBtn: document.getElementById('fpEmailPdfBtn'),
+    emailTo: document.getElementById('fpEmailTo'),
+    useConfiguredRecipients: document.getElementById('fpUseConfiguredRecipients'),
+    addBtn: document.getElementById('fpAddRowBtn'),
+    openMasterBtn: document.getElementById('fpOpenMasterBtn'),
+    status: document.getElementById('fpStatus'),
+    exportStatus: document.getElementById('fpExportStatus'),
+    totals: document.getElementById('fpTotals'),
+    summary: document.getElementById('fpSummaryGrid'),
+    tabDaily: document.getElementById('tabDaily'),
+    tabWc: document.getElementById('tabWc'),
+    tabFdr: document.getElementById('tabFdr'),
+    panelDaily: document.getElementById('panelDaily'),
+    panelWc: document.getElementById('panelWc'),
+    panelFdr: document.getElementById('panelFdr'),
+    dailyBody: document.getElementById('dailyBody'),
+    wcBody: document.getElementById('wcBody'),
+    fdrBody: document.getElementById('fdrBody'),
+    step1: document.getElementById('step1'),
+    step2: document.getElementById('step2'),
+    step3: document.getElementById('step3'),
+    tabHint: document.getElementById('fpTabHint'),
+    toast: document.getElementById('fpToast'),
+    masterRefreshBtn: document.getElementById('fpMasterRefreshBtn'),
+    masterModal: document.getElementById('fpMasterModal'),
+    masterCloseBtn: document.getElementById('fpMasterCloseBtn'),
+    masterFirm: document.getElementById('fpMasterFirm'),
+    masterFirmList: document.getElementById('fpMasterFirmList'),
+    masterBank: document.getElementById('fpMasterBank'),
+    masterType: document.getElementById('fpMasterType'),
+    masterLast4: document.getElementById('fpMasterLast4'),
+    masterLimit: document.getElementById('fpMasterLimit'),
+    masterActive: document.getElementById('fpMasterActive'),
+    masterSaveBtn: document.getElementById('fpMasterSaveBtn'),
+    masterResetBtn: document.getElementById('fpMasterResetBtn'),
+    masterStatus: document.getElementById('fpMasterStatus'),
+    masterBody: document.getElementById('fpMasterBody'),
+  };
+
+  function esc(v) {
+    return String(v ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function num(v) {
+    if (v === null || v === undefined) return 0;
+    if (typeof v === 'number') return Number.isFinite(v) ? v : 0;
+    let text = String(v).trim();
+    if (!text) return 0;
+    text = text
+      .replace(/,/g, '')
+      .replace(/₹/g, '')
+      .replace(/INR/gi, '')
+      .replace(/[−–—]/g, '-')
+      .trim();
+    let neg = false;
+    if (text.startsWith('(') && text.endsWith(')')) {
+      neg = true;
+      text = text.slice(1, -1).trim();
+    }
+    const n = Number(text);
+    if (!Number.isFinite(n)) return 0;
+    if (Object.is(n, -0)) return 0;
+    return neg ? -n : n;
+  }
+
+  function fmtINR(v) {
+    const n = num(v);
+    return n.toLocaleString('en-IN', { maximumFractionDigits: 2, minimumFractionDigits: 2 });
+  }
+
+  function amountToneClass(v) {
+    const n = num(v);
+    if (n < 0) return 'fp-amt-neg';
+    if (n > 0) return 'fp-amt-pos';
+    return 'fp-amt-zero';
+  }
+
+  function setAmountClass(node, value) {
+    if (!node) return;
+    node.classList.remove('fp-amt-neg', 'fp-amt-pos', 'fp-amt-zero');
+    node.classList.add(amountToneClass(value));
+  }
+
+  function showToast(msg, isError = false) {
+    el.toast.textContent = msg;
+    el.toast.style.background = isError ? '#991b1b' : '#0f172a';
+    el.toast.style.display = 'block';
+    clearTimeout(showToast._t);
+    showToast._t = setTimeout(() => { el.toast.style.display = 'none'; }, 2800);
+  }
+
+  function setSteps(stepNo) {
+    [el.step1, el.step2, el.step3].forEach((node, idx) => {
+      node.classList.toggle('active', idx < stepNo);
+    });
+  }
+
+  function setBusy(btn, busy, labelBusy, labelIdle) {
+    if (!btn) return;
+    btn.dataset.busy = busy ? '1' : '0';
+    btn.disabled = busy;
+    btn.textContent = busy ? labelBusy : labelIdle;
+    if (!busy) {
+      applyEditLockControls();
+    }
+  }
+
+  function applyEditLockFromPayload(data) {
+    state.isEditLocked = Boolean(data && data.is_edit_locked);
+    state.editLockMessage = String((data && data.edit_lock_message) || '').trim();
+    state.editLockWindowDays = Number((data && data.edit_lock_window_days) || 2);
+    state.editLockAgeDays = Number((data && data.edit_lock_age_days) || 0);
+    state.editLockCutoffDate = String((data && data.edit_lock_cutoff_date) || '');
+  }
+
+  function applyEditLockControls() {
+    if (el.saveBtn && el.saveBtn.dataset.busy !== '1') {
+      el.saveBtn.disabled = state.isEditLocked;
+      el.saveBtn.textContent = state.isEditLocked ? 'Save Locked' : 'Save Changes';
+    }
+    if (el.addBtn) {
+      el.addBtn.disabled = state.isEditLocked;
+      el.addBtn.textContent = state.isEditLocked ? 'Add Locked' : 'Add Row';
+    }
+  }
+
+  function activeTabHint(tab) {
+    const hintMap = {
+      daily: 'Closing balance is auto-calculated as Opening + Receipts - Payments.',
+      wc: 'Available limit is auto-calculated as Sanction Limit - Utilised.',
+      fdr: 'Use FDR No as the unique reference for each deposit.',
+    };
+    let text = hintMap[tab] || '';
+    if (state.isEditLocked) {
+      const lockText = state.editLockMessage || `This snapshot is read-only after ${state.editLockWindowDays} days for regular users. Only Admin/IT can edit older snapshots.`;
+      text = text ? `${text} ${lockText}` : lockText;
+    }
+    return text;
+  }
+
+  async function logEditEvent(tab, idx, field, oldValue, newValue, rowData) {
+    if (!el.date || !el.date.value) return;
+    try {
+      await fetch('/api/fund_position/edit_event', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date: el.date.value,
+          tab,
+          row_index: Number(idx) + 1,
+          field,
+          old_value: oldValue,
+          new_value: newValue,
+          row_data: rowData || {},
+        }),
+      });
+    } catch (_) {
+      // Keep edit UX non-blocking even if log/mail endpoint fails.
+    }
+  }
+
+  function refreshTabHint() {
+    if (!el.tabHint) return;
+    el.tabHint.textContent = activeTabHint(state.activeTab);
+  }
+
+  function firmOptions(selected) {
+    const options = [];
+    const seen = new Set();
+    (allowedFirms || []).forEach(f => {
+      const firm = String(f || '').trim().toUpperCase();
+      if (!firm || seen.has(firm)) return;
+      seen.add(firm);
+      options.push(firm);
+    });
+    const selectedFirm = String(selected || '').trim().toUpperCase();
+    if (selectedFirm && !seen.has(selectedFirm)) options.unshift(selectedFirm);
+    return options.map(f => `<option value="${esc(f)}" ${f === selectedFirm ? 'selected' : ''}>${esc(f)}</option>`).join('');
+  }
+
+  function applyFirmFilter(rows) {
+    const selected = String(el.firmFilter.value || 'ALL').toUpperCase();
+    if (selected === 'ALL') return rows;
+    return rows.filter(r => String(r.firm_name || '').toUpperCase() === selected);
+  }
+
+  function up(v) {
+    return String(v || '').trim().toUpperCase();
+  }
+
+  function syncAllowedFirmsFromState() {
+    const set = new Set();
+    (allowedFirms || []).forEach(f => {
+      const firm = up(f);
+      if (firm) set.add(firm);
+    });
+    [state.dailyRows, state.wcRows, state.fdrRows, state.dashboardRows, state.dailyMemory, state.masterAccounts].forEach(arr => {
+      (arr || []).forEach(row => {
+        const firm = up(row.firm_name);
+        if (firm) set.add(firm);
+      });
+    });
+    allowedFirms = Array.from(set).sort((a, b) => a.localeCompare(b));
+  }
+
+  function activeMasterProfilesFor(firmName, bankName) {
+    const firm = up(firmName);
+    const bank = up(bankName);
+    if (!firm) return [];
+    let rows = (state.masterAccounts || []).filter(m => up(m.firm_name) === firm && m.is_active !== false);
+    if (!rows.length) return [];
+    if (bank) {
+      const exact = rows.filter(m => up(m.bank_name) === bank);
+      if (exact.length) rows = exact;
+      else rows = rows.filter(m => up(m.bank_name).startsWith(bank));
+    }
+    return rows.slice().sort((a, b) => String(b.updated_at || '').localeCompare(String(a.updated_at || '')));
+  }
+
+  function dailyMemoryProfilesFor(firmName, bankName) {
+    const firm = up(firmName);
+    const bank = up(bankName);
+    const masterRows = activeMasterProfilesFor(firm, bank).map(r => ({ ...r, _source_rank: 2 }));
+    let memRows = (state.dailyMemory || []).filter(m => up(m.firm_name) === firm);
+    if (bank) {
+      const exact = memRows.filter(m => up(m.bank_name) === bank);
+      if (exact.length) memRows = exact;
+      else memRows = memRows.filter(m => up(m.bank_name).startsWith(bank));
+    }
+    memRows = memRows
+      .slice()
+      .sort((a, b) => String(b.last_date || '').localeCompare(String(a.last_date || '')))
+      .map(r => ({ ...r, _source_rank: 1 }));
+
+    const scored = masterRows.concat(memRows).map(r => {
+      let score = r._source_rank * 100;
+      const rowBank = up(r.bank_name);
+      if (bank && rowBank === bank) score += 30;
+      else if (bank && rowBank.startsWith(bank)) score += 20;
+      if (up(r.account_last4)) score += 5;
+      if (up(r.account_type)) score += 5;
+      return { ...r, _score: score };
+    });
+
+    scored.sort((a, b) => {
+      if (b._score !== a._score) return b._score - a._score;
+      const d1 = String(b.updated_at || b.last_date || '');
+      const d2 = String(a.updated_at || a.last_date || '');
+      return d1.localeCompare(d2);
+    });
+
+    const seen = new Set();
+    const dedup = [];
+    scored.forEach(r => {
+      const key = [up(r.firm_name), up(r.bank_name), up(r.account_type), up(r.account_last4), Number(num(r.credit_limit)).toFixed(2)].join('|');
+      if (seen.has(key)) return;
+      seen.add(key);
+      dedup.push(r);
+    });
+    return dedup;
+  }
+
+  function applyDailyMemoryForRow(idx, force = false) {
+    const row = state.dailyRows[idx];
+    if (!row) return false;
+    const candidates = dailyMemoryProfilesFor(row.firm_name, row.bank_name);
+    if (!candidates.length) return false;
+    const rowLast4 = up(row.account_last4);
+    let mem = candidates[0];
+    if (rowLast4) {
+      const exactLast4 = candidates.find(c => up(c.account_last4) === rowLast4);
+      if (exactLast4) mem = exactLast4;
+    }
+    let changed = false;
+
+    if ((force || !String(row.bank_name || '').trim()) && mem.bank_name) {
+      row.bank_name = mem.bank_name;
+      changed = true;
+    }
+    if (force || !String(row.account_type || '').trim()) {
+      if (mem.account_type) {
+        row.account_type = mem.account_type;
+        changed = true;
+      }
+    }
+    if (force || !String(row.account_last4 || '').trim()) {
+      if (mem.account_last4) {
+        row.account_last4 = mem.account_last4;
+        changed = true;
+      }
+    }
+    if (force || row.credit_limit === '' || row.credit_limit === null || row.credit_limit === undefined || Number(row.credit_limit) === 0) {
+      if (mem.credit_limit !== '' && mem.credit_limit !== null && mem.credit_limit !== undefined) {
+        row.credit_limit = mem.credit_limit;
+        changed = true;
+      }
+    }
+    return changed;
+  }
+
+  function syncDailyRowDom(idx) {
+    const rowEl = el.dailyBody.querySelector(`tr[data-i="${idx}"]`);
+    const row = state.dailyRows[idx];
+    if (!rowEl || !row) return;
+
+    const fType = rowEl.querySelector('[data-field="account_type"]');
+    const fLast4 = rowEl.querySelector('[data-field="account_last4"]');
+    const fLimit = rowEl.querySelector('[data-field="credit_limit"]');
+    const fClosing = rowEl.querySelector('input.readonly');
+
+    if (fType && document.activeElement !== fType) fType.value = row.account_type || '';
+    if (fLast4 && document.activeElement !== fLast4) fLast4.value = row.account_last4 || '';
+    if (fLimit && document.activeElement !== fLimit) fLimit.value = row.credit_limit ?? 0;
+    if (fLimit) setAmountClass(fLimit, row.credit_limit);
+    if (fClosing) {
+      fClosing.value = Number(row.closing_balance || 0).toFixed(2);
+      setAmountClass(fClosing, row.closing_balance);
+    }
+  }
+
+  function defaultDailyRow() {
+    const filterFirm = String(el.firmFilter?.value || '').toUpperCase();
+    const firm = filterFirm && filterFirm !== 'ALL'
+      ? filterFirm
+      : ((allowedFirms && allowedFirms[0]) || '');
+    const fromMem = dailyMemoryProfilesFor(firm, '')[0] || {};
+    return {
+      firm_name: firm,
+      bank_name: fromMem.bank_name || '',
+      account_type: fromMem.account_type || '',
+      account_last4: fromMem.account_last4 || '',
+      credit_limit: fromMem.credit_limit || 0,
+      opening_balance: 0,
+      receipts: 0,
+      payments_used: 0,
+      closing_balance: 0,
+      remarks: '',
+    };
+  }
+
+  function defaultWcRow() {
+    const filterFirm = String(el.firmFilter?.value || '').toUpperCase();
+    const firm = filterFirm && filterFirm !== 'ALL'
+      ? filterFirm
+      : ((allowedFirms && allowedFirms[0]) || '');
+    return {
+      firm_name: firm,
+      bank_name: '',
+      facility_type: '',
+      sanction_limit: 0,
+      drawing_power: 0,
+      utilised: 0,
+      available_limit: 0,
+      roi_pct: '',
+      due_date: '',
+      remarks: '',
+    };
+  }
+
+  function defaultFdrRow() {
+    const filterFirm = String(el.firmFilter?.value || '').toUpperCase();
+    const firm = filterFirm && filterFirm !== 'ALL'
+      ? filterFirm
+      : ((allowedFirms && allowedFirms[0]) || '');
+    return {
+      firm_name: firm,
+      bank_name: '',
+      fdr_no: '',
+      fdr_amount: 0,
+      start_date: '',
+      maturity_date: '',
+      roi_pct: '',
+      lien_flag: '',
+      linked_loan: '',
+      remarks: '',
+    };
+  }
+
+  function recalcDerived() {
+    state.dailyRows.forEach(r => {
+      r.closing_balance = num(r.opening_balance) + num(r.receipts) - num(r.payments_used);
+    });
+    state.wcRows.forEach(r => {
+      r.available_limit = num(r.sanction_limit) - num(r.utilised);
+    });
+  }
+
+  function renderFirmFilter() {
+    const prev = String(el.firmFilter.value || 'ALL').toUpperCase();
+    const opts = ['<option value="ALL">All Firms</option>']
+      .concat((allowedFirms || []).map(f => `<option value="${esc(f)}">${esc(f)}</option>`));
+    el.firmFilter.innerHTML = opts.join('');
+    const exists = Array.from(el.firmFilter.options).some(o => o.value.toUpperCase() === prev);
+    el.firmFilter.value = exists ? prev : 'ALL';
+  }
+
+  function renderMasterFirmList() {
+    if (!canManageMaster || !el.masterFirmList) return;
+    const firms = (allowedFirms || []).slice().sort((a, b) => a.localeCompare(b));
+    el.masterFirmList.innerHTML = firms.map(f => `<option value="${esc(f)}"></option>`).join('');
+  }
+
+  function resetMasterForm() {
+    if (!canManageMaster) return;
+    state.masterEditId = 0;
+    if (el.masterFirm) el.masterFirm.value = '';
+    if (el.masterBank) el.masterBank.value = '';
+    if (el.masterType) el.masterType.value = '';
+    if (el.masterLast4) el.masterLast4.value = '';
+    if (el.masterLimit) el.masterLimit.value = '';
+    if (el.masterActive) el.masterActive.value = '1';
+    if (el.masterSaveBtn) el.masterSaveBtn.textContent = 'Add Account';
+  }
+
+  function setMasterAccounts(rows) {
+    state.masterAccounts = Array.isArray(rows) ? rows.slice() : [];
+    syncAllowedFirmsFromState();
+    renderFirmFilter();
+    renderMasterFirmList();
+  }
+
+  function openMasterModal() {
+    if (!canManageMaster || !el.masterModal) return;
+    fetchMasterAccounts(true);
+    el.masterModal.classList.add('open');
+    el.masterModal.setAttribute('aria-hidden', 'false');
+    document.body.style.overflow = 'hidden';
+    setTimeout(() => { if (el.masterFirm) el.masterFirm.focus(); }, 0);
+  }
+
+  function closeMasterModal() {
+    if (!canManageMaster || !el.masterModal) return;
+    el.masterModal.classList.remove('open');
+    el.masterModal.setAttribute('aria-hidden', 'true');
+    document.body.style.overflow = '';
+  }
+
+  function renderMasterAccounts() {
+    if (!canManageMaster || !el.masterBody) return;
+    const rows = (state.masterAccounts || []).slice().sort((a, b) => {
+      const k1 = `${up(a.firm_name)}|${up(a.bank_name)}|${up(a.account_type)}|${up(a.account_last4)}`;
+      const k2 = `${up(b.firm_name)}|${up(b.bank_name)}|${up(b.account_type)}|${up(b.account_last4)}`;
+      return k1.localeCompare(k2);
+    });
+    if (!rows.length) {
+      el.masterBody.innerHTML = '<tr><td colspan="8" style="padding:10px; text-align:center;" class="fp-master-muted">No master accounts configured.</td></tr>';
+      return;
+    }
+    el.masterBody.innerHTML = rows.map(r => {
+      const statusClass = r.is_active ? 'on' : 'off';
+      const stamp = [r.updated_by || '', r.updated_at ? new Date(r.updated_at).toLocaleString('en-IN') : ''].filter(Boolean).join(' | ');
+      return `
+        <tr>
+          <td>${esc(r.firm_name || '')}</td>
+          <td>${esc(r.bank_name || '')}</td>
+          <td>${esc(r.account_type || '')}</td>
+          <td>${esc(r.account_last4 || '')}</td>
+          <td>${fmtINR(r.credit_limit)}</td>
+          <td><span class="fp-badge ${statusClass}">${r.is_active ? 'Active' : 'Inactive'}</span></td>
+          <td>${esc(stamp)}</td>
+          <td>
+            <button class="fp-mini-btn" data-master-edit="${Number(r.id || 0)}" type="button">Edit</button>
+            <button class="fp-mini-btn" data-master-toggle="${Number(r.id || 0)}" data-next-active="${r.is_active ? '0' : '1'}" type="button">${r.is_active ? 'Disable' : 'Enable'}</button>
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function fillMasterForm(id) {
+    if (!canManageMaster) return;
+    const row = (state.masterAccounts || []).find(r => Number(r.id) === Number(id));
+    if (!row) return;
+    state.masterEditId = Number(row.id || 0);
+    if (el.masterFirm) el.masterFirm.value = row.firm_name || '';
+    if (el.masterBank) el.masterBank.value = row.bank_name || '';
+    if (el.masterType) el.masterType.value = row.account_type || '';
+    if (el.masterLast4) el.masterLast4.value = row.account_last4 || '';
+    if (el.masterLimit) el.masterLimit.value = row.credit_limit ?? '';
+    if (el.masterActive) el.masterActive.value = row.is_active ? '1' : '0';
+    if (el.masterSaveBtn) el.masterSaveBtn.textContent = 'Update Account';
+    if (el.masterStatus) el.masterStatus.textContent = `Editing ${row.firm_name || ''} - ${row.bank_name || ''}.`;
+  }
+
+  async function fetchMasterAccounts(quiet = false) {
+    if (!canManageMaster) return;
+    try {
+      const res = await fetch('/api/fund_position/master_accounts');
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || 'Failed to load master accounts');
+      }
+      setMasterAccounts(Array.isArray(data.rows) ? data.rows : []);
+      renderMasterAccounts();
+      if (el.masterStatus) el.masterStatus.textContent = `Loaded ${state.masterAccounts.length} account presets.`;
+    } catch (err) {
+      if (!quiet) showToast(err.message || 'Master load failed', true);
+      if (el.masterStatus) el.masterStatus.textContent = err.message || 'Master load failed';
+    }
+  }
+
+  async function saveMasterAccount() {
+    if (!canManageMaster) return;
+    const payload = {
+      id: state.masterEditId || 0,
+      firm_name: up(el.masterFirm?.value),
+      bank_name: String(el.masterBank?.value || '').trim(),
+      account_type: String(el.masterType?.value || '').trim(),
+      account_last4: String(el.masterLast4?.value || '').trim(),
+      credit_limit: num(el.masterLimit?.value),
+      is_active: String(el.masterActive?.value || '1') === '1',
+    };
+    if (!payload.firm_name || !payload.bank_name) {
+      showToast('Firm and bank are required.', true);
+      return;
+    }
+    if (el.masterSaveBtn) setBusy(el.masterSaveBtn, true, 'Saving...', state.masterEditId ? 'Update Account' : 'Add Account');
+    try {
+      const res = await fetch('/api/fund_position/master_account_upsert', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || 'Failed to save master account');
+      }
+      setMasterAccounts(Array.isArray(data.rows) ? data.rows : []);
+      renderMasterAccounts();
+      renderAll();
+      resetMasterForm();
+      if (el.masterStatus) el.masterStatus.textContent = 'Master account saved.';
+      showToast('Master account saved.');
+    } catch (err) {
+      if (el.masterStatus) el.masterStatus.textContent = err.message || 'Master save failed';
+      showToast(el.masterStatus.textContent, true);
+    } finally {
+      if (el.masterSaveBtn) setBusy(el.masterSaveBtn, false, 'Saving...', state.masterEditId ? 'Update Account' : 'Add Account');
+    }
+  }
+
+  async function toggleMasterAccount(id, nextActive) {
+    if (!canManageMaster) return;
+    try {
+      const res = await fetch('/api/fund_position/master_account_toggle', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ id, is_active: String(nextActive) === '1' }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || 'Failed to update account status');
+      }
+      setMasterAccounts(Array.isArray(data.rows) ? data.rows : []);
+      renderMasterAccounts();
+      renderAll();
+      if (el.masterStatus) el.masterStatus.textContent = 'Master account status updated.';
+      showToast('Master account status updated.');
+    } catch (err) {
+      if (el.masterStatus) el.masterStatus.textContent = err.message || 'Master status update failed';
+      showToast(el.masterStatus.textContent, true);
+    }
+  }
+
+  function renderSummary() {
+    const rows = applyFirmFilter(state.dashboardRows || []);
+    if (!rows.length) {
+      el.summary.innerHTML = '<div style="font-size:12px; color:#64748b;">No summary rows for selected filter.</div>';
+      el.totals.textContent = 'Total Net: 0.00';
+      return;
+    }
+    let ca = 0, wc = 0, fdr = 0, net = 0;
+    el.summary.innerHTML = rows.map(r => {
+      ca += num(r.ca_balance);
+      wc += num(r.wc_available);
+      fdr += num(r.fdr_value);
+      net += num(r.net_fund_position);
+      const statusClass = String(r.status || '').toUpperCase() === 'ALERT' ? 'fp-alert' : 'fp-ok';
+      const caVal = num(r.ca_balance);
+      const cardClass = caVal < 0 ? 'fp-summary-card--neg' : (caVal > 0 ? 'fp-summary-card--pos' : 'fp-summary-card--zero');
+      return `
+        <div class="fp-summary-card ${cardClass}">
+          <h4>${esc(r.firm_name || '')}</h4>
+          <div class="fp-summary-line"><span>CA Balance</span><strong>${fmtINR(r.ca_balance)}</strong></div>
+          <div class="fp-summary-line"><span>WC Available</span><strong>${fmtINR(r.wc_available)}</strong></div>
+          <div class="fp-summary-line"><span>FDR Value</span><strong>${fmtINR(r.fdr_value)}</strong></div>
+          <div class="fp-summary-line"><span>Net Position</span><strong>${fmtINR(r.net_fund_position)}</strong></div>
+          <div class="fp-summary-line"><span>Status</span><strong class="${statusClass}">${esc(r.status || '')}</strong></div>
+        </div>
+      `;
+    }).join('');
+    const totalClass = net < 0 ? 'fp-alert' : 'fp-ok';
+    el.totals.innerHTML = `Total CA: <strong>${fmtINR(ca)}</strong> | WC: <strong>${fmtINR(wc)}</strong> | FDR: <strong>${fmtINR(fdr)}</strong> | Net: <strong class="${totalClass}">${fmtINR(net)}</strong>`;
+  }
+
+  function renderDaily() {
+    const editDisabled = state.isEditLocked ? 'disabled' : '';
+    const rows = state.dailyRows
+      .map((r, i) => ({ row: r, idx: i }))
+      .filter(item => applyFirmFilter([item.row]).length > 0);
+    if (!rows.length) {
+      el.dailyBody.innerHTML = '<tr><td colspan="11" style="text-align:center; color:#64748b; padding:12px;">No rows. Click "Add Row".</td></tr>';
+      return;
+    }
+    el.dailyBody.innerHTML = rows.map(({ row: r, idx }) => `
+      <tr data-i="${idx}">
+        <td><select data-tab="daily" data-field="firm_name" data-i="${idx}" ${editDisabled}>${firmOptions(r.firm_name)}</select></td>
+        <td><input data-tab="daily" data-field="bank_name" data-i="${idx}" value="${esc(r.bank_name)}" ${editDisabled}></td>
+        <td><input data-tab="daily" data-field="account_type" data-i="${idx}" value="${esc(r.account_type)}" ${editDisabled}></td>
+        <td><input data-tab="daily" data-field="account_last4" data-i="${idx}" value="${esc(r.account_last4)}" ${editDisabled}></td>
+        <td><input class="${amountToneClass(r.credit_limit)}" type="number" step="0.01" data-tab="daily" data-field="credit_limit" data-i="${idx}" value="${esc(r.credit_limit)}" ${editDisabled}></td>
+        <td><input class="${amountToneClass(r.opening_balance)}" type="number" step="0.01" data-tab="daily" data-field="opening_balance" data-i="${idx}" value="${esc(r.opening_balance)}" ${editDisabled}></td>
+        <td><input class="${amountToneClass(r.receipts)}" type="number" step="0.01" data-tab="daily" data-field="receipts" data-i="${idx}" value="${esc(r.receipts)}" ${editDisabled}></td>
+        <td><input class="${amountToneClass(r.payments_used)}" type="number" step="0.01" data-tab="daily" data-field="payments_used" data-i="${idx}" value="${esc(r.payments_used)}" ${editDisabled}></td>
+        <td><input class="readonly ${amountToneClass(r.closing_balance)}" readonly value="${esc(Number(r.closing_balance || 0).toFixed(2))}"></td>
+        <td><input data-tab="daily" data-field="remarks" data-i="${idx}" value="${esc(r.remarks)}" ${editDisabled}></td>
+        <td><button class="fp-del" data-del="daily" data-i="${idx}" type="button" ${editDisabled}>X</button></td>
+      </tr>
+    `).join('');
+  }
+
+  function renderWc() {
+    const editDisabled = state.isEditLocked ? 'disabled' : '';
+    const rows = state.wcRows
+      .map((r, i) => ({ row: r, idx: i }))
+      .filter(item => applyFirmFilter([item.row]).length > 0);
+    if (!rows.length) {
+      el.wcBody.innerHTML = '<tr><td colspan="11" style="text-align:center; color:#64748b; padding:12px;">No rows. Click "Add Row".</td></tr>';
+      return;
+    }
+    el.wcBody.innerHTML = rows.map(({ row: r, idx }) => `
+      <tr data-i="${idx}">
+        <td><select data-tab="wc" data-field="firm_name" data-i="${idx}" ${editDisabled}>${firmOptions(r.firm_name)}</select></td>
+        <td><input data-tab="wc" data-field="bank_name" data-i="${idx}" value="${esc(r.bank_name)}" ${editDisabled}></td>
+        <td><input data-tab="wc" data-field="facility_type" data-i="${idx}" value="${esc(r.facility_type)}" ${editDisabled}></td>
+        <td><input class="${amountToneClass(r.sanction_limit)}" type="number" step="0.01" data-tab="wc" data-field="sanction_limit" data-i="${idx}" value="${esc(r.sanction_limit)}" ${editDisabled}></td>
+        <td><input class="${amountToneClass(r.drawing_power)}" type="number" step="0.01" data-tab="wc" data-field="drawing_power" data-i="${idx}" value="${esc(r.drawing_power)}" ${editDisabled}></td>
+        <td><input class="${amountToneClass(r.utilised)}" type="number" step="0.01" data-tab="wc" data-field="utilised" data-i="${idx}" value="${esc(r.utilised)}" ${editDisabled}></td>
+        <td><input class="readonly ${amountToneClass(r.available_limit)}" readonly value="${esc(Number(r.available_limit || 0).toFixed(2))}"></td>
+        <td><input type="number" step="0.0001" data-tab="wc" data-field="roi_pct" data-i="${idx}" value="${esc(r.roi_pct)}" ${editDisabled}></td>
+        <td><input type="date" data-tab="wc" data-field="due_date" data-i="${idx}" value="${esc(r.due_date)}" ${editDisabled}></td>
+        <td><input data-tab="wc" data-field="remarks" data-i="${idx}" value="${esc(r.remarks)}" ${editDisabled}></td>
+        <td><button class="fp-del" data-del="wc" data-i="${idx}" type="button" ${editDisabled}>X</button></td>
+      </tr>
+    `).join('');
+  }
+
+  function renderFdr() {
+    const editDisabled = state.isEditLocked ? 'disabled' : '';
+    const rows = state.fdrRows
+      .map((r, i) => ({ row: r, idx: i }))
+      .filter(item => applyFirmFilter([item.row]).length > 0);
+    if (!rows.length) {
+      el.fdrBody.innerHTML = '<tr><td colspan="11" style="text-align:center; color:#64748b; padding:12px;">No rows. Click "Add Row".</td></tr>';
+      return;
+    }
+    el.fdrBody.innerHTML = rows.map(({ row: r, idx }) => `
+      <tr data-i="${idx}">
+        <td><select data-tab="fdr" data-field="firm_name" data-i="${idx}" ${editDisabled}>${firmOptions(r.firm_name)}</select></td>
+        <td><input data-tab="fdr" data-field="bank_name" data-i="${idx}" value="${esc(r.bank_name)}" ${editDisabled}></td>
+        <td><input data-tab="fdr" data-field="fdr_no" data-i="${idx}" value="${esc(r.fdr_no)}" ${editDisabled}></td>
+        <td><input class="${amountToneClass(r.fdr_amount)}" type="number" step="0.01" data-tab="fdr" data-field="fdr_amount" data-i="${idx}" value="${esc(r.fdr_amount)}" ${editDisabled}></td>
+        <td><input type="date" data-tab="fdr" data-field="start_date" data-i="${idx}" value="${esc(r.start_date)}" ${editDisabled}></td>
+        <td><input type="date" data-tab="fdr" data-field="maturity_date" data-i="${idx}" value="${esc(r.maturity_date)}" ${editDisabled}></td>
+        <td><input type="number" step="0.0001" data-tab="fdr" data-field="roi_pct" data-i="${idx}" value="${esc(r.roi_pct)}" ${editDisabled}></td>
+        <td>
+          <select data-tab="fdr" data-field="lien_flag" data-i="${idx}" ${editDisabled}>
+            <option value="" ${!r.lien_flag ? 'selected' : ''}>-</option>
+            <option value="Y" ${String(r.lien_flag || '').toUpperCase() === 'Y' ? 'selected' : ''}>Y</option>
+            <option value="N" ${String(r.lien_flag || '').toUpperCase() === 'N' ? 'selected' : ''}>N</option>
+          </select>
+        </td>
+        <td><input data-tab="fdr" data-field="linked_loan" data-i="${idx}" value="${esc(r.linked_loan)}" ${editDisabled}></td>
+        <td><input data-tab="fdr" data-field="remarks" data-i="${idx}" value="${esc(r.remarks)}" ${editDisabled}></td>
+        <td><button class="fp-del" data-del="fdr" data-i="${idx}" type="button" ${editDisabled}>X</button></td>
+      </tr>
+    `).join('');
+  }
+
+  function renderAll() {
+    recalcDerived();
+    syncAllowedFirmsFromState();
+    renderSummary();
+    renderDaily();
+    renderWc();
+    renderFdr();
+    renderMasterFirmList();
+    renderMasterAccounts();
+    applyEditLockControls();
+    el.tabDaily.textContent = `Daily Fund Position (${state.dailyRows.length})`;
+    el.tabWc.textContent = `WC & Loan Position (${state.wcRows.length})`;
+    el.tabFdr.textContent = `FDR Tracker (${state.fdrRows.length})`;
+    refreshTabHint();
+  }
+
+  function setActiveTab(tab) {
+    state.activeTab = tab;
+    el.tabDaily.classList.toggle('active', tab === 'daily');
+    el.tabWc.classList.toggle('active', tab === 'wc');
+    el.tabFdr.classList.toggle('active', tab === 'fdr');
+    el.panelDaily.style.display = tab === 'daily' ? '' : 'none';
+    el.panelWc.style.display = tab === 'wc' ? '' : 'none';
+    el.panelFdr.style.display = tab === 'fdr' ? '' : 'none';
+    refreshTabHint();
+  }
+
+  async function loadSnapshot() {
+    const date = el.date.value;
+    if (!date) {
+      showToast('Select a date first.', true);
+      return;
+    }
+    setBusy(el.loadBtn, true, 'Loading...', 'Load Snapshot');
+    el.status.textContent = `Loading data for ${date}...`;
+    try {
+      const res = await fetch(`/api/fund_position/data?date=${encodeURIComponent(date)}`);
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || 'Failed to load data');
+      }
+      if (Array.isArray(data.allowed_firms) && data.allowed_firms.length) {
+        allowedFirms = data.allowed_firms;
+      }
+      state.dailyRows = Array.isArray(data.daily_rows) ? data.daily_rows : [];
+      state.dailyMemory = Array.isArray(data.daily_memory) ? data.daily_memory : [];
+      setMasterAccounts(Array.isArray(data.master_accounts) ? data.master_accounts : []);
+      applyEditLockFromPayload(data);
+      state.dailyRows.forEach((_, i) => { applyDailyMemoryForRow(i, false); });
+      state.wcRows = Array.isArray(data.wc_rows) ? data.wc_rows : [];
+      state.fdrRows = Array.isArray(data.fdr_rows) ? data.fdr_rows : [];
+      state.dashboardRows = Array.isArray(data.dashboard_rows) ? data.dashboard_rows : [];
+      state.totals = data.totals || null;
+      syncAllowedFirmsFromState();
+      renderFirmFilter();
+      renderAll();
+      if (canManageMaster) fetchMasterAccounts(true);
+      setSteps(2);
+      if (state.isEditLocked) {
+        el.status.textContent = state.editLockMessage || `Loaded snapshot for ${date} in read-only mode.`;
+      } else if (data.carried_forward_from) {
+        el.status.textContent = `Loaded ${date} with opening carry-forward from ${data.carried_forward_from}. Update rows and click "Save Changes".`;
+      } else {
+        el.status.textContent = `Loaded snapshot for ${date}. Update rows and click "Save Changes".`;
+      }
+      showToast('Snapshot loaded.');
+    } catch (err) {
+      el.status.textContent = err.message || 'Failed to load data.';
+      showToast(el.status.textContent, true);
+    } finally {
+      setBusy(el.loadBtn, false, 'Loading...', 'Load Snapshot');
+    }
+  }
+
+  async function saveSnapshot() {
+    const date = el.date.value;
+    if (!date) {
+      showToast('Select a date first.', true);
+      return;
+    }
+    if (state.isEditLocked) {
+      const msg = state.editLockMessage || 'This snapshot is locked for edits.';
+      el.status.textContent = msg;
+      showToast(msg, true);
+      return;
+    }
+    setBusy(el.saveBtn, true, 'Saving...', 'Save Changes');
+    el.status.textContent = 'Saving tracker data...';
+    try {
+      recalcDerived();
+      const res = await fetch('/api/fund_position/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          date,
+          daily_rows: state.dailyRows,
+          wc_rows: state.wcRows,
+          fdr_rows: state.fdrRows,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        if (data && Object.prototype.hasOwnProperty.call(data, 'is_edit_locked')) {
+          applyEditLockFromPayload(data);
+          renderAll();
+        }
+        throw new Error(data.message || 'Failed to save data');
+      }
+      if (Array.isArray(data.allowed_firms) && data.allowed_firms.length) {
+        allowedFirms = data.allowed_firms;
+      }
+      state.dailyRows = Array.isArray(data.daily_rows) ? data.daily_rows : [];
+      state.dailyMemory = Array.isArray(data.daily_memory) ? data.daily_memory : [];
+      setMasterAccounts(Array.isArray(data.master_accounts) ? data.master_accounts : []);
+      applyEditLockFromPayload(data);
+      state.dailyRows.forEach((_, i) => { applyDailyMemoryForRow(i, false); });
+      state.wcRows = Array.isArray(data.wc_rows) ? data.wc_rows : [];
+      state.fdrRows = Array.isArray(data.fdr_rows) ? data.fdr_rows : [];
+      state.dashboardRows = Array.isArray(data.dashboard_rows) ? data.dashboard_rows : [];
+      state.totals = data.totals || null;
+      syncAllowedFirmsFromState();
+      renderFirmFilter();
+      renderAll();
+      if (canManageMaster) fetchMasterAccounts(true);
+      setSteps(3);
+      const counts = data.saved_counts || {};
+      if (state.isEditLocked) {
+        el.status.textContent = state.editLockMessage || `Snapshot ${date} is now read-only.`;
+      } else {
+        el.status.textContent = `Saved successfully. Daily: ${counts.daily || 0}, WC: ${counts.wc_loan || 0}, FDR: ${counts.fdr || 0}.`;
+      }
+      showToast('Changes saved successfully.');
+    } catch (err) {
+      el.status.textContent = err.message || 'Save failed.';
+      showToast(el.status.textContent, true);
+    } finally {
+      setBusy(el.saveBtn, false, 'Saving...', 'Save Changes');
+    }
+  }
+
+  async function exportHistoryPdf() {
+    const fromDate = String(el.fromDate?.value || '').trim();
+    const toDate = String(el.toDate?.value || '').trim();
+    const from = fromDate;
+    const to = toDate;
+
+    if (!from || !to) {
+      if (el.exportStatus) {
+        el.exportStatus.textContent = 'Select both From Date and To Date for export.';
+      }
+      showToast('Select From Date and To Date for export.', true);
+      return;
+    }
+    if (from > to) {
+      if (el.exportStatus) {
+        el.exportStatus.textContent = 'From Date cannot be greater than To Date.';
+      }
+      showToast('From Date cannot be greater than To Date.', true);
+      return;
+    }
+
+    setBusy(el.exportPdfBtn, true, 'Preparing PDF...', 'Export History PDF');
+    if (el.exportStatus) {
+      el.exportStatus.textContent = `Preparing PDF export from ${from} to ${to}...`;
+    }
+    try {
+      const url = `/api/fund_position/export_pdf?from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}`;
+      const res = await fetch(url, { method: 'GET' });
+      if (!res.ok) {
+        let msg = 'PDF export failed';
+        try {
+          const data = await res.json();
+          msg = data.message || msg;
+        } catch (_) {}
+        throw new Error(msg);
+      }
+
+      const blob = await res.blob();
+      let filename = `Fund_Position_History_${from}_to_${to}.pdf`;
+      const cd = res.headers.get('Content-Disposition') || '';
+      const m = cd.match(/filename\*=UTF-8''([^;]+)|filename=\"?([^\";]+)\"?/i);
+      if (m) {
+        filename = decodeURIComponent((m[1] || m[2] || filename).trim());
+      }
+
+      const dl = document.createElement('a');
+      const dlUrl = URL.createObjectURL(blob);
+      dl.href = dlUrl;
+      dl.download = filename;
+      document.body.appendChild(dl);
+      dl.click();
+      dl.remove();
+      URL.revokeObjectURL(dlUrl);
+
+      if (el.exportStatus) {
+        el.exportStatus.textContent = `PDF exported for ${from} to ${to}.`;
+      }
+      showToast('PDF exported successfully.');
+    } catch (err) {
+      const msg = err.message || 'PDF export failed.';
+      if (el.exportStatus) {
+        el.exportStatus.textContent = msg;
+      }
+      showToast(msg, true);
+    } finally {
+      setBusy(el.exportPdfBtn, false, 'Preparing PDF...', 'Export History PDF');
+    }
+  }
+
+  function parseRecipientEmails(raw) {
+    const text = String(raw || '').trim();
+    if (!text) return [];
+    const parts = text.split(/[\n,;]+/).map(s => s.trim()).filter(Boolean);
+    const uniq = [];
+    const seen = new Set();
+    parts.forEach(p => {
+      const key = p.toLowerCase();
+      if (!seen.has(key)) {
+        seen.add(key);
+        uniq.push(p);
+      }
+    });
+    return uniq;
+  }
+
+  function isValidEmail(email) {
+    return /^[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}$/i.test(String(email || '').trim());
+  }
+
+  async function emailHistoryPdf() {
+    const from = String(el.fromDate?.value || '').trim();
+    const to = String(el.toDate?.value || '').trim();
+    const recipients = parseRecipientEmails(el.emailTo?.value);
+    const useConfiguredRecipients = Boolean(el.useConfiguredRecipients?.checked);
+
+    if (!from || !to) {
+      if (el.exportStatus) el.exportStatus.textContent = 'Select both From Date and To Date for email.';
+      showToast('Select From Date and To Date first.', true);
+      return;
+    }
+    if (from > to) {
+      if (el.exportStatus) el.exportStatus.textContent = 'From Date cannot be greater than To Date.';
+      showToast('From Date cannot be greater than To Date.', true);
+      return;
+    }
+    if (!recipients.length && !useConfiguredRecipients) {
+      if (el.exportStatus) {
+        el.exportStatus.textContent = 'Enter manual email(s) or enable configured recipients.';
+      }
+      showToast('Enter manual email(s) or enable configured recipients.', true);
+      return;
+    }
+    const invalid = recipients.filter(email => !isValidEmail(email));
+    if (invalid.length) {
+      if (el.exportStatus) el.exportStatus.textContent = `Invalid email(s): ${invalid.join(', ')}`;
+      showToast('Invalid recipient email detected.', true);
+      return;
+    }
+
+    setBusy(el.emailPdfBtn, true, 'Sending...', 'Email Report');
+    if (el.exportStatus) {
+      const cfgText = useConfiguredRecipients ? ' + configured recipients' : '';
+      el.exportStatus.textContent = `Sending PDF report to manual recipients (${recipients.length})${cfgText}...`;
+    }
+    try {
+      const res = await fetch('/api/fund_position/email_pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          from,
+          to,
+          to_emails: recipients,
+          use_configured_recipients: useConfiguredRecipients,
+        }),
+      });
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        throw new Error((data && data.message) || 'Email send failed');
+      }
+
+      if (el.exportStatus) {
+        el.exportStatus.textContent = data.message || `Report emailed to ${recipients.length} recipient(s).`;
+      }
+      showToast('Report emailed successfully.');
+    } catch (err) {
+      const msg = err.message || 'Email send failed.';
+      if (el.exportStatus) el.exportStatus.textContent = msg;
+      showToast(msg, true);
+    } finally {
+      setBusy(el.emailPdfBtn, false, 'Sending...', 'Email Report');
+    }
+  }
+
+  function addRowForTab(tab) {
+    if (state.isEditLocked) {
+      showToast(state.editLockMessage || 'This snapshot is locked for edits.', true);
+      return;
+    }
+    if (tab === 'daily') state.dailyRows.push(defaultDailyRow());
+    if (tab === 'wc') state.wcRows.push(defaultWcRow());
+    if (tab === 'fdr') state.fdrRows.push(defaultFdrRow());
+    renderAll();
+  }
+
+  function addRowForActiveTab() {
+    addRowForTab(state.activeTab);
+  }
+
+  function focusInputNode(node) {
+    if (!node) return;
+    node.focus();
+    if (typeof node.select === 'function' && node.tagName === 'INPUT' && node.type !== 'date') {
+      node.select();
+    }
+  }
+
+  function keyboardFlow(tab, currentNode, backward = false) {
+    if (state.isEditLocked) return;
+    const panel = tab === 'daily' ? el.panelDaily : tab === 'wc' ? el.panelWc : el.panelFdr;
+    if (!panel) return;
+    const inputs = Array.from(panel.querySelectorAll(`[data-tab="${tab}"][data-field][data-i]`))
+      .filter(node => !node.disabled && node.offsetParent !== null);
+    if (!inputs.length) return;
+    const idx = inputs.indexOf(currentNode);
+    if (idx < 0) return;
+    const next = inputs[idx + (backward ? -1 : 1)];
+    if (next) {
+      focusInputNode(next);
+      return;
+    }
+    if (backward) return;
+    const prevCount = inputs.length;
+    addRowForTab(tab);
+    requestAnimationFrame(() => {
+      const afterInputs = Array.from(panel.querySelectorAll(`[data-tab="${tab}"][data-field][data-i]`))
+        .filter(node => !node.disabled && node.offsetParent !== null);
+      const target = afterInputs[prevCount] || afterInputs[afterInputs.length - 1];
+      focusInputNode(target);
+    });
+  }
+
+  function handleCellChange(target, commitChange = false) {
+    if (state.isEditLocked) return;
+    const tab = target.dataset.tab;
+    const field = target.dataset.field;
+    const idx = Number(target.dataset.i);
+    if (!tab || !field || !Number.isInteger(idx)) return;
+    const src = tab === 'daily' ? state.dailyRows : tab === 'wc' ? state.wcRows : state.fdrRows;
+    if (!src[idx]) return;
+    const oldValue = Object.prototype.hasOwnProperty.call(target.dataset, 'prevValue')
+      ? target.dataset.prevValue
+      : src[idx][field];
+    const rowBefore = { ...src[idx] };
+    src[idx][field] = target.value;
+    if (tab === 'daily' && commitChange && (field === 'firm_name' || field === 'bank_name')) {
+      applyDailyMemoryForRow(idx, false);
+    }
+    recalcDerived();
+    if (target.tagName === 'INPUT' && target.type === 'number') {
+      setAmountClass(target, target.value);
+    }
+
+    // Avoid full table re-render while typing; only update derived cells in place.
+    if (tab === 'daily') {
+      syncDailyRowDom(idx);
+    } else if (tab === 'wc') {
+      const rowEl = el.wcBody.querySelector(`tr[data-i="${idx}"]`);
+      const readonly = rowEl ? rowEl.querySelector('input.readonly') : null;
+      if (readonly) {
+        readonly.value = Number(src[idx].available_limit || 0).toFixed(2);
+        setAmountClass(readonly, src[idx].available_limit);
+      }
+    }
+
+    // If firm changed under a specific firm filter, row visibility may need refresh.
+    const filterVal = String(el.firmFilter.value || 'ALL').toUpperCase();
+    if (commitChange && field === 'firm_name' && filterVal !== 'ALL') {
+      renderAll();
+    }
+
+    if (commitChange) {
+      target.dataset.prevValue = String(target.value ?? '');
+      if (String(oldValue ?? '') !== String(target.value ?? '')) {
+        logEditEvent(tab, idx, field, oldValue, target.value, { ...rowBefore, ...src[idx] });
+      }
+    }
+  }
+
+  function handleDelete(target) {
+    if (state.isEditLocked) return;
+    const tab = target.dataset.del;
+    const idx = Number(target.dataset.i);
+    if (!tab || !Number.isInteger(idx)) return;
+    const src = tab === 'daily' ? state.dailyRows : tab === 'wc' ? state.wcRows : state.fdrRows;
+    if (!src[idx]) return;
+    src.splice(idx, 1);
+    renderAll();
+  }
+
+  async function init() {
+    const today = new Date().toISOString().slice(0, 10);
+    el.date.value = today;
+    if (el.fromDate) el.fromDate.value = today;
+    if (el.toDate) el.toDate.value = today;
+    syncAllowedFirmsFromState();
+    renderFirmFilter();
+    renderMasterFirmList();
+    renderAll();
+    setActiveTab('daily');
+    if (!allowedFirms.length && !allowAllFirms) {
+      el.status.textContent = 'No firm access assigned. Contact IT.';
+      el.loadBtn.disabled = true;
+      el.saveBtn.disabled = true;
+      if (el.exportPdfBtn) el.exportPdfBtn.disabled = true;
+      if (el.emailPdfBtn) el.emailPdfBtn.disabled = true;
+      el.addBtn.disabled = true;
+      return;
+    }
+    await loadSnapshot();
+    if (canManageMaster) await fetchMasterAccounts(true);
+  }
+
+  document.querySelectorAll('.fp-tab').forEach(btn => {
+    btn.addEventListener('click', () => setActiveTab(btn.dataset.tab));
+  });
+
+  el.firmFilter.addEventListener('change', renderAll);
+  el.loadBtn.addEventListener('click', loadSnapshot);
+  el.saveBtn.addEventListener('click', saveSnapshot);
+  el.exportPdfBtn.addEventListener('click', exportHistoryPdf);
+  el.emailPdfBtn.addEventListener('click', emailHistoryPdf);
+  el.addBtn.addEventListener('click', addRowForActiveTab);
+  if (canManageMaster && el.openMasterBtn) {
+    el.openMasterBtn.addEventListener('click', openMasterModal);
+  }
+  if (canManageMaster && el.masterSaveBtn) {
+    el.masterSaveBtn.addEventListener('click', saveMasterAccount);
+  }
+  if (canManageMaster && el.masterResetBtn) {
+    el.masterResetBtn.addEventListener('click', resetMasterForm);
+  }
+  if (canManageMaster && el.masterRefreshBtn) {
+    el.masterRefreshBtn.addEventListener('click', () => fetchMasterAccounts(false));
+  }
+  if (canManageMaster && el.masterCloseBtn) {
+    el.masterCloseBtn.addEventListener('click', closeMasterModal);
+  }
+  if (canManageMaster && el.masterModal) {
+    el.masterModal.addEventListener('click', (e) => {
+      if (e.target === el.masterModal) closeMasterModal();
+    });
+  }
+
+  document.addEventListener('input', (e) => {
+    if (e.target && e.target.matches('[data-tab][data-field][data-i]')) {
+      handleCellChange(e.target, false);
+    }
+  });
+  document.addEventListener('focusin', (e) => {
+    if (e.target && e.target.matches('[data-tab][data-field][data-i]')) {
+      e.target.dataset.prevValue = String(e.target.value ?? '');
+    }
+  });
+  document.addEventListener('change', (e) => {
+    if (e.target && e.target.matches('[data-tab][data-field][data-i]')) {
+      handleCellChange(e.target, true);
+    }
+  });
+  document.addEventListener('click', (e) => {
+    const editBtn = e.target.closest('[data-master-edit]');
+    if (editBtn) {
+      fillMasterForm(Number(editBtn.dataset.masterEdit));
+      return;
+    }
+    const toggleBtn = e.target.closest('[data-master-toggle]');
+    if (toggleBtn) {
+      toggleMasterAccount(Number(toggleBtn.dataset.masterToggle), toggleBtn.dataset.nextActive);
+      return;
+    }
+    const btn = e.target.closest('[data-del][data-i]');
+    if (btn) handleDelete(btn);
+  });
+  document.addEventListener('keydown', (e) => {
+    if (e.key === 'Escape' && canManageMaster && el.masterModal && el.masterModal.classList.contains('open')) {
+      closeMasterModal();
+      return;
+    }
+    const target = e.target;
+    if (!(target && target.matches('[data-tab][data-field][data-i]'))) return;
+    if (e.key !== 'Enter') return;
+    e.preventDefault();
+    keyboardFlow(target.dataset.tab, target, e.shiftKey);
+  });
+
+  init();
+</script>
+{% endblock %}

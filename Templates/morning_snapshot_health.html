@@ -1,0 +1,272 @@
+{% extends "layout.html" %}
+{% block content %}
+<style>
+  .health-wrap {
+    width: min(1200px, 100%);
+    margin: 0 auto;
+    display: grid;
+    gap: 12px;
+  }
+  .health-head {
+    background: linear-gradient(120deg, #0f4c81, #0ea5e9);
+    color: #fff;
+    border-radius: 14px;
+    padding: 16px 18px;
+    box-shadow: 0 8px 20px rgba(15, 76, 129, 0.2);
+  }
+  .health-head h2 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 800;
+  }
+  .health-head p {
+    margin: 4px 0 0;
+    font-size: 13px;
+    opacity: 0.9;
+  }
+  .health-toolbar {
+    display: flex;
+    gap: 8px;
+    align-items: center;
+    flex-wrap: wrap;
+  }
+  .health-status {
+    font-size: 13px;
+    color: #334155;
+  }
+  .btn {
+    border: 1px solid #93c5fd;
+    background: #e0f2fe;
+    color: #0f172a;
+    border-radius: 8px;
+    padding: 7px 12px;
+    cursor: pointer;
+    font-weight: 700;
+  }
+  .btn:hover { background: #bae6fd; }
+  .health-card {
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    border-radius: 14px;
+    overflow: auto;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  }
+  table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 12px;
+    min-width: 1480px;
+  }
+  th, td {
+    border: 1px solid #cbd5e1;
+    padding: 6px 8px;
+    text-align: left;
+    vertical-align: top;
+  }
+  th {
+    background: #e2e8f0;
+    font-weight: 800;
+  }
+  .status-success { color: #166534; font-weight: 700; }
+  .status-failed { color: #991b1b; font-weight: 700; }
+  .fab-user {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    display: flex;
+    align-items: center;
+    z-index: 50;
+  }
+  .fab-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: linear-gradient(135deg, #1e40af, #3b82f6);
+    color: #fff;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    box-shadow: 0 8px 18px rgba(30, 64, 175, 0.3);
+  }
+  .fab-icon {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .fab-icon span {
+    width: 16px;
+    height: 3px;
+    background: #fff;
+    border-radius: 3px;
+    display: block;
+  }
+  .fab-menu {
+    position: absolute;
+    top: 52px;
+    right: 0;
+    background: rgba(255,255,255,0.98);
+    border: 1px solid rgba(0,0,0,0.08);
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.18);
+    border-radius: 12px;
+    padding: 10px;
+    min-width: 200px;
+    display: none;
+    z-index: 10;
+  }
+  .fab-menu.open { display: block; }
+  .fab-menu a, .fab-menu div {
+    display: block;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #0f172a;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .fab-menu a:hover { background: #e0f2fe; color: #1e40af; }
+  .fab-user-name { color: #64748b; font-weight: 700; }
+</style>
+
+<div class="fab-user">
+  <button class="fab-btn" id="fabToggle" title="User Menu">
+    <span class="fab-icon"><span></span><span></span><span></span></span>
+  </button>
+  <div class="fab-menu" id="fabMenu">
+    <div class="fab-user-name">{{ session.get('username','User') }}</div>
+    <a href="{{ url_for('dashboard') }}">Dashboard</a>
+    <a href="{{ url_for('mod_reports_dashboard') }}">MOD Reports</a>
+    <a href="{{ url_for('logout') }}" style="color:#dc2626;">Logout</a>
+  </div>
+</div>
+
+<section class="health-wrap">
+  <div class="health-head">
+    <h2>Morning Snapshot Health</h2>
+    <p>Auto snapshot run log with section-level completeness metrics and save outcomes.</p>
+  </div>
+
+  <div class="health-toolbar">
+    <button id="refreshBtn" class="btn" type="button">Refresh</button>
+    <span id="healthStatus" class="health-status">Loading...</span>
+  </div>
+
+  <div class="health-card">
+    <table>
+      <thead>
+        <tr>
+          <th>Run Time</th>
+          <th>Target Time</th>
+          <th>Date</th>
+          <th>Unit</th>
+          <th>Status</th>
+          <th>Summary</th>
+          <th>Investigation</th>
+          <th>Procedure</th>
+          <th>Admission</th>
+          <th>Doctorwise</th>
+          <th>Occupancy</th>
+          <th>Doctor Night Visit</th>
+          <th>Staff</th>
+          <th>Staff Value</th>
+          <th>Non-Medical</th>
+          <th>Non-Medical Value</th>
+          <th>Referral</th>
+          <th>Saved</th>
+          <th>Message</th>
+        </tr>
+      </thead>
+      <tbody id="healthBody">
+        <tr><td colspan="19">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<script>
+  const fabToggle = document.getElementById('fabToggle');
+  const fabMenu = document.getElementById('fabMenu');
+  const refreshBtn = document.getElementById('refreshBtn');
+  const healthStatus = document.getElementById('healthStatus');
+  const healthBody = document.getElementById('healthBody');
+
+  function esc(text) {
+    return String(text ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\"/g, '&quot;')
+      .replace(/'/g, '&#039;');
+  }
+
+  function statusClass(status) {
+    const s = String(status || '').toLowerCase();
+    if (s === 'success') return 'status-success';
+    if (s === 'failed') return 'status-failed';
+    return '';
+  }
+
+  function savedText(saved) {
+    if (saved === true) return 'Yes';
+    if (saved === false) return 'No';
+    return '-';
+  }
+
+  async function loadHealth() {
+    healthStatus.textContent = 'Loading...';
+    try {
+      const res = await fetch('/api/mod_reports/morning_snapshot_health?limit=180', { cache: 'no-store' });
+      const payload = await res.json();
+      if (!res.ok || payload.status !== 'success') {
+        throw new Error(payload.message || 'Failed to load health log');
+      }
+      const rows = Array.isArray(payload.rows) ? payload.rows : [];
+      if (!rows.length) {
+        healthBody.innerHTML = '<tr><td colspan="19">No audit rows found.</td></tr>';
+      } else {
+        healthBody.innerHTML = rows.map((row) => `
+          <tr>
+            <td>${esc(row.run_time)}</td>
+            <td>${esc(row.target_time)}</td>
+            <td>${esc(row.snapshot_date)}</td>
+            <td>${esc(row.unit)}</td>
+            <td class="${statusClass(row.status)}">${esc(row.status)}</td>
+            <td>${esc(row.summary_rows)}</td>
+            <td>${esc(row.investigation_rows)}</td>
+            <td>${esc(row.procedure_rows)}</td>
+            <td>${esc(row.admission_rows)}</td>
+            <td>${esc(row.doctorwise_rows)}</td>
+            <td>${esc(row.occupancy_rows)}</td>
+            <td>${esc(row.doctor_night_visit_rows)}</td>
+            <td>${esc(row.staff_rows)}</td>
+            <td>${esc(row.staff_value_rows)}</td>
+            <td>${esc(row.non_medical_rows)}</td>
+            <td>${esc(row.non_medical_value_rows)}</td>
+            <td>${esc(row.referral_rows)}</td>
+            <td>${esc(savedText(row.saved))}</td>
+            <td>${esc(row.message)}</td>
+          </tr>
+        `).join('');
+      }
+      healthStatus.textContent = `Loaded ${rows.length} rows.`;
+    } catch (err) {
+      healthBody.innerHTML = `<tr><td colspan="19">Error: ${esc(err.message)}</td></tr>`;
+      healthStatus.textContent = `Error: ${err.message}`;
+    }
+  }
+
+  fabToggle?.addEventListener('click', function (ev) {
+    ev.stopPropagation();
+    fabMenu?.classList.toggle('open');
+  });
+  document.addEventListener('click', function (ev) {
+    if (!fabMenu || !fabToggle) return;
+    if (!fabMenu.contains(ev.target) && !fabToggle.contains(ev.target)) {
+      fabMenu.classList.remove('open');
+    }
+  });
+
+  refreshBtn?.addEventListener('click', loadHealth);
+  loadHealth();
+</script>
+{% endblock %}

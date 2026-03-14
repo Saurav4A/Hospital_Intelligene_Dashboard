@@ -1,0 +1,1651 @@
+{% extends "layout.html" %}
+{% block content %}
+<style>
+  :root {
+    --mod-primary: #1e3a8a;
+    --mod-primary-2: #2563eb;
+    --mod-accent: #14b8a6;
+    --mod-border: #dbeafe;
+    --mod-surface: #ffffff;
+    --mod-surface-soft: #f8fbff;
+    --mod-text: #0f172a;
+    --mod-muted: #64748b;
+  }
+  .mod-hero {
+    width: min(1260px, 100%);
+    background: linear-gradient(120deg, #1e3a8a, #2563eb 55%, #38bdf8);
+    color: #fff;
+    border-radius: 18px;
+    padding: 22px 26px;
+    box-shadow: 0 14px 30px rgba(30, 58, 138, 0.22);
+    display: flex;
+    gap: 14px;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .mod-hero h2 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+  }
+  .mod-hero p {
+    margin: 6px 0 0;
+    font-size: 14px;
+    color: rgba(255,255,255,0.9);
+  }
+  .mod-workspace {
+    width: min(1260px, 100%);
+    display: grid;
+    grid-template-columns: 280px minmax(0, 1fr);
+    gap: 18px;
+    align-items: start;
+    padding: 6px;
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(255,255,255,0.45), rgba(241,245,249,0.45));
+  }
+  .mod-sidebar {
+    position: sticky;
+    top: 86px;
+  }
+  .mod-content {
+    display: flex;
+    justify-content: center;
+    min-width: 0;
+  }
+  .mod-grid {
+    width: 100%;
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+  }
+  .mod-side-head {
+    font-size: 11px;
+    letter-spacing: 0.8px;
+    text-transform: uppercase;
+    font-weight: 800;
+    color: #334155;
+    padding: 4px 2px;
+  }
+  .mod-card {
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+    padding: 14px 12px;
+    text-decoration: none;
+    color: #0f172a;
+    display: grid;
+    grid-template-columns: auto minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    transition: transform 0.15s ease, box-shadow 0.15s ease;
+  }
+  .mod-card:hover {
+    transform: translateY(-2px);
+    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.12);
+  }
+  .mod-card.active {
+    border-color: #93c5fd;
+    box-shadow: 0 14px 26px rgba(30, 64, 175, 0.18);
+    background: linear-gradient(140deg, #ffffff, #f0f7ff);
+  }
+  .mod-card-copy {
+    min-width: 0;
+  }
+  .mod-arrow {
+    color: #94a3b8;
+    font-weight: 900;
+    font-size: 18px;
+    line-height: 1;
+    justify-self: end;
+    padding-right: 2px;
+  }
+  .mod-card.active .mod-arrow {
+    color: #1d4ed8;
+  }
+  .mod-icon {
+    width: 44px;
+    height: 44px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #e0f2fe, #dbeafe);
+    display: grid;
+    place-items: center;
+    color: #0ea5e9;
+  }
+  .mod-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 800;
+    color: #0f172a;
+  }
+  .mod-desc {
+    margin: 4px 0 0;
+    font-size: 11px;
+    color: #475569;
+    line-height: 1.3;
+  }
+  .fab-user {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    display: flex;
+    align-items: center;
+    z-index: 50;
+  }
+  .fab-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: linear-gradient(135deg, #1e40af, #3b82f6);
+    color: #fff;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    box-shadow: 0 8px 18px rgba(30, 64, 175, 0.3);
+  }
+  .fab-icon {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .fab-icon span {
+    width: 16px;
+    height: 3px;
+    background: #fff;
+    border-radius: 3px;
+    display: block;
+  }
+  .fab-menu {
+    position: absolute;
+    top: 52px;
+    right: 0;
+    background: rgba(255,255,255,0.98);
+    border: 1px solid rgba(0,0,0,0.08);
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.18);
+    border-radius: 12px;
+    padding: 10px;
+    min-width: 200px;
+    display: none;
+    z-index: 10;
+  }
+  .fab-menu.open { display: block; }
+  .fab-menu a, .fab-menu div {
+    display: block;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #0f172a;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .fab-menu a:hover { background: #e0f2fe; color: #1e40af; }
+  .fab-user-name { color: #64748b; font-weight: 700; }
+
+  .summary-shell {
+    width: min(980px, 100%);
+    background: rgba(255, 255, 255, 0.92);
+    border: 1px solid #dbeafe;
+    border-radius: 18px;
+    box-shadow: 0 14px 30px rgba(15, 23, 42, 0.08);
+    padding: 18px;
+    margin-bottom: 12px;
+  }
+  .summary-head {
+    display: flex;
+    justify-content: space-between;
+    align-items: flex-start;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .summary-title {
+    margin: 0;
+    font-size: 20px;
+    font-weight: 800;
+    color: #0f172a;
+  }
+  .summary-subtitle {
+    margin: 4px 0 0;
+    font-size: 13px;
+    color: #475569;
+  }
+  .summary-controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+    background: #f8fbff;
+    border: 1px solid #dbeafe;
+    border-radius: 12px;
+    padding: 8px;
+  }
+  .summary-select {
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+    background: #fff;
+    min-width: 120px;
+  }
+  .summary-search {
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+    background: #fff;
+    min-width: 220px;
+  }
+  .summary-clear {
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    color: #334155;
+    background: #fff;
+  }
+  .summary-clear:hover {
+    border-color: #93c5fd;
+    color: #1e3a8a;
+    background: #eff6ff;
+  }
+  .duration-toggle {
+    display: inline-flex;
+    border: 1px solid #bfdbfe;
+    border-radius: 11px;
+    overflow: hidden;
+    background: #eff6ff;
+  }
+  .duration-btn {
+    border: none;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    color: #1e3a8a;
+    background: transparent;
+  }
+  .duration-btn.active {
+    background: linear-gradient(135deg, #1d4ed8, #2563eb);
+    color: #fff;
+  }
+  .kpi-mode-toggle {
+    display: inline-flex;
+    border: 1px solid #99f6e4;
+    border-radius: 11px;
+    overflow: hidden;
+    background: #f0fdfa;
+  }
+  .kpi-mode-btn {
+    border: none;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    color: #0f766e;
+    background: transparent;
+  }
+  .kpi-mode-btn.active {
+    background: linear-gradient(135deg, #0f766e, #14b8a6);
+    color: #fff;
+  }
+  .summary-refresh {
+    border: none;
+    border-radius: 10px;
+    padding: 8px 12px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    color: #fff;
+    background: linear-gradient(135deg, #0f766e, #14b8a6);
+  }
+  .summary-refresh[disabled] {
+    opacity: 0.65;
+    cursor: wait;
+  }
+  .summary-status {
+    margin-top: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    padding: 7px 10px;
+    border-radius: 10px;
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .summary-status.idle {
+    color: #1e3a8a;
+    background: #eff6ff;
+  }
+  .summary-status.loading {
+    color: #0f766e;
+    background: #ecfeff;
+  }
+  .summary-status.error {
+    color: #b91c1c;
+    background: #fee2e2;
+  }
+  .summary-status.loading::before {
+    content: "";
+    width: 11px;
+    height: 11px;
+    border-radius: 50%;
+    border: 2px solid rgba(15, 118, 110, 0.25);
+    border-top-color: #0f766e;
+    animation: spin 0.8s linear infinite;
+  }
+  @keyframes spin {
+    to { transform: rotate(360deg); }
+  }
+  .kpi-grid {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(165px, 1fr));
+    gap: 10px;
+  }
+  .kpi-card {
+    border: 1px solid #dbeafe;
+    border-radius: 14px;
+    padding: 10px;
+    background: linear-gradient(160deg, #ffffff, #f8fbff);
+  }
+  .kpi-label {
+    font-size: 11px;
+    color: #64748b;
+    text-transform: uppercase;
+    letter-spacing: 0.4px;
+    font-weight: 700;
+  }
+  .kpi-value {
+    margin-top: 4px;
+    font-size: 21px;
+    font-weight: 800;
+    color: #0f172a;
+  }
+  .kpi-trend {
+    margin-top: 4px;
+    font-size: 11px;
+    font-weight: 700;
+  }
+  .kpi-trend.up { color: #15803d; }
+  .kpi-trend.down { color: #b91c1c; }
+  .kpi-trend.flat { color: #64748b; }
+
+  .dept-grid {
+    margin-top: 12px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(300px, 1fr));
+    gap: 10px;
+  }
+  .dept-card {
+    border: 1px solid #dbeafe;
+    border-radius: 12px;
+    background: #fff;
+    padding: 10px 12px;
+  }
+  .dept-card h4 {
+    margin: 0 0 8px;
+    font-size: 13px;
+    font-weight: 800;
+    color: #0f172a;
+  }
+  .dept-card.potential h4 { color: #166534; }
+  .dept-card.attention h4 { color: #b91c1c; }
+  .dept-card.steady h4 { color: #0f766e; }
+  .dept-card.stagnating h4 { color: #92400e; }
+  .dept-list {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 6px;
+  }
+  .dept-item {
+    font-size: 12px;
+    border-bottom: 1px dashed #e2e8f0;
+    padding-bottom: 5px;
+    color: #1e293b;
+    white-space: nowrap;
+    overflow: hidden;
+    text-overflow: ellipsis;
+  }
+  .dept-item:last-child {
+    border-bottom: none;
+    padding-bottom: 0;
+  }
+  .dept-empty {
+    font-size: 12px;
+    color: #64748b;
+  }
+
+  .summary-table-wrap {
+    margin-top: 12px;
+    border: 1px solid #dbeafe;
+    border-radius: 12px;
+    overflow: auto;
+    max-height: 430px;
+    background: #fff;
+  }
+  .summary-table {
+    width: 100%;
+    border-collapse: separate;
+    border-spacing: 0;
+    min-width: 1080px;
+    font-size: 12px;
+  }
+  .summary-table thead th {
+    position: sticky;
+    top: 0;
+    background: #eaf2ff;
+    color: #1e3a8a;
+    z-index: 2;
+    text-align: left;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.35px;
+    padding: 10px 10px;
+    border-bottom: 1px solid #bfdbfe;
+  }
+  .summary-table tbody td {
+    padding: 9px 10px;
+    border-bottom: 1px solid #eff6ff;
+    color: #1e293b;
+    white-space: nowrap;
+  }
+  .summary-table tbody tr:nth-child(even):not(.status-healthy):not(.status-watch):not(.status-critical) {
+    background: #fafcff;
+  }
+  .summary-table tbody tr:hover td {
+    background: #eef6ff;
+  }
+  .summary-table tbody tr.status-healthy { background: #f8fff9; }
+  .summary-table tbody tr.status-watch { background: #fffbeb; }
+  .summary-table tbody tr.status-critical { background: #fff7f7; }
+  .metric-high { color: #166534; font-weight: 800; }
+  .metric-mid { color: #b45309; font-weight: 800; }
+  .metric-low { color: #b91c1c; font-weight: 800; }
+  .summary-pagination {
+    margin-top: 10px;
+    display: none;
+    align-items: center;
+    justify-content: flex-end;
+    gap: 8px;
+  }
+  .summary-page-btn {
+    border: 1px solid #bfdbfe;
+    border-radius: 9px;
+    padding: 6px 10px;
+    background: #eff6ff;
+    color: #1e3a8a;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+  }
+  .summary-page-btn[disabled] {
+    opacity: 0.5;
+    cursor: not-allowed;
+  }
+  .summary-page-info {
+    min-width: 130px;
+    text-align: center;
+    font-size: 12px;
+    font-weight: 700;
+    color: #334155;
+  }
+  .summary-row-info {
+    min-width: 120px;
+    text-align: right;
+    font-size: 11px;
+    color: #64748b;
+    font-weight: 700;
+  }
+  .summary-note {
+    margin-top: 8px;
+    font-size: 12px;
+    color: #64748b;
+    font-weight: 700;
+  }
+  .summary-help {
+    margin-top: 6px;
+    font-size: 12px;
+    color: #475569;
+  }
+  .summary-empty {
+    margin-top: 10px;
+    font-size: 13px;
+    color: #64748b;
+    display: none;
+  }
+  .summary-export-panel {
+    width: min(1040px, 100%);
+    margin-top: 12px;
+  }
+  .summary-export {
+    border: 1px solid #dbeafe;
+    border-radius: 12px;
+    background: #fff;
+    padding: 10px;
+    box-shadow: 0 6px 14px rgba(30, 64, 175, 0.08);
+  }
+  .summary-export-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .summary-export-title {
+    margin: 0;
+    font-size: 13px;
+    font-weight: 800;
+    color: #0f172a;
+  }
+  .summary-export-sub {
+    margin: 2px 0 0;
+    font-size: 11px;
+    color: #64748b;
+  }
+  .summary-export-controls {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    align-items: center;
+  }
+  .summary-export .summary-status {
+    margin-top: 8px;
+  }
+
+  @media (max-width: 1120px) {
+    .mod-workspace {
+      grid-template-columns: 240px minmax(0, 1fr);
+    }
+    .summary-shell {
+      width: min(920px, 100%);
+    }
+    .summary-export-panel {
+      width: min(920px, 100%);
+    }
+  }
+
+  @media (max-width: 860px) {
+    .mod-hero { padding: 16px; }
+    .mod-workspace {
+      grid-template-columns: 1fr;
+      gap: 12px;
+    }
+    .mod-sidebar {
+      position: static;
+    }
+    .mod-grid {
+      display: grid;
+      grid-template-columns: 1fr;
+    }
+    .summary-shell { padding: 14px; }
+    .dept-grid { grid-template-columns: 1fr; }
+    .summary-pagination { justify-content: center; }
+  }
+</style>
+
+<div class="fab-user">
+  <button class="fab-btn" id="fabToggle" title="User Menu">
+    <span class="fab-icon"><span></span><span></span><span></span></span>
+  </button>
+  <div class="fab-menu" id="fabMenu">
+    <div class="fab-user-name">{{ session.get('username','User') }}</div>
+    <a href="{{ url_for('dashboard') }}">Dashboard</a>
+    <a href="{{ url_for('mod_reports_dashboard') }}">MOD Reports</a>
+    <a href="{{ url_for('logout') }}" style="color:#dc2626;">Logout</a>
+  </div>
+</div>
+
+<section class="mod-hero">
+  <div>
+    <h2>MOD Reports</h2>
+    <p>Operational snapshots and end-of-day summaries ready for export.</p>
+  </div>
+</section>
+
+{% set can_view_snapshot_health = (session.get('role', '')|string|lower) in ['it', 'management'] %}
+
+<div class="mod-workspace">
+  <aside class="mod-sidebar">
+    <section class="mod-grid">
+      <div class="mod-side-head">Navigate MOD Modules</div>
+      <a class="mod-card {% if request.path == url_for('night_report_page') %}active{% endif %}" href="{{ url_for('night_report_page') }}">
+        <div class="mod-icon">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M21 12.5A8.5 8.5 0 1 1 11.5 3a6.5 6.5 0 1 0 9.5 9.5z"></path>
+            <path d="M4 17h6"></path>
+            <path d="M4 21h10"></path>
+          </svg>
+        </div>
+        <div class="mod-card-copy">
+          <div class="mod-title">Night Report</div>
+          <div class="mod-desc">Daily admissions, occupancy, and doctor counts.</div>
+        </div>
+        <span class="mod-arrow" aria-hidden="true">&gt;</span>
+      </a>
+      <a class="mod-card {% if request.path == url_for('morning_report_page') %}active{% endif %}" href="{{ url_for('morning_report_page') }}">
+        <div class="mod-icon">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <circle cx="12" cy="12" r="4"></circle>
+            <path d="M12 2v2"></path>
+            <path d="M12 20v2"></path>
+            <path d="M4.93 4.93l1.41 1.41"></path>
+            <path d="M17.66 17.66l1.41 1.41"></path>
+            <path d="M2 12h2"></path>
+            <path d="M20 12h2"></path>
+          </svg>
+        </div>
+        <div class="mod-card-copy">
+          <div class="mod-title">Morning MOD Report</div>
+          <div class="mod-desc">08:00 summary with investigations and procedures.</div>
+        </div>
+        <span class="mod-arrow" aria-hidden="true">&gt;</span>
+      </a>
+      {% if can_view_snapshot_health %}
+      <a class="mod-card {% if request.path == url_for('night_snapshot_health_page') %}active{% endif %}" href="{{ url_for('night_snapshot_health_page') }}">
+        <div class="mod-icon">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M12 3v18"></path>
+            <path d="M7 8h8"></path>
+            <path d="M7 12h8"></path>
+            <path d="M7 16h8"></path>
+            <circle cx="18" cy="6" r="2.2"></circle>
+          </svg>
+        </div>
+        <div class="mod-card-copy">
+          <div class="mod-title">Night Snapshot Health</div>
+          <div class="mod-desc">23:59:50 auto-run audit and save checks.</div>
+        </div>
+        <span class="mod-arrow" aria-hidden="true">&gt;</span>
+      </a>
+      <a class="mod-card {% if request.path == url_for('morning_snapshot_health_page') %}active{% endif %}" href="{{ url_for('morning_snapshot_health_page') }}">
+        <div class="mod-icon">
+          <svg viewBox="0 0 24 24" width="24" height="24" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+            <path d="M4 20h16"></path>
+            <path d="M6 16l3-4 3 2 4-6 2 3"></path>
+            <circle cx="6" cy="16" r="1.5"></circle>
+            <circle cx="12" cy="14" r="1.5"></circle>
+            <circle cx="16" cy="8" r="1.5"></circle>
+          </svg>
+        </div>
+        <div class="mod-card-copy">
+          <div class="mod-title">Morning Snapshot Health</div>
+          <div class="mod-desc">08:00 coverage and persistence monitor.</div>
+        </div>
+        <span class="mod-arrow" aria-hidden="true">&gt;</span>
+      </a>
+      {% endif %}
+    </section>
+  </aside>
+
+  <main class="mod-content">
+    <section class="summary-export-panel">
+      <div class="summary-export">
+        <div class="summary-export-head">
+          <div>
+            <p class="summary-export-title">Locked Sequence Audit Export</p>
+            <p class="summary-export-sub">Excel audit export for locked night + follow-up morning MOD sequences.</p>
+          </div>
+          <div class="summary-export-controls">
+            <input id="auditFrom" class="summary-select" type="date" title="From Date" />
+            <input id="auditTo" class="summary-select" type="date" title="To Date" />
+            <select id="auditUnit" class="summary-select" title="Unit">
+              {% if allowed_units and allowed_units|length > 1 %}
+                <option value="ALL" {% if (selected_unit or '')|upper == 'ALL' %}selected{% endif %}>ALL Units</option>
+              {% endif %}
+              {% if allowed_units %}
+                {% for unit in allowed_units %}
+                  <option value="{{ unit }}" {% if unit == (selected_unit or '') %}selected{% endif %}>{{ unit }}</option>
+                {% endfor %}
+              {% else %}
+                <option value="ALL" selected>ALL Units</option>
+              {% endif %}
+            </select>
+            <select id="auditSegment" class="summary-select" title="AHL Segment" style="display:none;">
+              <option value="total" selected>Combined</option>
+              <option value="asarfi">Asarfi</option>
+              <option value="cardiac">Cardiac</option>
+            </select>
+            <button type="button" id="auditExportBtn" class="summary-refresh">Export Excel</button>
+          </div>
+        </div>
+        <div id="auditExportStatus" class="summary-status idle">
+          Exports locked (closed) sequences only where night and morning snapshots are both available.
+        </div>
+      </div>
+    </section>
+    <section class="summary-shell">
+      <div class="summary-head">
+        <div>
+          <h3 class="summary-title">MOD Summary View</h3>
+          <p class="summary-subtitle">Scrollable saved-report view with KPI averages for daily, monthly, and yearly durations.</p>
+        </div>
+        <div class="summary-controls">
+          <select id="summaryUnit" class="summary-select" title="Unit">
+            {% if allowed_units and allowed_units|length > 1 %}
+              <option value="ALL" {% if (selected_unit or '')|upper == 'ALL' %}selected{% endif %}>ALL Units</option>
+            {% endif %}
+            {% if allowed_units %}
+              {% for unit in allowed_units %}
+                <option value="{{ unit }}" {% if unit == (selected_unit or '') %}selected{% endif %}>{{ unit }}</option>
+              {% endfor %}
+            {% else %}
+              <option value="ALL" selected>ALL Units</option>
+            {% endif %}
+          </select>
+          <select id="summarySegment" class="summary-select" title="AHL Segment" style="display:none;">
+            <option value="total" selected>Combined</option>
+            <option value="asarfi">Asarfi</option>
+            <option value="cardiac">Cardiac</option>
+          </select>
+          <div class="duration-toggle">
+            <button type="button" class="duration-btn active" data-duration="daily">Daily</button>
+            <button type="button" class="duration-btn" data-duration="monthly">Monthly</button>
+            <button type="button" class="duration-btn" data-duration="yearly">Yearly</button>
+          </div>
+          <div class="kpi-mode-toggle" title="KPI Mode">
+            <button type="button" class="kpi-mode-btn active" data-kpi-mode="range">Range Total</button>
+            <button type="button" class="kpi-mode-btn" data-kpi-mode="latest">Latest Day</button>
+          </div>
+          <input id="summarySearch" class="summary-search" type="search" placeholder="Search period, values, snapshot..." />
+          <button type="button" id="summarySearchClear" class="summary-clear">Clear</button>
+          <button type="button" id="summaryRefresh" class="summary-refresh">Refresh</button>
+        </div>
+      </div>
+
+      <div id="summaryStatus" class="summary-status idle">Ready</div>
+
+      <div class="kpi-grid">
+        <div class="kpi-card"><div class="kpi-label">Occupancy % @08:00</div><div class="kpi-value" id="kpiOcc">-</div><div class="kpi-trend flat" id="trendOcc">No trend</div></div>
+        <div class="kpi-card"><div class="kpi-label">OPD (Prev Day upto 00:00)</div><div class="kpi-value" id="kpiOpd">-</div><div class="kpi-trend flat" id="trendOpd">No trend</div></div>
+        <div class="kpi-card"><div class="kpi-label">IPD (Prev Day upto 00:00)</div><div class="kpi-value" id="kpiIpd">-</div><div class="kpi-trend flat" id="trendIpd">No trend</div></div>
+        <div class="kpi-card"><div class="kpi-label">Admissions (Prev Day upto 00:00)</div><div class="kpi-value" id="kpiAdm">-</div><div class="kpi-trend flat" id="trendAdm">No trend</div></div>
+        <div class="kpi-card"><div class="kpi-label">Discharges (Prev Day)</div><div class="kpi-value" id="kpiDis">-</div><div class="kpi-trend flat" id="trendDis">No trend</div></div>
+        <div class="kpi-card"><div class="kpi-label">Admissions (00:00 to 08:00 Today)</div><div class="kpi-value" id="kpiNight0800">-</div><div class="kpi-trend flat" id="trendNight0800">Night window only</div></div>
+        <div class="kpi-card"><div class="kpi-label">Investigations Total (Prev Day)</div><div class="kpi-value" id="kpiInv">-</div><div class="kpi-trend flat" id="trendInv">Saved reports only</div></div>
+        <div class="kpi-card"><div class="kpi-label">Key Procedures Total (Prev Day)</div><div class="kpi-value" id="kpiProc">-</div><div class="kpi-trend flat" id="trendProc">Saved reports only</div></div>
+      </div>
+      <div class="dept-grid">
+        <div class="dept-card potential">
+          <h4>OPD Departments With Growth Potential</h4>
+          <ul class="dept-list" id="opdPotential"></ul>
+          <div class="dept-empty" id="opdPotentialEmpty">No OPD trend data available yet.</div>
+        </div>
+        <div class="dept-card attention">
+          <h4>OPD Departments Needing Attention</h4>
+          <ul class="dept-list" id="opdAttention"></ul>
+          <div class="dept-empty" id="opdAttentionEmpty">No OPD concern trends in this range.</div>
+        </div>
+        <div class="dept-card potential">
+          <h4>IPD Departments With Growth Potential</h4>
+          <ul class="dept-list" id="ipdPotential"></ul>
+          <div class="dept-empty" id="ipdPotentialEmpty">No IPD trend data available yet.</div>
+        </div>
+        <div class="dept-card attention">
+          <h4>IPD Departments Needing Attention</h4>
+          <ul class="dept-list" id="ipdAttention"></ul>
+          <div class="dept-empty" id="ipdAttentionEmpty">No IPD concern trends in this range.</div>
+        </div>
+        <div class="dept-card steady">
+          <h4>OPD Departments Steady</h4>
+          <ul class="dept-list" id="opdSteady"></ul>
+          <div class="dept-empty" id="opdSteadyEmpty">No OPD steady trends in this range.</div>
+        </div>
+        <div class="dept-card stagnating">
+          <h4>OPD Departments Stagnating</h4>
+          <ul class="dept-list" id="opdStagnating"></ul>
+          <div class="dept-empty" id="opdStagnatingEmpty">No OPD stagnating trends in this range.</div>
+        </div>
+        <div class="dept-card steady">
+          <h4>IPD Departments Steady</h4>
+          <ul class="dept-list" id="ipdSteady"></ul>
+          <div class="dept-empty" id="ipdSteadyEmpty">No IPD steady trends in this range.</div>
+        </div>
+        <div class="dept-card stagnating">
+          <h4>IPD Departments Stagnating</h4>
+          <ul class="dept-list" id="ipdStagnating"></ul>
+          <div class="dept-empty" id="ipdStagnatingEmpty">No IPD stagnating trends in this range.</div>
+        </div>
+      </div>
+
+      <div class="summary-table-wrap">
+        <table class="summary-table">
+          <thead>
+            <tr>
+              <th>Period</th>
+              <th>Days</th>
+              <th id="summaryUnitHeader">Units</th>
+              <th>Locked Snapshots</th>
+              <th>Occupancy Used @08:00</th>
+              <th>Occupancy Beds @08:00</th>
+              <th>Occupancy % @08:00</th>
+              <th>OPD (Prev Day upto 00:00)</th>
+              <th>IPD (Prev Day upto 00:00)</th>
+              <th>Admissions (Prev Day upto 00:00)</th>
+              <th>Discharges (Prev Day)</th>
+              <th>Investigations Total (Prev Day)</th>
+              <th>Key Procedures Total (Prev Day)</th>
+              <th>Completeness %</th>
+              <th>Latest Snapshot</th>
+            </tr>
+          </thead>
+          <tbody id="summaryTableBody"></tbody>
+        </table>
+      </div>
+      <div class="summary-pagination" id="summaryPagination">
+        <button type="button" class="summary-page-btn" id="summaryPrevPage">Prev</button>
+        <span class="summary-page-info" id="summaryPageInfo">Page 1 / 1</span>
+        <button type="button" class="summary-page-btn" id="summaryNextPage">Next</button>
+        <span class="summary-row-info" id="summaryRowInfo">Showing 0-0</span>
+      </div>
+      <div class="summary-note" id="summaryTrendNote">KPI delta values compare with previous period.</div>
+      <div class="summary-help" id="summaryHelpText">Locked snapshots: morning + night snapshots found for each closed day. Completeness% = locked snapshots found / expected snapshots.</div>
+      <div id="summaryEmpty" class="summary-empty">No locked MOD snapshot data found for this selection.</div>
+
+    </section>
+  </main>
+</div>
+
+<script>
+  const fabToggle = document.getElementById('fabToggle');
+  const fabMenu = document.getElementById('fabMenu');
+
+  fabToggle?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    fabMenu?.classList.toggle('open');
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!fabMenu || !fabToggle) return;
+    if (!fabMenu.contains(event.target) && !fabToggle.contains(event.target)) {
+      fabMenu.classList.remove('open');
+    }
+  });
+
+  const SUMMARY_API_URL = "{{ url_for('api_mod_reports_summary') }}";
+  const MOD_AUDIT_EXPORT_URL = "{{ url_for('api_mod_reports_sequence_audit_export_excel') }}";
+  const MOD_PREFS_KEY = 'mod_reports_ui_prefs_v1';
+  const state = {
+    duration: 'daily',
+    kpiMode: 'range',
+    unit: document.getElementById('summaryUnit')?.value || 'ALL',
+    resolvedUnit: document.getElementById('summaryUnit')?.value || 'ALL',
+    segment: document.getElementById('summarySegment')?.value || 'total',
+    resolvedSegment: document.getElementById('summarySegment')?.value || 'total',
+    rowsAll: [],
+    rowsCompareAll: [],
+    rowsFiltered: [],
+    rowsCompareFiltered: [],
+    page: 1,
+    pageSize: 5,
+    meta: {},
+    busy: false,
+    timer: null,
+  };
+
+  const LIMIT_BY_DURATION = { daily: 45, monthly: 18, yearly: 8 };
+  const AUTO_REFRESH_MS = 90000;
+
+  function formatNumber(value, digits = 1) {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+    return Number(value).toLocaleString(undefined, {
+      minimumFractionDigits: digits,
+      maximumFractionDigits: digits,
+    });
+  }
+
+  function formatCount(value) {
+    if (value === null || value === undefined || Number.isNaN(Number(value))) return '-';
+    return Number(value).toLocaleString(undefined, { maximumFractionDigits: 0 });
+  }
+
+  function setStatus(kind, text) {
+    const el = document.getElementById('summaryStatus');
+    if (!el) return;
+    el.className = `summary-status ${kind}`;
+    el.textContent = text;
+  }
+
+  function _savePrefs() {
+    try {
+      const payload = {
+        summary: {
+          duration: state.duration,
+          kpi_mode: state.kpiMode,
+          unit: state.unit,
+          segment: state.segment,
+          search: (document.getElementById('summarySearch')?.value || '').trim(),
+        },
+        audit: {
+          from: (document.getElementById('auditFrom')?.value || ''),
+          to: (document.getElementById('auditTo')?.value || ''),
+          unit: (document.getElementById('auditUnit')?.value || 'ALL'),
+          segment: (document.getElementById('auditSegment')?.value || 'total'),
+        },
+      };
+      localStorage.setItem(MOD_PREFS_KEY, JSON.stringify(payload));
+    } catch (_) {}
+  }
+
+  function _loadPrefs() {
+    try {
+      const raw = localStorage.getItem(MOD_PREFS_KEY);
+      if (!raw) return;
+      const payload = JSON.parse(raw);
+      const summary = payload?.summary || {};
+      const audit = payload?.audit || {};
+
+      if (['daily', 'monthly', 'yearly'].includes(String(summary.duration || '').toLowerCase())) {
+        state.duration = String(summary.duration).toLowerCase();
+      }
+      if (['range', 'latest'].includes(String(summary.kpi_mode || '').toLowerCase())) {
+        state.kpiMode = String(summary.kpi_mode).toLowerCase();
+      }
+      const sumUnit = document.getElementById('summaryUnit');
+      if (sumUnit && summary.unit) {
+        const exists = Array.from(sumUnit.options || []).some((o) => String(o.value || '').toUpperCase() === String(summary.unit).toUpperCase());
+        if (exists) {
+          sumUnit.value = summary.unit;
+          state.unit = summary.unit;
+          state.resolvedUnit = summary.unit;
+        }
+      }
+      if (['total', 'asarfi', 'cardiac'].includes(String(summary.segment || '').toLowerCase())) {
+        state.segment = String(summary.segment).toLowerCase();
+        state.resolvedSegment = state.segment;
+      }
+      const searchEl = document.getElementById('summarySearch');
+      if (searchEl && typeof summary.search === 'string') {
+        searchEl.value = summary.search;
+      }
+
+      const auditFrom = document.getElementById('auditFrom');
+      const auditTo = document.getElementById('auditTo');
+      const auditUnit = document.getElementById('auditUnit');
+      const auditSegment = document.getElementById('auditSegment');
+
+      if (auditFrom && typeof audit.from === 'string') auditFrom.value = audit.from;
+      if (auditTo && typeof audit.to === 'string') auditTo.value = audit.to;
+      if (auditUnit && audit.unit) {
+        const exists = Array.from(auditUnit.options || []).some((o) => String(o.value || '').toUpperCase() === String(audit.unit).toUpperCase());
+        if (exists) auditUnit.value = audit.unit;
+      }
+      if (auditSegment && ['total', 'asarfi', 'cardiac'].includes(String(audit.segment || '').toLowerCase())) {
+        auditSegment.value = String(audit.segment).toLowerCase();
+      }
+    } catch (_) {}
+  }
+
+  function _trendLabel() {
+    if (state.kpiMode === 'range') return 'range';
+    if (state.duration === 'monthly') return 'month';
+    if (state.duration === 'yearly') return 'year';
+    return 'day';
+  }
+
+  function setTrend(elId, delta, suffix = '') {
+    const el = document.getElementById(elId);
+    if (!el) return;
+    const prevLabel = _trendLabel();
+    const compareText = state.kpiMode === 'range'
+      ? 'vs previous range'
+      : `vs prev ${prevLabel}`;
+    if (delta === null || delta === undefined || Number.isNaN(Number(delta))) {
+      el.className = 'kpi-trend flat';
+      el.textContent = `No previous ${prevLabel}`;
+      return;
+    }
+    const n = Number(delta);
+    if (n > 0) {
+      el.className = 'kpi-trend up';
+      el.textContent = `+${formatNumber(n, 2)}${suffix} ${compareText}`;
+      return;
+    }
+    if (n < 0) {
+      el.className = 'kpi-trend down';
+      el.textContent = `${formatNumber(n, 2)}${suffix} ${compareText}`;
+      return;
+    }
+    el.className = 'kpi-trend flat';
+    el.textContent = state.kpiMode === 'range'
+      ? 'No change vs previous range'
+      : `No change vs prev ${prevLabel}`;
+  }
+
+  function _syncDurationButtons() {
+    document.querySelectorAll('.duration-btn').forEach((btn) => {
+      const active = btn.dataset.duration === state.duration;
+      btn.classList.toggle('active', active);
+    });
+  }
+
+  function _syncKpiModeButtons() {
+    document.querySelectorAll('.kpi-mode-btn').forEach((btn) => {
+      const active = btn.dataset.kpiMode === state.kpiMode;
+      btn.classList.toggle('active', active);
+    });
+  }
+
+  function updateUnitColumnHeader() {
+    const unitHeader = document.getElementById('summaryUnitHeader');
+    if (unitHeader) {
+      unitHeader.textContent = state.resolvedUnit && state.resolvedUnit !== 'ALL' ? 'Unit' : 'Units';
+    }
+    const note = document.getElementById('summaryTrendNote');
+    if (note) {
+      if (state.kpiMode === 'range') {
+        note.textContent = 'KPI mode: Range Total. Deltas compare with the previous equivalent range.';
+      } else {
+        note.textContent = `KPI mode: Latest Day. Deltas compare with previous ${_trendLabel()}.`;
+      }
+    }
+  }
+
+  function renderDeptList(containerId, emptyId, rows, { statusLabel }) {
+    const list = document.getElementById(containerId);
+    const empty = document.getElementById(emptyId);
+    if (!list || !empty) return;
+    list.innerHTML = '';
+    if (!rows || !rows.length) {
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+    rows.forEach((row) => {
+      const li = document.createElement('li');
+      li.className = 'dept-item';
+      const pctRaw = row.trend_pct;
+      const pctText = (pctRaw === null || pctRaw === undefined || Number.isNaN(Number(pctRaw)))
+        ? 'n/a'
+        : `${Number(pctRaw) > 0 ? '+' : ''}${formatNumber(pctRaw, 1)}%`;
+      const delta = Number(row.trend_delta || 0);
+      const deltaText = `${delta > 0 ? '+' : ''}${formatNumber(delta, 1)}`;
+      const avgValue = row.avg_metric ?? row.avg_total ?? 0;
+      li.textContent = `${row.department || '-'} | ${statusLabel} ${pctText} (${deltaText}) | Avg ${formatNumber(avgValue, 1)}`;
+      list.appendChild(li);
+    });
+  }
+
+  function renderDeptInsights(payload) {
+    const insight = payload?.dept_insights || {};
+    renderDeptList('opdPotential', 'opdPotentialEmpty', insight.opd?.potential || [], { statusLabel: 'Growth' });
+    renderDeptList('opdAttention', 'opdAttentionEmpty', insight.opd?.needs_attention || [], { statusLabel: 'Drop' });
+    renderDeptList('ipdPotential', 'ipdPotentialEmpty', insight.ipd?.potential || [], { statusLabel: 'Growth' });
+    renderDeptList('ipdAttention', 'ipdAttentionEmpty', insight.ipd?.needs_attention || [], { statusLabel: 'Drop' });
+    renderDeptList('opdSteady', 'opdSteadyEmpty', insight.opd?.steady || [], { statusLabel: 'Stable' });
+    renderDeptList('opdStagnating', 'opdStagnatingEmpty', insight.opd?.stagnating || [], { statusLabel: 'Flat' });
+    renderDeptList('ipdSteady', 'ipdSteadyEmpty', insight.ipd?.steady || [], { statusLabel: 'Stable' });
+    renderDeptList('ipdStagnating', 'ipdStagnatingEmpty', insight.ipd?.stagnating || [], { statusLabel: 'Flat' });
+    const help = document.getElementById('summaryHelpText');
+    if (help) {
+      const lockedLine = 'Locked snapshots: morning + night snapshots found for each closed day. Completeness% = locked snapshots found / expected snapshots.';
+      help.textContent = insight.note ? `${lockedLine} ${insight.note}` : lockedLine;
+    }
+  }
+
+  function segmentTitle(segment) {
+    const key = String(segment || 'total').toLowerCase();
+    if (key === 'asarfi') return 'Asarfi';
+    if (key === 'cardiac') return 'Cardiac';
+    return 'Combined';
+  }
+
+  function syncSegmentControl() {
+    const select = document.getElementById('summarySegment');
+    if (!select) return;
+    const isAhl = (state.unit || '').toUpperCase() === 'AHL';
+    if (isAhl) {
+      select.style.display = '';
+      if (!['total', 'asarfi', 'cardiac'].includes(String(state.segment || '').toLowerCase())) {
+        state.segment = 'total';
+      }
+      select.value = state.segment;
+      return;
+    }
+    state.segment = 'total';
+    state.resolvedSegment = 'total';
+    select.value = 'total';
+    select.style.display = 'none';
+  }
+
+  function metricClass(value, kind) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return '';
+    if (kind === 'coverage') {
+      if (n >= 90) return 'metric-high';
+      if (n >= 70) return 'metric-mid';
+      return 'metric-low';
+    }
+    if (kind === 'occupancy') {
+      if (n >= 80) return 'metric-high';
+      if (n >= 65) return 'metric-mid';
+      return 'metric-low';
+    }
+    return '';
+  }
+
+  function _toNumber(value) {
+    const n = Number(value);
+    return Number.isFinite(n) ? n : null;
+  }
+
+  function _calcSum(rows, field, fallbackField = null) {
+    if (!rows || !rows.length) return null;
+    let total = 0;
+    let found = false;
+    rows.forEach((row) => {
+      let v = _toNumber(row?.[field]);
+      if (v === null && fallbackField) v = _toNumber(row?.[fallbackField]);
+      if (v !== null) {
+        total += v;
+        found = true;
+      }
+    });
+    return found ? total : null;
+  }
+
+  function _metricFromRow(row, field, fallbackField = null) {
+    const val = _toNumber(row?.[field]);
+    if (val !== null) return val;
+    return fallbackField ? _toNumber(row?.[fallbackField]) : null;
+  }
+
+  function _calcTrend(rows, field, fallbackField = null) {
+    if (!rows || rows.length < 2) return null;
+    const a = _metricFromRow(rows[0], field, fallbackField);
+    const b = _metricFromRow(rows[1], field, fallbackField);
+    if (a === null || b === null) return null;
+    return a - b;
+  }
+
+  function _rangeSumDelta(currentRows, previousRows, field, fallbackField = null) {
+    const cur = _calcSum(currentRows, field, fallbackField);
+    const needed = Math.max(1, (currentRows || []).length);
+    const prev = _calcSum((previousRows || []).slice(0, needed), field, fallbackField);
+    if (cur === null || prev === null) return null;
+    return cur - prev;
+  }
+
+  function _occPctForRows(rows) {
+    const used = _calcSum(rows, 'occupancy_used');
+    const beds = _calcSum(rows, 'occupancy_beds');
+    if (used === null || beds === null || beds <= 0) return null;
+    return (used / beds) * 100;
+  }
+
+  function _occPctFromRow(row) {
+    const direct = _toNumber(row?.avg_occupancy_pct);
+    if (direct !== null) return direct;
+    const used = _toNumber(row?.occupancy_used);
+    const beds = _toNumber(row?.occupancy_beds);
+    if (used === null || beds === null || beds <= 0) return null;
+    return (used / beds) * 100;
+  }
+
+  function _latestDelta(currentRows, previousRows, field, fallbackField = null) {
+    const curRow = (currentRows || [])[0] || null;
+    const prevRow = (currentRows || [])[1] || (previousRows || [])[0] || null;
+    const cur = _metricFromRow(curRow, field, fallbackField);
+    const prev = _metricFromRow(prevRow, field, fallbackField);
+    if (cur === null || prev === null) return null;
+    return cur - prev;
+  }
+
+  function _latestOccDelta(currentRows, previousRows) {
+    const curRow = (currentRows || [])[0] || null;
+    const prevRow = (currentRows || [])[1] || (previousRows || [])[0] || null;
+    const cur = _occPctFromRow(curRow);
+    const prev = _occPctFromRow(prevRow);
+    if (cur === null || prev === null) return null;
+    return cur - prev;
+  }
+
+  function _rangeOccDelta(currentRows, previousRows) {
+    const cur = _occPctForRows(currentRows);
+    const needed = Math.max(1, (currentRows || []).length);
+    const prev = _occPctForRows((previousRows || []).slice(0, needed));
+    if (cur === null || prev === null) return null;
+    return cur - prev;
+  }
+
+  function updateKpisFromRows(currentRows, previousRows) {
+    const isRange = state.kpiMode === 'range';
+    const basisRows = isRange ? (currentRows || []) : (((currentRows || [])[0]) ? [(currentRows || [])[0]] : []);
+
+    const occ = isRange ? _occPctForRows(basisRows) : _occPctFromRow((basisRows || [])[0] || null);
+    const opd = isRange ? _calcSum(basisRows, 'total_opd', 'avg_opd') : _metricFromRow((basisRows || [])[0] || null, 'total_opd', 'avg_opd');
+    const ipd = isRange ? _calcSum(basisRows, 'total_ipd', 'avg_ipd') : _metricFromRow((basisRows || [])[0] || null, 'total_ipd', 'avg_ipd');
+    const adm = isRange ? _calcSum(basisRows, 'total_night_admissions', 'avg_night_admissions') : _metricFromRow((basisRows || [])[0] || null, 'total_night_admissions', 'avg_night_admissions');
+    const dis = isRange ? _calcSum(basisRows, 'total_night_discharges', 'avg_night_discharges') : _metricFromRow((basisRows || [])[0] || null, 'total_night_discharges', 'avg_night_discharges');
+    const night0800 = isRange ? _calcSum(basisRows, 'total_night_0000_0800_admissions', 'avg_night_0000_0800_admissions') : _metricFromRow((basisRows || [])[0] || null, 'total_night_0000_0800_admissions', 'avg_night_0000_0800_admissions');
+    const inv = isRange ? _calcSum(basisRows, 'total_investigations', 'avg_investigations') : _metricFromRow((basisRows || [])[0] || null, 'total_investigations', 'avg_investigations');
+    const proc = isRange ? _calcSum(basisRows, 'total_procedures', 'avg_procedures') : _metricFromRow((basisRows || [])[0] || null, 'total_procedures', 'avg_procedures');
+
+    const occDelta = isRange ? _rangeOccDelta(currentRows, previousRows) : _latestOccDelta(currentRows, previousRows);
+    const opdDelta = isRange ? _rangeSumDelta(currentRows, previousRows, 'total_opd', 'avg_opd') : _latestDelta(currentRows, previousRows, 'total_opd', 'avg_opd');
+    const ipdDelta = isRange ? _rangeSumDelta(currentRows, previousRows, 'total_ipd', 'avg_ipd') : _latestDelta(currentRows, previousRows, 'total_ipd', 'avg_ipd');
+    const admDelta = isRange ? _rangeSumDelta(currentRows, previousRows, 'total_night_admissions', 'avg_night_admissions') : _latestDelta(currentRows, previousRows, 'total_night_admissions', 'avg_night_admissions');
+    const disDelta = isRange ? _rangeSumDelta(currentRows, previousRows, 'total_night_discharges', 'avg_night_discharges') : _latestDelta(currentRows, previousRows, 'total_night_discharges', 'avg_night_discharges');
+    const night0800Delta = isRange ? _rangeSumDelta(currentRows, previousRows, 'total_night_0000_0800_admissions', 'avg_night_0000_0800_admissions') : _latestDelta(currentRows, previousRows, 'total_night_0000_0800_admissions', 'avg_night_0000_0800_admissions');
+    const invDelta = isRange ? _rangeSumDelta(currentRows, previousRows, 'total_investigations', 'avg_investigations') : _latestDelta(currentRows, previousRows, 'total_investigations', 'avg_investigations');
+    const procDelta = isRange ? _rangeSumDelta(currentRows, previousRows, 'total_procedures', 'avg_procedures') : _latestDelta(currentRows, previousRows, 'total_procedures', 'avg_procedures');
+
+    document.getElementById('kpiOcc').textContent = occ === null ? '-' : `${formatNumber(occ, 2)}%`;
+    document.getElementById('kpiOpd').textContent = opd === null ? '-' : formatCount(opd);
+    document.getElementById('kpiIpd').textContent = ipd === null ? '-' : formatCount(ipd);
+    document.getElementById('kpiAdm').textContent = adm === null ? '-' : formatCount(adm);
+    document.getElementById('kpiDis').textContent = dis === null ? '-' : formatCount(dis);
+    document.getElementById('kpiNight0800').textContent = night0800 === null ? '-' : formatCount(night0800);
+    document.getElementById('kpiInv').textContent = inv === null ? '-' : formatCount(inv);
+    document.getElementById('kpiProc').textContent = proc === null ? '-' : formatCount(proc);
+
+    setTrend('trendOcc', occDelta, '%');
+    setTrend('trendOpd', opdDelta);
+    setTrend('trendIpd', ipdDelta);
+    setTrend('trendAdm', admDelta);
+    setTrend('trendDis', disDelta);
+    setTrend('trendNight0800', night0800Delta);
+    setTrend('trendInv', invDelta);
+    setTrend('trendProc', procDelta);
+  }
+
+  function _rowSearchText(row) {
+    return [
+      row?.period_label,
+      row?.period_key,
+      row?.updated_at,
+      row?.status,
+      row?.occupancy_used,
+      row?.occupancy_beds,
+      row?.avg_occupancy_pct,
+      row?.avg_opd,
+      row?.avg_ipd,
+      row?.avg_night_admissions,
+      row?.avg_night_discharges,
+      row?.avg_night_0000_0800_admissions,
+      row?.avg_investigations,
+      row?.avg_procedures,
+      row?.total_night_0000_0800_admissions,
+      row?.coverage_pct,
+      row?.reports_saved,
+      row?.units_covered,
+    ].map((v) => String(v ?? '').toLowerCase()).join(' ');
+  }
+
+  function renderPagination(totalRows) {
+    const wrap = document.getElementById('summaryPagination');
+    const prevBtn = document.getElementById('summaryPrevPage');
+    const nextBtn = document.getElementById('summaryNextPage');
+    const info = document.getElementById('summaryPageInfo');
+    const rowInfo = document.getElementById('summaryRowInfo');
+    if (!wrap || !prevBtn || !nextBtn || !info || !rowInfo) return;
+
+    const totalPages = Math.max(1, Math.ceil((totalRows || 0) / state.pageSize));
+    if (state.page > totalPages) state.page = totalPages;
+    if (state.page < 1) state.page = 1;
+
+    wrap.style.display = totalRows > 0 ? 'flex' : 'none';
+    prevBtn.disabled = state.page <= 1;
+    nextBtn.disabled = state.page >= totalPages;
+    info.textContent = `Page ${state.page} / ${totalPages}`;
+    if (!totalRows) {
+      rowInfo.textContent = 'Showing 0-0';
+    } else {
+      const start = ((state.page - 1) * state.pageSize) + 1;
+      const end = Math.min(totalRows, state.page * state.pageSize);
+      rowInfo.textContent = `Showing ${start}-${end}`;
+    }
+  }
+
+  function renderPagedRows() {
+    const start = (state.page - 1) * state.pageSize;
+    const end = start + state.pageSize;
+    renderRows(state.rowsFiltered.slice(start, end));
+    renderPagination(state.rowsFiltered.length);
+  }
+
+  function applySearchAndRender(resetPage = true) {
+    const query = (document.getElementById('summarySearch')?.value || '').trim().toLowerCase();
+    const filtered = !query
+      ? [...state.rowsAll]
+      : state.rowsAll.filter((row) => _rowSearchText(row).includes(query));
+    const filteredCompare = !query
+      ? [...state.rowsCompareAll]
+      : state.rowsCompareAll.filter((row) => _rowSearchText(row).includes(query));
+    state.rowsFiltered = filtered;
+    state.rowsCompareFiltered = filteredCompare;
+    if (resetPage) state.page = 1;
+
+    updateKpisFromRows(filtered, filteredCompare);
+    renderPagedRows();
+
+    const meta = state.meta || {};
+    const splitText = (state.resolvedUnit === 'AHL')
+      ? ` | Split ${segmentTitle(state.resolvedSegment)}`
+      : '';
+    const closedText = meta.closed_only ? ' | Closed snapshots only' : '';
+    const modeText = state.kpiMode === 'range' ? ' | KPI Range Total' : ' | KPI Latest Day';
+    const queryText = query ? ` | Search "${query}"` : '';
+    const msg = `Updated ${meta.updated_at || ''} | Range ${meta.from || '-'} to ${meta.to || '-'}${splitText}${closedText}${modeText}${queryText} | Rows ${filtered.length}${query ? `/${state.rowsAll.length}` : ''}`;
+    setStatus('idle', msg);
+  }
+
+  function renderRows(rows) {
+    const body = document.getElementById('summaryTableBody');
+    const empty = document.getElementById('summaryEmpty');
+    if (!body || !empty) return;
+    body.innerHTML = '';
+
+    if (!rows || !rows.length) {
+      empty.style.display = 'block';
+      return;
+    }
+    empty.style.display = 'none';
+
+    rows.forEach((row) => {
+      const tr = document.createElement('tr');
+      tr.className = `status-${row.status || 'watch'}`;
+
+      const occCls = metricClass(row.avg_occupancy_pct, 'occupancy');
+      const covCls = metricClass(row.coverage_pct, 'coverage');
+      const isSingle = state.resolvedUnit && state.resolvedUnit !== 'ALL';
+      const unitText = isSingle
+        ? (
+            (state.resolvedUnit === 'AHL' && state.resolvedSegment !== 'total')
+              ? `${state.resolvedUnit} (${segmentTitle(state.resolvedSegment)})`
+              : state.resolvedUnit
+          )
+        : formatCount(row.units_covered);
+
+      tr.innerHTML = `
+        <td>${row.period_label || row.period_key || '-'}</td>
+        <td>${formatCount(row.days)}</td>
+        <td>${unitText}</td>
+        <td>${formatCount(row.reports_saved)}</td>
+        <td>${formatNumber(row.occupancy_used, 1)}</td>
+        <td>${formatNumber(row.occupancy_beds, 1)}</td>
+        <td class="${occCls}">${row.avg_occupancy_pct === null || row.avg_occupancy_pct === undefined ? '-' : `${formatNumber(row.avg_occupancy_pct, 2)}%`}</td>
+        <td>${formatNumber(row.avg_opd, 1)}</td>
+        <td>${formatNumber(row.avg_ipd, 1)}</td>
+        <td>${formatNumber(row.avg_night_admissions, 1)}</td>
+        <td>${formatNumber(row.avg_night_discharges, 1)}</td>
+        <td>${formatNumber(row.avg_investigations, 1)}</td>
+        <td>${formatNumber(row.avg_procedures, 1)}</td>
+        <td class="${covCls}">${formatNumber(row.coverage_pct, 1)}%</td>
+        <td>${row.updated_at || '-'}</td>
+      `;
+      body.appendChild(tr);
+    });
+  }
+
+  async function loadSummary(silent = false) {
+    if (state.busy) return;
+    state.busy = true;
+    const refreshBtn = document.getElementById('summaryRefresh');
+    if (refreshBtn) refreshBtn.disabled = true;
+    if (!silent) setStatus('loading', 'Fetching saved MOD summary snapshots...');
+
+    try {
+      const params = new URLSearchParams({
+        duration: state.duration,
+        unit: state.unit || 'ALL',
+        segment: state.segment || 'total',
+        limit: String((LIMIT_BY_DURATION[state.duration] || 45) * 2),
+      });
+      const response = await fetch(`${SUMMARY_API_URL}?${params.toString()}`);
+      const payload = await response.json();
+      if (!response.ok || payload.status !== 'success') {
+        throw new Error(payload.message || 'Failed to load summary data');
+      }
+      state.resolvedUnit = payload.unit || state.unit || 'ALL';
+      state.resolvedSegment = payload.segment || state.segment || 'total';
+      state.meta = {
+        updated_at: payload.updated_at || '',
+        from: payload.from || '',
+        to: payload.to || '',
+        closed_only: !!payload.closed_only,
+      };
+      const visibleLimit = LIMIT_BY_DURATION[state.duration] || 45;
+      const allRows = payload.rows || [];
+      state.rowsAll = allRows.slice(0, visibleLimit);
+      state.rowsCompareAll = allRows.slice(visibleLimit);
+      updateUnitColumnHeader();
+      renderDeptInsights(payload);
+      applySearchAndRender(!silent);
+    } catch (error) {
+      setStatus('error', error.message || 'Unable to load summary');
+      state.rowsAll = [];
+      state.rowsCompareAll = [];
+      state.rowsFiltered = [];
+      state.rowsCompareFiltered = [];
+      state.meta = {};
+      renderDeptInsights({});
+      updateKpisFromRows([], []);
+      state.page = 1;
+      renderRows([]);
+      renderPagination(0);
+    } finally {
+      state.busy = false;
+      if (refreshBtn) refreshBtn.disabled = false;
+    }
+  }
+
+  function setDuration(nextDuration) {
+    state.duration = nextDuration;
+    _syncDurationButtons();
+    updateUnitColumnHeader();
+    _savePrefs();
+    loadSummary(false);
+  }
+
+  function setKpiMode(nextMode) {
+    if (!['range', 'latest'].includes(String(nextMode || '').toLowerCase())) return;
+    state.kpiMode = String(nextMode).toLowerCase();
+    _syncKpiModeButtons();
+    updateUnitColumnHeader();
+    _savePrefs();
+    applySearchAndRender(false);
+  }
+
+  function setupAutoRefresh() {
+    if (state.timer) {
+      window.clearInterval(state.timer);
+      state.timer = null;
+    }
+    state.timer = window.setInterval(() => {
+      loadSummary(true);
+    }, AUTO_REFRESH_MS);
+  }
+
+  document.querySelectorAll('.duration-btn').forEach((btn) => {
+    btn.addEventListener('click', () => setDuration(btn.dataset.duration));
+  });
+  document.querySelectorAll('.kpi-mode-btn').forEach((btn) => {
+    btn.addEventListener('click', () => setKpiMode(btn.dataset.kpiMode));
+  });
+  document.getElementById('summaryUnit')?.addEventListener('change', (event) => {
+    state.unit = event.target.value;
+    state.resolvedUnit = event.target.value;
+    syncSegmentControl();
+    updateUnitColumnHeader();
+    _savePrefs();
+    loadSummary(false);
+  });
+  document.getElementById('summarySegment')?.addEventListener('change', (event) => {
+    state.segment = event.target.value || 'total';
+    state.resolvedSegment = state.segment;
+    _savePrefs();
+    loadSummary(false);
+  });
+  document.getElementById('summarySearch')?.addEventListener('input', () => {
+    if (state.busy) return;
+    _savePrefs();
+    applySearchAndRender(true);
+  });
+  document.getElementById('summarySearchClear')?.addEventListener('click', () => {
+    const search = document.getElementById('summarySearch');
+    if (!search) return;
+    search.value = '';
+    _savePrefs();
+    applySearchAndRender(true);
+    search.focus();
+  });
+  document.getElementById('summaryRefresh')?.addEventListener('click', () => loadSummary(false));
+  document.getElementById('summaryPrevPage')?.addEventListener('click', () => {
+    if (state.page <= 1) return;
+    state.page -= 1;
+    renderPagedRows();
+  });
+  document.getElementById('summaryNextPage')?.addEventListener('click', () => {
+    const totalPages = Math.max(1, Math.ceil((state.rowsFiltered.length || 0) / state.pageSize));
+    if (state.page >= totalPages) return;
+    state.page += 1;
+    renderPagedRows();
+  });
+
+  function _toIsoDate(dt) {
+    const y = dt.getFullYear();
+    const m = String(dt.getMonth() + 1).padStart(2, '0');
+    const d = String(dt.getDate()).padStart(2, '0');
+    return `${y}-${m}-${d}`;
+  }
+
+  function setAuditStatus(kind, text) {
+    const el = document.getElementById('auditExportStatus');
+    if (!el) return;
+    el.className = `summary-status ${kind}`;
+    el.textContent = text;
+  }
+
+  function syncAuditSegmentControl() {
+    const unitEl = document.getElementById('auditUnit');
+    const segEl = document.getElementById('auditSegment');
+    if (!unitEl || !segEl) return;
+    const isAhl = String(unitEl.value || '').toUpperCase() === 'AHL';
+    if (isAhl) {
+      segEl.style.display = '';
+      return;
+    }
+    segEl.value = 'total';
+    segEl.style.display = 'none';
+  }
+
+  function applyAuditRangeDefaults(force = false) {
+    const fromEl = document.getElementById('auditFrom');
+    const toEl = document.getElementById('auditTo');
+    if (!fromEl || !toEl) return;
+
+    if (!force && fromEl.value && toEl.value) return;
+
+    const now = new Date();
+    const closed = new Date(now.getFullYear(), now.getMonth(), now.getDate() - 1);
+    fromEl.value = _toIsoDate(closed);
+    toEl.value = _toIsoDate(closed);
+  }
+
+  async function triggerLockedAuditExport() {
+    const fromEl = document.getElementById('auditFrom');
+    const toEl = document.getElementById('auditTo');
+    const unitEl = document.getElementById('auditUnit');
+    const segEl = document.getElementById('auditSegment');
+    if (!fromEl || !toEl || !unitEl || !segEl) return;
+
+    const fromDate = String(fromEl.value || '').trim();
+    const toDate = String(toEl.value || '').trim();
+    if (!fromDate || !toDate) {
+      setAuditStatus('error', 'Please choose both from and to dates.');
+      return;
+    }
+    if (toDate < fromDate) {
+      setAuditStatus('error', 'To date cannot be earlier than from date.');
+      return;
+    }
+
+    const unit = String(unitEl.value || 'ALL').toUpperCase();
+    const segment = unit === 'AHL' ? (String(segEl.value || 'total').toLowerCase()) : 'total';
+    const params = new URLSearchParams({
+      range: 'custom',
+      from: fromDate,
+      to: toDate,
+      unit,
+      segment,
+      locked_only: '1',
+    });
+    setAuditStatus('loading', 'Preparing locked sequence audit export...');
+    try {
+      const res = await fetch(`${MOD_AUDIT_EXPORT_URL}?${params.toString()}`);
+      if (!res.ok) {
+        let msg = 'Failed to export locked sequence audit.';
+        try {
+          const payload = await res.json();
+          msg = payload?.message || msg;
+        } catch (_) {}
+        throw new Error(msg);
+      }
+
+      const blob = await res.blob();
+      const cd = res.headers.get('Content-Disposition') || '';
+      let filename = `MOD_Sequence_Audit_${unit}_${fromDate}_to_${toDate}.xlsx`;
+      const match = cd.match(/filename\\*=UTF-8''([^;]+)|filename=\"?([^\";]+)\"?/i);
+      if (match) {
+        const rawName = match[1] || match[2] || filename;
+        try {
+          filename = decodeURIComponent(rawName);
+        } catch (_) {
+          filename = rawName;
+        }
+      }
+
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = filename;
+      document.body.appendChild(a);
+      a.click();
+      a.remove();
+      URL.revokeObjectURL(url);
+      setAuditStatus('idle', `Export ready: ${filename}`);
+    } catch (error) {
+      setAuditStatus('error', error?.message || 'Failed to export locked sequence audit.');
+    }
+  }
+
+  document.getElementById('auditUnit')?.addEventListener('change', () => {
+    syncAuditSegmentControl();
+    _savePrefs();
+  });
+  document.getElementById('auditSegment')?.addEventListener('change', _savePrefs);
+  document.getElementById('auditFrom')?.addEventListener('change', _savePrefs);
+  document.getElementById('auditTo')?.addEventListener('change', _savePrefs);
+  document.getElementById('auditExportBtn')?.addEventListener('click', triggerLockedAuditExport);
+  document.addEventListener('keydown', (event) => {
+    const tag = String(event.target?.tagName || '').toLowerCase();
+    if (tag === 'input' || tag === 'textarea' || tag === 'select') return;
+    if (event.key === '/') {
+      event.preventDefault();
+      document.getElementById('summarySearch')?.focus();
+    } else if (event.key.toLowerCase() === 'r') {
+      event.preventDefault();
+      loadSummary(false);
+    }
+  });
+
+  _loadPrefs();
+  _syncDurationButtons();
+  _syncKpiModeButtons();
+  setupAutoRefresh();
+  syncSegmentControl();
+  updateUnitColumnHeader();
+  syncAuditSegmentControl();
+  applyAuditRangeDefaults(false);
+  loadSummary(false);
+</script>
+{% endblock %}

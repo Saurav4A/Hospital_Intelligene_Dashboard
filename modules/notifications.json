@@ -1,0 +1,54 @@
+[
+  {
+    "id": 4,
+    "title": "\ud83c\udf89 New Volume Tracker is live!!",
+    "message": "Now track patients across various categories like citywise, doctorwise, deptwise, etc",
+    "type": "feature",
+    "link": "/volume",
+    "created_at": "2025-11-13T23:04:49.743478"
+  },
+  {
+    "id": 1,
+    "title": "\ud83c\udf89 New Business Insights Dashboard",
+    "message": "We've added a new Business Insights panel showing daily average billing split by Cash/Cashless across all visit types. Check it out from the main dashboard!",
+    "type": "feature",
+    "link": "/business_insights",
+    "created_at": "2025-01-13T09:00:00"
+  },
+  {
+    "id": 2,
+    "title": "\ud83d\udcca Volume Tracker Improvements",
+    "message": "The Volume Tracker now features better chart layouts with improved label positioning and space utilization for easier data viewing.",
+    "type": "update",
+    "link": "/volume",
+    "created_at": "2025-01-12T14:30:00"
+  },
+  {
+    "id": 3,
+    "title": "\ud83d\udd14 Welcome to Notifications!",
+    "message": "Stay updated with the latest features and improvements. You'll see notifications here for 7 days after they're posted.",
+    "type": "announcement",
+    "link": "",
+    "created_at": "2025-01-13T10:00:00"
+  },
+  {
+    "id": 5,
+    "title": "Historical access approved",
+    "message": "Your request for historical data access has been approved for this session.",
+    "type": "alert",
+    "link": "/dashboard",
+    "created_at": "2025-12-01T11:50:05.305500+05:30",
+    "user": "us",
+    "ref": "42"
+  },
+  {
+    "id": 6,
+    "title": "Historical access approved",
+    "message": "Your request for historical data access has been approved for this session.",
+    "type": "alert",
+    "link": "/dashboard",
+    "created_at": "2026-03-12T12:29:49.404066+05:30",
+    "user": "ratan",
+    "ref": "88"
+  }
+]

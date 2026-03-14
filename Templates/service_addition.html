@@ -1,0 +1,3077 @@
+{% extends "layout.html" %}
+{% block title %}Service Management | HID{% endblock %}
+{% block content %}
+<style>
+  header, footer { display: none !important; }
+  main { padding: 0 !important; width: 100% !important; }
+  .svc-wrapper {
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    color: #0f172a;
+    background:
+      radial-gradient(1200px 600px at -10% -10%, #e3f2fd 0, transparent 40%),
+      radial-gradient(1400px 700px at 110% -10%, #e3f2fd 0, transparent 35%),
+      #f4f7fb;
+    min-height: 100vh;
+    width: 100%;
+    padding: 24px 18px 50px;
+    box-sizing: border-box;
+  }
+  .svc-wrapper * { box-sizing: border-box; }
+  .svc-wrapper {
+    --brand: #1e3a8a;
+    --brand-2: #3b82f6;
+    --ink: #0f172a;
+    --muted: #64748b;
+    --line: #e2e8f0;
+    --card: rgba(255,255,255,0.94);
+    --shadow: 0 12px 30px rgba(15,23,42,0.08);
+    --radius: 18px;
+    --ok: #16a34a;
+    --warn: #f59e0b;
+    --bad: #dc2626;
+  }
+  .svc-progress {
+    height: 4px;
+    width: 100%;
+    background: rgba(30, 64, 175, 0.12);
+    border-radius: 999px;
+    overflow: hidden;
+    position: relative;
+    margin: 16px auto 0;
+    max-width: 1200px;
+  }
+  .svc-progress span {
+    position: absolute;
+    inset: 0;
+    background: linear-gradient(90deg, var(--brand), var(--brand-2));
+    transform: scaleX(0);
+    transform-origin: left;
+    transition: transform 0.25s ease;
+  }
+  .svc-wrapper.is-busy .svc-progress span {
+    transform: scaleX(0.65);
+  }
+  .svc-wrapper.is-busy.is-done .svc-progress span {
+    transform: scaleX(1);
+  }
+
+  .svc-hero {
+    max-width: 1200px;
+    margin: 0 auto 18px;
+    background: linear-gradient(120deg, #1e3a8a, #2563eb 55%, #38bdf8);
+    color: #fff;
+    border-radius: 22px;
+    padding: 22px 26px;
+    box-shadow: 0 18px 36px rgba(30, 58, 138, 0.2);
+    display: grid;
+    grid-template-columns: 1.3fr 1fr;
+    gap: 18px;
+    align-items: center;
+  }
+  .svc-hero h1 {
+    margin: 0 0 6px;
+    font-size: 26px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+  }
+  .svc-hero p {
+    margin: 0;
+    font-size: 14px;
+    color: rgba(255,255,255,0.88);
+    line-height: 1.5;
+  }
+  .svc-status {
+    margin-top: 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .svc-status-pill {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    background: rgba(255,255,255,0.18);
+    border: 1px solid rgba(255,255,255,0.25);
+    color: #fff;
+    padding: 6px 12px;
+    border-radius: 999px;
+    font-size: 12px;
+    font-weight: 700;
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+  }
+  .svc-status-pill.ready { background: rgba(34, 197, 94, 0.25); border-color: rgba(34, 197, 94, 0.45); }
+  .svc-status-pill.warn { background: rgba(245, 158, 11, 0.25); border-color: rgba(245, 158, 11, 0.5); }
+  .svc-status-pill.error { background: rgba(239, 68, 68, 0.25); border-color: rgba(239, 68, 68, 0.55); }
+  .svc-status-text {
+    font-size: 13px;
+    color: rgba(255,255,255,0.88);
+  }
+  .svc-hero-side {
+    display: flex;
+    flex-direction: column;
+    gap: 12px;
+    align-items: flex-end;
+  }
+  .svc-back {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    text-decoration: none;
+    color: #fff;
+    font-weight: 700;
+    font-size: 13px;
+    background: rgba(255,255,255,0.15);
+    border: 1px solid rgba(255,255,255,0.2);
+    padding: 8px 12px;
+    border-radius: 999px;
+    transition: transform 0.15s ease, background 0.15s ease;
+  }
+  .svc-back:hover { transform: translateY(-1px); background: rgba(255,255,255,0.22); }
+  .svc-back.alt {
+    background: rgba(255,255,255,0.08);
+    border-style: dashed;
+  }
+  .svc-gate {
+    max-width: 1200px;
+    margin: 0 auto 18px;
+    background: rgba(255,255,255,0.94);
+    border-radius: 22px;
+    padding: 22px 26px;
+    border: 1px solid #e5e7eb;
+    box-shadow: var(--shadow);
+  }
+  .svc-gate-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 16px;
+    flex-wrap: wrap;
+  }
+  .svc-gate-menu {
+    display: flex;
+    gap: 8px;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    background: linear-gradient(120deg, #1e3a8a, #2563eb 55%, #38bdf8);
+    padding: 8px;
+    border-radius: 16px;
+    box-shadow: 0 10px 24px rgba(30, 58, 138, 0.18);
+  }
+  .svc-gate h2 {
+    margin: 0 0 6px;
+    font-size: 22px;
+    font-weight: 800;
+    color: var(--brand);
+  }
+  .svc-gate p {
+    margin: 0 0 16px;
+    font-size: 13px;
+    color: var(--muted);
+  }
+  .svc-gate-actions {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .svc-gate-btn {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    padding: 16px;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    color: #0f172a;
+    text-decoration: none;
+    text-align: left;
+    cursor: pointer;
+    font-family: inherit;
+    transition: transform 0.15s ease, box-shadow 0.15s ease, border-color 0.15s ease;
+  }
+  .svc-gate-btn strong {
+    font-size: 14px;
+    font-weight: 800;
+    color: var(--brand);
+  }
+  .svc-gate-btn span {
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .svc-gate-btn:hover {
+    transform: translateY(-1px);
+    border-color: #cbd5e1;
+    box-shadow: 0 10px 22px rgba(15, 23, 42, 0.08);
+  }
+  .svc-gate-btn.primary {
+    background: #f8fafc;
+    color: inherit;
+    border-color: #e2e8f0;
+  }
+  .svc-gate-btn.primary strong { color: var(--brand); }
+  .svc-gate-btn.primary span { color: var(--muted); }
+  .svc-master-hidden { display: none; }
+  .svc-embed-head {
+    max-width: 1200px;
+    margin: 0 auto 12px;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+  }
+  .svc-embed-head .svc-back {
+    background: #e2e8f0;
+    color: #1e293b;
+    border-color: #cbd5e1;
+    box-shadow: none;
+  }
+  .svc-embed-head .svc-back.alt {
+    border-style: solid;
+  }
+  .svc-embed-frame {
+    max-width: 1200px;
+    margin: 0 auto;
+    border-radius: 20px;
+    overflow: hidden;
+    border: 1px solid #e5e7eb;
+    box-shadow: none;
+    background: #fff;
+  }
+  .svc-embed-frame iframe {
+    width: 100%;
+    height: 88vh;
+    min-height: 900px;
+    border: 0;
+    display: block;
+  }
+  .svc-unit-select {
+    width: 100%;
+    max-width: 260px;
+    background: rgba(255,255,255,0.15);
+    border-radius: 14px;
+    padding: 10px 12px;
+    border: 1px solid rgba(255,255,255,0.2);
+  }
+  .svc-unit-select label {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: rgba(255,255,255,0.85);
+    font-weight: 700;
+    margin-bottom: 6px;
+  }
+  .svc-unit-select select {
+    width: 100%;
+    border: none;
+    background: rgba(255,255,255,0.9);
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-weight: 700;
+    color: #0f172a;
+    font-size: 13px;
+  }
+  .svc-steps {
+    max-width: 1200px;
+    margin: 0 auto;
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .svc-step {
+    background: rgba(255,255,255,0.9);
+    border-radius: 14px;
+    border: 1px solid var(--line);
+    padding: 12px 14px;
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    box-shadow: 0 6px 14px rgba(15,23,42,0.08);
+  }
+  .svc-step span {
+    width: 32px;
+    height: 32px;
+    border-radius: 10px;
+    background: linear-gradient(135deg, #e0f2fe, #dbeafe);
+    color: var(--brand);
+    font-weight: 800;
+    display: grid;
+    place-items: center;
+    font-size: 13px;
+  }
+  .svc-step strong {
+    display: block;
+    font-size: 13px;
+    color: var(--ink);
+  }
+  .svc-step small {
+    display: block;
+    font-size: 11px;
+    color: var(--muted);
+  }
+
+  .svc-alert {
+    max-width: 1200px;
+    margin: 16px auto 0;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    color: #1e3a8a;
+    padding: 10px 14px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 600;
+    display: none;
+    align-items: center;
+    gap: 10px;
+  }
+  .svc-alert.show { display: flex; }
+  .svc-alert.error { background: #fef2f2; border-color: #fecaca; color: #991b1b; }
+  .svc-alert.success { background: #ecfdf3; border-color: #bbf7d0; color: #166534; }
+  .svc-alert.warn { background: #fff7ed; border-color: #fdba74; color: #9a3412; }
+  .svc-it-only { display: none; }
+  .svc-wrapper[data-role="IT"] .svc-it-only { display: block; }
+
+  .svc-container {
+    max-width: 1200px;
+    margin: 18px auto 0;
+    display: grid;
+    grid-template-columns: minmax(0, 2.2fr) minmax(0, 1fr);
+    gap: 22px;
+  }
+  .svc-card {
+    background: var(--card);
+    border-radius: var(--radius);
+    box-shadow: var(--shadow);
+    border: 1px solid #e5e7eb;
+    padding: 20px 22px;
+  }
+  .svc-card + .svc-card { margin-top: 18px; }
+  .svc-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 14px;
+  }
+  .svc-card-title {
+    margin: 0;
+    font-size: 17px;
+    font-weight: 800;
+    color: var(--brand);
+  }
+  .svc-card-sub {
+    margin: 6px 0 0;
+    font-size: 12px;
+    color: var(--muted);
+  }
+  .svc-pill {
+    display: inline-flex;
+    align-items: center;
+    padding: 6px 10px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 700;
+    background: #e0f2fe;
+    color: #0369a1;
+  }
+  .svc-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .svc-span-2 { grid-column: span 2; }
+  .svc-field {
+    display: flex;
+    flex-direction: column;
+    gap: 6px;
+    position: relative;
+  }
+  .svc-field label {
+    font-size: 12px;
+    font-weight: 700;
+    color: #334155;
+  }
+  .svc-field input,
+  .svc-field select,
+  .svc-field textarea {
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13px;
+    font-family: inherit;
+    background: #fff;
+    color: #0f172a;
+    transition: border-color 0.15s ease, box-shadow 0.15s ease;
+  }
+  .svc-field textarea { min-height: 90px; resize: vertical; }
+  .svc-field input:focus,
+  .svc-field select:focus,
+  .svc-field textarea:focus {
+    outline: none;
+    border-color: #93c5fd;
+    box-shadow: 0 0 0 3px rgba(59,130,246,0.15);
+  }
+  .svc-field input[readonly] {
+    background: #f1f5f9;
+    color: #64748b;
+  }
+  .svc-field .hint {
+    font-size: 11px;
+    color: #94a3b8;
+  }
+  .svc-field.error input,
+  .svc-field.error select,
+  .svc-field.error textarea {
+    border-color: #fca5a5;
+    box-shadow: 0 0 0 3px rgba(248,113,113,0.15);
+  }
+  .svc-switch-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(180px, 1fr));
+    gap: 12px;
+  }
+  .svc-switch {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    padding: 10px 12px;
+    border-radius: 12px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    font-size: 12px;
+    font-weight: 700;
+    color: #334155;
+  }
+  .svc-toggle {
+    position: relative;
+    width: 46px;
+    height: 24px;
+  }
+  .svc-toggle input {
+    position: absolute;
+    opacity: 0;
+    width: 0;
+    height: 0;
+  }
+  .svc-toggle span {
+    position: absolute;
+    inset: 0;
+    border-radius: 999px;
+    background: #e2e8f0;
+    border: 1px solid #cbd5e1;
+    transition: 0.2s ease;
+  }
+  .svc-toggle span::after {
+    content: "";
+    position: absolute;
+    top: 3px;
+    left: 3px;
+    width: 18px;
+    height: 18px;
+    border-radius: 50%;
+    background: #fff;
+    box-shadow: 0 4px 10px rgba(15,23,42,0.15);
+    transition: transform 0.2s ease;
+  }
+  .svc-toggle input:checked + span {
+    background: linear-gradient(135deg, #22c55e, #16a34a);
+    border-color: #16a34a;
+  }
+  .svc-toggle input:checked + span::after {
+    transform: translateX(22px);
+  }
+
+  .svc-chip-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .svc-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    padding: 6px 10px;
+    border-radius: 999px;
+    border: 1px solid #e2e8f0;
+    background: #f8fafc;
+    font-size: 11px;
+    font-weight: 700;
+    color: #475569;
+  }
+  .svc-chip input { accent-color: #2563eb; }
+  .svc-chip.svc-chip--selected {
+    background: #e0f2fe;
+    border-color: #93c5fd;
+    color: #1e40af;
+  }
+
+  html.modal-open,
+  body.modal-open {
+    overflow: hidden;
+  }
+
+  .svc-inline {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .svc-inline input#serviceLookup {
+    flex: 1;
+    min-width: 320px;
+  }
+  .svc-inline .btn { white-space: nowrap; }
+
+  .svc-modal {
+    position: fixed;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.4);
+    --brand: #1e3a8a;
+    --brand-2: #3b82f6;
+    --ink: #0f172a;
+    --muted: #64748b;
+    --shadow: 0 12px 30px rgba(15,23,42,0.08);
+    display: none;
+    align-items: flex-start;
+    justify-content: center;
+    padding: 24px 18px;
+    overflow: auto;
+    z-index: 60;
+  }
+  .svc-modal.open { display: flex; }
+  .svc-modal-card {
+    width: min(1100px, 95vw);
+    max-height: calc(100vh - 48px);
+    background: #fff;
+    border-radius: 18px;
+    box-shadow: 0 20px 50px rgba(15, 23, 42, 0.25);
+    overflow: hidden;
+    display: flex;
+    flex-direction: column;
+  }
+  .svc-modal-card--service { width: min(1200px, 96vw); }
+  .svc-modal-head {
+    padding: 16px 18px;
+    border-bottom: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .svc-modal-head h4 {
+    margin: 0;
+    font-size: 16px;
+    font-weight: 800;
+    color: var(--brand);
+  }
+  .svc-modal-search {
+    flex: 1;
+    display: flex;
+    gap: 10px;
+    align-items: center;
+    min-width: 260px;
+  }
+  .svc-modal-search input {
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 10px;
+    padding: 10px 12px;
+    font-size: 13px;
+  }
+  .svc-modal-meta {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #64748b;
+  }
+  .svc-modal-count {
+    padding: 4px 10px;
+    border-radius: 999px;
+    background: #f1f5f9;
+    border: 1px solid #e2e8f0;
+  }
+  .svc-modal-status {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+  }
+  .svc-modal-status.loading { color: #1d4ed8; }
+  .svc-modal-status.success { color: #166534; }
+  .svc-modal-status.warn { color: #92400e; }
+  .svc-spinner {
+    width: 12px;
+    height: 12px;
+    border-radius: 50%;
+    border: 2px solid #cbd5e1;
+    border-top-color: #3b82f6;
+    animation: svc-spin 0.8s linear infinite;
+    display: none;
+  }
+  .svc-modal-status.loading .svc-spinner { display: inline-block; }
+  @keyframes svc-spin {
+    to { transform: rotate(360deg); }
+  }
+  .svc-modal-body { padding: 0; overflow: auto; }
+  .svc-modal-selection {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+    padding: 12px 18px 0;
+  }
+  .svc-modal-table {
+    width: 100%;
+    border-collapse: collapse;
+  }
+  .svc-modal-table th,
+  .svc-modal-table td {
+    padding: 10px 12px;
+    border-bottom: 1px solid #e2e8f0;
+    font-size: 12px;
+    text-align: left;
+  }
+  .svc-modal-table th {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 10px;
+    color: #94a3b8;
+    background: #f8fafc;
+  }
+  .svc-modal-table tr:hover td { background: #f8fafc; }
+  .svc-modal-table--service tbody tr.is-selected td { background: #eff6ff; }
+  .svc-modal-table--service th,
+  .svc-modal-table--service td {
+    border-left: none;
+    border-right: none;
+  }
+  .svc-modal-table--service tbody tr.is-active td {
+    box-shadow: none;
+  }
+  .svc-modal-table--service tbody tr.is-active td:first-child {
+    box-shadow: inset 3px 0 0 #e2e8f0;
+  }
+  .svc-modal-tag {
+    display: inline-flex;
+    align-items: center;
+    padding: 2px 6px;
+    border-radius: 999px;
+    font-size: 10px;
+    font-weight: 700;
+    background: #fef3c7;
+    border: 1px solid #fde68a;
+    color: #92400e;
+    margin-left: 6px;
+  }
+  .svc-modal-empty {
+    padding: 20px;
+    text-align: center;
+    font-size: 13px;
+    color: #94a3b8;
+    font-weight: 700;
+  }
+  .svc-modal-footer {
+    padding: 12px 18px;
+    border-top: 1px solid #e2e8f0;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    flex-wrap: wrap;
+  }
+  .svc-modal-summary {
+    font-size: 12px;
+    font-weight: 700;
+    color: #475569;
+  }
+  .svc-modal-actions {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+
+  .svc-billing {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .svc-billing label {
+    position: relative;
+    cursor: pointer;
+  }
+  .svc-billing input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .svc-billing span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    border-radius: 12px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    font-size: 12px;
+    font-weight: 800;
+    color: #1e293b;
+    transition: 0.2s ease;
+  }
+  .svc-billing input:checked + span {
+    background: #e0f2fe;
+    border-color: #93c5fd;
+    color: #1e40af;
+    box-shadow: inset 0 0 0 1px #bfdbfe;
+  }
+
+  .svc-tariff-rates {
+    display: grid;
+    gap: 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 12px;
+    padding: 10px;
+    background: #fff;
+  }
+  .svc-tariff-row {
+    display: grid;
+    grid-template-columns: minmax(0, 2fr) minmax(0, 1fr) minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+  }
+  .svc-tariff-row span {
+    font-size: 12px;
+    font-weight: 700;
+    color: #475569;
+  }
+  .svc-tariff-label { grid-column: 1; }
+  .svc-tariff-row.header span {
+    text-transform: uppercase;
+    letter-spacing: 0.05em;
+    font-size: 10px;
+    color: #94a3b8;
+  }
+  .svc-tariff-row input {
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 6px 8px;
+    font-size: 12px;
+    font-family: inherit;
+  }
+  .svc-tariff-status {
+    font-size: 11px;
+    color: #94a3b8;
+    font-weight: 700;
+  }
+  .svc-tariff-status.synced { color: #1e3a8a; }
+  .svc-tariff-status.custom { color: #9a3412; }
+  .svc-suggest {
+    position: absolute;
+    top: calc(100% + 4px);
+    left: 0;
+    right: 0;
+    background: #fff;
+    border: 1px solid #cbd5e1;
+    border-radius: 12px;
+    box-shadow: 0 10px 24px rgba(15,23,42,0.12);
+    max-height: 220px;
+    overflow: auto;
+    display: none;
+    z-index: 5;
+  }
+  .svc-suggest.show { display: block; }
+  .svc-suggest button {
+    width: 100%;
+    border: none;
+    background: transparent;
+    padding: 8px 10px;
+    text-align: left;
+    font-size: 12px;
+    font-weight: 700;
+    color: #334155;
+    cursor: pointer;
+  }
+  .svc-suggest button:hover { background: #f1f5f9; }
+  .svc-tariff-empty {
+    font-size: 12px;
+    color: #94a3b8;
+    font-weight: 700;
+  }
+
+  .svc-mode-toggle {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .svc-mode-option {
+    position: relative;
+    cursor: pointer;
+  }
+  .svc-mode-option input {
+    position: absolute;
+    opacity: 0;
+    pointer-events: none;
+  }
+  .svc-mode-option span {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    padding: 8px 14px;
+    border-radius: 12px;
+    border: 1px solid #cbd5e1;
+    background: #fff;
+    font-size: 12px;
+    font-weight: 800;
+    color: #1e293b;
+    transition: 0.2s ease;
+  }
+  .svc-mode-option input:checked + span {
+    background: #dbeafe;
+    border-color: #93c5fd;
+    color: #1e40af;
+    box-shadow: inset 0 0 0 1px #bfdbfe;
+  }
+  .svc-update-only { display: none; }
+  .svc-wrapper.is-update .svc-update-only { display: flex; }
+
+  .svc-multi {
+    border: 1px solid #cbd5e1;
+    border-radius: 12px;
+    padding: 6px;
+    background: #fff;
+    max-height: 180px;
+    overflow: auto;
+    display: grid;
+    gap: 6px;
+  }
+  .svc-multi label {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    padding: 6px 8px;
+    border-radius: 8px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #334155;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+  }
+  .svc-multi label.hidden {
+    display: none;
+  }
+  .svc-multi input {
+    accent-color: #2563eb;
+  }
+
+  .svc-actions {
+    display: flex;
+    justify-content: space-between;
+    align-items: center;
+    gap: 12px;
+    margin-top: 18px;
+  }
+  .btn {
+    border: none;
+    cursor: pointer;
+    border-radius: 12px;
+    padding: 12px 18px;
+    font-weight: 800;
+    font-size: 13px;
+    transition: transform 0.12s ease, box-shadow 0.12s ease;
+  }
+  .btn-primary {
+    background: linear-gradient(90deg, var(--brand), var(--brand-2));
+    color: #fff;
+    box-shadow: 0 10px 20px rgba(37,99,235,0.22);
+  }
+  .btn-primary:hover { transform: translateY(-1px); }
+  .btn-ghost {
+    background: #f1f5f9;
+    color: #475569;
+  }
+  .btn-ghost:hover { transform: translateY(-1px); }
+  .btn[disabled] {
+    opacity: 0.6;
+    cursor: not-allowed;
+    transform: none;
+  }
+
+  .svc-side {
+    position: sticky;
+    top: 18px;
+    align-self: start;
+    max-height: calc(100vh - 36px);
+    overflow: auto;
+    padding-right: 4px;
+  }
+  .svc-side::-webkit-scrollbar { width: 6px; }
+  .svc-side::-webkit-scrollbar-thumb { background: #d1d5db; border-radius: 999px; }
+  .svc-summary {
+    display: grid;
+    gap: 12px;
+  }
+  .svc-summary-item {
+    background: #f8fafc;
+    border-radius: 12px;
+    padding: 10px 12px;
+    border: 1px solid #e2e8f0;
+  }
+  .svc-summary-item span {
+    display: block;
+    font-size: 11px;
+    text-transform: uppercase;
+    letter-spacing: 0.06em;
+    color: #94a3b8;
+    font-weight: 700;
+  }
+  .svc-summary-item strong {
+    display: block;
+    font-size: 14px;
+    color: #0f172a;
+    margin-top: 4px;
+  }
+
+  .svc-activity {
+    margin: 0;
+    padding: 0;
+    list-style: none;
+    display: grid;
+    gap: 8px;
+  }
+  .svc-activity li {
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    color: #475569;
+    background: #f8fafc;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .svc-activity li.active {
+    border-color: #93c5fd;
+    color: #1e40af;
+    background: #eff6ff;
+  }
+  .svc-activity li.done {
+    border-color: #86efac;
+    color: #166534;
+    background: #ecfdf3;
+  }
+  .svc-activity li.warn {
+    border-color: #fdba74;
+    color: #9a3412;
+    background: #fff7ed;
+  }
+
+  .svc-checklist {
+    list-style: none;
+    padding: 0;
+    margin: 0;
+    display: grid;
+    gap: 8px;
+  }
+  .svc-checklist li {
+    border-radius: 10px;
+    padding: 8px 10px;
+    font-size: 12px;
+    font-weight: 700;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    color: #64748b;
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 8px;
+  }
+  .svc-checklist li.done {
+    background: #ecfdf3;
+    border-color: #bbf7d0;
+    color: #166534;
+  }
+
+  @media (max-width: 1024px) {
+    .svc-hero { grid-template-columns: 1fr; }
+    .svc-hero-side { align-items: flex-start; }
+    .svc-container { grid-template-columns: 1fr; }
+    .svc-side {
+      position: static;
+      max-height: none;
+      overflow: visible;
+      padding-right: 0;
+    }
+  }
+  @media (max-width: 760px) {
+    .svc-wrapper { padding: 18px 12px 40px; }
+    .svc-hero { padding: 18px 18px; }
+    .svc-hero h1 { font-size: 22px; }
+    .svc-card { padding: 16px; }
+    .svc-grid { grid-template-columns: 1fr; }
+    .svc-steps { grid-template-columns: 1fr; }
+    .svc-actions { flex-direction: column; align-items: stretch; }
+    .svc-inline { align-items: stretch; }
+    .svc-inline input#serviceLookup { min-width: 0; width: 100%; }
+    .svc-inline .btn { width: 100%; justify-content: center; }
+    .svc-modal-head { flex-wrap: wrap; }
+    .svc-modal-search { width: 100%; min-width: 0; }
+    .svc-modal-meta { width: 100%; justify-content: space-between; }
+    .svc-modal-selection { padding: 8px 12px 0; }
+    .svc-modal-footer { flex-direction: column; align-items: stretch; }
+    .svc-modal-actions { width: 100%; }
+    .svc-modal-actions .btn { width: 100%; justify-content: center; }
+    .svc-modal-table { min-width: 680px; }
+    .svc-tariff-row { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .svc-tariff-row span { grid-column: 1 / -1; }
+    .svc-tariff-row.header span { grid-column: auto; }
+    .svc-tariff-row.header span:first-child { display: none; }
+  }
+</style>
+
+{% set _raw_sections = session.get('section_rights') or [] %}
+{% if _raw_sections is string %}
+  {% set _raw_sections = _raw_sections.split(',') %}
+{% endif %}
+{% set _sections = [] %}
+{% for s in _raw_sections %}
+  {% set _ = _sections.append((s|string).strip().lower()) %}
+{% endfor %}
+{% set _role = session.get('role') or '' %}
+{% set allow_all = (_role == 'IT') or ('*' in _sections) %}
+{% set allow_service_all = allow_all or ('service_addition' in _sections) %}
+{% set allow_service_master = allow_service_all or ('service_addition_master' in _sections) %}
+{% set allow_service_package = allow_service_all or ('service_addition_health_package' in _sections) %}
+{% set allow_service_ip_package = allow_service_all or ('service_addition_ip_package' in _sections) %}
+
+<div class="svc-wrapper" data-single-unit="{% if allowed_units and allowed_units|length == 1 %}1{% else %}0{% endif %}" data-role="{{ role }}">
+  <div class="svc-gate" id="svcGate">
+    <div class="svc-gate-head">
+      <div>
+        <h2>Service Management Hub</h2>
+        <p>Select the master you want to work on. Data will load only after you choose a module.</p>
+      </div>
+      <div class="svc-gate-menu">
+        <a class="svc-back" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+      </div>
+    </div>
+    <div class="svc-gate-actions">
+      {% if allow_service_master %}
+      <button type="button" class="svc-gate-btn primary" id="serviceMasterBtn">
+        <strong>Service Master</strong>
+        <span>Create or update individual services and tariffs.</span>
+      </button>
+      {% endif %}
+      {% if allow_service_package %}
+      <button type="button" class="svc-gate-btn" id="healthPackageBtn">
+        <strong>Health Package Master</strong>
+        <span>Copy packages, tweak services, and save new variants.</span>
+      </button>
+      {% endif %}
+      {% if allow_service_ip_package %}
+      <button type="button" class="svc-gate-btn" id="ipPackageBtn">
+        <strong>IP Package Master</strong>
+        <span>Create IP packages with service bundles and tariff mapping.</span>
+      </button>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if allow_service_master %}
+  <div id="serviceMasterSection" class="svc-master-hidden">
+  <div class="svc-hero">
+    <div>
+      <h1>Service Management</h1>
+      <p>Create a new service, map departments, and publish tariff rates with live checks.</p>
+      <div class="svc-status">
+        <span class="svc-status-pill ready" id="statusPill">Ready</span>
+        <span class="svc-status-text" id="statusText">Select a unit to load master lists.</span>
+      </div>
+    </div>
+    <div class="svc-hero-side">
+      <a class="svc-back" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+      <button type="button" class="svc-back alt" id="backToMenuBtn">Back to Menu</button>
+      {% if allow_service_package %}
+      <button type="button" class="svc-back alt" id="openHealthFromService">Health Package Master</button>
+      {% endif %}
+      {% if allow_service_ip_package %}
+      <button type="button" class="svc-back alt" id="openIpFromService">IP Package Master</button>
+      {% endif %}
+      <div class="svc-unit-select">
+        <label for="unitSelect">Unit</label>
+        <select id="unitSelect">
+          {% if allowed_units %}
+            {% if allowed_units|length > 1 %}
+              <option value="">Select Unit</option>
+            {% endif %}
+            {% for u in allowed_units %}
+              <option value="{{ u }}">{{ u }}</option>
+            {% endfor %}
+          {% else %}
+            <option value="">No unit access</option>
+          {% endif %}
+        </select>
+      </div>
+    </div>
+  </div>
+
+  <div class="svc-steps">
+    <div class="svc-step">
+      <span>1</span>
+      <div>
+        <strong>Service Basics</strong>
+        <small>Codes, names, and classification</small>
+      </div>
+    </div>
+    <div class="svc-step">
+      <span>2</span>
+      <div>
+        <strong>Pricing Setup</strong>
+        <small>Rates, margins, and discounts</small>
+      </div>
+    </div>
+    <div class="svc-step">
+      <span>3</span>
+      <div>
+        <strong>Tariff Mapping</strong>
+        <small>Scheme, class, and publish</small>
+      </div>
+    </div>
+  </div>
+
+  <div class="svc-progress"><span></span></div>
+
+  <div class="svc-alert" id="formAlert"></div>
+
+  <div class="svc-container">
+    <div class="svc-main">
+      <form id="serviceForm" autocomplete="off">
+        <div class="svc-card">
+          <div class="svc-card-head">
+            <div>
+              <h3 class="svc-card-title">Service Action</h3>
+              <p class="svc-card-sub">Add a new service or update an existing one.</p>
+            </div>
+            <span class="svc-pill">Mode</span>
+          </div>
+          <div class="svc-grid">
+            <div class="svc-field">
+              <label>Mode</label>
+              <div class="svc-mode-toggle">
+                <label class="svc-mode-option">
+                  <input type="radio" name="svcMode" id="modeAdd" value="add" checked />
+                  <span>Add New</span>
+                </label>
+                <label class="svc-mode-option">
+                  <input type="radio" name="svcMode" id="modeUpdate" value="update" />
+                  <span>Update Existing</span>
+                </label>
+              </div>
+              <span class="hint">Switch to update to load an existing service.</span>
+            </div>
+            <div class="svc-field svc-update-only">
+              <label for="serviceLookup">Find Service</label>
+              <div class="svc-inline">
+                <input id="serviceLookup" type="text" placeholder="Select a service" readonly />
+                <button type="button" class="btn btn-ghost" id="openServiceModal">Browse Services</button>
+              </div>
+              <input type="hidden" id="serviceId" />
+              <span class="hint">Search by name or code, then load to update.</span>
+            </div>
+          </div>
+        </div>
+        <div class="svc-card">
+          <div class="svc-card-head">
+            <div>
+              <h3 class="svc-card-title">Service Identity</h3>
+              <p class="svc-card-sub">Required information to register the service.</p>
+            </div>
+            <span class="svc-pill">Step 1</span>
+          </div>
+            <div class="svc-grid">
+              <div class="svc-field" data-check="category_id">
+                <label for="categoryInput">Service Category *</label>
+                <input id="categoryInput" type="text" list="categoryOptions" placeholder="Search category" />
+                <input type="hidden" id="categoryId" />
+                <datalist id="categoryOptions"></datalist>
+                <span class="hint">Selecting a category auto-generates the next service code.</span>
+              </div>
+            <div class="svc-field" data-check="service_code">
+              <label for="serviceCode">Service Code *</label>
+              <input id="serviceCode" type="text" placeholder="e.g. LAB-1112" />
+              <span class="hint">Unique code used in billing and reports.</span>
+            </div>
+            <div class="svc-field" data-check="service_name">
+              <label for="serviceName">Service Name *</label>
+              <input id="serviceName" type="text" placeholder="e.g. BRUCELLA IGG ANTIBODY" />
+            </div>
+            <div class="svc-field">
+              <label for="serviceAlias">Service Alias</label>
+              <input id="serviceAlias" type="text" placeholder="Optional shorthand" />
+            </div>
+            <div class="svc-field">
+              <label for="cghsCode">CGHS Code</label>
+              <input id="cghsCode" type="text" placeholder="Leave blank if not applicable" />
+            </div>
+          </div>
+        </div>
+
+        <div class="svc-card">
+          <div class="svc-card-head">
+            <div>
+              <h3 class="svc-card-title">Classification</h3>
+              <p class="svc-card-sub">Map the service to its department structure.</p>
+            </div>
+            <span class="svc-pill">Step 1</span>
+          </div>
+            <div class="svc-grid">
+              <div class="svc-field" data-check="department_id">
+                <label for="departmentInput">Department *</label>
+                <input id="departmentInput" type="text" list="departmentOptions" placeholder="Search department" />
+                <input type="hidden" id="departmentId" />
+                <datalist id="departmentOptions"></datalist>
+              </div>
+              <div class="svc-field">
+                <label for="subdepartmentInput">Subdepartment</label>
+                <input id="subdepartmentInput" type="text" list="subdepartmentOptions" placeholder="Search subdepartment" />
+                <input type="hidden" id="subdepartmentId" />
+                <datalist id="subdepartmentOptions"></datalist>
+              </div>
+            <div class="svc-field">
+              <label for="defaultItem">Default Item</label>
+              <select id="defaultItem">
+                <option value="0">No</option>
+                <option value="1">Yes</option>
+              </select>
+            </div>
+          </div>
+        </div>
+
+        <div class="svc-card svc-it-only">
+          <div class="svc-card-head">
+            <div>
+              <h3 class="svc-card-title">Visibility and Rules</h3>
+              <p class="svc-card-sub">Optional switches that control availability.</p>
+            </div>
+            <span class="svc-pill">Optional</span>
+          </div>
+          <div class="svc-switch-grid">
+            <div class="svc-switch">
+              Autorender
+              <label class="svc-toggle">
+                <input type="checkbox" id="autoRender" />
+                <span></span>
+              </label>
+            </div>
+            <div class="svc-switch">
+              Patient Visible
+              <label class="svc-toggle">
+                <input type="checkbox" id="patientVisible" checked />
+                <span></span>
+              </label>
+            </div>
+            <div class="svc-switch">
+              Doctor Required
+              <label class="svc-toggle">
+                <input type="checkbox" id="docRequired" />
+                <span></span>
+              </label>
+            </div>
+            <div class="svc-switch">
+              Clinical Reporting
+              <label class="svc-toggle">
+                <input type="checkbox" id="clinicalReporting" />
+                <span></span>
+              </label>
+            </div>
+            <div class="svc-switch">
+              Bedside Procedure
+              <label class="svc-toggle">
+                <input type="checkbox" id="bedsideProcedure" />
+                <span></span>
+              </label>
+            </div>
+            <div class="svc-switch">
+              Routine Service
+              <label class="svc-toggle">
+                <input type="checkbox" id="routineService" checked />
+                <span></span>
+              </label>
+            </div>
+            <div class="svc-switch">
+              Outsource Service
+              <label class="svc-toggle">
+                <input type="checkbox" id="outsourceService" />
+                <span></span>
+              </label>
+            </div>
+            <div class="svc-switch">
+              Exclusive Service
+              <label class="svc-toggle">
+                <input type="checkbox" id="exclusiveService" />
+                <span></span>
+              </label>
+            </div>
+            <div class="svc-switch">
+              Renewal Service
+              <label class="svc-toggle">
+                <input type="checkbox" id="renewalService" />
+                <span></span>
+              </label>
+            </div>
+            <div class="svc-switch">
+              Blocked by TPA
+              <label class="svc-toggle">
+                <input type="checkbox" id="blockedByTpa" />
+                <span></span>
+              </label>
+            </div>
+            <div class="svc-switch">
+              Deactive
+              <label class="svc-toggle">
+                <input type="checkbox" id="deactive" />
+                <span></span>
+              </label>
+            </div>
+          </div>
+        </div>
+
+        <div class="svc-card">
+          <div class="svc-card-head">
+            <div>
+              <h3 class="svc-card-title">Pricing</h3>
+              <p class="svc-card-sub">Set default tariff pricing and override per scheme.</p>
+            </div>
+            <span class="svc-pill">Step 2</span>
+          </div>
+          <div class="svc-grid">
+            <input id="basicRate" type="hidden" />
+            <div class="svc-field">
+              <label for="profitPer">Profit %</label>
+              <input id="profitPer" type="number" min="0" step="0.01" placeholder="0" />
+            </div>
+            <div class="svc-field">
+              <label for="saleRate">Sale Rate</label>
+              <input id="saleRate" type="number" min="0" step="0.01" placeholder="0.00" />
+            </div>
+            <div class="svc-field">
+              <label for="discount">Discount</label>
+              <input id="discount" type="number" min="0" step="0.01" placeholder="0.00" />
+              <span class="hint">Applies to Service Mst and tariffs by default.</span>
+            </div>
+            <div class="svc-field">
+              <label for="updatedBy">Updated By (User ID)</label>
+              <input id="updatedBy" type="number" min="0" step="1" placeholder="0" value="{{ account_id or '' }}" />
+            </div>
+            <div class="svc-field" data-check="tariff_rate">
+              <label for="tariffRate">Default Tariff Rate *</label>
+              <input id="tariffRate" type="number" min="0" step="0.01" placeholder="0.00" />
+              <span class="hint">Auto-fills OPD/IPD rates until overridden.</span>
+            </div>
+            <div class="svc-field svc-span-2">
+              <label>Tariff Scheme Rates</label>
+              <div class="svc-tariff-rates" id="tariffRateList"></div>
+              <span class="hint">Set OPD/IPD per scheme. If you fill one, the other auto-copies unless you change it.</span>
+            </div>
+          </div>
+          <div class="svc-chip-row" style="margin-top: 12px;">
+            <label class="svc-chip">
+              <input type="checkbox" id="autoSale" checked /> Auto compute sale rate
+            </label>
+          </div>
+        </div>
+
+        <div class="svc-card">
+          <div class="svc-card-head">
+            <div>
+              <h3 class="svc-card-title">Tariff Mapping</h3>
+              <p class="svc-card-sub">Tariff scheme and billing class must be selected.</p>
+            </div>
+            <span class="svc-pill">Step 3</span>
+          </div>
+          <div class="svc-grid">
+            <div class="svc-field" data-check="tariff_scheme_id">
+              <label for="tariffSchemeFilter">Tariff Schemes *</label>
+              <input id="tariffSchemeFilter" type="text" placeholder="Search tariff scheme" />
+              <div class="svc-multi" id="tariffSchemeList"></div>
+              <span class="hint">Select one or more schemes.</span>
+            </div>
+            <div class="svc-field" data-check="billing_class_id">
+              <label>Billing Class *</label>
+              <div class="svc-billing" id="billingClassGroup">
+                <label>
+                  <input type="checkbox" name="billingClass" value="1" checked />
+                  <span>OPD</span>
+                </label>
+                <label>
+                  <input type="checkbox" name="billingClass" value="2" checked />
+                  <span>IPD</span>
+                </label>
+              </div>
+              <span class="hint">Default adds both. Uncheck to limit.</span>
+            </div>
+            <div class="svc-field">
+              <label for="roomId">Room ID</label>
+              <input id="roomId" type="number" value="0" readonly />
+            </div>
+            <div class="svc-field">
+              <label for="remarks">Remarks</label>
+              <textarea id="remarks" placeholder="Notes or instructions for this service."></textarea>
+            </div>
+          </div>
+        </div>
+
+        <div class="svc-actions">
+          <button type="button" class="btn btn-ghost" id="resetBtn">Reset Form</button>
+          <button type="submit" class="btn btn-primary" id="saveBtn">Save Service</button>
+        </div>
+      </form>
+    </div>
+    <div class="svc-side">
+      <div class="svc-card">
+        <div class="svc-card-head">
+          <div>
+            <h3 class="svc-card-title">Live Summary</h3>
+            <p class="svc-card-sub">Auto-refreshes with your inputs.</p>
+          </div>
+        </div>
+        <div class="svc-summary">
+          <div class="svc-summary-item">
+            <span>Service</span>
+            <strong id="summaryService">Not set</strong>
+          </div>
+          <div class="svc-summary-item">
+            <span>Department</span>
+            <strong id="summaryDept">Not selected</strong>
+          </div>
+          <div class="svc-summary-item">
+            <span>Category</span>
+            <strong id="summaryCategory">Not selected</strong>
+          </div>
+          <div class="svc-summary-item">
+            <span>Tariff Scheme</span>
+            <strong id="summaryTariff">Not selected</strong>
+          </div>
+          <div class="svc-summary-item">
+            <span>Billing Class</span>
+            <strong id="summaryBilling">OPD</strong>
+          </div>
+          <div class="svc-summary-item">
+            <span>Default Tariff Rate</span>
+            <strong id="summaryFinal">0.00</strong>
+          </div>
+        </div>
+      </div>
+
+      <div class="svc-card">
+        <div class="svc-card-head">
+          <div>
+            <h3 class="svc-card-title">Activity Queue</h3>
+            <p class="svc-card-sub">Track background tasks in real time.</p>
+          </div>
+        </div>
+        <ul class="svc-activity" id="activityList">
+          <li data-step="connect">Connect to unit</li>
+          <li data-step="masters">Load master lists</li>
+          <li data-step="lookup">Load service</li>
+          <li data-step="validate">Validate form</li>
+          <li data-step="save">Save to Service_Mst</li>
+          <li data-step="tariff">Save to ServiceTariffSheet</li>
+        </ul>
+      </div>
+
+      <div class="svc-card">
+        <div class="svc-card-head">
+          <div>
+            <h3 class="svc-card-title">Required Checks</h3>
+            <p class="svc-card-sub">Complete items marked in green.</p>
+          </div>
+        </div>
+        <ul class="svc-checklist" id="validationList">
+          <li data-check="service_code">Service code</li>
+          <li data-check="service_name">Service name</li>
+          <li data-check="department_id">Department</li>
+          <li data-check="category_id">Category</li>
+          <li data-check="tariff_scheme_id">Tariff scheme</li>
+          <li data-check="billing_class_id">Billing class</li>
+          <li data-check="tariff_rate">Tariff rate</li>
+        </ul>
+      </div>
+    </div>
+  </div>
+  </div>
+  {% endif %}
+
+  {% if allow_service_package %}
+  <div id="healthPackageSection" class="svc-master-hidden">
+    <div class="svc-embed-head">
+      <button type="button" class="svc-back alt" id="backToMenuFromHealth">Back to Menu</button>
+      <a class="svc-back" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+    </div>
+    <div class="svc-embed-frame">
+      <iframe id="healthPackageFrame" title="Health Package Master" data-src="{{ url_for('health_package_service_addition') }}?embed=1"></iframe>
+    </div>
+  </div>
+  {% endif %}
+
+  {% if allow_service_ip_package %}
+  <div id="ipPackageSection" class="svc-master-hidden">
+    <div class="svc-embed-head">
+      <button type="button" class="svc-back alt" id="backToMenuFromIp">Back to Menu</button>
+      <a class="svc-back" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+    </div>
+    <div class="svc-embed-frame">
+      <iframe id="ipPackageFrame" title="IP Package Master" data-src="{{ url_for('ip_package_service_addition') }}?embed=1"></iframe>
+    </div>
+  </div>
+  {% endif %}
+</div>
+
+<div class="svc-modal" id="serviceModal">
+  <div class="svc-modal-card svc-modal-card--service">
+    <div class="svc-modal-head">
+      <h4>Find Service</h4>
+      <div class="svc-modal-search">
+        <input type="text" id="serviceModalSearch" placeholder="Search by name or code" />
+        <button type="button" class="btn btn-ghost" id="serviceModalClear">Clear</button>
+      </div>
+      <div class="svc-modal-meta">
+        <span class="svc-modal-count" id="serviceModalCount">0 results</span>
+        <span class="svc-modal-status" id="serviceModalStatus">
+          <span class="svc-spinner" id="serviceModalSpinner" aria-hidden="true"></span>
+          <span id="serviceModalStatusText">Idle</span>
+        </span>
+      </div>
+      <button type="button" class="btn btn-ghost" id="serviceModalClose">Close</button>
+    </div>
+    <div class="svc-modal-body">
+      <div class="svc-modal-selection" id="serviceModalSelection"></div>
+      <table class="svc-modal-table svc-modal-table--service">
+        <thead>
+          <tr>
+            <th></th>
+            <th>Service</th>
+            <th>Code</th>
+            <th>Category</th>
+            <th>Rate</th>
+            <th>CGHS</th>
+          </tr>
+        </thead>
+        <tbody id="serviceModalTableBody"></tbody>
+      </table>
+      <div class="svc-modal-empty" id="serviceModalEmpty">Type at least 2 characters to search services.</div>
+    </div>
+    <div class="svc-modal-footer">
+      <div class="svc-modal-summary">
+        Selected: <strong id="serviceModalSelected">0</strong>
+      </div>
+      <div class="svc-modal-actions">
+        <button type="button" class="btn btn-ghost" id="serviceModalCancel">Cancel</button>
+        <button type="button" class="btn btn-primary" id="serviceModalAddBtn" disabled>Load Selected Service</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const svcWrapper = document.querySelector('.svc-wrapper');
+  const svcGate = document.getElementById('svcGate');
+  const serviceMasterSection = document.getElementById('serviceMasterSection');
+  const serviceMasterBtn = document.getElementById('serviceMasterBtn');
+  const healthPackageBtn = document.getElementById('healthPackageBtn');
+  const ipPackageBtn = document.getElementById('ipPackageBtn');
+  const healthPackageSection = document.getElementById('healthPackageSection');
+  const healthPackageFrame = document.getElementById('healthPackageFrame');
+  const ipPackageSection = document.getElementById('ipPackageSection');
+  const ipPackageFrame = document.getElementById('ipPackageFrame');
+  const backToMenuBtn = document.getElementById('backToMenuBtn');
+  const backToMenuFromHealth = document.getElementById('backToMenuFromHealth');
+  const backToMenuFromIp = document.getElementById('backToMenuFromIp');
+  const openHealthFromService = document.getElementById('openHealthFromService');
+  const openIpFromService = document.getElementById('openIpFromService');
+  const unitSelect = document.getElementById('unitSelect');
+  const formAlert = document.getElementById('formAlert');
+  const statusPill = document.getElementById('statusPill');
+  const statusText = document.getElementById('statusText');
+  const activityList = document.getElementById('activityList');
+  const validationList = document.getElementById('validationList');
+  const serviceForm = document.getElementById('serviceForm');
+  const saveBtn = document.getElementById('saveBtn');
+  const resetBtn = document.getElementById('resetBtn');
+  const modeAdd = document.getElementById('modeAdd');
+  const modeUpdate = document.getElementById('modeUpdate');
+  const serviceLookupInput = document.getElementById('serviceLookup');
+  const serviceLookupId = document.getElementById('serviceId');
+  const openServiceModalBtn = document.getElementById('openServiceModal');
+  const serviceModal = document.getElementById('serviceModal');
+  const serviceModalSearch = document.getElementById('serviceModalSearch');
+  const serviceModalClear = document.getElementById('serviceModalClear');
+  const serviceModalClose = document.getElementById('serviceModalClose');
+  const serviceModalCancel = document.getElementById('serviceModalCancel');
+  const serviceModalTableBody = document.getElementById('serviceModalTableBody');
+  const serviceModalEmpty = document.getElementById('serviceModalEmpty');
+  const serviceModalAddBtn = document.getElementById('serviceModalAddBtn');
+  const serviceModalSelection = document.getElementById('serviceModalSelection');
+  const serviceModalSelected = document.getElementById('serviceModalSelected');
+  const serviceModalCount = document.getElementById('serviceModalCount');
+  const serviceModalStatus = document.getElementById('serviceModalStatus');
+  const serviceModalStatusText = document.getElementById('serviceModalStatusText');
+  const serviceModalSpinner = document.getElementById('serviceModalSpinner');
+
+  const departmentInput = document.getElementById('departmentInput');
+  const departmentId = document.getElementById('departmentId');
+  const departmentOptions = document.getElementById('departmentOptions');
+  const subdepartmentInput = document.getElementById('subdepartmentInput');
+  const subdepartmentId = document.getElementById('subdepartmentId');
+  const subdepartmentOptions = document.getElementById('subdepartmentOptions');
+  const categoryInput = document.getElementById('categoryInput');
+  const categoryId = document.getElementById('categoryId');
+  const categoryOptions = document.getElementById('categoryOptions');
+  const tariffSchemeFilter = document.getElementById('tariffSchemeFilter');
+  const tariffSchemeList = document.getElementById('tariffSchemeList');
+  const tariffRateList = document.getElementById('tariffRateList');
+
+  const serviceCode = document.getElementById('serviceCode');
+  const serviceName = document.getElementById('serviceName');
+  const serviceAlias = document.getElementById('serviceAlias');
+  const cghsCode = document.getElementById('cghsCode');
+  const basicRate = document.getElementById('basicRate');
+  const profitPer = document.getElementById('profitPer');
+  const saleRate = document.getElementById('saleRate');
+  const discount = document.getElementById('discount');
+  const tariffRate = document.getElementById('tariffRate');
+  const remarks = document.getElementById('remarks');
+  const updatedBy = document.getElementById('updatedBy');
+  const defaultItem = document.getElementById('defaultItem');
+
+  const autoSale = document.getElementById('autoSale');
+
+  const summaryService = document.getElementById('summaryService');
+  const summaryDept = document.getElementById('summaryDept');
+  const summaryCategory = document.getElementById('summaryCategory');
+  const summaryTariff = document.getElementById('summaryTariff');
+  const summaryBilling = document.getElementById('summaryBilling');
+  const summaryFinal = document.getElementById('summaryFinal');
+
+  const state = {
+    departments: [],
+    subdepartments: [],
+    categories: [],
+    tariffSchemes: [],
+    departmentMaps: { labelById: new Map(), idByLabel: new Map(), idByCode: new Map() },
+    subdepartmentMaps: { labelById: new Map(), idByLabel: new Map(), idByCode: new Map() },
+    categoryMaps: { labelById: new Map(), idByLabel: new Map(), idByCode: new Map() },
+    serviceLookupMaps: { labelById: new Map(), idByLabel: new Map(), idByCode: new Map() },
+    tariffLabelById: new Map(),
+    tariffOverrides: new Map(),
+    isUpdate: false,
+    lastCategoryId: '',
+  };
+  let showFieldErrors = false;
+  let serviceCodeTouched = false;
+  let serviceSearchTimer = null;
+  const serviceModalState = {
+    query: '',
+    results: [],
+    catalog: new Map(),
+    selected: new Map(),
+    loading: false,
+    activeIndex: -1,
+  };
+  const lastTariffDefaults = { rate: null };
+
+  function getBillingClasses() {
+    return Array.from(document.querySelectorAll('input[name="billingClass"]:checked'))
+      .map((el) => el.value);
+  }
+
+  function getTariffSchemeIds() {
+    return Array.from(tariffSchemeList.querySelectorAll('input[type="checkbox"]:checked'))
+      .map((el) => el.value);
+  }
+
+  function setStatus(text, tone) {
+    statusText.textContent = text;
+    statusPill.classList.remove('ready', 'warn', 'error');
+    statusPill.textContent = tone === 'error' ? 'Error' : tone === 'warn' ? 'Attention' : 'Ready';
+    if (tone === 'error') statusPill.classList.add('error');
+    if (tone === 'warn') statusPill.classList.add('warn');
+    if (!tone || tone === 'ready') statusPill.classList.add('ready');
+  }
+
+  function setAlert(message, tone) {
+    if (!message) {
+      formAlert.classList.remove('show');
+      formAlert.textContent = '';
+      return;
+    }
+    formAlert.textContent = message;
+    formAlert.classList.add('show');
+    formAlert.classList.remove('error', 'success', 'warn');
+    if (tone === 'error') formAlert.classList.add('error');
+    if (tone === 'success') formAlert.classList.add('success');
+    if (tone === 'warn') formAlert.classList.add('warn');
+  }
+
+  function setActivity(step, stateClass) {
+    const item = activityList.querySelector(`[data-step="${step}"]`);
+    if (!item) return;
+    item.classList.remove('active', 'done', 'warn');
+    if (stateClass) item.classList.add(stateClass);
+  }
+
+  function setBusy(flag) {
+    svcWrapper.classList.toggle('is-busy', flag);
+    if (!flag) {
+      svcWrapper.classList.add('is-done');
+      setTimeout(() => svcWrapper.classList.remove('is-done'), 350);
+    }
+  }
+
+  function parseNum(value) {
+    const num = Number(value);
+    return Number.isFinite(num) ? num : 0;
+  }
+
+  function formatMoney(value) {
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '0.00';
+    return num.toFixed(2);
+  }
+
+  function normalizeKey(value) {
+    return String(value || '').trim().toLowerCase();
+  }
+
+  function toBool(value) {
+    return ['1', 'true', 'yes', 'y', 'on'].includes(String(value || '').trim().toLowerCase());
+  }
+
+  function getCheckboxValue(id, fallback) {
+    const el = document.getElementById(id);
+    if (!el) return fallback;
+    return el.checked;
+  }
+
+  function buildComboMaps(items, listEl, idKey, nameKey, codeKey) {
+    const labelById = new Map();
+    const idByLabel = new Map();
+    const idByCode = new Map();
+    if (listEl) listEl.innerHTML = '';
+    (items || []).forEach((item) => {
+      const id = item[idKey];
+      const name = item[nameKey] || item[nameKey.toLowerCase()] || '';
+      const code = codeKey ? (item[codeKey] || item[codeKey.toLowerCase()] || '') : '';
+      const inactive = String(item.Deactive || item.deactive || 0) === '1';
+      let label = code ? `${code} - ${name}` : name;
+      if (inactive) label = `${label} (Inactive)`;
+      if (!label) label = `#${id}`;
+        labelById.set(String(id), label);
+        idByLabel.set(normalizeKey(label), String(id));
+        if (name) {
+          idByLabel.set(normalizeKey(name), String(id));
+        }
+        if (code) idByCode.set(normalizeKey(code), String(id));
+      if (listEl) {
+        const opt = document.createElement('option');
+        opt.value = label;
+        listEl.appendChild(opt);
+      }
+    });
+    return { labelById, idByLabel, idByCode };
+  }
+
+  function applyMode(isUpdate) {
+    state.isUpdate = isUpdate;
+    svcWrapper.classList.toggle('is-update', isUpdate);
+    saveBtn.textContent = isUpdate ? 'Update Service' : 'Save Service';
+    if (!isUpdate) {
+      serviceLookupInput.value = '';
+      serviceLookupId.value = '';
+    }
+    serviceLookupInput.disabled = !unitSelect.value || !isUpdate;
+    if (openServiceModalBtn) {
+      openServiceModalBtn.disabled = !unitSelect.value || !isUpdate;
+    }
+    if (!isUpdate) {
+      serviceCodeTouched = false;
+    } else {
+      serviceCodeTouched = true;
+    }
+    updateSummary();
+    updateValidation();
+  }
+
+  const isTouchDevice = window.matchMedia('(hover: none)').matches;
+  const mobileSuggest = {
+    department: null,
+    subdepartment: null,
+    category: null,
+    service: null,
+  };
+
+  function setupMobileSuggest(inputEl, listEl, onSelect) {
+    if (!inputEl || !listEl || !isTouchDevice) return null;
+    const field = inputEl.closest('.svc-field');
+    if (!field) return null;
+    const suggest = document.createElement('div');
+    suggest.className = 'svc-suggest';
+    field.appendChild(suggest);
+
+    const render = () => {
+      if (!isTouchDevice) return;
+      const query = normalizeKey(inputEl.value);
+      const options = Array.from(listEl.options || []).map((opt) => opt.value).filter(Boolean);
+      let items = options;
+      if (query) {
+        items = options.filter((opt) => normalizeKey(opt).includes(query));
+      }
+      items = items.slice(0, 10);
+      suggest.innerHTML = '';
+      if (!items.length) {
+        suggest.classList.remove('show');
+        return;
+      }
+      items.forEach((label) => {
+        const btn = document.createElement('button');
+        btn.type = 'button';
+        btn.textContent = label;
+        btn.addEventListener('pointerdown', (evt) => {
+          evt.preventDefault();
+          inputEl.value = label;
+          if (onSelect) onSelect();
+          suggest.classList.remove('show');
+        });
+        suggest.appendChild(btn);
+      });
+      suggest.classList.add('show');
+    };
+
+    const hide = () => {
+      suggest.classList.remove('show');
+    };
+
+    inputEl.addEventListener('focus', render);
+    inputEl.addEventListener('input', render);
+    inputEl.addEventListener('blur', () => setTimeout(hide, 150));
+    return { render, hide };
+  }
+  function getServiceSearchQuery(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const parts = raw.split(' - ').map((part) => part.trim()).filter(Boolean);
+    if (parts.length) {
+      return parts[0].length >= 2 ? parts[0] : raw;
+    }
+    return raw;
+  }
+
+  function resolveComboId(inputEl, hiddenEl, maps) {
+    if (!inputEl || !hiddenEl) return '';
+    const key = normalizeKey(inputEl.value);
+    let id = maps.idByLabel.get(key);
+    if (!id) {
+      id = maps.idByCode.get(key);
+    }
+    hiddenEl.value = id || '';
+    return id || '';
+  }
+
+  function updateSubdepartments() {
+    const deptIdVal = String(departmentId.value || '');
+    if (!deptIdVal) {
+      subdepartmentOptions.innerHTML = '';
+      subdepartmentInput.value = '';
+      subdepartmentId.value = '';
+      state.subdepartmentMaps = buildComboMaps([], subdepartmentOptions, 'SubDepartment_ID', 'SubDepartment_Name', 'SubDepartment_Code');
+      if (mobileSuggest.subdepartment) {
+        mobileSuggest.subdepartment.render();
+      }
+      return;
+    }
+    const filtered = state.subdepartments.filter((row) => String(row.Department_Id) === deptIdVal);
+    state.subdepartmentMaps = buildComboMaps(filtered, subdepartmentOptions, 'SubDepartment_ID', 'SubDepartment_Name', 'SubDepartment_Code');
+    resolveComboId(subdepartmentInput, subdepartmentId, state.subdepartmentMaps);
+    if (mobileSuggest.subdepartment) {
+      mobileSuggest.subdepartment.render();
+    }
+  }
+
+  function updateTariffEntry(key, updates) {
+    const entry = state.tariffOverrides.get(key) || {};
+    Object.entries(updates || {}).forEach(([field, value]) => {
+      if (value === undefined) return;
+      entry[field] = value;
+    });
+    const hasValue = ['opd', 'ipd'].some((field) => {
+      const val = entry[field];
+      return val !== undefined && val !== null && String(val).trim() !== '';
+    });
+    const hasTouched = Boolean(entry.opdTouched || entry.ipdTouched);
+    if (hasValue || hasTouched) {
+      state.tariffOverrides.set(key, entry);
+    } else {
+      state.tariffOverrides.delete(key);
+    }
+    return entry;
+  }
+
+  function renderTariffOverrides() {
+    if (!tariffRateList) return;
+    const schemeIds = getTariffSchemeIds();
+    const billingIds = new Set(getBillingClasses());
+    tariffRateList.innerHTML = '';
+    if (!schemeIds.length) {
+      const empty = document.createElement('div');
+      empty.className = 'svc-tariff-empty';
+      empty.textContent = 'Select tariff schemes to add scheme-specific rates.';
+      tariffRateList.appendChild(empty);
+      return;
+    }
+    const header = document.createElement('div');
+    header.className = 'svc-tariff-row header';
+    header.innerHTML = '<span>Tariff Scheme</span><span>OPD Rate</span><span>IPD Rate</span>';
+    tariffRateList.appendChild(header);
+    const validKeys = new Set();
+    schemeIds.forEach((schemeId) => {
+      const key = String(schemeId);
+      validKeys.add(key);
+      const entry = state.tariffOverrides.get(key) || {};
+      const schemeLabel = state.tariffLabelById.get(String(schemeId)) || `#${schemeId}`;
+      if (!entry.opdTouched && (!entry.opd || String(entry.opd).trim() === '') && tariffRate.value) {
+        entry.opd = tariffRate.value;
+      }
+      if (!entry.ipdTouched && (!entry.ipd || String(entry.ipd).trim() === '') && tariffRate.value) {
+        entry.ipd = tariffRate.value;
+      }
+      state.tariffOverrides.set(key, entry);
+      const row = document.createElement('div');
+      row.className = 'svc-tariff-row';
+      row.dataset.key = key;
+      const opdValue = entry.opd != null ? entry.opd : '';
+      const ipdValue = entry.ipd != null ? entry.ipd : '';
+      const opdDisabled = !billingIds.has('1');
+      const ipdDisabled = !billingIds.has('2');
+        row.innerHTML = `
+          <span class="svc-tariff-label">${schemeLabel}</span>
+        <input type="number" min="0" step="0.01" data-field="opd" value="${opdValue}" placeholder="${tariffRate.value || '0.00'}" ${opdDisabled ? 'disabled' : ''} />
+        <input type="number" min="0" step="0.01" data-field="ipd" value="${ipdValue}" placeholder="${tariffRate.value || '0.00'}" ${ipdDisabled ? 'disabled' : ''} />
+      `;
+      const status = document.createElement('div');
+      status.className = 'svc-tariff-status';
+      status.dataset.key = key;
+      row.querySelectorAll('input').forEach((input) => {
+        input.addEventListener('input', () => {
+          const field = input.dataset.field;
+          const value = input.value.trim();
+          const otherField = field === 'opd' ? 'ipd' : 'opd';
+          const otherInput = row.querySelector(`input[data-field="${otherField}"]`);
+          const entryNow = updateTariffEntry(key, {
+            [field]: value,
+            [`${field}Touched`]: true,
+          });
+          const otherTouched = Boolean(entryNow[`${otherField}Touched`]);
+          if (otherInput && !otherInput.disabled && !otherTouched) {
+            otherInput.value = value;
+            updateTariffEntry(key, {
+              [otherField]: value,
+              [`${otherField}Touched`]: false,
+            });
+            status.textContent = `Auto-copied ${field.toUpperCase()} to ${otherField.toUpperCase()}.`;
+            status.classList.add('synced');
+          } else {
+            updateTariffStatus(key, row, status);
+          }
+        });
+      });
+      tariffRateList.appendChild(row);
+      tariffRateList.appendChild(status);
+      updateTariffStatus(key, row, status);
+    });
+    Array.from(state.tariffOverrides.keys()).forEach((key) => {
+      if (!validKeys.has(key)) {
+        state.tariffOverrides.delete(key);
+      }
+    });
+  }
+
+  function updateTariffStatus(key, row, statusEl) {
+    const opdInput = row.querySelector('input[data-field="opd"]');
+    const ipdInput = row.querySelector('input[data-field="ipd"]');
+    const opdVal = (opdInput?.value || '').trim();
+    const ipdVal = (ipdInput?.value || '').trim();
+    statusEl.classList.remove('synced', 'custom');
+    if (opdInput?.disabled && !ipdInput?.disabled) {
+      statusEl.textContent = 'OPD not selected; IPD rate will be applied.';
+      return;
+    }
+    if (ipdInput?.disabled && !opdInput?.disabled) {
+      statusEl.textContent = 'IPD not selected; OPD rate will be applied.';
+      return;
+    }
+    if (!opdVal && !ipdVal) {
+      statusEl.textContent = 'Waiting for rates (defaults apply).';
+      return;
+    }
+    if (opdVal && ipdVal && opdVal === ipdVal) {
+      statusEl.textContent = 'OPD and IPD rates are synced.';
+      statusEl.classList.add('synced');
+      return;
+    }
+    statusEl.textContent = 'Custom OPD/IPD split.';
+    statusEl.classList.add('custom');
+  }
+
+  function collectTariffRows() {
+    const rows = [];
+    const schemeIds = getTariffSchemeIds();
+    const billingIds = getBillingClasses();
+    const defaultRate = tariffRate.value;
+    schemeIds.forEach((schemeId) => {
+      const key = String(schemeId);
+      const entry = state.tariffOverrides.get(key) || {};
+      const opdVal = entry.opd != null && entry.opd !== '' ? entry.opd : defaultRate;
+      const ipdVal = entry.ipd != null && entry.ipd !== '' ? entry.ipd : defaultRate;
+      billingIds.forEach((billingId) => {
+        const rateVal = String(billingId) === '2' ? ipdVal : opdVal;
+        rows.push({
+          tariff_scheme_id: schemeId,
+          billing_class_id: billingId,
+          rate: rateVal,
+          discount_amt: discount.value,
+        });
+      });
+    });
+    return rows;
+  }
+
+  function renderServiceLookup(items) {
+    state.serviceLookupMaps = buildComboMaps(items || [], null, 'Service_ID', 'Service_Name', 'Service_Code');
+  }
+
+  async function searchServices(query) {
+    const unit = unitSelect.value;
+    if (!unit) {
+      setStatus('Select a unit before searching services.', 'warn');
+      throw new Error('Select a unit before searching services.');
+    }
+    const res = await fetch(`/api/service_addition/search?unit=${encodeURIComponent(unit)}&q=${encodeURIComponent(query)}`, { cache: 'no-store' });
+    const data = await res.json();
+    if (!res.ok || data.status !== 'success') {
+      throw new Error(data.message || 'Unable to search services');
+    }
+    renderServiceLookup(data.services || []);
+    return data.services || [];
+  }
+
+  function normalizeServiceLookupRecord(raw) {
+    if (!raw) return {};
+    return {
+      serviceId: raw.Service_ID ?? raw.service_id ?? raw.ServiceId ?? raw.serviceId,
+      name: raw.Service_Name ?? raw.service_name ?? raw.ServiceName ?? raw.serviceName ?? '',
+      code: raw.Service_Code ?? raw.service_code ?? raw.ServiceCode ?? raw.serviceCode ?? '',
+      categoryId: raw.Category_Id ?? raw.category_id ?? raw.ServiceCategory_ID ?? raw.serviceCategoryId ?? '',
+      basicRate: raw.BasicRate ?? raw.basic_rate ?? raw.Basic_Rate ?? raw.basicRate ?? '',
+      cghs: raw.CGHSCode ?? raw.cghs_code ?? raw.CghsCode ?? raw.cghs ?? '',
+      deactive: raw.Deactive ?? raw.deactive ?? 0,
+    };
+  }
+
+  function setServiceModalStatus(message, tone, loading) {
+    if (!serviceModalStatus || !serviceModalStatusText) return;
+    serviceModalStatusText.textContent = message || '';
+    serviceModalStatus.classList.remove('loading', 'success', 'warn');
+    if (tone) serviceModalStatus.classList.add(tone);
+    if (loading) serviceModalStatus.classList.add('loading');
+  }
+
+  function updateServiceModalSelection() {
+    const count = serviceModalState.selected.size;
+    serviceModalSelected.textContent = String(count);
+    serviceModalAddBtn.textContent = count ? `Load Selected Service (${count})` : 'Load Selected Service';
+    serviceModalAddBtn.disabled = count === 0 || serviceModalState.loading;
+    serviceModalSelection.innerHTML = '';
+    if (!count) return;
+    const list = Array.from(serviceModalState.selected.values());
+    list.slice(0, 4).forEach((svc) => {
+      const chip = document.createElement('span');
+      chip.className = 'svc-chip svc-chip--selected';
+      chip.textContent = svc.name || 'Service';
+      serviceModalSelection.appendChild(chip);
+    });
+  }
+
+  function updateServiceModalCount(count) {
+    serviceModalCount.textContent = `${count} results`;
+  }
+
+  function getServiceModalRows() {
+    return Array.from(serviceModalTableBody.querySelectorAll('tr'));
+  }
+
+  function findSelectableIndex(start, dir) {
+    const rows = getServiceModalRows();
+    if (!rows.length) return -1;
+    let idx = Math.max(0, Math.min(rows.length - 1, start));
+    for (let i = 0; i < rows.length; i += 1) {
+      const row = rows[idx];
+      if (row && row.dataset.disabled !== '1') {
+        return idx;
+      }
+      idx += dir;
+      if (idx < 0) idx = rows.length - 1;
+      if (idx >= rows.length) idx = 0;
+    }
+    return -1;
+  }
+
+  function setServiceModalActiveIndex(nextIndex, dir = 1) {
+    const rows = getServiceModalRows();
+    if (!rows.length) {
+      serviceModalState.activeIndex = -1;
+      return;
+    }
+    const idx = findSelectableIndex(nextIndex, dir);
+    serviceModalState.activeIndex = idx;
+    rows.forEach((row, i) => {
+      const isActive = i === idx;
+      row.classList.toggle('is-active', isActive);
+      if (isActive) {
+        row.setAttribute('aria-selected', 'true');
+      } else {
+        row.removeAttribute('aria-selected');
+      }
+    });
+    if (idx >= 0 && rows[idx]) {
+      rows[idx].scrollIntoView({ block: 'nearest' });
+    }
+  }
+
+  function toggleServiceSelectionByRow(row) {
+    if (!row || row.dataset.disabled === '1') return;
+    const id = row.dataset.id || '';
+    if (!id) return;
+    const wasSelected = serviceModalState.selected.has(id);
+    serviceModalState.selected.clear();
+    if (!wasSelected) {
+      const svc = serviceModalState.catalog.get(id);
+      if (!svc) return;
+      serviceModalState.selected.set(id, svc);
+    }
+    getServiceModalRows().forEach((r) => {
+      const rowId = r.dataset.id || '';
+      const isSelected = rowId && serviceModalState.selected.has(rowId);
+      r.classList.toggle('is-selected', isSelected);
+      const checkbox = r.querySelector('input[type="checkbox"]');
+      if (checkbox) checkbox.checked = Boolean(isSelected);
+    });
+    updateServiceModalSelection();
+  }
+
+  function renderServiceModalTable(items) {
+    serviceModalTableBody.innerHTML = '';
+    if (!items.length) {
+      serviceModalEmpty.textContent = serviceModalState.query
+        ? 'No services found for this search.'
+        : 'Type at least 2 characters to search services.';
+      serviceModalEmpty.style.display = 'block';
+      updateServiceModalCount(0);
+      serviceModalState.activeIndex = -1;
+      return;
+    }
+    serviceModalEmpty.style.display = 'none';
+    updateServiceModalCount(items.length);
+    items.forEach((svc) => {
+      const id = String(svc.serviceId || '');
+      if (!id) return;
+      const categoryName = state.categoryMaps.labelById.get(String(svc.categoryId || '')) || '-';
+      const inactive = String(svc.deactive || 0) === '1';
+      const isSelected = serviceModalState.selected.has(id);
+      const tag = inactive ? '<span class="svc-modal-tag">Inactive</span>' : '';
+      const rateText = svc.basicRate !== '' && svc.basicRate != null ? formatMoney(svc.basicRate) : '-';
+      const cghsText = svc.cghs ? svc.cghs : '-';
+      const row = document.createElement('tr');
+      row.dataset.id = id;
+      if (isSelected) row.classList.add('is-selected');
+      row.innerHTML = `
+        <td><input type="checkbox" ${isSelected ? 'checked' : ''}></td>
+        <td>
+          <div><strong>${svc.name || '-'}</strong>${tag}</div>
+          <div class="svc-muted">${categoryName}</div>
+        </td>
+        <td>${svc.code || '-'}</td>
+        <td>${categoryName}</td>
+        <td>${rateText}</td>
+        <td>${cghsText}</td>
+      `;
+      serviceModalTableBody.appendChild(row);
+    });
+    const startIndex = serviceModalState.activeIndex >= 0 ? serviceModalState.activeIndex : 0;
+    setServiceModalActiveIndex(startIndex, 1);
+  }
+
+  async function fetchServiceModalResults(query) {
+    const trimmed = (query || '').trim();
+    serviceModalState.query = trimmed;
+    if (trimmed.length < 2) {
+      serviceModalState.results = [];
+      serviceModalState.catalog = new Map();
+      renderServiceModalTable([]);
+      setServiceModalStatus('Type at least 2 characters.', 'warn', false);
+      return;
+    }
+    serviceModalState.loading = true;
+    updateServiceModalSelection();
+    setServiceModalStatus('Searching...', 'loading', true);
+    serviceModalEmpty.textContent = 'Searching services...';
+    serviceModalEmpty.style.display = 'block';
+    try {
+      const rawItems = await searchServices(trimmed);
+      const items = (rawItems || []).map((svc) => normalizeServiceLookupRecord(svc)).filter((svc) => svc.serviceId);
+      serviceModalState.results = items;
+      serviceModalState.catalog = new Map(items.map((svc) => [String(svc.serviceId), svc]));
+      renderServiceModalTable(items);
+      if (items.length) {
+        setServiceModalStatus('Results updated.', 'success', false);
+      } else {
+        setServiceModalStatus('No matches found.', 'warn', false);
+      }
+    } catch (err) {
+      serviceModalState.results = [];
+      serviceModalState.catalog = new Map();
+      renderServiceModalTable([]);
+      serviceModalEmpty.textContent = 'Unable to load services.';
+      serviceModalEmpty.style.display = 'block';
+      setServiceModalStatus('Search failed.', 'warn', false);
+      setAlert(err.message || 'Failed to search services.', 'error');
+    } finally {
+      serviceModalState.loading = false;
+      updateServiceModalSelection();
+    }
+  }
+
+  function resetServiceModal() {
+    serviceModalState.query = '';
+    serviceModalState.results = [];
+    serviceModalState.catalog = new Map();
+    serviceModalState.selected = new Map();
+    serviceModalState.loading = false;
+    serviceModalState.activeIndex = -1;
+    if (serviceModalSearch) {
+      serviceModalSearch.value = '';
+    }
+    renderServiceModalTable([]);
+    updateServiceModalSelection();
+    setServiceModalStatus('Ready to search.', '', false);
+  }
+
+  function openServiceModal() {
+    if (!state.isUpdate) {
+      setAlert('Switch to update mode to find a service.', 'warn');
+      return;
+    }
+    const unit = unitSelect.value;
+    if (!unit) {
+      setAlert('Select a unit before searching services.', 'warn');
+      return;
+    }
+    if (serviceModal.classList.contains('open')) return;
+    resetServiceModal();
+    const currentId = String(serviceLookupId.value || '');
+    if (currentId) {
+      const label = serviceLookupInput.value || `Service #${currentId}`;
+      serviceModalState.selected.set(currentId, {
+        serviceId: currentId,
+        name: label,
+      });
+      updateServiceModalSelection();
+    }
+    document.documentElement.classList.add('modal-open');
+    document.body.classList.add('modal-open');
+    serviceModal.classList.add('open');
+    setTimeout(() => serviceModalSearch.focus(), 0);
+  }
+
+  function closeServiceModal() {
+    serviceModal.classList.remove('open');
+    document.documentElement.classList.remove('modal-open');
+    document.body.classList.remove('modal-open');
+    resetServiceModal();
+  }
+
+  function attemptCloseServiceModal() {
+    const count = serviceModalState.selected.size;
+    if (count > 0) {
+      const label = count === 1 ? 'service' : 'services';
+      const ok = window.confirm(`You have ${count} selected ${label}. Exit without loading?`);
+      if (!ok) return;
+    }
+    closeServiceModal();
+  }
+
+  function loadSelectedService() {
+    if (serviceModalState.selected.size === 0) return;
+    const svc = serviceModalState.selected.values().next().value;
+    closeServiceModal();
+    if (svc && svc.serviceId) {
+      loadServiceDetails(svc.serviceId);
+    }
+  }
+
+  function applyServiceDetails(service, tariffs) {
+    if (!service) return;
+    serviceLookupId.value = service.Service_ID || '';
+    const lookupLabel = state.serviceLookupMaps.labelById.get(String(service.Service_ID || '')) ||
+      [service.Service_Code, service.Service_Name].filter(Boolean).join(' - ');
+    serviceLookupInput.value = lookupLabel;
+    serviceCode.value = service.Service_Code || '';
+    serviceName.value = service.Service_Name || '';
+    serviceAlias.value = service.ServiceAliasName || '';
+    cghsCode.value = service.CGHSCode || '';
+    serviceCodeTouched = true;
+
+    departmentId.value = service.DepartmentId || '';
+    categoryId.value = service.Category_Id || '';
+    departmentInput.value = state.departmentMaps.labelById.get(String(departmentId.value || '')) || '';
+    categoryInput.value = state.categoryMaps.labelById.get(String(categoryId.value || '')) || '';
+    state.lastCategoryId = String(categoryId.value || '');
+    updateSubdepartments();
+    subdepartmentId.value = service.SubDepartmentId || '';
+    subdepartmentInput.value = state.subdepartmentMaps.labelById.get(String(subdepartmentId.value || '')) || '';
+
+    defaultItem.value = service.DefaultItem != null ? String(service.DefaultItem) : '0';
+    document.getElementById('autoRender').checked = toBool(service.Autorender);
+    document.getElementById('patientVisible').checked = toBool(service.PatInvestigationVisible);
+    document.getElementById('docRequired').checked = toBool(service.DocRequired);
+    document.getElementById('clinicalReporting').checked = toBool(service.ClinicalReportingFlag);
+    document.getElementById('bedsideProcedure').checked = toBool(service.IsBedSideProcedure);
+    document.getElementById('routineService').checked = toBool(service.IsRoutineService);
+    document.getElementById('outsourceService').checked = toBool(service.IsOutSourceService);
+    document.getElementById('exclusiveService').checked = toBool(service.IsExclusiveService);
+    document.getElementById('renewalService').checked = toBool(service.IsRenewal);
+    document.getElementById('blockedByTpa').checked = toBool(service.BlockedByTPA);
+    document.getElementById('deactive').checked = toBool(service.Deactive);
+
+    basicRate.value = service.BasicRate != null ? service.BasicRate : '';
+    profitPer.value = service.ProfitPer != null ? service.ProfitPer : '';
+    saleRate.value = service.SaleRate != null ? service.SaleRate : '';
+    discount.value = service.Discount != null ? service.Discount : '';
+    remarks.value = service.Remarks || '';
+
+    autoSale.checked = false;
+
+    const tariffRows = tariffs || [];
+    state.tariffOverrides.clear();
+    const schemeIds = new Set();
+    const billingIds = new Set();
+    const rateSet = new Set();
+    const schemeDiffs = new Set();
+    if (tariffRows.length) {
+      const first = tariffRows[0];
+      tariffRate.value = first.Rate != null ? first.Rate : '';
+      tariffRows.forEach((row) => {
+        const schemeId = row.TariffScheme_ID != null ? String(row.TariffScheme_ID) : '';
+        const billingId = row.BillingClassID != null ? String(row.BillingClassID) : '';
+        if (schemeId) schemeIds.add(schemeId);
+        if (billingId) billingIds.add(billingId);
+        if (row.Rate != null) rateSet.add(String(row.Rate));
+        if (schemeId) {
+          if (String(billingId) === '2') {
+            updateTariffEntry(schemeId, { ipd: row.Rate, ipdTouched: true });
+          } else {
+            updateTariffEntry(schemeId, { opd: row.Rate, opdTouched: true });
+          }
+          const entry = state.tariffOverrides.get(schemeId) || {};
+          if (entry.opd != null && entry.ipd != null && entry.opd !== entry.ipd) {
+            schemeDiffs.add(schemeId);
+          }
+        }
+      });
+    } else {
+      tariffRate.value = tariffRate.value || '';
+    }
+
+    if (schemeIds.size) {
+      tariffSchemeList.querySelectorAll('input[type="checkbox"]').forEach((el) => {
+        el.checked = schemeIds.has(el.value);
+      });
+    }
+    if (billingIds.size) {
+      document.querySelectorAll('input[name="billingClass"]').forEach((el) => {
+        el.checked = billingIds.has(el.value);
+      });
+    }
+
+    if (rateSet.size > 1) {
+      const warnMsg = schemeDiffs.size
+        ? 'Different rates found within the same scheme. Defaults show latest scheme rate.'
+        : 'Multiple tariff rates found. Scheme-specific rates loaded.';
+      setAlert(warnMsg, 'warn');
+    }
+
+    updateRates();
+  }
+
+  async function loadServiceDetails(serviceId) {
+    if (!serviceId) return;
+    const unit = unitSelect.value;
+    if (!unit) {
+      setAlert('Select a unit before loading a service.', 'error');
+      return;
+    }
+    setBusy(true);
+    setStatus('Loading service details...', 'warn');
+    setActivity('lookup', 'active');
+    try {
+      const res = await fetch(`/api/service_addition/detail?unit=${encodeURIComponent(unit)}&service_id=${encodeURIComponent(serviceId)}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || 'Unable to load service');
+      }
+      applyServiceDetails(data.service, data.tariffs || []);
+      setActivity('lookup', 'done');
+      setStatus('Service loaded. Ready to update.', 'ready');
+    } catch (err) {
+      setActivity('lookup', 'warn');
+      setStatus('Failed to load service details.', 'error');
+      setAlert(err.message || 'Failed to load service.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  function updateSummary() {
+    summaryService.textContent = serviceName.value ? `${serviceName.value} (${serviceCode.value || 'Code'})` : 'Not set';
+    const deptLabel = state.departmentMaps.labelById.get(String(departmentId.value || '')) || 'Not selected';
+    const catLabel = state.categoryMaps.labelById.get(String(categoryId.value || '')) || 'Not selected';
+    const tariffIds = getTariffSchemeIds();
+    let tariffLabel = 'Not selected';
+    if (tariffIds.length === 1) {
+      tariffLabel = state.tariffLabelById.get(String(tariffIds[0])) || 'Not selected';
+    } else if (tariffIds.length > 1) {
+      const firstLabel = state.tariffLabelById.get(String(tariffIds[0])) || 'Selected';
+      tariffLabel = `${firstLabel} +${tariffIds.length - 1}`;
+    }
+    summaryDept.textContent = deptLabel;
+    summaryCategory.textContent = catLabel;
+    summaryTariff.textContent = tariffLabel;
+    const billing = getBillingClasses();
+    if (!billing.length) {
+      summaryBilling.textContent = 'Not selected';
+    } else if (billing.length === 2) {
+      summaryBilling.textContent = 'OPD + IPD';
+    } else {
+      summaryBilling.textContent = billing[0] === '2' ? 'IPD' : 'OPD';
+    }
+  summaryFinal.textContent = formatMoney(tariffRate.value);
+  }
+
+  function updateValidation() {
+    const checks = {
+      service_code: serviceCode.value.trim(),
+      service_name: serviceName.value.trim(),
+      department_id: departmentId.value,
+      category_id: categoryId.value,
+      tariff_scheme_id: getTariffSchemeIds().length,
+      billing_class_id: getBillingClasses().length,
+      tariff_rate: tariffRate.value,
+    };
+    validationList.querySelectorAll('li').forEach((item) => {
+      const key = item.getAttribute('data-check');
+      const ok = Boolean(checks[key]);
+      item.classList.toggle('done', ok);
+    });
+    Object.entries(checks).forEach(([key, val]) => {
+      const field = document.querySelector(`.svc-field[data-check="${key}"]`);
+      if (!field) return;
+      if (!showFieldErrors) {
+        field.classList.remove('error');
+        return;
+      }
+      field.classList.toggle('error', !val);
+    });
+  }
+
+  function updateRates() {
+    const basicRaw = String(basicRate.value || '').trim();
+    const basic = parseNum(basicRate.value);
+    const profit = parseNum(profitPer.value);
+    if (autoSale.checked && basicRaw !== '') {
+      const calcSale = basic * (1 + profit / 100);
+      saleRate.value = formatMoney(calcSale);
+      saleRate.readOnly = true;
+    } else {
+      saleRate.readOnly = false;
+    }
+    const tariffDefaultChanged = lastTariffDefaults.rate !== tariffRate.value;
+    if (tariffDefaultChanged) {
+      lastTariffDefaults.rate = tariffRate.value;
+      const schemeIds = getTariffSchemeIds();
+      schemeIds.forEach((schemeId) => {
+        const key = String(schemeId);
+        const entry = state.tariffOverrides.get(key) || {};
+        if (!entry.opdTouched && (!entry.opd || String(entry.opd).trim() === '')) {
+          entry.opd = tariffRate.value;
+        }
+        if (!entry.ipdTouched && (!entry.ipd || String(entry.ipd).trim() === '')) {
+          entry.ipd = tariffRate.value;
+        }
+        state.tariffOverrides.set(key, entry);
+      });
+      renderTariffOverrides();
+    }
+    updateSummary();
+    updateValidation();
+  }
+
+  function resetForm() {
+    serviceForm.reset();
+    showFieldErrors = false;
+    serviceCodeTouched = false;
+    serviceLookupInput.value = '';
+    serviceLookupId.value = '';
+    resetServiceModal();
+    applyMode(false);
+    state.tariffOverrides.clear();
+    autoSale.checked = true;
+    if (state.tariffSchemes.length) {
+      renderTariffSchemes(state.tariffSchemes);
+      tariffSchemeFilter.value = '';
+      filterTariffSchemes('');
+    }
+    departmentId.value = '';
+    categoryId.value = '';
+    state.lastCategoryId = '';
+    subdepartmentId.value = '';
+    updateSubdepartments();
+    updateRates();
+    updateSummary();
+    updateValidation();
+  }
+
+  function renderTariffSchemes(items) {
+    tariffSchemeList.innerHTML = '';
+    state.tariffLabelById = new Map();
+    let baseSchemeId = '';
+    (items || []).forEach((item) => {
+      const id = String(item.TariffScheme_ID || item.tariffscheme_id || '');
+      const desc = item.TariffScheme_Desc || item.tariffscheme_desc || '';
+      const code = item.TariffScheme_Code || item.tariffscheme_code || '';
+      const inactive = String(item.Deactive || item.deactive || 0) === '1';
+      const label = code ? `${code} - ${desc}` : desc || `#${id}`;
+      state.tariffLabelById.set(id, label);
+      if (String(item.IsBaseTariffScheme || 0) === '1' && !inactive) {
+        baseSchemeId = id;
+      }
+      const row = document.createElement('label');
+      row.dataset.label = normalizeKey(label);
+      const checkbox = document.createElement('input');
+      checkbox.type = 'checkbox';
+      checkbox.value = id;
+      checkbox.disabled = inactive;
+      const span = document.createElement('span');
+      span.textContent = inactive ? `${label} (Inactive)` : label;
+      row.appendChild(checkbox);
+      row.appendChild(span);
+      tariffSchemeList.appendChild(row);
+    });
+    if (baseSchemeId) {
+      const baseCheckbox = tariffSchemeList.querySelector(`input[value="${baseSchemeId}"]`);
+      if (baseCheckbox) baseCheckbox.checked = true;
+    }
+    renderTariffOverrides();
+  }
+
+  function filterTariffSchemes(query) {
+    const needle = normalizeKey(query);
+    tariffSchemeList.querySelectorAll('label').forEach((row) => {
+      const label = row.dataset.label || '';
+      row.classList.toggle('hidden', needle && !label.includes(needle));
+    });
+  }
+
+  async function loadNextCode(categoryId) {
+    if (!categoryId) return;
+    if (serviceCodeTouched && serviceCode.value.trim()) return;
+    try {
+      const unit = unitSelect.value;
+      if (!unit) return;
+      const res = await fetch(`/api/service_addition/next_code?unit=${encodeURIComponent(unit)}&category_id=${encodeURIComponent(categoryId)}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        return;
+      }
+      if (data.next_code) {
+        serviceCode.value = data.next_code;
+        updateSummary();
+        updateValidation();
+      }
+    } catch (err) {
+      // silent: code generation is optional
+    }
+  }
+  async function loadInit(unit) {
+    if (!unit) return;
+    setBusy(true);
+    setStatus('Loading master lists for ' + unit + '...', 'warn');
+    setActivity('connect', 'active');
+    setActivity('masters', '');
+    try {
+      const res = await fetch(`/api/service_addition/init?unit=${encodeURIComponent(unit)}`, { cache: 'no-store' });
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || 'Unable to load masters');
+      }
+      state.departments = data.departments || [];
+      state.subdepartments = data.subdepartments || [];
+      state.categories = data.categories || [];
+      state.tariffSchemes = data.tariff_schemes || [];
+
+      state.departmentMaps = buildComboMaps(state.departments, departmentOptions, 'Department_ID', 'Department_Name', 'Department_Code');
+      state.categoryMaps = buildComboMaps(state.categories, categoryOptions, 'ServiceCategory_ID', 'ServiceCategory_Name', 'ServiceCategory_Code');
+      departmentInput.value = '';
+      departmentId.value = '';
+      categoryInput.value = '';
+      categoryId.value = '';
+      state.lastCategoryId = '';
+      subdepartmentInput.value = '';
+      subdepartmentId.value = '';
+      updateSubdepartments();
+      renderTariffSchemes(state.tariffSchemes);
+      tariffSchemeFilter.value = '';
+      filterTariffSchemes('');
+      serviceLookupInput.value = '';
+      serviceLookupId.value = '';
+      state.serviceLookupMaps = { labelById: new Map(), idByLabel: new Map(), idByCode: new Map() };
+      serviceLookupInput.disabled = !state.isUpdate;
+      if (openServiceModalBtn) {
+        openServiceModalBtn.disabled = !state.isUpdate;
+      }
+      resetServiceModal();
+      renderTariffOverrides();
+
+      setActivity('connect', 'done');
+      setActivity('masters', 'done');
+      setActivity('lookup', '');
+      setStatus('Masters loaded. Ready to add or update service.', 'ready');
+      updateSummary();
+      updateValidation();
+      if (pendingServiceId) {
+        modeUpdate.checked = true;
+        applyMode(true);
+        loadServiceDetails(pendingServiceId);
+        pendingServiceId = '';
+      }
+    } catch (err) {
+      setActivity('connect', 'warn');
+      setActivity('masters', 'warn');
+      setStatus('Failed to load master lists. Try again.', 'error');
+      setAlert(err.message || 'Failed to load masters.', 'error');
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  async function submitForm(evt) {
+    evt.preventDefault();
+    setAlert('');
+    showFieldErrors = true;
+    updateRates();
+    updateValidation();
+
+    const missing = validationList.querySelectorAll('li:not(.done)');
+    if (missing.length > 0) {
+      setStatus('Complete required fields before saving.', 'warn');
+      setAlert('Please fill all required fields highlighted on the left.', 'error');
+      return;
+    }
+
+    const unit = unitSelect.value;
+    if (!unit) {
+      setStatus('Select a unit before saving.', 'warn');
+      setAlert('Unit is required to save the service.', 'error');
+      return;
+    }
+    if (state.isUpdate && !serviceLookupId.value) {
+      setStatus('Select a service to update.', 'warn');
+      setAlert('Choose an existing service before updating.', 'error');
+      return;
+    }
+
+    const billingValues = getBillingClasses();
+    if (!billingValues.length) {
+      setStatus('Select at least one billing class.', 'warn');
+      setAlert('Choose OPD and/or IPD billing class.', 'error');
+      return;
+    }
+    const tariffValues = getTariffSchemeIds();
+    if (!tariffValues.length) {
+      setStatus('Select at least one tariff scheme.', 'warn');
+      setAlert('Choose one or more tariff schemes before saving.', 'error');
+      return;
+    }
+    const payload = {
+      unit,
+      mode: state.isUpdate ? 'update' : 'add',
+      service_id: serviceLookupId.value,
+      service_code: serviceCode.value.trim(),
+      service_name: serviceName.value.trim(),
+      service_alias_name: serviceAlias.value.trim(),
+      cghs_code: cghsCode.value.trim(),
+      department_id: departmentId.value,
+      subdepartment_id: subdepartmentId.value,
+      category_id: categoryId.value,
+      default_item: defaultItem.value,
+      autorender: getCheckboxValue('autoRender', false),
+      pat_investigation_visible: getCheckboxValue('patientVisible', true),
+      doc_required: getCheckboxValue('docRequired', false),
+      clinical_reporting_flag: getCheckboxValue('clinicalReporting', false),
+      is_bedside_procedure: getCheckboxValue('bedsideProcedure', false),
+      is_routine_service: getCheckboxValue('routineService', true),
+      is_outsource_service: getCheckboxValue('outsourceService', false),
+      is_exclusive_service: getCheckboxValue('exclusiveService', false),
+      is_renewal: getCheckboxValue('renewalService', false),
+      blocked_by_tpa: getCheckboxValue('blockedByTpa', false),
+      deactive: getCheckboxValue('deactive', false),
+      basic_rate: basicRate.value,
+      profit_per: profitPer.value,
+      sale_rate: saleRate.value,
+      discount: discount.value,
+      tariff_scheme_ids: tariffValues,
+      billing_class_ids: billingValues,
+      tariff_rate: tariffRate.value,
+      tariff_discount: discount.value,
+      tariff_rows: collectTariffRows(),
+      remarks: remarks.value.trim(),
+      updated_by: updatedBy.value,
+    };
+
+    saveBtn.disabled = true;
+    setBusy(true);
+    setStatus(state.isUpdate ? 'Updating service and tariff...' : 'Saving service and tariff...', 'warn');
+    setActivity('validate', 'done');
+    setActivity('save', 'active');
+    setActivity('tariff', '');
+
+    try {
+      const res = await fetch('/api/service_addition/submit', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || 'Unable to save service');
+      }
+      setActivity('save', 'done');
+      setActivity('tariff', 'done');
+      const action = data.action || (state.isUpdate ? 'updated' : 'added');
+      setStatus(`Service ${action} successfully.`, 'ready');
+      const ids = Array.isArray(data.tariff_ids) ? data.tariff_ids : (data.tariff_id ? [data.tariff_id] : []);
+      const uniqueIds = [...new Set(ids.map((val) => String(val)))];
+      let tariffText = '';
+      if (uniqueIds.length) {
+        const shown = uniqueIds.slice(0, 3).join(', ');
+        tariffText = uniqueIds.length > 3 ? `${shown} +${uniqueIds.length - 3} more` : shown;
+      }
+      const tariffSuffix = tariffText ? ` Tariff IDs ${tariffText}.` : '';
+      const approvalSuffix = data.approval_required ? ' Service is deactive until IT approval.' : '';
+      setAlert(`Saved. Service ID ${data.service_id || ''}.${tariffSuffix}${approvalSuffix}`, 'success');
+      updateSummary();
+    } catch (err) {
+      setActivity('save', 'warn');
+      setActivity('tariff', 'warn');
+      setStatus('Failed to save service.', 'error');
+      setAlert(err.message || 'Failed to save service.', 'error');
+    } finally {
+      saveBtn.disabled = false;
+      setBusy(false);
+    }
+  }
+
+  modeAdd.addEventListener('change', () => {
+    if (modeAdd.checked) {
+      applyMode(false);
+      setStatus('Ready to add a new service.', 'ready');
+      setAlert('');
+    }
+  });
+  modeUpdate.addEventListener('change', () => {
+    if (modeUpdate.checked) {
+      applyMode(true);
+      if (!unitSelect.value) {
+        setStatus('Select a unit to search existing services.', 'warn');
+      } else {
+        setStatus('Search and load a service to update.', 'ready');
+      }
+    }
+  });
+  if (openServiceModalBtn) {
+    openServiceModalBtn.addEventListener('click', openServiceModal);
+  }
+  serviceLookupInput.addEventListener('click', openServiceModal);
+  serviceLookupInput.addEventListener('focus', openServiceModal);
+
+  if (serviceModal) {
+    serviceModalClose.addEventListener('click', attemptCloseServiceModal);
+    serviceModalCancel.addEventListener('click', attemptCloseServiceModal);
+    serviceModal.addEventListener('click', (event) => {
+      if (event.target === serviceModal) {
+        attemptCloseServiceModal();
+      }
+    });
+    serviceModalClear.addEventListener('click', () => {
+      serviceModalSearch.value = '';
+      fetchServiceModalResults('');
+      serviceModalSearch.focus();
+    });
+    serviceModalSearch.addEventListener('input', () => {
+      if (serviceSearchTimer) clearTimeout(serviceSearchTimer);
+      serviceSearchTimer = setTimeout(() => fetchServiceModalResults(serviceModalSearch.value), 250);
+    });
+    serviceModalTableBody.addEventListener('click', (event) => {
+      const row = event.target.closest('tr');
+      if (!row) return;
+      const rows = getServiceModalRows();
+      const idx = rows.indexOf(row);
+      if (idx >= 0) {
+        setServiceModalActiveIndex(idx, 1);
+      }
+      toggleServiceSelectionByRow(row);
+    });
+    serviceModalAddBtn.addEventListener('click', () => {
+      loadSelectedService();
+    });
+    serviceModal.addEventListener('keydown', (event) => {
+      if (!serviceModal.classList.contains('open')) return;
+      const rows = getServiceModalRows();
+      const isTypingTarget = event.target === serviceModalSearch || event.target.tagName === 'INPUT' || event.target.tagName === 'TEXTAREA';
+      if (event.key === 'Escape') {
+        event.preventDefault();
+        attemptCloseServiceModal();
+        return;
+      }
+      if (event.key === 'ArrowDown' || event.key === 'ArrowUp') {
+        event.preventDefault();
+        const dir = event.key === 'ArrowDown' ? 1 : -1;
+        if (!rows.length) return;
+        const start = serviceModalState.activeIndex === -1
+          ? (dir === 1 ? 0 : rows.length - 1)
+          : serviceModalState.activeIndex + dir;
+        setServiceModalActiveIndex(start, dir);
+        return;
+      }
+      if ((event.ctrlKey || event.metaKey) && event.key === 'Enter') {
+        if (!serviceModalAddBtn.disabled) {
+          event.preventDefault();
+          loadSelectedService();
+        }
+        return;
+      }
+      if ((event.key === 'Enter') || (!isTypingTarget && event.key === ' ')) {
+        if (serviceModalState.activeIndex < 0) return;
+        const row = rows[serviceModalState.activeIndex];
+        if (!row) return;
+        event.preventDefault();
+        toggleServiceSelectionByRow(row);
+      }
+    });
+  }
+
+  departmentInput.addEventListener('input', () => {
+    resolveComboId(departmentInput, departmentId, state.departmentMaps);
+    updateSubdepartments();
+    updateSummary();
+    updateValidation();
+  });
+  subdepartmentInput.addEventListener('input', () => {
+    resolveComboId(subdepartmentInput, subdepartmentId, state.subdepartmentMaps);
+    updateSummary();
+    updateValidation();
+  });
+  categoryInput.addEventListener('input', () => {
+    const prevId = String(state.lastCategoryId || '');
+    const selectedId = resolveComboId(categoryInput, categoryId, state.categoryMaps);
+    const selectedKey = selectedId ? String(selectedId) : '';
+    if (selectedId && selectedKey !== prevId) {
+      serviceCodeTouched = false;
+      loadNextCode(selectedId);
+    }
+    state.lastCategoryId = selectedKey;
+    updateSummary();
+    updateValidation();
+  });
+  tariffSchemeList.addEventListener('change', () => {
+    renderTariffOverrides();
+    updateSummary();
+    updateValidation();
+  });
+  tariffSchemeFilter.addEventListener('input', () => {
+    filterTariffSchemes(tariffSchemeFilter.value);
+  });
+  document.querySelectorAll('input[name="billingClass"]').forEach((el) => {
+    el.addEventListener('change', () => {
+      renderTariffOverrides();
+      updateSummary();
+      updateValidation();
+    });
+  });
+
+  serviceCode.addEventListener('input', () => {
+    serviceCodeTouched = true;
+    updateRates();
+  });
+
+  [serviceName, serviceAlias, cghsCode, profitPer, saleRate, discount, remarks, updatedBy].forEach((el) => {
+    el.addEventListener('input', () => {
+      updateRates();
+    });
+  });
+  tariffRate.addEventListener('input', () => {
+    updateRates();
+  });
+
+  autoSale.addEventListener('change', updateRates);
+
+  resetBtn.addEventListener('click', resetForm);
+  serviceForm.addEventListener('submit', submitForm);
+
+  unitSelect.addEventListener('change', () => {
+    const unit = unitSelect.value;
+    if (unit) {
+      setAlert('');
+      loadInit(unit);
+    }
+  });
+
+  const isSingleUnit = svcWrapper.getAttribute('data-single-unit') === '1';
+  const urlParams = new URLSearchParams(window.location.search);
+  const presetUnit = (urlParams.get('unit') || '').trim().toUpperCase();
+  const presetServiceId = (urlParams.get('service_id') || '').trim();
+  let pendingServiceId = presetServiceId;
+
+  if (presetUnit) {
+    const option = Array.from(unitSelect.options).find((opt) => opt.value === presetUnit);
+    if (option) {
+      unitSelect.value = presetUnit;
+    }
+  }
+
+  function startServiceMaster() {
+    if (!serviceMasterSection || !svcGate) return;
+    if (!serviceMasterSection.classList.contains('svc-master-hidden')) return;
+    svcGate.style.display = 'none';
+    serviceMasterSection.classList.remove('svc-master-hidden');
+    if (healthPackageSection) {
+      healthPackageSection.classList.add('svc-master-hidden');
+    }
+    if (ipPackageSection) {
+      ipPackageSection.classList.add('svc-master-hidden');
+    }
+    resetForm();
+
+    if (pendingServiceId) {
+      modeUpdate.checked = true;
+      applyMode(true);
+    }
+
+    mobileSuggest.department = setupMobileSuggest(departmentInput, departmentOptions, () => {
+      departmentInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    mobileSuggest.subdepartment = setupMobileSuggest(subdepartmentInput, subdepartmentOptions, () => {
+      subdepartmentInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+    mobileSuggest.category = setupMobileSuggest(categoryInput, categoryOptions, () => {
+      categoryInput.dispatchEvent(new Event('input', { bubbles: true }));
+    });
+
+    if (isSingleUnit && unitSelect.options.length > 0) {
+      unitSelect.selectedIndex = 0;
+      loadInit(unitSelect.value);
+    } else if (unitSelect.value) {
+      loadInit(unitSelect.value);
+    }
+  }
+
+  if (serviceMasterBtn) {
+    serviceMasterBtn.addEventListener('click', startServiceMaster);
+  }
+
+  function startHealthPackage() {
+    if (!healthPackageSection || !svcGate) return;
+    svcGate.style.display = 'none';
+    healthPackageSection.classList.remove('svc-master-hidden');
+    if (serviceMasterSection) {
+      serviceMasterSection.classList.add('svc-master-hidden');
+    }
+    if (ipPackageSection) {
+      ipPackageSection.classList.add('svc-master-hidden');
+    }
+    if (healthPackageFrame && !healthPackageFrame.src) {
+      const src = healthPackageFrame.getAttribute('data-src');
+      if (src) {
+        healthPackageFrame.src = src;
+      }
+    }
+  }
+
+  function startIpPackage() {
+    if (!ipPackageSection || !svcGate) return;
+    svcGate.style.display = 'none';
+    ipPackageSection.classList.remove('svc-master-hidden');
+    if (serviceMasterSection) {
+      serviceMasterSection.classList.add('svc-master-hidden');
+    }
+    if (healthPackageSection) {
+      healthPackageSection.classList.add('svc-master-hidden');
+    }
+    if (ipPackageFrame && !ipPackageFrame.src) {
+      const src = ipPackageFrame.getAttribute('data-src');
+      if (src) {
+        ipPackageFrame.src = src;
+      }
+    }
+  }
+
+  function returnToMenu() {
+    if (!svcGate) return;
+    svcGate.style.display = '';
+    if (serviceMasterSection) {
+      serviceMasterSection.classList.add('svc-master-hidden');
+    }
+    if (healthPackageSection) {
+      healthPackageSection.classList.add('svc-master-hidden');
+    }
+    if (ipPackageSection) {
+      ipPackageSection.classList.add('svc-master-hidden');
+    }
+  }
+
+  if (healthPackageBtn) {
+    healthPackageBtn.addEventListener('click', startHealthPackage);
+  }
+  if (openHealthFromService) {
+    openHealthFromService.addEventListener('click', startHealthPackage);
+  }
+  if (ipPackageBtn) {
+    ipPackageBtn.addEventListener('click', startIpPackage);
+  }
+  if (openIpFromService) {
+    openIpFromService.addEventListener('click', startIpPackage);
+  }
+  if (backToMenuBtn) {
+    backToMenuBtn.addEventListener('click', returnToMenu);
+  }
+  if (backToMenuFromHealth) {
+    backToMenuFromHealth.addEventListener('click', returnToMenu);
+  }
+  if (backToMenuFromIp) {
+    backToMenuFromIp.addEventListener('click', returnToMenu);
+  }
+
+</script>
+{% endblock %}

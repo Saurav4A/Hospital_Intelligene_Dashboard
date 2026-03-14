@@ -1,0 +1,134 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>Hospital Intelligence Dashboard | Asarfi Hospital Ltd</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1" />
+    <link rel="icon" href="{{ url_for('static', filename='logo/asarfi.png') }}">
+
+    <!-- Global Styling -->
+    <style>
+      :root {
+        --bg-light: #f4f7fb;
+        --primary: #1e3a8a;
+        --secondary: #3b82f6;
+        --muted: #64748b;
+        --card-bg: rgba(255,255,255,0.9);
+        --radius: 18px;
+        --shadow: 0 10px 30px rgba(0,0,0,0.08);
+      }
+
+      * { box-sizing: border-box; }
+
+      html, body {
+        margin: 0;
+        padding: 0;
+        height: 100%;
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        color: #0f172a;
+        background:
+          radial-gradient(1200px 600px at -10% -10%, #e3f2fd 0, transparent 40%),
+          radial-gradient(1400px 700px at 110% -10%, #e3f2fd 0, transparent 35%),
+          var(--bg-light);
+        display: flex;
+        flex-direction: column;
+        min-height: 100vh;
+        transition: background 0.3s ease;
+      }
+
+      header {
+        text-align: center;
+        margin-top: 40px;
+        margin-bottom: 14px;
+      }
+
+      header img {
+        width: 80px;
+        height: 80px;
+        object-fit: contain;
+        border-radius: 16px;
+        box-shadow: 0 8px 18px rgba(0,0,0,0.15);
+        background: #fff;
+        padding: 4px;
+      }
+
+      header h1 {
+        margin-top: 12px;
+        font-size: 26px;
+        font-weight: 800;
+        color: var(--primary);
+        letter-spacing: 0.3px;
+      }
+
+      main {
+        flex: 1;
+        display: flex;
+        flex-direction: column;
+        align-items: center;
+        justify-content: flex-start;
+        padding: 0 16px 40px;
+        width: 100%;
+      }
+
+      footer {
+        text-align: center;
+        font-size: 13px;
+        color: var(--muted);
+        margin-bottom: 20px;
+      }
+
+      /* Smooth fade-in for every page */
+      @keyframes fadeIn {
+        from { opacity: 0; transform: translateY(6px); }
+        to { opacity: 1; transform: translateY(0); }
+      }
+
+      body {
+        animation: fadeIn 0.4s ease-out;
+      }
+
+      @media (max-width: 768px) {
+        header img { width: 68px; height: 68px; }
+        header h1 { font-size: 22px; }
+      }
+    </style>
+  </head>
+
+  <body>
+    {% block page_header %}
+    <header>
+      <img src="{{ url_for('static', filename='logo/asarfi.png') }}" alt="Asarfi Hospital Logo">
+      <h1>Hospital Intelligence Dashboard</h1>
+    </header>
+    {% endblock %}
+
+    <main>
+      {% block content %}{% endblock %}
+    </main>
+
+    {% block page_footer %}
+    <footer>
+      &copy; 2025 Asarfi Hospital Ltd. All Rights Reserved.
+    </footer>
+    {% endblock %}
+
+    <!-- Smooth page transitions -->
+    <script>
+      document.addEventListener("click", (e) => {
+        const link = e.target.closest("a");
+        if (!link || link.target === "_blank" || link.hasAttribute("download")) return;
+
+        const href = link.getAttribute("href");
+        if (!href || href.startsWith("#") || href.startsWith("mailto:")) return;
+
+        e.preventDefault();
+        document.body.style.opacity = "0";
+        setTimeout(() => { window.location.href = href; }, 180);
+      });
+    </script>
+    {% include '_session_keepalive.html' %}
+    
+    {% block scripts %}{% endblock %}
+
+  </body>
+</html>

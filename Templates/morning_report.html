@@ -1,0 +1,1971 @@
+{% extends "layout.html" %}
+{% block content %}
+<style>
+  .morning-wrap {
+    width: min(1200px, 98%);
+    margin: 0 auto;
+  }
+  .controls {
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    padding: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    align-items: end;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+    margin-bottom: 12px;
+  }
+  .control {
+    display: grid;
+    gap: 6px;
+  }
+  .control label {
+    font-size: 12px;
+    color: #475569;
+    font-weight: 700;
+  }
+  .control input,
+  .control select {
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid #cbd5e1;
+    font-size: 13px;
+  }
+  .btn-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    border: none;
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+  }
+  .btn.primary {
+    background: linear-gradient(90deg, #2563eb, #1e3a8a);
+    color: #fff;
+  }
+  .btn.secondary {
+    background: #e0f2fe;
+    color: #0f172a;
+    border: 1px solid #bae6fd;
+  }
+  .btn.ghost {
+    background: #eef2ff;
+    color: #1e3a8a;
+    border: 1px solid #c7d2fe;
+  }
+  .btn.save {
+    background: #22c55e;
+    color: #fff;
+  }
+  .status {
+    font-size: 13px;
+    color: #475569;
+  }
+  .fab-user {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    display: flex;
+    align-items: center;
+    z-index: 50;
+  }
+  .fab-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: linear-gradient(135deg, #1e40af, #3b82f6);
+    color: #fff;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    box-shadow: 0 8px 18px rgba(30, 64, 175, 0.3);
+  }
+  .fab-icon {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .fab-icon span {
+    width: 16px;
+    height: 3px;
+    background: #fff;
+    border-radius: 3px;
+    display: block;
+  }
+  .fab-menu {
+    position: absolute;
+    top: 52px;
+    right: 0;
+    background: rgba(255,255,255,0.98);
+    border: 1px solid rgba(0,0,0,0.08);
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.18);
+    border-radius: 12px;
+    padding: 10px;
+    min-width: 200px;
+    display: none;
+    z-index: 10;
+  }
+  .fab-menu.open { display: block; }
+  .fab-menu a, .fab-menu div {
+    display: block;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #0f172a;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .fab-menu a:hover { background: #e0f2fe; color: #1e40af; }
+  .fab-user-name { color: #64748b; font-weight: 700; }
+  .report-card {
+    background: #fff;
+    border: 1px solid #1f2937;
+    border-radius: 10px;
+    padding: 10px;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+  }
+  .report-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1.1fr) minmax(0, 0.9fr);
+    gap: 10px;
+    margin-top: 10px;
+  }
+  .report-table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .report-table th,
+  .report-table td {
+    border: 1px solid #1f2937;
+    padding: 6px 8px;
+    text-align: center;
+  }
+  .table-actions th {
+    background: #eef2ff;
+    text-align: right;
+    padding: 4px 8px;
+  }
+  .table-actions .action-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  .add-row-btn {
+    border: 1px solid #93c5fd;
+    background: #e0f2fe;
+    color: #1e3a8a;
+    font-weight: 700;
+    font-size: 12px;
+    padding: 4px 10px;
+    border-radius: 6px;
+    cursor: pointer;
+  }
+  .add-row-btn:hover {
+    background: #bfdbfe;
+  }
+  .remove-row-btn {
+    border: 1px solid #fca5a5;
+    background: #fee2e2;
+    color: #991b1b;
+  }
+  .remove-row-btn:hover {
+    background: #fecaca;
+  }
+  .report-header th.title-cell {
+    background: #9dc3e6;
+    font-size: 16px;
+    font-weight: 800;
+  }
+  .report-header td.label-cell {
+    background: #fde2e2;
+    font-weight: 700;
+    text-align: left;
+  }
+  .report-header td.value-cell {
+    background: #fde2e2;
+    font-weight: 700;
+  }
+  .column-head th {
+    background: #f4b183;
+    font-weight: 800;
+  }
+  .section-title th {
+    background: #b7dee8;
+    font-weight: 800;
+  }
+  .total-row td {
+    background: #d9d9d9;
+    font-weight: 800;
+  }
+  .left {
+    text-align: left;
+  }
+  .manual-input {
+    width: 70px;
+    padding: 4px 6px;
+    border: 1px solid #94a3b8;
+    border-radius: 6px;
+    text-align: center;
+    background: #fff;
+    font-size: 12px;
+  }
+  .manual-input.mini {
+    width: 44px;
+    padding: 2px 4px;
+    font-size: 11px;
+  }
+  .manual-input.text {
+    width: 100%;
+    text-align: left;
+  }
+  .occ-cell {
+    display: flex;
+    flex-direction: column;
+    gap: 2px;
+    align-items: center;
+  }
+  .occ-sub {
+    display: flex;
+    gap: 4px;
+    align-items: center;
+    justify-content: center;
+  }
+  .alt-card {
+    margin-top: 12px;
+  }
+  .alt-title th {
+    background: #9dc3e6;
+    font-size: 16px;
+    font-weight: 800;
+  }
+  .alt-section th {
+    background: #d9c2e9;
+    font-weight: 800;
+  }
+  .alt-head th {
+    background: #ead1ec;
+    font-weight: 800;
+  }
+  .note-link {
+    text-decoration: underline;
+  }
+  .subtext {
+    font-size: 11px;
+    color: #64748b;
+    line-height: 1.2;
+  }
+  .no-seg .cardiac-col {
+    display: none;
+  }
+  @media (max-width: 980px) {
+    .report-grid { grid-template-columns: 1fr; }
+  }
+</style>
+
+<section class="morning-wrap">
+  <div class="fab-user">
+    <button class="fab-btn" id="fabToggle" title="User Menu">
+      <span class="fab-icon"><span></span><span></span><span></span></span>
+    </button>
+    <div class="fab-menu" id="fabMenu">
+      <div class="fab-user-name">{{ session.get('username','User') }}</div>
+      <a href="{{ url_for('dashboard') }}">Dashboard</a>
+      <a href="{{ url_for('mod_reports_dashboard') }}">MOD Reports</a>
+      <a href="{{ url_for('logout') }}" style="color:#dc2626;">Logout</a>
+    </div>
+  </div>
+
+  <div class="controls">
+    <div class="control">
+      <label>Date</label>
+      <select id="morningDate" disabled>
+        <option value="">Loading snapshots...</option>
+      </select>
+    </div>
+    <div class="control">
+      <label>Unit</label>
+      <select id="morningUnit">
+        {% if allowed_units and allowed_units|length %}
+          {% for u in allowed_units %}
+            <option value="{{ u }}" {% if u == selected_unit %}selected{% endif %}>{{ u }}</option>
+          {% endfor %}
+        {% else %}
+          <option value="">No units</option>
+        {% endif %}
+      </select>
+    </div>
+    <div class="control">
+      <label>Actions</label>
+      <div class="btn-row">
+        <button class="btn primary" type="button" id="loadSnapshotBtn">Load Snapshot</button>
+        <button class="btn secondary" type="button" id="loadLiveBtn">Fetch Current</button>
+        <button class="btn ghost" type="button" id="exportBtn">Export Excel</button>
+        <button class="btn ghost" type="button" id="exportPdfBtn">Export PDF</button>
+        <button class="btn ghost" type="button" id="exportJpgBtn">Export JPG</button>
+        <button class="btn save" type="button" id="saveBtn">Save Manual</button>
+      </div>
+    </div>
+    <div class="control">
+      <label>Status</label>
+      <div class="status" id="actionStatus">Ready.</div>
+    </div>
+  </div>
+  <div class="report-card">
+    <table class="report-table report-header">
+      <tr>
+        <th class="title-cell" colspan="8">Night Shift MOD Daily Report</th>
+      </tr>
+      <tr>
+        <td class="label-cell">Date:</td>
+        <td class="value-cell" id="reportDate">-</td>
+        <td class="label-cell">Time:</td>
+        <td class="value-cell" id="reportTime">-</td>
+        <td class="label-cell">MOD Name</td>
+        <td class="value-cell" id="reportModName" colspan="3">-</td>
+      </tr>
+      <tr>
+        <td class="label-cell">Snapshot Time:</td>
+        <td class="value-cell" id="snapshotTime" colspan="7">-</td>
+      </tr>
+    </table>
+
+    <div class="report-grid">
+      <div class="report-left">
+        <table class="report-table" id="summaryTable">
+          <thead>
+            <tr class="column-head">
+              <th style="width:60px;">Sl. No.</th>
+              <th>Particular</th>
+              <th style="width:90px;" id="summaryAsarfiHead">Asarfi</th>
+              <th style="width:90px;" id="summaryCardiacHead" class="cardiac-col">Cardiac</th>
+              <th style="width:90px;">Total</th>
+            </tr>
+          </thead>
+          <tbody id="summaryBody">
+            <tr><td colspan="5">Loading...</td></tr>
+          </tbody>
+        </table>
+
+        <table class="report-table" id="investigationTable" style="margin-top:8px;">
+          <thead>
+            <tr class="section-title">
+              <th colspan="5" id="invSectionTitle">Investigation/Radiology</th>
+            </tr>
+            <tr class="column-head">
+              <th style="width:60px;">Sl. No.</th>
+              <th>Particular</th>
+              <th style="width:90px;" id="invAsarfiHead">Asarfi</th>
+              <th style="width:90px;" id="invCardiacHead" class="cardiac-col">Cardiac</th>
+              <th style="width:90px;">Total</th>
+            </tr>
+          </thead>
+          <tbody id="investigationBody">
+            <tr><td colspan="5">Loading...</td></tr>
+          </tbody>
+        </table>
+
+        <table class="report-table" style="margin-top:8px;">
+          <thead>
+            <tr class="section-title">
+              <th colspan="3">Key Procedure</th>
+            </tr>
+            <tr class="column-head">
+              <th style="width:60px;">Sl. No.</th>
+              <th>Particular</th>
+              <th style="width:110px;">Count</th>
+            </tr>
+          </thead>
+          <tbody id="procedureBody">
+            <tr><td colspan="3">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="report-right">
+        <table class="report-table">
+          <thead>
+            <tr class="section-title">
+              <th colspan="5">Admission</th>
+            </tr>
+            <tr class="column-head">
+              <th style="width:60px;">Sl. No.</th>
+              <th>Dept</th>
+              <th>Doctor</th>
+              <th style="width:110px;">Previous Day Count</th>
+              <th style="width:120px;">Night Admission Count</th>
+            </tr>
+          </thead>
+          <tbody id="admissionBody">
+            <tr><td colspan="5">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+
+  <div class="report-card alt-card">
+    <table class="report-table alt-header">
+      <tr class="alt-title">
+        <th colspan="6">Night Shift MOD Daily Report</th>
+      </tr>
+    </table>
+
+    <div class="report-grid" style="grid-template-columns: minmax(0, 1fr) minmax(0, 0.9fr);">
+      <div class="report-left">
+        <table class="report-table" id="doctorwiseTable">
+          <thead>
+            <tr class="alt-section">
+              <th colspan="4">Doctor wise IPD&OPD Details (00:00 to 23:59)</th>
+            </tr>
+            <tr class="table-actions">
+              <th colspan="4">
+                <div class="action-buttons">
+                  <button class="add-row-btn" type="button" id="addDoctorwiseRowBtn">Add Row</button>
+                  <button class="add-row-btn remove-row-btn" type="button" id="removeDoctorwiseRowBtn">Remove Row</button>
+                </div>
+              </th>
+            </tr>
+            <tr class="alt-head">
+              <th style="width:60px;">SL</th>
+              <th>Department</th>
+              <th style="width:90px;">OPD</th>
+              <th style="width:90px;">IPD</th>
+            </tr>
+          </thead>
+          <tbody id="doctorwiseBody">
+            <tr><td colspan="4">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+
+      <div class="report-right">
+        <table class="report-table" id="occupancyMorningTable">
+          <thead>
+            <tr class="alt-section">
+              <th colspan="3">Occupancy details till 08:00AM</th>
+            </tr>
+            <tr class="table-actions">
+              <th colspan="3">
+                <div class="action-buttons">
+                  <button class="add-row-btn" type="button" id="addOccupancyRowBtn">Add Row</button>
+                  <button class="add-row-btn remove-row-btn" type="button" id="removeOccupancyRowBtn">Remove Row</button>
+                </div>
+              </th>
+            </tr>
+            <tr class="alt-head">
+              <th style="width:60px;">Sl. No.</th>
+              <th>Ward</th>
+              <th style="width:90px;">Count</th>
+            </tr>
+          </thead>
+          <tbody id="occupancyMorningBody">
+            <tr><td colspan="3">Loading...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
+    <table class="report-table" id="nightVisitTable" style="margin-top:10px;">
+      <thead>
+        <tr class="alt-section">
+          <th colspan="5">DOCTOR NIGHT VISIT</th>
+        </tr>
+        <tr class="table-actions">
+          <th colspan="5">
+            <div class="action-buttons">
+              <button class="add-row-btn" type="button" id="addNightVisitRowBtn">Add Row</button>
+              <button class="add-row-btn remove-row-btn" type="button" id="removeNightVisitRowBtn">Remove Row</button>
+            </div>
+          </th>
+        </tr>
+        <tr class="alt-head">
+          <th style="width:60px;">Sl. No.</th>
+          <th>Patient Name</th>
+          <th style="width:110px;">Admission Time</th>
+          <th>Consultant Name</th>
+          <th style="width:120px;">Visiting</th>
+        </tr>
+      </thead>
+      <tbody id="nightVisitBody">
+        <tr><td colspan="5">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+
+  <div class="report-card alt-card">
+    <table class="report-table" id="staffTable">
+      <thead>
+        <tr class="alt-title">
+          <th colspan="7">Department wise Count of Staff at Night Shift</th>
+        </tr>
+        <tr class="table-actions">
+          <th colspan="7">
+            <div class="action-buttons">
+              <button class="add-row-btn" type="button" id="addStaffRowBtn">Add Row</button>
+              <button class="add-row-btn remove-row-btn" type="button" id="removeStaffRowBtn">Remove Row</button>
+            </div>
+          </th>
+        </tr>
+        <tr class="alt-head">
+          <th style="width:60px;">Sl. No.</th>
+          <th>Department</th>
+          <th style="width:90px;">Doctor</th>
+          <th style="width:90px;">Nursing</th>
+          <th style="width:90px;">Aaya</th>
+          <th style="width:120px;">Ward Boy/GDA</th>
+          <th style="width:110px;">HouseKeeping</th>
+        </tr>
+      </thead>
+      <tbody id="staffBody">
+        <tr><td colspan="7">Loading...</td></tr>
+      </tbody>
+    </table>
+
+    <table class="report-table" id="nonMedicalTable" style="margin-top:8px;">
+      <thead>
+        <tr class="alt-section">
+          <th colspan="5">Non Medical Staff</th>
+        </tr>
+        <tr class="table-actions">
+          <th colspan="5">
+            <div class="action-buttons">
+              <button class="add-row-btn" type="button" id="addNonMedicalRowBtn">Add Row</button>
+              <button class="add-row-btn remove-row-btn" type="button" id="removeNonMedicalRowBtn">Remove Row</button>
+            </div>
+          </th>
+        </tr>
+        <tr class="alt-head">
+          <th style="width:60px;">Sl</th>
+          <th>Staff</th>
+          <th style="width:90px;">Count</th>
+          <th>Staff</th>
+          <th style="width:90px;">Count</th>
+        </tr>
+      </thead>
+      <tbody id="nonMedicalBody">
+        <tr><td colspan="5">Loading...</td></tr>
+      </tbody>
+    </table>
+
+    <table class="report-table" id="referralTable" style="margin-top:8px;">
+      <thead>
+        <tr class="alt-section">
+          <th colspan="5">Referral/Refusal/Brought Death Information (12:00 PM to 11:59 PM)</th>
+        </tr>
+        <tr class="table-actions">
+          <th colspan="5">
+            <div class="action-buttons">
+              <button class="add-row-btn" type="button" id="addReferralRowBtn">Add Row</button>
+              <button class="add-row-btn remove-row-btn" type="button" id="removeReferralRowBtn">Remove Row</button>
+            </div>
+          </th>
+        </tr>
+        <tr class="alt-head">
+          <th style="width:60px;">Sl</th>
+          <th>Patient Name</th>
+          <th style="width:110px;">Visit Time</th>
+          <th>Consultant Name</th>
+          <th>Reason for Refering</th>
+        </tr>
+      </thead>
+      <tbody id="referralBody">
+        <tr><td colspan="5">Loading...</td></tr>
+      </tbody>
+    </table>
+  </div>
+</section>
+
+<script>
+  const reportDateEl = document.getElementById('reportDate');
+  const reportTimeEl = document.getElementById('reportTime');
+  const reportModNameEl = document.getElementById('reportModName');
+  const snapshotTimeEl = document.getElementById('snapshotTime');
+  const summaryTable = document.getElementById('summaryTable');
+  const investigationTable = document.getElementById('investigationTable');
+  const summaryAsarfiHead = document.getElementById('summaryAsarfiHead');
+  const invAsarfiHead = document.getElementById('invAsarfiHead');
+  const invSectionTitle = document.getElementById('invSectionTitle');
+  const summaryBody = document.getElementById('summaryBody');
+  const investigationBody = document.getElementById('investigationBody');
+  const procedureBody = document.getElementById('procedureBody');
+  const admissionBody = document.getElementById('admissionBody');
+  const doctorwiseBody = document.getElementById('doctorwiseBody');
+  const occupancyMorningBody = document.getElementById('occupancyMorningBody');
+  const nightVisitBody = document.getElementById('nightVisitBody');
+  const staffBody = document.getElementById('staffBody');
+  const nonMedicalBody = document.getElementById('nonMedicalBody');
+  const referralBody = document.getElementById('referralBody');
+  const addDoctorwiseRowBtn = document.getElementById('addDoctorwiseRowBtn');
+  const addOccupancyRowBtn = document.getElementById('addOccupancyRowBtn');
+  const addNightVisitRowBtn = document.getElementById('addNightVisitRowBtn');
+  const addStaffRowBtn = document.getElementById('addStaffRowBtn');
+  const addNonMedicalRowBtn = document.getElementById('addNonMedicalRowBtn');
+  const addReferralRowBtn = document.getElementById('addReferralRowBtn');
+  const removeDoctorwiseRowBtn = document.getElementById('removeDoctorwiseRowBtn');
+  const removeOccupancyRowBtn = document.getElementById('removeOccupancyRowBtn');
+  const removeNightVisitRowBtn = document.getElementById('removeNightVisitRowBtn');
+  const removeStaffRowBtn = document.getElementById('removeStaffRowBtn');
+  const removeNonMedicalRowBtn = document.getElementById('removeNonMedicalRowBtn');
+  const removeReferralRowBtn = document.getElementById('removeReferralRowBtn');
+  const morningDate = document.getElementById('morningDate');
+  const morningUnit = document.getElementById('morningUnit');
+  const loadSnapshotBtn = document.getElementById('loadSnapshotBtn');
+  const loadLiveBtn = document.getElementById('loadLiveBtn');
+  const saveBtn = document.getElementById('saveBtn');
+  const exportBtn = document.getElementById('exportBtn');
+  const exportPdfBtn = document.getElementById('exportPdfBtn');
+  const exportJpgBtn = document.getElementById('exportJpgBtn');
+  const actionStatus = document.getElementById('actionStatus');
+  const fabToggle = document.getElementById('fabToggle');
+  const fabMenu = document.getElementById('fabMenu');
+
+  let currentPayload = null;
+  let currentMode = 'snapshot';
+  let snapshotDates = [];
+  let latestSnapshotStamp = '';
+  let editLocked = false;
+  let prefillStaffBaseline = null;
+  let prefillNonMedBaseline = null;
+  let prefillStaffActive = false;
+  let prefillNonMedActive = false;
+  let prefillSourceStamp = '';
+
+  function setStatus(text, warn = false) {
+    if (!actionStatus) return;
+    actionStatus.textContent = text;
+    actionStatus.style.color = warn ? '#dc2626' : '#475569';
+  }
+
+  function applyEditLock(locked, message) {
+    editLocked = !!locked;
+    if (saveBtn) saveBtn.disabled = editLocked;
+    [
+      addDoctorwiseRowBtn, addOccupancyRowBtn, addNightVisitRowBtn,
+      addStaffRowBtn, addNonMedicalRowBtn, addReferralRowBtn,
+      removeDoctorwiseRowBtn, removeOccupancyRowBtn, removeNightVisitRowBtn,
+      removeStaffRowBtn, removeNonMedicalRowBtn, removeReferralRowBtn
+    ].forEach((btn) => {
+      if (btn) btn.disabled = editLocked;
+    });
+    document.querySelectorAll('.manual-input').forEach((input) => {
+      input.disabled = editLocked;
+    });
+    if (editLocked && message) {
+      setStatus(message, true);
+    }
+  }
+
+  function isSegmentedUnit(unit) {
+    return String(unit || '').trim().toUpperCase() === 'AHL';
+  }
+
+  function applyUnitSegmentation(unit) {
+    const unitLabel = String(unit || '').trim().toUpperCase() || 'UNIT';
+    const segmented = isSegmentedUnit(unit);
+    if (summaryAsarfiHead) summaryAsarfiHead.textContent = segmented ? 'Asarfi' : unitLabel;
+    if (invAsarfiHead) invAsarfiHead.textContent = segmented ? 'Asarfi' : unitLabel;
+    if (invSectionTitle) invSectionTitle.setAttribute('colspan', segmented ? '5' : '4');
+    summaryTable?.classList.toggle('no-seg', !segmented);
+    investigationTable?.classList.toggle('no-seg', !segmented);
+  }
+
+  function formatSnapshotDateLabel(dateStr) {
+    const match = String(dateStr || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) return String(dateStr || '');
+    return `${match[3]}-${match[2]}-${match[1]}`;
+  }
+
+  function formatSnapshotStamp(snapshotTime, snapshotDate) {
+    const raw = String(snapshotTime || snapshotDate || '').trim();
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}:\d{2}(?::\d{2})?)?)?/);
+    if (!match) return raw;
+    const formattedDate = `${match[3]}-${match[2]}-${match[1]}`;
+    const timePart = match[4] ? ` ${match[4]}` : '';
+    return `${formattedDate}${timePart}`;
+  }
+
+  function setSnapshotDateOptions(dates, preferred) {
+    if (!morningDate) return;
+    morningDate.innerHTML = '';
+    snapshotDates = Array.isArray(dates) ? dates.filter(Boolean) : [];
+    if (!snapshotDates.length) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No snapshots available';
+      morningDate.appendChild(opt);
+      morningDate.disabled = true;
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+    snapshotDates.forEach((dateStr) => {
+      const opt = document.createElement('option');
+      opt.value = dateStr;
+      opt.textContent = formatSnapshotDateLabel(dateStr);
+      fragment.appendChild(opt);
+    });
+    morningDate.appendChild(fragment);
+    const nextValue = preferred && snapshotDates.includes(preferred)
+      ? preferred
+      : snapshotDates[0];
+    morningDate.value = nextValue;
+    morningDate.disabled = false;
+  }
+
+  async function loadSnapshotDates(preferredDate) {
+    if (!morningDate) return;
+    const unit = morningUnit?.value || '';
+    if (!unit) {
+      setSnapshotDateOptions([], null);
+      return;
+    }
+    morningDate.disabled = true;
+    morningDate.innerHTML = '<option value="">Loading snapshots...</option>';
+    try {
+      const res = await fetch(`/api/mod_reports/morning_report/snapshot_dates?unit=${encodeURIComponent(unit)}`, {
+        cache: 'no-store'
+      });
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || 'Failed to load snapshot dates');
+      }
+      setSnapshotDateOptions(data.dates || [], preferredDate);
+    } catch (err) {
+      setSnapshotDateOptions([], null);
+      setStatus(`Failed to load snapshot dates: ${err.message}`, true);
+    }
+  }
+
+  function fmt(val) {
+    if (val === null || val === undefined) return '';
+    return val;
+  }
+
+  function summaryManualKey(row) {
+    const label = String(row?.label || '').trim().toUpperCase();
+    if (label === 'LAMA') return 'lama';
+    if (label === 'DEATH COUNT PREVIOUS DAY UPTO 00:00 HOURS') return 'death_prev_day';
+    return 'manual';
+  }
+
+  function parseCountInput(raw) {
+    const text = String(raw ?? '').trim();
+    if (text === '') {
+      return { empty: true, valid: false, value: 0 };
+    }
+    if (!/^\d+$/.test(text)) {
+      return { empty: false, valid: false, value: 0 };
+    }
+    return {
+      empty: false,
+      valid: true,
+      value: parseInt(text, 10) || 0
+    };
+  }
+
+  function parsePlusNumber(raw) {
+    const text = String(raw || '').trim();
+    if (!text) return null;
+    const parts = text.split('+').map((part) => part.trim()).filter(Boolean);
+    if (!parts.length) return null;
+    let total = 0;
+    for (const part of parts) {
+      if (!/^\d+(?:\.\d+)?$/.test(part)) {
+        return null;
+      }
+      total += parseFloat(part);
+    }
+    return Number.isFinite(total) ? total : null;
+  }
+
+  function formatTotalValue(value) {
+    if (value === null || value === undefined) return '';
+    const num = Number(value);
+    if (!Number.isFinite(num)) return '';
+    return Number.isInteger(num) ? String(num) : String(num.toFixed(2)).replace(/\.00$/, '');
+  }
+
+  function rowHasValue(row, keys) {
+    return keys.some((key) => String(row?.[key] || '').trim());
+  }
+
+  function filterRows(rows, keys) {
+    if (!rows) return [];
+    return rows.filter((row) => row?._manual || rowHasValue(row, keys));
+  }
+
+  function normalizeStaffRows(rows) {
+    const data = filterRows(rows || [], ["department", "doctor", "nursing", "aaya", "ward_boy", "housekeeping"]);
+    return data.map((row) => ({
+      department: String(row.department || '').trim(),
+      doctor: String(row.doctor || '').trim(),
+      nursing: String(row.nursing || '').trim(),
+      aaya: String(row.aaya || '').trim(),
+      ward_boy: String(row.ward_boy || '').trim(),
+      housekeeping: String(row.housekeeping || '').trim()
+    }));
+  }
+
+  function normalizeNonMedicalRows(rows) {
+    const data = filterRows(rows || [], ["left_label", "left_count", "right_label", "right_count"]);
+    return data.map((row) => ({
+      left_label: String(row.left_label || '').trim(),
+      left_count: String(row.left_count || '').trim(),
+      right_label: String(row.right_label || '').trim(),
+      right_count: String(row.right_count || '').trim()
+    }));
+  }
+
+  function resetPrefillTracking() {
+    prefillStaffBaseline = null;
+    prefillNonMedBaseline = null;
+    prefillStaffActive = false;
+    prefillNonMedActive = false;
+    prefillSourceStamp = '';
+  }
+
+  function setPrefillTracking(data) {
+    prefillStaffActive = !!data?.prefill_staff_from_snapshot;
+    prefillNonMedActive = !!data?.prefill_non_medical_from_snapshot;
+    prefillStaffBaseline = prefillStaffActive ? JSON.stringify(normalizeStaffRows(data?.staff_rows || [])) : null;
+    prefillNonMedBaseline = prefillNonMedActive ? JSON.stringify(normalizeNonMedicalRows(data?.non_medical_rows || [])) : null;
+    if (prefillStaffActive || prefillNonMedActive) {
+      prefillSourceStamp = formatSnapshotStamp(data?.prefill_snapshot_time, data?.prefill_snapshot_date);
+    }
+  }
+
+  function prefilledTablesUnchanged(payload) {
+    if (!prefillStaffActive && !prefillNonMedActive) return false;
+    const staffSame = prefillStaffActive
+      && JSON.stringify(normalizeStaffRows(payload?.staff_rows || [])) === prefillStaffBaseline;
+    const nonMedSame = prefillNonMedActive
+      && JSON.stringify(normalizeNonMedicalRows(payload?.non_medical_rows || [])) === prefillNonMedBaseline;
+    return staffSame || nonMedSame;
+  }
+
+  function updateManualTotals() {
+    summaryBody.querySelectorAll('tr[data-manual]').forEach((row) => {
+      const aState = parseCountInput(row.querySelector('input[data-side="asarfi"]')?.value);
+      const cState = parseCountInput(row.querySelector('input[data-side="cardiac"]')?.value);
+      const total = aState.value + cState.value;
+      const hasAnyInput = !aState.empty || !cState.empty;
+      const totalCell = row.querySelector('[data-total-cell]');
+      if (totalCell) {
+        totalCell.textContent = (total || hasAnyInput) ? total : '';
+      }
+    });
+  }
+
+  function updateProcedureTotals() {
+    let total = 0;
+    procedureBody.querySelectorAll('input[data-proc-count]').forEach((input) => {
+      const val = parseInt(input.value || '0', 10);
+      if (Number.isFinite(val)) total += val;
+    });
+    const totalCell = procedureBody.querySelector('[data-proc-total]');
+    if (totalCell) totalCell.textContent = total ? total : '';
+  }
+
+  function updateInvestigationTotals() {
+    let totalAsarfi = 0;
+    let totalCardiac = 0;
+    investigationBody.querySelectorAll('tr[data-inv-row]').forEach((row) => {
+      const aVal = parseInt(row.querySelector('input[data-inv-side="asarfi"]')?.value || '0', 10) || 0;
+      const cVal = parseInt(row.querySelector('input[data-inv-side="cardiac"]')?.value || '0', 10) || 0;
+      const rowTotal = aVal + cVal;
+      totalAsarfi += aVal;
+      totalCardiac += cVal;
+      const totalCell = row.querySelector('[data-inv-total]');
+      if (totalCell) totalCell.textContent = rowTotal ? rowTotal : '';
+    });
+    const totalRow = investigationBody.querySelector('tr[data-inv-total-row]');
+    if (totalRow) {
+      const aCell = totalRow.querySelector('[data-total-asarfi]');
+      const cCell = totalRow.querySelector('[data-total-cardiac]');
+      const tCell = totalRow.querySelector('[data-total-overall]');
+      if (aCell) aCell.textContent = totalAsarfi ? totalAsarfi : '';
+      if (cCell) cCell.textContent = totalCardiac ? totalCardiac : '';
+      if (tCell) tCell.textContent = (totalAsarfi + totalCardiac) ? (totalAsarfi + totalCardiac) : '';
+    }
+  }
+
+  function updateDoctorwiseTotals() {
+    if (!doctorwiseBody) return;
+    let totalOpd = 0;
+    let totalIpd = 0;
+    let hasAny = false;
+    doctorwiseBody.querySelectorAll('tr[data-doctorwise-row]').forEach((row) => {
+      const opdVal = parseInt(row.querySelector('[data-doctorwise="opd"]')?.value || '0', 10) || 0;
+      const ipdVal = parseInt(row.querySelector('[data-doctorwise="ipd"]')?.value || '0', 10) || 0;
+      if (opdVal || ipdVal) {
+        hasAny = true;
+        totalOpd += opdVal;
+        totalIpd += ipdVal;
+      }
+    });
+    const opdCell = doctorwiseBody.querySelector('[data-doctorwise-total="opd"]');
+    const ipdCell = doctorwiseBody.querySelector('[data-doctorwise-total="ipd"]');
+    if (opdCell) opdCell.textContent = hasAny ? totalOpd : '';
+    if (ipdCell) ipdCell.textContent = hasAny ? totalIpd : '';
+  }
+
+  function updateOccupancyTotals() {
+    if (!occupancyMorningBody) return;
+    let totalPatient = 0;
+    let hasAny = false;
+    occupancyMorningBody.querySelectorAll('tr[data-occupancy-row]').forEach((row) => {
+      const patientVal = parseInt(row.querySelector('[data-occupancy="patient_count"]')?.value || '0', 10) || 0;
+      if (patientVal) {
+        hasAny = true;
+        totalPatient += patientVal;
+      }
+    });
+    const patientCell = occupancyMorningBody.querySelector('[data-occupancy-total="patient_count"]');
+    if (patientCell) patientCell.textContent = hasAny ? totalPatient : '';
+  }
+
+  function updateStaffTotals() {
+    if (!staffBody) return;
+    let totalDoctor = 0;
+    let totalNursing = 0;
+    let totalAaya = 0;
+    let totalWardBoy = 0;
+    let totalHouse = 0;
+    let hasAny = false;
+    staffBody.querySelectorAll('tr[data-staff-row]').forEach((row) => {
+      const doctorVal = parsePlusNumber(row.querySelector('[data-staff="doctor"]')?.value);
+      const nursingVal = parsePlusNumber(row.querySelector('[data-staff="nursing"]')?.value);
+      const aayaVal = parsePlusNumber(row.querySelector('[data-staff="aaya"]')?.value);
+      const wardVal = parsePlusNumber(row.querySelector('[data-staff="ward_boy"]')?.value);
+      const houseVal = parsePlusNumber(row.querySelector('[data-staff="housekeeping"]')?.value);
+      if (doctorVal !== null || nursingVal !== null || aayaVal !== null || wardVal !== null || houseVal !== null) {
+        hasAny = true;
+        if (doctorVal !== null) totalDoctor += doctorVal;
+        if (nursingVal !== null) totalNursing += nursingVal;
+        if (aayaVal !== null) totalAaya += aayaVal;
+        if (wardVal !== null) totalWardBoy += wardVal;
+        if (houseVal !== null) totalHouse += houseVal;
+      }
+    });
+    const docCell = staffBody.querySelector('[data-staff-total="doctor"]');
+    const nurseCell = staffBody.querySelector('[data-staff-total="nursing"]');
+    const aayaCell = staffBody.querySelector('[data-staff-total="aaya"]');
+    const wardCell = staffBody.querySelector('[data-staff-total="ward_boy"]');
+    const houseCell = staffBody.querySelector('[data-staff-total="housekeeping"]');
+    if (docCell) docCell.textContent = hasAny ? formatTotalValue(totalDoctor) : '';
+    if (nurseCell) nurseCell.textContent = hasAny ? formatTotalValue(totalNursing) : '';
+    if (aayaCell) aayaCell.textContent = hasAny ? formatTotalValue(totalAaya) : '';
+    if (wardCell) wardCell.textContent = hasAny ? formatTotalValue(totalWardBoy) : '';
+    if (houseCell) houseCell.textContent = hasAny ? formatTotalValue(totalHouse) : '';
+  }
+
+  function updateNonMedicalTotals() {
+    if (!nonMedicalBody) return;
+    let leftTotal = 0;
+    let rightTotal = 0;
+    let hasAny = false;
+    nonMedicalBody.querySelectorAll('tr[data-non-med-row]').forEach((row) => {
+      const leftVal = parsePlusNumber(row.querySelector('[data-non-med="left_count"]')?.value);
+      const rightVal = parsePlusNumber(row.querySelector('[data-non-med="right_count"]')?.value);
+      if (leftVal !== null || rightVal !== null) {
+        hasAny = true;
+        if (leftVal !== null) leftTotal += leftVal;
+        if (rightVal !== null) rightTotal += rightVal;
+      }
+    });
+    const leftCell = nonMedicalBody.querySelector('[data-non-med-total="left"]');
+    const rightCell = nonMedicalBody.querySelector('[data-non-med-total="right"]');
+    if (leftCell) leftCell.textContent = hasAny ? formatTotalValue(leftTotal) : '';
+    if (rightCell) rightCell.textContent = hasAny ? formatTotalValue(rightTotal) : '';
+  }
+
+  function updateReferralTotals() {
+    if (!referralBody) return;
+    let total = 0;
+    referralBody.querySelectorAll('tr[data-referral-row]').forEach((row) => {
+      const patient = row.querySelector('[data-referral="patient_name"]')?.value || '';
+      const visit = row.querySelector('[data-referral="visit_time"]')?.value || '';
+      const consultant = row.querySelector('[data-referral="consultant"]')?.value || '';
+      const reason = row.querySelector('[data-referral="reason"]')?.value || '';
+      if (String(patient || '').trim() || String(visit || '').trim() || String(consultant || '').trim() || String(reason || '').trim()) {
+        total += 1;
+      }
+    });
+    const totalCell = referralBody.querySelector('[data-referral-total]');
+    if (totalCell) totalCell.textContent = total ? total : '';
+  }
+
+  function renderSummary(rows) {
+    if (!rows || !rows.length) {
+      summaryBody.innerHTML = '<tr><td colspan="5">No data.</td></tr>';
+      return;
+    }
+    summaryBody.innerHTML = rows.map((row, idx) => {
+      const sl = row.sl ?? (idx + 1);
+      const label = row.label || '';
+      const isManual = !!row.manual;
+      const manualKey = isManual ? summaryManualKey(row) : '';
+      const isRequiredManual = !!row.required || manualKey === 'death_prev_day';
+      const displayLabel = row.emphasis ? `<span class="note-link">${label}</span>` : label;
+      const asarfiCell = isManual
+        ? `<input class="manual-input" type="number" min="0" step="1" data-side="asarfi" ${isRequiredManual ? 'required' : ''} value="${fmt(row.asarfi)}">`
+        : fmt(row.asarfi);
+      const cardiacCell = isManual
+        ? `<input class="manual-input" type="number" min="0" step="1" data-side="cardiac" ${isRequiredManual ? 'required' : ''} value="${fmt(row.cardiac)}">`
+        : fmt(row.cardiac);
+      const totalCell = isManual ? '' : fmt(row.total);
+      return `
+        <tr ${isManual ? `data-manual="${manualKey}" data-manual-required="${isRequiredManual ? '1' : '0'}"` : ''}>
+          <td>${sl}</td>
+          <td class="left">${displayLabel}</td>
+          <td>${asarfiCell}</td>
+          <td class="cardiac-col">${cardiacCell}</td>
+          <td data-total-cell>${totalCell}</td>
+        </tr>
+      `;
+    }).join('');
+    updateManualTotals();
+  }
+
+  function renderInvestigations(rows) {
+    if (!rows || !rows.length) {
+      investigationBody.innerHTML = '<tr><td colspan="5">No data.</td></tr>';
+      return;
+    }
+    const dataRows = rows.filter((row) => String(row.label || '').trim().toUpperCase() !== 'TOTAL');
+    const bodyRows = dataRows.map((row, idx) => {
+      const sl = row.sl ?? (idx + 1);
+      const label = row.label || '';
+      return `
+        <tr data-inv-row data-label="${label}">
+          <td>${sl}</td>
+          <td class="left">${fmt(label)}</td>
+          <td><input class="manual-input" type="number" min="0" data-inv-side="asarfi" value="${fmt(row.asarfi)}"></td>
+          <td class="cardiac-col"><input class="manual-input" type="number" min="0" data-inv-side="cardiac" value="${fmt(row.cardiac)}"></td>
+          <td data-inv-total></td>
+        </tr>
+      `;
+    }).join('');
+    const totalRow = `
+      <tr class="total-row" data-inv-total-row>
+        <td></td>
+        <td class="left">Total</td>
+        <td data-total-asarfi></td>
+        <td class="cardiac-col" data-total-cardiac></td>
+        <td data-total-overall></td>
+      </tr>
+    `;
+    investigationBody.innerHTML = bodyRows + totalRow;
+    updateInvestigationTotals();
+  }
+
+  function renderProcedures(rows) {
+    if (!rows || !rows.length) {
+      procedureBody.innerHTML = '<tr><td colspan="3">No data.</td></tr>';
+      return;
+    }
+    const bodyRows = rows.map((row, idx) => {
+      const sl = row.sl ?? (idx + 1);
+      const countVal = row.count ?? '';
+      return `
+        <tr>
+          <td>${sl}</td>
+          <td class="left">${fmt(row.label)}</td>
+          <td><input class="manual-input" type="number" min="0" data-proc-count value="${fmt(countVal)}"></td>
+        </tr>
+      `;
+    }).join('');
+    const totalRow = `
+      <tr class="total-row">
+        <td></td>
+        <td class="left">Total</td>
+        <td data-proc-total></td>
+      </tr>
+    `;
+    procedureBody.innerHTML = bodyRows + totalRow;
+    updateProcedureTotals();
+  }
+
+  function renderAdmissions(rows) {
+    if (!rows || !rows.length) {
+      admissionBody.innerHTML = '<tr><td colspan="5">No data.</td></tr>';
+      return;
+    }
+    let totalPrev = 0;
+    let totalNight = 0;
+    const bodyRows = rows.map((row, idx) => {
+      const sl = row.sl ?? (idx + 1);
+      const prev = Number(row.prev_count || 0);
+      const night = Number(row.night_count || 0);
+      totalPrev += prev;
+      totalNight += night;
+      return `
+        <tr>
+          <td>${sl}</td>
+          <td class="left">${fmt(row.dept)}</td>
+          <td class="left">${fmt(row.doctor)}</td>
+          <td>${fmt(prev)}</td>
+          <td>${fmt(night)}</td>
+        </tr>
+      `;
+    }).join('');
+    const totalRow = `
+      <tr class="total-row">
+        <td></td>
+        <td class="left">TOTAL</td>
+        <td></td>
+        <td>${totalPrev ? totalPrev : ''}</td>
+        <td>${totalNight ? totalNight : ''}</td>
+      </tr>
+    `;
+    admissionBody.innerHTML = bodyRows + totalRow;
+  }
+
+  function renderDoctorwise(rows) {
+    if (!doctorwiseBody) return;
+    const data = filterRows(rows, ["department", "opd", "ipd"]).filter((row) => String(row.department || '').trim().toUpperCase() !== 'TOTAL');
+    if (!data.length) {
+      doctorwiseBody.innerHTML = '<tr class="empty-row"><td colspan="4">No data.</td></tr>';
+      return;
+    }
+    const bodyRows = data.map((row, idx) => {
+      const sl = idx + 1;
+      return `
+        <tr data-doctorwise-row>
+          <td>${sl}</td>
+          <td><input class="manual-input text" type="text" data-doctorwise="department" value="${fmt(row.department)}"></td>
+          <td><input class="manual-input" type="number" min="0" data-doctorwise="opd" value="${fmt(row.opd)}"></td>
+          <td><input class="manual-input" type="number" min="0" data-doctorwise="ipd" value="${fmt(row.ipd)}"></td>
+        </tr>
+      `;
+    }).join('');
+    const totalRow = `
+      <tr class="total-row" data-doctorwise-total>
+        <td></td>
+        <td class="left">Total</td>
+        <td data-doctorwise-total="opd"></td>
+        <td data-doctorwise-total="ipd"></td>
+      </tr>
+    `;
+    doctorwiseBody.innerHTML = bodyRows + totalRow;
+    updateDoctorwiseTotals();
+  }
+
+  function renderOccupancyMorning(rows) {
+    if (!occupancyMorningBody) return;
+    const data = filterRows(rows, ["ward", "patient_count"]).filter((row) => String(row.ward || '').trim().toUpperCase() !== 'TOTAL');
+    if (!data.length) {
+      occupancyMorningBody.innerHTML = '<tr class="empty-row"><td colspan="3">No data.</td></tr>';
+      return;
+    }
+    const bodyRows = data.map((row, idx) => {
+      const sl = idx + 1;
+      let patientCount = row.patient_count;
+      if ((patientCount === null || patientCount === undefined || patientCount === '') && (row.occupied_count || row.clinically_discharged_count)) {
+        const occVal = parseInt(row.occupied_count || '0', 10) || 0;
+        const clinVal = parseInt(row.clinically_discharged_count || '0', 10) || 0;
+        const totalVal = occVal + clinVal;
+        patientCount = totalVal ? totalVal : '';
+      }
+      return `
+        <tr data-occupancy-row>
+          <td>${sl}</td>
+          <td><input class="manual-input text" type="text" data-occupancy="ward" value="${fmt(row.ward)}"></td>
+          <td><input class="manual-input" type="number" min="0" data-occupancy="patient_count" value="${fmt(patientCount)}"></td>
+        </tr>
+      `;
+    }).join('');
+    const totalRow = `
+      <tr class="total-row" data-occupancy-total>
+        <td></td>
+        <td class="left">Total</td>
+        <td data-occupancy-total="patient_count"></td>
+      </tr>
+    `;
+    occupancyMorningBody.innerHTML = bodyRows + totalRow;
+    updateOccupancyTotals();
+  }
+
+  function renderNightVisits(rows) {
+    if (!nightVisitBody) return;
+    const data = filterRows(rows, ["patient_name", "admission_time", "consultant", "visiting"]);
+    if (!data.length) {
+      nightVisitBody.innerHTML = '<tr class="empty-row"><td colspan="5">No data.</td></tr>';
+      return;
+    }
+    nightVisitBody.innerHTML = data.map((row, idx) => {
+      const sl = idx + 1;
+      return `
+        <tr data-night-row>
+          <td>${sl}</td>
+          <td><input class="manual-input text" type="text" data-night="patient_name" value="${fmt(row.patient_name)}"></td>
+          <td><input class="manual-input" type="text" data-night="admission_time" value="${fmt(row.admission_time)}"></td>
+          <td><input class="manual-input text" type="text" data-night="consultant" value="${fmt(row.consultant)}"></td>
+          <td><input class="manual-input text" type="text" data-night="visiting" value="${fmt(row.visiting)}"></td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function renderStaff(rows) {
+    if (!staffBody) return;
+    const data = filterRows(rows, ["department", "doctor", "nursing", "aaya", "ward_boy", "housekeeping"]);
+    const bodyRows = data.map((row, idx) => {
+      const sl = row.sl ?? (idx + 1);
+      return `
+        <tr data-staff-row>
+          <td>${sl}</td>
+          <td><input class="manual-input text" type="text" data-staff="department" value="${fmt(row.department)}"></td>
+          <td><input class="manual-input" type="text" data-staff="doctor" value="${fmt(row.doctor)}"></td>
+          <td><input class="manual-input" type="text" data-staff="nursing" value="${fmt(row.nursing)}"></td>
+          <td><input class="manual-input" type="text" data-staff="aaya" value="${fmt(row.aaya)}"></td>
+          <td><input class="manual-input" type="text" data-staff="ward_boy" value="${fmt(row.ward_boy)}"></td>
+          <td><input class="manual-input" type="text" data-staff="housekeeping" value="${fmt(row.housekeeping)}"></td>
+        </tr>
+      `;
+    }).join('');
+    const totalRow = `
+      <tr class="total-row">
+        <td></td>
+        <td class="left">Total</td>
+        <td data-staff-total="doctor"></td>
+        <td data-staff-total="nursing"></td>
+        <td data-staff-total="aaya"></td>
+        <td data-staff-total="ward_boy"></td>
+        <td data-staff-total="housekeeping"></td>
+      </tr>
+    `;
+    staffBody.innerHTML = (bodyRows || '<tr class="empty-row"><td colspan="7">No data.</td></tr>') + totalRow;
+    updateStaffTotals();
+  }
+
+  function renderNonMedical(rows) {
+    if (!nonMedicalBody) return;
+    const data = filterRows(rows, ["left_label", "left_count", "right_label", "right_count"]);
+    const bodyRows = data.map((row, idx) => {
+      const sl = row.sl ?? (idx + 1);
+      return `
+        <tr data-non-med-row>
+          <td>${sl}</td>
+          <td><input class="manual-input text" type="text" data-non-med="left_label" value="${fmt(row.left_label)}"></td>
+          <td><input class="manual-input" type="text" data-non-med="left_count" value="${fmt(row.left_count)}"></td>
+          <td><input class="manual-input text" type="text" data-non-med="right_label" value="${fmt(row.right_label)}"></td>
+          <td><input class="manual-input" type="text" data-non-med="right_count" value="${fmt(row.right_count)}"></td>
+        </tr>
+      `;
+    }).join('');
+    const totalRow = `
+      <tr class="total-row">
+        <td></td>
+        <td class="left">Total</td>
+        <td data-non-med-total="left"></td>
+        <td class="left">Total</td>
+        <td data-non-med-total="right"></td>
+      </tr>
+    `;
+    nonMedicalBody.innerHTML = (bodyRows || '<tr class="empty-row"><td colspan="5">No data.</td></tr>') + totalRow;
+    updateNonMedicalTotals();
+  }
+
+  function renderReferral(rows) {
+    if (!referralBody) return;
+    const data = filterRows(rows, ["patient_name", "visit_time", "consultant", "reason"]);
+    const bodyRows = data.map((row, idx) => {
+      const sl = row.sl ?? (idx + 1);
+      return `
+        <tr data-referral-row>
+          <td>${sl}</td>
+          <td><input class="manual-input text" type="text" data-referral="patient_name" value="${fmt(row.patient_name)}"></td>
+          <td><input class="manual-input" type="text" data-referral="visit_time" value="${fmt(row.visit_time)}"></td>
+          <td><input class="manual-input text" type="text" data-referral="consultant" value="${fmt(row.consultant)}"></td>
+          <td><input class="manual-input text" type="text" data-referral="reason" value="${fmt(row.reason)}"></td>
+        </tr>
+      `;
+    }).join('');
+    const totalRow = `
+      <tr class="total-row">
+        <td></td>
+        <td class="left">Total</td>
+        <td></td>
+        <td></td>
+        <td data-referral-total></td>
+      </tr>
+    `;
+    referralBody.innerHTML = (bodyRows || '<tr class="empty-row"><td colspan="5">No data.</td></tr>') + (bodyRows ? totalRow : '');
+    updateReferralTotals();
+  }
+
+  async function loadMorningReport(mode) {
+    const date = morningDate?.value || '';
+    const unit = morningUnit?.value || '';
+    if (!unit) {
+      setStatus('Select a unit.', true);
+      return;
+    }
+    if (mode === 'snapshot' && !date) {
+      setStatus('No snapshot dates available.', true);
+      return;
+    }
+    try {
+      setStatus(mode === 'snapshot' ? 'Loading snapshot...' : 'Fetching live data...');
+      const res = await fetch(`/api/mod_reports/morning_report?date=${encodeURIComponent(date)}&unit=${encodeURIComponent(unit)}&mode=${encodeURIComponent(mode)}`);
+      const payload = await res.json();
+      if (!res.ok || payload.status !== 'success') {
+        throw new Error(payload.message || 'Failed to load report');
+      }
+      const data = payload.data || {};
+      currentPayload = data;
+      currentMode = mode;
+      applyUnitSegmentation(data.unit || morningUnit?.value || '');
+      if (reportDateEl) reportDateEl.textContent = data.report_date || '-';
+      if (reportTimeEl) reportTimeEl.textContent = data.report_time || '-';
+      if (reportModNameEl) reportModNameEl.textContent = data.mod_name || '-';
+      if (snapshotTimeEl) {
+        if (data.source === 'snapshot') {
+          snapshotTimeEl.textContent = data.snapshot_time || 'Snapshot saved (time unavailable)';
+        } else {
+          snapshotTimeEl.textContent = 'Live data (not snapshotted yet)';
+        }
+      }
+      renderSummary(data.summary_rows || []);
+      renderInvestigations(data.investigations || []);
+      renderProcedures(data.key_procedures || []);
+      renderAdmissions(data.admissions || []);
+      renderDoctorwise(data.doctorwise_rows || []);
+      renderOccupancyMorning(data.occupancy_rows || []);
+      renderNightVisits(data.doctor_night_visits || []);
+      renderStaff(data.staff_rows || []);
+      renderNonMedical(data.non_medical_rows || []);
+      renderReferral(data.referral_rows || []);
+      resetPrefillTracking();
+      setPrefillTracking(data);
+      if (data.source === 'snapshot') {
+        latestSnapshotStamp = formatSnapshotStamp(data.snapshot_time, data.report_date || date);
+        const stampText = latestSnapshotStamp ? ` Last saved: ${latestSnapshotStamp}` : '';
+        setStatus(`Snapshot loaded.${stampText}`);
+      } else {
+        const stampText = latestSnapshotStamp ? ` Last snapshot: ${latestSnapshotStamp}` : '';
+        setStatus(`Live data loaded.${stampText}`);
+      }
+      applyEditLock(!!currentPayload?.edit_locked, currentPayload?.edit_lock_message || '');
+    } catch (err) {
+      summaryBody.innerHTML = `<tr><td colspan="5">Error: ${err.message}</td></tr>`;
+      investigationBody.innerHTML = `<tr><td colspan="5">Error loading data.</td></tr>`;
+      procedureBody.innerHTML = `<tr><td colspan="3">Error loading data.</td></tr>`;
+      admissionBody.innerHTML = `<tr><td colspan="5">Error loading data.</td></tr>`;
+      if (doctorwiseBody) doctorwiseBody.innerHTML = `<tr><td colspan="4">Error loading data.</td></tr>`;
+      if (occupancyMorningBody) occupancyMorningBody.innerHTML = `<tr><td colspan="3">Error loading data.</td></tr>`;
+      if (nightVisitBody) nightVisitBody.innerHTML = `<tr><td colspan="5">Error loading data.</td></tr>`;
+      if (staffBody) staffBody.innerHTML = `<tr><td colspan="7">Error loading data.</td></tr>`;
+      if (nonMedicalBody) nonMedicalBody.innerHTML = `<tr><td colspan="5">Error loading data.</td></tr>`;
+      if (referralBody) referralBody.innerHTML = `<tr><td colspan="5">Error loading data.</td></tr>`;
+      setStatus('Failed to load report.', true);
+    }
+  }
+
+  function collectSummaryRows() {
+    const rows = [];
+    const base = currentPayload?.summary_rows || [];
+    summaryBody.querySelectorAll('tr').forEach((row, idx) => {
+      const label = base[idx]?.label || row.querySelector('td:nth-child(2)')?.textContent || '';
+      const isManual = !!base[idx]?.manual;
+      if (isManual) {
+        const aVal = parseCountInput(row.querySelector('input[data-side="asarfi"]')?.value).value;
+        const cVal = parseCountInput(row.querySelector('input[data-side="cardiac"]')?.value).value;
+        rows.push({
+          sl: base[idx]?.sl || (idx + 1),
+          label,
+          asarfi: aVal,
+          cardiac: cVal,
+          total: aVal + cVal,
+          manual: true,
+          required: !!base[idx]?.required
+        });
+      } else {
+        rows.push({
+          sl: base[idx]?.sl || (idx + 1),
+          label,
+          asarfi: base[idx]?.asarfi ?? null,
+          cardiac: base[idx]?.cardiac ?? null,
+          total: base[idx]?.total ?? null,
+          manual: false,
+          emphasis: base[idx]?.emphasis
+        });
+      }
+    });
+    return rows.filter(r => r.label);
+  }
+
+  function validateRequiredSummaryRows() {
+    const requiredRows = summaryBody.querySelectorAll('tr[data-manual-required="1"]');
+    for (const row of requiredRows) {
+      const asarfiInput = row.querySelector('input[data-side="asarfi"]');
+      const cardiacInput = row.querySelector('input[data-side="cardiac"]');
+      const asarfiState = parseCountInput(asarfiInput?.value);
+      const cardiacState = parseCountInput(cardiacInput?.value);
+      if (!asarfiState.valid) {
+        setStatus('Death Count Previous Day Upto 00:00 Hours is mandatory. Enter 0 if there were no Asarfi deaths.', true);
+        asarfiInput?.focus();
+        asarfiInput?.select?.();
+        return false;
+      }
+      if (!cardiacState.valid) {
+        setStatus('Death Count Previous Day Upto 00:00 Hours is mandatory. Enter 0 if there were no Cardiac deaths.', true);
+        cardiacInput?.focus();
+        cardiacInput?.select?.();
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function collectInvestigations() {
+    const rows = [];
+    let totalAsarfi = 0;
+    let totalCardiac = 0;
+    investigationBody.querySelectorAll('tr[data-inv-row]').forEach((row, idx) => {
+      const label = row.dataset.label || '';
+      const aVal = parseInt(row.querySelector('input[data-inv-side="asarfi"]')?.value || '0', 10) || 0;
+      const cVal = parseInt(row.querySelector('input[data-inv-side="cardiac"]')?.value || '0', 10) || 0;
+      const totalVal = aVal + cVal;
+      totalAsarfi += aVal;
+      totalCardiac += cVal;
+      rows.push({
+        sl: idx + 1,
+        label,
+        asarfi: aVal,
+        cardiac: cVal,
+        total: totalVal
+      });
+    });
+    rows.push({
+      sl: '',
+      label: 'Total',
+      asarfi: totalAsarfi,
+      cardiac: totalCardiac,
+      total: totalAsarfi + totalCardiac
+    });
+    return rows;
+  }
+
+  function collectProcedures() {
+    const rows = [];
+    let idx = 0;
+    procedureBody.querySelectorAll('tr').forEach((row) => {
+      const label = row.querySelector('td:nth-child(2)')?.textContent;
+      const input = row.querySelector('input[data-proc-count]');
+      if (!label || !input) return;
+      const countVal = parseInt(input.value || '0', 10) || 0;
+      rows.push({
+        sl: idx + 1,
+        label: label.trim(),
+        count: countVal
+      });
+      idx += 1;
+    });
+    return rows;
+  }
+
+  function collectNightVisits() {
+    const rows = [];
+    if (!nightVisitBody) return rows;
+    nightVisitBody.querySelectorAll('tr[data-night-row]').forEach((row, idx) => {
+      const patient = row.querySelector('[data-night="patient_name"]')?.value || '';
+      const admitTime = row.querySelector('[data-night="admission_time"]')?.value || '';
+      const consultant = row.querySelector('[data-night="consultant"]')?.value || '';
+      const visiting = row.querySelector('[data-night="visiting"]')?.value || '';
+      if (!String(patient).trim() && !String(admitTime).trim() && !String(consultant).trim() && !String(visiting).trim()) {
+        return;
+      }
+      rows.push({
+        sl: rows.length + 1,
+        patient_name: patient,
+        admission_time: admitTime,
+        consultant,
+        visiting
+      });
+    });
+    return rows;
+  }
+
+  function collectStaffRows() {
+    const rows = [];
+    if (!staffBody) return rows;
+    staffBody.querySelectorAll('tr[data-staff-row]').forEach((row, idx) => {
+      const department = row.querySelector('[data-staff="department"]')?.value || '';
+      const doctor = row.querySelector('[data-staff="doctor"]')?.value || '';
+      const nursing = row.querySelector('[data-staff="nursing"]')?.value || '';
+      const aaya = row.querySelector('[data-staff="aaya"]')?.value || '';
+      const wardBoy = row.querySelector('[data-staff="ward_boy"]')?.value || '';
+      const housekeeping = row.querySelector('[data-staff="housekeeping"]')?.value || '';
+      if (!String(department).trim() && !String(doctor).trim() && !String(nursing).trim() && !String(aaya).trim() && !String(wardBoy).trim() && !String(housekeeping).trim()) {
+        return;
+      }
+      rows.push({
+        sl: rows.length + 1,
+        department,
+        doctor,
+        nursing,
+        aaya,
+        ward_boy: wardBoy,
+        housekeeping
+      });
+    });
+    return rows;
+  }
+
+  function collectNonMedicalRows() {
+    const rows = [];
+    if (!nonMedicalBody) return rows;
+    nonMedicalBody.querySelectorAll('tr[data-non-med-row]').forEach((row, idx) => {
+      const leftLabel = row.querySelector('[data-non-med="left_label"]')?.value || '';
+      const leftCount = row.querySelector('[data-non-med="left_count"]')?.value || '';
+      const rightLabel = row.querySelector('[data-non-med="right_label"]')?.value || '';
+      const rightCount = row.querySelector('[data-non-med="right_count"]')?.value || '';
+      if (!String(leftLabel).trim() && !String(leftCount).trim() && !String(rightLabel).trim() && !String(rightCount).trim()) {
+        return;
+      }
+      rows.push({
+        sl: rows.length + 1,
+        left_label: leftLabel,
+        left_count: leftCount,
+        right_label: rightLabel,
+        right_count: rightCount
+      });
+    });
+    return rows;
+  }
+
+  function collectReferralRows() {
+    const rows = [];
+    if (!referralBody) return rows;
+    referralBody.querySelectorAll('tr[data-referral-row]').forEach((row, idx) => {
+      const patient = row.querySelector('[data-referral="patient_name"]')?.value || '';
+      const visitTime = row.querySelector('[data-referral="visit_time"]')?.value || '';
+      const consultant = row.querySelector('[data-referral="consultant"]')?.value || '';
+      const reason = row.querySelector('[data-referral="reason"]')?.value || '';
+      if (!String(patient).trim() && !String(visitTime).trim() && !String(consultant).trim() && !String(reason).trim()) {
+        return;
+      }
+      rows.push({
+        sl: rows.length + 1,
+        patient_name: patient,
+        visit_time: visitTime,
+        consultant,
+        reason
+      });
+    });
+    return rows;
+  }
+
+  function collectDoctorwiseRows() {
+    const rows = [];
+    if (!doctorwiseBody) return rows;
+    doctorwiseBody.querySelectorAll('tr[data-doctorwise-row]').forEach((row) => {
+      const dept = row.querySelector('[data-doctorwise="department"]')?.value || '';
+      const opd = row.querySelector('[data-doctorwise="opd"]')?.value || '';
+      const ipd = row.querySelector('[data-doctorwise="ipd"]')?.value || '';
+      if (!String(dept).trim() && !String(opd).trim() && !String(ipd).trim()) {
+        return;
+      }
+      rows.push({
+        sl: rows.length + 1,
+        department: dept,
+        opd: opd,
+        ipd: ipd
+      });
+    });
+    if (rows.length) {
+      const totalOpd = rows.reduce((sum, r) => sum + (parseInt(r.opd || '0', 10) || 0), 0);
+      const totalIpd = rows.reduce((sum, r) => sum + (parseInt(r.ipd || '0', 10) || 0), 0);
+      rows.push({
+        sl: '',
+        department: 'Total',
+        opd: totalOpd ? totalOpd : '',
+        ipd: totalIpd ? totalIpd : ''
+      });
+    }
+    return rows;
+  }
+
+  function collectOccupancyRows() {
+    const rows = [];
+    if (!occupancyMorningBody) return rows;
+    occupancyMorningBody.querySelectorAll('tr[data-occupancy-row]').forEach((row) => {
+      const ward = row.querySelector('[data-occupancy="ward"]')?.value || '';
+      const patient = row.querySelector('[data-occupancy="patient_count"]')?.value || '';
+      if (!String(ward).trim() && !String(patient).trim()) {
+        return;
+      }
+      rows.push({
+        sl: rows.length + 1,
+        ward,
+        patient_count: patient,
+        occupied_count: '',
+        clinically_discharged_count: ''
+      });
+    });
+    if (rows.length) {
+      const totalPatient = rows.reduce((sum, r) => sum + (parseInt(r.patient_count || '0', 10) || 0), 0);
+      rows.push({
+        sl: '',
+        ward: 'Total',
+        patient_count: totalPatient ? totalPatient : '',
+        occupied_count: '',
+        clinically_discharged_count: ''
+      });
+    }
+    return rows;
+  }
+
+  function buildPayloadFromUi() {
+    const reportDate = reportDateEl?.textContent || (currentPayload?.report_date || '');
+    const reportTime = reportTimeEl?.textContent || (currentPayload?.report_time || '');
+    const modName = reportModNameEl?.textContent || (currentPayload?.mod_name || '');
+    return {
+      unit: morningUnit?.value || currentPayload?.unit || '',
+      report_date: reportDate,
+      report_time: reportTime,
+      mod_name: modName,
+      snapshot_time: snapshotTimeEl?.textContent || currentPayload?.snapshot_time || '',
+      source: currentMode || currentPayload?.source || 'snapshot',
+      summary_rows: collectSummaryRows(),
+      investigations: collectInvestigations(),
+      key_procedures: collectProcedures(),
+      admissions: currentPayload?.admissions || [],
+      doctorwise_rows: collectDoctorwiseRows(),
+      occupancy_rows: collectOccupancyRows(),
+      doctor_night_visits: collectNightVisits(),
+      staff_rows: collectStaffRows(),
+      non_medical_rows: collectNonMedicalRows(),
+      referral_rows: collectReferralRows()
+    };
+  }
+
+  function addDoctorwiseRow() {
+    const rows = collectDoctorwiseRows().filter((r) => String(r.department || '').trim().toUpperCase() !== 'TOTAL');
+    rows.push({ department: '', opd: '', ipd: '', _manual: true });
+    renderDoctorwise(rows);
+  }
+
+  function addOccupancyRow() {
+    const rows = collectOccupancyRows().filter((r) => String(r.ward || '').trim().toUpperCase() !== 'TOTAL');
+    rows.push({ ward: '', patient_count: '', occupied_count: '', clinically_discharged_count: '', _manual: true });
+    renderOccupancyMorning(rows);
+  }
+
+  function addNightVisitRow() {
+    const rows = collectNightVisits();
+    rows.push({ patient_name: '', admission_time: '', consultant: '', visiting: '', _manual: true });
+    renderNightVisits(rows);
+  }
+
+  function addStaffRow() {
+    const rows = collectStaffRows();
+    rows.push({ department: '', doctor: '', nursing: '', aaya: '', ward_boy: '', housekeeping: '', _manual: true });
+    renderStaff(rows);
+  }
+
+  function addNonMedicalRow() {
+    const rows = collectNonMedicalRows();
+    rows.push({ left_label: '', left_count: '', right_label: '', right_count: '', _manual: true });
+    renderNonMedical(rows);
+  }
+
+  function addReferralRow() {
+    const rows = collectReferralRows();
+    rows.push({ patient_name: '', visit_time: '', consultant: '', reason: '', _manual: true });
+    renderReferral(rows);
+  }
+
+  function removeDoctorwiseRow() {
+    const rows = collectDoctorwiseRows().filter((r) => String(r.department || '').trim().toUpperCase() !== 'TOTAL');
+    if (!rows.length) return;
+    rows.pop();
+    renderDoctorwise(rows);
+  }
+
+  function removeOccupancyRow() {
+    const rows = collectOccupancyRows().filter((r) => String(r.ward || '').trim().toUpperCase() !== 'TOTAL');
+    if (!rows.length) return;
+    rows.pop();
+    renderOccupancyMorning(rows);
+  }
+
+  function removeNightVisitRow() {
+    const rows = collectNightVisits();
+    if (!rows.length) return;
+    rows.pop();
+    renderNightVisits(rows);
+  }
+
+  function removeStaffRow() {
+    const rows = collectStaffRows();
+    if (!rows.length) return;
+    rows.pop();
+    renderStaff(rows);
+  }
+
+  function removeNonMedicalRow() {
+    const rows = collectNonMedicalRows();
+    if (!rows.length) return;
+    rows.pop();
+    renderNonMedical(rows);
+  }
+
+  function removeReferralRow() {
+    const rows = collectReferralRows();
+    if (!rows.length) return;
+    rows.pop();
+    renderReferral(rows);
+  }
+
+  async function saveManual() {
+    if (editLocked) {
+      setStatus('Editing locked. Contact IT for changes.', true);
+      return;
+    }
+    if (!validateRequiredSummaryRows()) {
+      return;
+    }
+    try {
+      setStatus('Saving manual entries...');
+      const payload = buildPayloadFromUi();
+      if (prefilledTablesUnchanged(payload)) {
+        const stamp = prefillSourceStamp ? ` (${prefillSourceStamp})` : '';
+        const ok = window.confirm(
+          `Department wise Count of Staff and Non Medical Staff look unchanged from the previous snapshot${stamp}. Please confirm you've reviewed these tables before saving.`
+        );
+        if (!ok) {
+          setStatus('Save cancelled. Please review Staff and Non Medical tables.', true);
+          return;
+        }
+      }
+      const res = await fetch('/api/mod_reports/morning_report/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || 'Save failed');
+      }
+      const currentDate = payload.report_date || '';
+      await loadSnapshotDates(currentDate);
+      if (morningDate?.value) {
+        await loadMorningReport('snapshot');
+      } else {
+        setStatus('Manual data saved.');
+      }
+    } catch (err) {
+      setStatus(`Save failed: ${err.message}`, true);
+    }
+  }
+
+  async function exportReport() {
+    if (!validateRequiredSummaryRows()) {
+      return;
+    }
+    try {
+      setStatus('Preparing export...');
+      const payload = buildPayloadFromUi();
+      const res = await fetch('/api/mod_reports/morning_report/export', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Export failed');
+      }
+      const blob = await res.blob();
+      const unit = payload.unit || 'UNIT';
+      const date = payload.report_date || '';
+      const filename = `Morning_Report_${unit}_${date}.xlsx`;
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setStatus('Export ready.');
+    } catch (err) {
+      setStatus(`Export failed: ${err.message}`, true);
+    }
+  }
+
+  async function exportMorningPdf() {
+    if (!currentPayload) {
+      setStatus('Load data before PDF export.', true);
+      return;
+    }
+    if (!morningUnit?.value) {
+      setStatus('Select a unit before export.', true);
+      return;
+    }
+    if (!validateRequiredSummaryRows()) {
+      return;
+    }
+    try {
+      if (exportPdfBtn) exportPdfBtn.disabled = true;
+      setStatus('Preparing PDF...');
+      const payload = buildPayloadFromUi();
+      const res = await fetch('/api/mod_reports/morning_report/export_pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Export failed');
+      }
+      const blob = await res.blob();
+      const unit = payload.unit || 'UNIT';
+      const date = payload.report_date || '';
+      const filename = `Morning_Report_${unit}_${date}.pdf`;
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setStatus('PDF export ready.');
+    } catch (err) {
+      setStatus(`PDF export failed: ${err.message}`, true);
+    } finally {
+      if (exportPdfBtn) exportPdfBtn.disabled = false;
+    }
+  }
+
+  async function exportMorningJpg() {
+    if (!currentPayload) {
+      setStatus('Load data before JPG export.', true);
+      return;
+    }
+    if (!morningUnit?.value) {
+      setStatus('Select a unit before export.', true);
+      return;
+    }
+    if (!validateRequiredSummaryRows()) {
+      return;
+    }
+    try {
+      if (exportJpgBtn) exportJpgBtn.disabled = true;
+      const basePayload = buildPayloadFromUi();
+      const unit = basePayload.unit || 'UNIT';
+      const date = basePayload.report_date || '';
+      const sections = [1, 2, 3];
+      let idx = 0;
+      for (const section of sections) {
+        idx += 1;
+        setStatus(`Preparing JPG ${idx}/${sections.length}...`);
+        const payload = { ...basePayload, section };
+        const res = await fetch('/api/mod_reports/morning_report/export_jpg', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          credentials: 'same-origin',
+          body: JSON.stringify(payload)
+        });
+        if (!res.ok) {
+          const err = await res.json().catch(() => ({}));
+          throw new Error(err.message || 'Export failed');
+        }
+        const blob = await res.blob();
+        const filename = `Morning_Report_${unit}_${date}_P${section}.jpg`;
+        const link = document.createElement('a');
+        link.href = URL.createObjectURL(blob);
+        link.download = filename;
+        document.body.appendChild(link);
+        link.click();
+        link.remove();
+      }
+      setStatus('JPG exports ready.');
+    } catch (err) {
+      setStatus(`JPG export failed: ${err.message}`, true);
+    } finally {
+      if (exportJpgBtn) exportJpgBtn.disabled = false;
+    }
+  }
+
+  summaryBody.addEventListener('input', (event) => {
+    if (event.target && event.target.classList.contains('manual-input')) {
+      updateManualTotals();
+    }
+  });
+  procedureBody.addEventListener('input', (event) => {
+    if (event.target && event.target.hasAttribute('data-proc-count')) {
+      updateProcedureTotals();
+    }
+  });
+  investigationBody.addEventListener('input', (event) => {
+    if (event.target && event.target.hasAttribute('data-inv-side')) {
+      updateInvestigationTotals();
+    }
+  });
+  doctorwiseBody?.addEventListener('input', updateDoctorwiseTotals);
+  occupancyMorningBody?.addEventListener('input', updateOccupancyTotals);
+  staffBody?.addEventListener('input', updateStaffTotals);
+  nonMedicalBody?.addEventListener('input', updateNonMedicalTotals);
+  referralBody?.addEventListener('input', updateReferralTotals);
+
+  const runIfEditable = (fn) => {
+    if (editLocked) {
+      setStatus('Editing locked. Contact IT for changes.', true);
+      return;
+    }
+    fn();
+  };
+
+  addDoctorwiseRowBtn?.addEventListener('click', () => runIfEditable(addDoctorwiseRow));
+  addOccupancyRowBtn?.addEventListener('click', () => runIfEditable(addOccupancyRow));
+  addNightVisitRowBtn?.addEventListener('click', () => runIfEditable(addNightVisitRow));
+  addStaffRowBtn?.addEventListener('click', () => runIfEditable(addStaffRow));
+  addNonMedicalRowBtn?.addEventListener('click', () => runIfEditable(addNonMedicalRow));
+  addReferralRowBtn?.addEventListener('click', () => runIfEditable(addReferralRow));
+  removeDoctorwiseRowBtn?.addEventListener('click', () => runIfEditable(removeDoctorwiseRow));
+  removeOccupancyRowBtn?.addEventListener('click', () => runIfEditable(removeOccupancyRow));
+  removeNightVisitRowBtn?.addEventListener('click', () => runIfEditable(removeNightVisitRow));
+  removeStaffRowBtn?.addEventListener('click', () => runIfEditable(removeStaffRow));
+  removeNonMedicalRowBtn?.addEventListener('click', () => runIfEditable(removeNonMedicalRow));
+  removeReferralRowBtn?.addEventListener('click', () => runIfEditable(removeReferralRow));
+
+  loadSnapshotBtn?.addEventListener('click', () => loadMorningReport('snapshot'));
+  loadLiveBtn?.addEventListener('click', () => loadMorningReport('live'));
+  saveBtn?.addEventListener('click', saveManual);
+  exportBtn?.addEventListener('click', exportReport);
+  exportPdfBtn?.addEventListener('click', exportMorningPdf);
+  exportJpgBtn?.addEventListener('click', exportMorningJpg);
+
+  fabToggle?.addEventListener('click', () => fabMenu?.classList.toggle('open'));
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('.fab-user')) fabMenu?.classList.remove('open');
+  });
+
+  morningUnit?.addEventListener('change', async () => {
+    const previous = morningDate?.value || '';
+    applyUnitSegmentation(morningUnit?.value || '');
+    await loadSnapshotDates(previous);
+    if (morningDate?.value) {
+      await loadMorningReport('snapshot');
+    }
+  });
+
+  (async () => {
+    applyUnitSegmentation(morningUnit?.value || '');
+    await loadSnapshotDates();
+    if (morningDate?.value) {
+      await loadMorningReport('snapshot');
+    } else {
+      setStatus('No snapshots available for the selected unit.', true);
+    }
+  })();
+</script>
+{% endblock %}

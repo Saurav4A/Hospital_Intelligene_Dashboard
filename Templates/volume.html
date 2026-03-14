@@ -1,0 +1,3474 @@
+{% extends "layout.html" %}
+{% block content %}
+<style>
+  .vt-wrap{ margin:60px auto; width:95%; max-width:1180px; }
+  .vt-card{
+    background: rgba(255,255,255,0.95);
+    backdrop-filter: blur(12px);
+    border-radius: 16px;
+    box-shadow: 0 4px 20px rgba(0,0,0,.06);
+    padding: 16px 18px; 
+    margin-bottom: 20px; 
+    position:relative;
+    border: 1px solid rgba(226, 232, 240, 0.8);
+  }
+  .vt-grid{ display:grid; grid-template-columns: 1fr 1fr; gap:20px; }
+  .vt-head{ display:flex; gap:12px; align-items:center; justify-content:space-between; flex-wrap: wrap; }
+  .vt-head .row{display:flex; gap:10px; align-items:center; flex-wrap:wrap;}
+  .vt-input{ height:38px; padding:0 12px; border-radius:8px; border:1px solid #e2e8f0; outline:none; background:#fff; font-size:14px; transition: all 0.2s; }
+  .vt-input:focus{ border-color:#3b82f6; box-shadow: 0 0 0 3px rgba(59, 130, 246, 0.1); }
+  .btn{ appearance:none; border:0; padding:9px 16px; border-radius:8px; background:#3b82f6; color:#fff; cursor:pointer; font-weight:500; font-size:14px; transition: all 0.2s; }
+  .btn:hover{ background:#2563eb; transform: translateY(-1px); box-shadow: 0 4px 12px rgba(59, 130, 246, 0.3); }
+  .btn.secondary{ background:#0ea5e9; }
+  .btn.secondary:hover{ background:#0284c7; box-shadow: 0 4px 12px rgba(14, 165, 233, 0.3); }
+  .muted{ color:#64748b; font-size:14px; }
+  .badge{ background:#dbeafe; color:#1e40af; border-radius:999px; padding:4px 12px; font-size:13px; font-weight:500; }
+  .btn#vt-export-pdf {background: linear-gradient(135deg, #10b981, #059669); }
+  .btn#vt-export-pdf:hover {background: linear-gradient(135deg, #059669, #047857);box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3); }
+  .btn#vt-export-pdf:disabled {opacity: 0.6; cursor: not-allowed; transform: none !important; }
+  .card-title{ font-weight:600; font-size:15px; color:#0f172a; margin-bottom:10px; display:flex; gap:8px; align-items:center; }
+  .card-title .card-title-left{ display:inline-flex; gap:8px; align-items:center; flex-wrap:wrap; }
+  .vt-expand-btn{
+    margin-left:auto;
+    width:32px;
+    height:32px;
+    border-radius:10px;
+    border:1px solid #e2e8f0;
+    background:#fff;
+    color:#64748b;
+    display:grid;
+    place-items:center;
+    cursor:pointer;
+    transition: all 0.2s;
+  }
+  .vt-expand-btn:hover{
+    border-color:#cbd5e1;
+    color:#1e3a8a;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+    transform: translateY(-1px);
+  }
+  .vt-expand-btn:focus-visible{
+    outline: 2px solid #93c5fd;
+    outline-offset: 2px;
+  }
+  .vt-expand-btn svg{ width:16px; height:16px; }
+  .kpi{ font-weight:600; font-size:16px; color:#3b82f6; }
+  .empty{ position:absolute; inset:46px 16px 16px 16px; display:flex; align-items:center; justify-content:center; color:#94a3b8; font-size:14px; pointer-events:none; border:2px dashed #e2e8f0; border-radius:12px; background: rgba(248, 250, 252, 0.5); }
+  .loading{ position:absolute; inset:0; display:flex; align-items:center; justify-content:center; background:rgba(255,255,255,.92); font-size:13px; color:#475569; border-radius:16px; backdrop-filter: blur(4px); font-weight:500; }
+  select.vt-input{ min-width: 170px; cursor: pointer; }
+
+  .vt-kpi-panel{ padding: 14px 16px; }
+  .vt-live-note{
+    display:none;
+    margin: 0 0 10px;
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid #fde68a;
+    background: #fffbeb;
+    color: #92400e;
+    font-size: 12px;
+    font-weight: 600;
+  }
+  .vt-live-note.active{
+    display:block;
+    border-color: #bfdbfe;
+    background: #eff6ff;
+    color: #1e40af;
+  }
+  .vt-live-note.warn{ display:block; }
+  .vt-kpi-grid{ display:grid; grid-template-columns: repeat(auto-fit, minmax(400px, 1fr)); gap:14px; }
+  .vt-kpi-card{
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+    border-radius:12px;
+    padding:10px 12px;
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+    min-height:64px;
+  }
+  .vt-kpi-label{
+    font-size:12px;
+    font-weight:600;
+    color:#64748b;
+    text-transform:uppercase;
+    letter-spacing:0.02em;
+  }
+  .vt-kpi-value{
+    font-size:20px;
+    font-weight:700;
+    color:#0f172a;
+  }
+  .vt-kpi-value.kpi-summary{
+    font-size:12px;
+    font-weight:600;
+    line-height:1.4;
+  }
+  .vt-kpi-value.kpi-summary .kpi-row{
+    padding:1px 0;
+  }
+  .vt-kpi-visit{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+  }
+  .vt-kpi-dot{
+    width:8px;
+    height:8px;
+    border-radius:50%;
+    background:#cbd5e1;
+    flex-shrink:0;
+  }
+  .vt-visit-opd .vt-kpi-dot{ background:#3b82f6; }
+  .vt-visit-dpv .vt-kpi-dot{ background:#f59e0b; }
+  .vt-visit-ipd .vt-kpi-dot{ background:#10b981; }
+  .vt-visit-daycare .vt-kpi-dot{ background:#8b5cf6; }
+  .vt-visit-hcv .vt-kpi-dot{ background:#ec4899; }
+  .vt-visit-other .vt-kpi-dot{ background:#64748b; }
+  .vt-visit-unknown .vt-kpi-dot{ background:#94a3b8; }
+  .vt-kpi-details{
+    margin-top:4px;
+    padding-top:6px;
+    border-top:1px dashed #e2e8f0;
+    font-size:11px;
+    color:#475569;
+    max-height:200px;
+    overflow:auto;
+  }
+  .kpi-row{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:8px;
+    padding:2px 0;
+  }
+  .kpi-row span:last-child{
+    font-weight:600;
+    color:#0f172a;
+  }
+  .kpi-group{ margin-top:6px; }
+  .kpi-group-title{
+    display:flex;
+    justify-content:space-between;
+    font-size:11px;
+    font-weight:700;
+    color:#1f2937;
+    padding:2px 0;
+  }
+  .kpi-sub{
+    display:flex;
+    justify-content:space-between;
+    align-items:flex-start;
+    gap:8px;
+    padding-left:8px;
+    font-size:10px;
+    color:#475569;
+  }
+  .kpi-level-1{ padding-left:8px; font-weight:600; color:#334155; }
+  .kpi-level-2{ padding-left:18px; }
+  .kpi-level-3{ padding-left:26px; font-size:10px; color:#64748b; }
+  .kpi-sub-label{
+    font-weight:600;
+    color:#334155;
+    min-width:72px;
+  }
+  .kpi-sub-value{
+    text-align:right;
+    flex:1;
+  }
+  .kpi-count{ color:#0f172a; }
+  .kpi-empty{
+    color:#94a3b8;
+    font-style:italic;
+    padding:2px 0;
+  }
+  .vt-kpi-card-wide{ grid-column: 1 / -1; }
+  .vt-kpi-card-wide .vt-kpi-details{ max-height:320px; }
+  .vt-admissions{ display:flex; flex-direction:column; gap:10px; }
+  .vt-admissions-unit{
+    border:1px dashed #e2e8f0;
+    border-radius:10px;
+    padding:8px;
+    background:#fff;
+  }
+  .vt-admissions-unit-title{
+    font-size:11px;
+    font-weight:700;
+    color:#0f172a;
+    text-transform:uppercase;
+    letter-spacing:0.03em;
+    display:flex;
+    justify-content:space-between;
+    gap:8px;
+  }
+  .vt-admissions-type{ margin-top:6px; }
+  .vt-admissions-type-title{
+    font-size:11px;
+    font-weight:600;
+    color:#475569;
+    display:flex;
+    justify-content:space-between;
+    gap:8px;
+  }
+  .vt-admissions-list{ margin-top:4px; display:flex; flex-direction:column; gap:6px; }
+  .vt-admissions-item{
+    display:grid;
+    grid-template-columns: 1.2fr 0.7fr 0.9fr 1fr 1.1fr 0.8fr;
+    gap:8px;
+    padding:6px 8px;
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+    border-radius:8px;
+    font-size:11px;
+    border-left:4px solid var(--dept-color, #cbd5f5);
+  }
+  .vt-admissions-cell{ min-width:0; }
+  .vt-admissions-label{
+    font-size:9px;
+    text-transform:uppercase;
+    color:#94a3b8;
+    letter-spacing:0.05em;
+    display:block;
+  }
+  .vt-admissions-value{
+    font-weight:600;
+    color:#0f172a;
+    display:block;
+    white-space:normal;
+    overflow:visible;
+    text-overflow:clip;
+    word-break:break-word;
+    line-height:1.25;
+  }
+  .vt-discharge-value{
+    font-size:15px;
+    line-height:1.35;
+    font-weight:700;
+  }
+  .vt-discharge-summary{
+    display:grid;
+    grid-template-columns: repeat(auto-fit, minmax(130px, 1fr));
+    gap:6px;
+    margin:6px 0 8px;
+  }
+  .vt-discharge-pill{
+    background:#eff6ff;
+    border:1px solid #dbeafe;
+    border-radius:8px;
+    padding:6px 8px;
+  }
+  .vt-discharge-pill-label{
+    display:block;
+    font-size:9px;
+    text-transform:uppercase;
+    letter-spacing:0.05em;
+    color:#64748b;
+    margin-bottom:2px;
+  }
+  .vt-discharge-pill-value{
+    display:block;
+    font-size:12px;
+    font-weight:700;
+    color:#0f172a;
+  }
+  .vt-discharge-pill-cured{
+    background:#ecfdf3;
+    border-color:#86efac;
+  }
+  .vt-discharge-pill-cured .vt-discharge-pill-label{ color:#166534; }
+  .vt-discharge-pill-cured .vt-discharge-pill-value{ color:#166534; }
+  .vt-discharge-pill-lama{
+    background:#fff7ed;
+    border-color:#fdba74;
+  }
+  .vt-discharge-pill-lama .vt-discharge-pill-label{ color:#9a3412; }
+  .vt-discharge-pill-lama .vt-discharge-pill-value{ color:#9a3412; }
+  .vt-discharge-pill-referred{
+    background:#eff6ff;
+    border-color:#93c5fd;
+  }
+  .vt-discharge-pill-referred .vt-discharge-pill-label{ color:#1d4ed8; }
+  .vt-discharge-pill-referred .vt-discharge-pill-value{ color:#1d4ed8; }
+  .vt-discharge-pill-mortality{
+    background:#fef2f2;
+    border-color:#fca5a5;
+  }
+  .vt-discharge-pill-mortality .vt-discharge-pill-label{ color:#b91c1c; }
+  .vt-discharge-pill-mortality .vt-discharge-pill-value{ color:#b91c1c; }
+  .vt-discharge-inline{
+    display:inline-block;
+    margin-right:8px;
+  }
+  .vt-inline-total{ color:#0f172a; }
+  .vt-inline-cured{ color:#166534; }
+  .vt-inline-lama{ color:#9a3412; }
+  .vt-inline-referred{ color:#1d4ed8; }
+  .vt-inline-mortality{ color:#b91c1c; }
+  .vt-discharge-type-line{
+    font-size:11px;
+    color:#334155;
+    margin:0 0 6px;
+  }
+  .vt-type-chip{
+    display:inline-flex;
+    align-items:center;
+    border-radius:999px;
+    padding:2px 8px;
+    font-size:10px;
+    font-weight:700;
+    margin:2px 4px 2px 0;
+    border:1px solid #cbd5e1;
+    background:#f8fafc;
+    color:#334155;
+  }
+  .vt-type-chip-cured{ background:#ecfdf3; border-color:#86efac; color:#166534; }
+  .vt-type-chip-lama{ background:#fff7ed; border-color:#fdba74; color:#9a3412; }
+  .vt-type-chip-ref{ background:#eff6ff; border-color:#93c5fd; color:#1d4ed8; }
+  .vt-type-chip-mort{ background:#fef2f2; border-color:#fca5a5; color:#b91c1c; }
+  .vt-discharge-table{
+    border:1px solid #e2e8f0;
+    border-radius:8px;
+    overflow:hidden;
+    background:#fff;
+  }
+  .vt-discharge-row{
+    display:grid;
+    grid-template-columns: 1.5fr 0.45fr 0.65fr 0.65fr 0.65fr 0.65fr;
+    gap:8px;
+    padding:6px 8px;
+    font-size:11px;
+    border-top:1px solid #f1f5f9;
+    align-items:center;
+  }
+  .vt-discharge-row:first-child{
+    border-top:0;
+  }
+  .vt-discharge-row.vt-discharge-head{
+    background:#f8fafc;
+    font-weight:700;
+    color:#475569;
+    text-transform:uppercase;
+    letter-spacing:0.03em;
+    font-size:10px;
+  }
+  .vt-discharge-cell-right{
+    text-align:right;
+    font-weight:600;
+    color:#0f172a;
+  }
+  .vt-metric-cured{ color:#166534; }
+  .vt-metric-lama{ color:#9a3412; }
+  .vt-metric-ref{ color:#1d4ed8; }
+  .vt-metric-mort{ color:#b91c1c; }
+  .vt-discharge-empty{
+    padding:8px;
+    font-style:italic;
+    color:#94a3b8;
+    font-size:11px;
+  }
+  .vt-discharge-row-clickable{
+    cursor:pointer;
+    transition: background 0.2s;
+  }
+  .vt-discharge-row-clickable:hover{
+    background:#f8fafc;
+  }
+  .vt-discharge-ward-btn{
+    appearance:none;
+    border:0;
+    background:transparent;
+    padding:0;
+    margin:0;
+    color:#1e40af;
+    font-size:11px;
+    font-weight:600;
+    text-align:left;
+    cursor:pointer;
+    text-decoration:underline;
+    text-underline-offset:2px;
+  }
+  .vt-discharge-ward-btn:hover{
+    color:#1d4ed8;
+  }
+  .vt-discharge-modal-meta{
+    font-size:12px;
+    color:#475569;
+    margin:0 0 8px;
+  }
+  .vt-discharge-modal-table-wrap{
+    height: calc(100% - 28px);
+    border:1px solid #e2e8f0;
+    border-radius:10px;
+    overflow:auto;
+    background:#fff;
+  }
+  .vt-discharge-modal-table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:12px;
+  }
+  .vt-discharge-modal-table th{
+    position:sticky;
+    top:0;
+    z-index:1;
+    background:#f8fafc;
+    color:#334155;
+    text-transform:uppercase;
+    letter-spacing:0.03em;
+    font-size:10px;
+    border-bottom:1px solid #e2e8f0;
+    padding:8px 10px;
+    text-align:left;
+    white-space:nowrap;
+  }
+  .vt-discharge-modal-table td{
+    padding:8px 10px;
+    border-top:1px solid #f1f5f9;
+    color:#0f172a;
+    vertical-align:top;
+  }
+  .vt-discharge-modal-empty{
+    color:#94a3b8;
+    font-style:italic;
+    text-align:center;
+    padding:18px 10px !important;
+  }
+  .vt-visit-kpi-controls{
+    display:flex;
+    flex-wrap:wrap;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    margin:2px 0 4px;
+  }
+  .vt-visit-kpi-controls-left{
+    display:flex;
+    align-items:center;
+    gap:8px;
+    flex:1;
+    min-width:220px;
+  }
+  .vt-visit-kpi-search{
+    flex:1;
+    min-width:180px;
+    height:34px;
+    font-size:12px;
+  }
+  .vt-visit-kpi-size{
+    height:34px;
+    min-width:76px;
+    font-size:12px;
+  }
+  .vt-visit-kpi-pager{
+    display:flex;
+    align-items:center;
+    gap:6px;
+  }
+  .vt-visit-kpi-page-btn{
+    appearance:none;
+    border:1px solid #cbd5e1;
+    background:#fff;
+    color:#334155;
+    border-radius:8px;
+    padding:6px 10px;
+    font-size:11px;
+    font-weight:600;
+    cursor:pointer;
+    line-height:1;
+    transition: all 0.2s;
+  }
+  .vt-visit-kpi-page-btn:hover{
+    border-color:#93c5fd;
+    color:#1e40af;
+  }
+  .vt-visit-kpi-page-btn:disabled{
+    opacity:0.45;
+    cursor:not-allowed;
+  }
+  .vt-visit-kpi-page-info{
+    font-size:11px;
+    color:#475569;
+    min-width:82px;
+    text-align:center;
+    font-weight:600;
+  }
+  .vt-visit-kpi-details{
+    max-height:none !important;
+    overflow:visible !important;
+  }
+  .vt-visit-kpi-meta{
+    font-size:11px;
+    color:#64748b;
+    margin-bottom:6px;
+  }
+  .vt-visit-kpi-table-wrap{
+    max-height:260px;
+    border:1px solid #e2e8f0;
+    border-radius:10px;
+    overflow:auto;
+    background:#fff;
+  }
+  .vt-visit-kpi-table{
+    width:100%;
+    border-collapse:collapse;
+    font-size:11px;
+  }
+  .vt-visit-kpi-table th{
+    position:sticky;
+    top:0;
+    z-index:1;
+    background:#f8fafc;
+    color:#334155;
+    text-transform:uppercase;
+    letter-spacing:0.03em;
+    font-size:10px;
+    border-bottom:1px solid #e2e8f0;
+    padding:8px 9px;
+    text-align:left;
+    white-space:nowrap;
+  }
+  .vt-visit-kpi-table td{
+    padding:7px 9px;
+    border-top:1px solid #f1f5f9;
+    color:#0f172a;
+    vertical-align:top;
+  }
+  .vt-visit-kpi-table td.vt-col-sl{
+    width:42px;
+    color:#64748b;
+    text-align:right;
+    font-weight:600;
+  }
+  .vt-visit-kpi-table td.vt-col-unit{
+    font-weight:700;
+    color:#1e3a8a;
+    white-space:nowrap;
+  }
+  .vt-visit-kpi-empty{
+    color:#94a3b8;
+    font-style:italic;
+    text-align:center;
+    padding:18px 10px !important;
+  }
+
+  .vt-toast{
+    position: fixed; right: 24px; bottom: 24px; max-width: 540px;
+    background: linear-gradient(135deg, #1e293b 0%, #0f172a 100%);
+    color:#e2e8f0; padding:14px 18px; border-radius: 12px;
+    box-shadow: 0 12px 32px rgba(0,0,0,.25); z-index: 1000; display:none;
+    border: 1px solid rgba(255, 255, 255, 0.1);
+  }
+  .vt-toast strong{ color:#fff; }
+  .vt-toast small{ color:#cbd5e1; }
+  body.vt-modal-open{ overflow:hidden; }
+  .vt-modal{
+    position: fixed;
+    inset: 0;
+    z-index: 1300;
+    display: none;
+    align-items: center;
+    justify-content: center;
+    padding: 24px;
+  }
+  .vt-modal.open{ display:flex; }
+  .vt-modal-backdrop{
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.7);
+  }
+  .vt-modal-dialog{
+    position: relative;
+    width: min(1200px, 96vw);
+    height: min(760px, 88vh);
+    background: #fff;
+    border-radius: 18px;
+    box-shadow: 0 30px 80px rgba(0,0,0,0.35);
+    display: flex;
+    flex-direction: column;
+    border: 1px solid rgba(15, 23, 42, 0.1);
+  }
+  .vt-modal-header{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:12px;
+    padding: 14px 18px 6px;
+  }
+  .vt-modal-title{
+    font-size:16px;
+    font-weight:700;
+    color:#0f172a;
+  }
+  .vt-modal-close{
+    width:34px;
+    height:34px;
+    border-radius:999px;
+    border:1px solid #e2e8f0;
+    background:#fff;
+    color:#1f2937;
+    display:grid;
+    place-items:center;
+    cursor:pointer;
+    transition: all 0.2s;
+  }
+  .vt-modal-close:hover{
+    border-color:#cbd5e1;
+    color:#111827;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+  }
+  .vt-modal-body{
+    padding: 8px 18px 18px;
+    flex: 1;
+  }
+  #vt-modal-chart{ width:100%; height:100%; }
+
+  /* ===== Top actions: bell + timer + fab (match dashboard) ===== */
+  .top-actions{
+    position: fixed;
+    top: 20px; right: 20px;
+    z-index: 1100;
+    display:flex;
+    align-items:center;
+    gap:14px;
+  }
+  .fab-user {
+    position: relative;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    flex-shrink:0;
+  }
+  .fab-btn {
+    width:58px; height:58px;
+    border-radius: 50%;
+    background: linear-gradient(135deg, #1e40af, #3b82f6);
+    color: #fff;
+    display: grid; place-items: center;
+    font-size: 22px;
+    box-shadow: 0 8px 20px rgba(37,99,235,.3);
+    border: none;
+    cursor: pointer;
+    transition: transform .18s ease;
+  }
+  .fab-btn:hover{ transform: scale(1.06); }
+
+  .fab-menu {
+    position: absolute;
+    top: 60px; right: 0;
+    background: rgba(255,255,255,.96);
+    border-radius: 12px;
+    box-shadow: 0 10px 30px rgba(0,0,0,.08);
+    border: 1px solid rgba(0,0,0,.06);
+    backdrop-filter: blur(8px);
+    padding: 10px;
+    display: none;
+    min-width: 200px;
+  }
+  .fab-menu.open { display: block; animation: fadeIn .18s ease both; }
+  @keyframes fadeIn { from { opacity: 0; transform: translateY(-4px); } to { opacity: 1; transform: none; } }
+  .fab-menu a {
+    display: block;
+    padding: 8px 12px;
+    border-radius: 8px;
+    color: #0f172a;
+    font-weight: 600;
+    text-decoration: none;
+    font-size: 14px;
+  }
+  .fab-menu a:hover { background: #eef2ff; color: #1e40af; }
+  .fab-icon{ display:flex; flex-direction:column; gap:5px; align-items:center; }
+  .fab-icon span{ display:block; width:18px; height:3px; background:#fff; border-radius:2px; }
+  .fab-timer{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding:8px 10px;
+    border-radius:12px;
+    background: #0ea5e9;
+    color:#fff;
+    font-weight:700;
+    min-width:72px;
+    box-shadow:0 6px 14px rgba(14,165,233,.25);
+  }
+
+  /* hide legacy bottom FAB if present */
+  .fab-wrapper{ display:none !important; }
+
+  @media (max-width: 1024px){
+    .vt-wrap{ margin:24px auto; width:calc(100% - 20px); }
+    .vt-grid{ grid-template-columns: 1fr; }
+    .vt-head{ align-items: stretch; }
+    .vt-head .row{ width:100%; }
+    .vt-head .row:last-child{ gap:8px; }
+    .vt-head label{ flex:1 1 160px; }
+    .vt-input{ width:100%; min-width:0; }
+    select.vt-input{ min-width:0; }
+    .btn{ width:100%; text-align:center; }
+    .vt-kpi-grid{ grid-template-columns:1fr; }
+    .vt-kpi-details{ max-height:160px; }
+    .top-actions{ top:10px; right:10px; gap:8px; }
+    .fab-btn{ width:48px; height:48px; font-size:18px; }
+    .vt-toast{ right:12px; left:12px; bottom:12px; max-width:none; }
+    .vt-modal-dialog{ width: min(960px, 96vw); height: min(700px, 90vh); }
+  }
+
+  @media (max-width: 640px){
+    .vt-head .row{ flex-direction:column; align-items:stretch; }
+    .vt-head .row:first-child{ gap:6px; }
+    .vt-head .row:first-child .muted{ font-size:12px; }
+    .card-title{ font-size:14px; flex-wrap:wrap; }
+    .badge{ align-self:flex-start; }
+    .vt-kpi-value{ font-size:18px; }
+    .vt-admissions-item{ grid-template-columns:1fr 1fr; }
+    .vt-admissions-value{ white-space:normal; }
+    .vt-discharge-row{
+      grid-template-columns: 1.2fr 0.42fr 0.66fr 0.66fr 0.66fr 0.66fr;
+      font-size:10px;
+      gap:6px;
+    }
+    .vt-visit-kpi-controls{ align-items:stretch; }
+    .vt-visit-kpi-controls-left{ width:100%; min-width:0; }
+    .vt-visit-kpi-search{ min-width:0; width:100%; }
+    .vt-visit-kpi-size{ min-width:74px; }
+    .vt-visit-kpi-pager{ width:100%; justify-content:flex-end; }
+    .vt-visit-kpi-table{ font-size:10px; }
+    .vt-visit-kpi-table th{ font-size:9px; padding:7px 8px; }
+    .vt-visit-kpi-table td{ padding:6px 8px; }
+    .vt-modal{ padding:12px; }
+    .vt-modal-dialog{ width: 96vw; height: 90vh; border-radius: 14px; }
+    .vt-modal-title{ font-size:14px; }
+    .vt-modal-close{ width:30px; height:30px; }
+    .vt-discharge-ward-btn{ font-size:10px; }
+    .vt-discharge-modal-table{ font-size:11px; }
+  }
+</style>
+
+<script src="https://cdn.jsdelivr.net/npm/echarts@5/dist/echarts.min.js"></script>
+
+<!-- FAB user menu -->
+<div class="top-actions">
+  <div class="fab-user">
+    <!-- <div class="fab-timer" id="fabTimer">--:--</div> -->
+    <button class="fab-btn" id="fabToggle" title="User Menu">
+      <span class="fab-icon"><span></span><span></span><span></span></span>
+    </button>
+    <div class="fab-menu" id="fabMenu">
+      <div style="padding:6px 12px;font-weight:700;color:#1e3a8a;">
+        👋 {{ session.get('username') or session.get('user') or 'User' }}
+      </div>
+      <a href="/">← Back to Dashboard</a>
+      <a href="{{ url_for('logout') }}">⏻ Logout</a>
+    </div>
+  </div>
+</div>
+
+<div class="vt-wrap">
+  <div class="vt-card vt-head">
+    <div class="row">
+      <strong style="font-size:16px; color:#0f172a;">Volume Dashboard</strong>
+      <span class="muted">OPD / IPD (Daycare/IPD) / Others</span>
+      <span id="vt-count" class="badge" style="display:none;"></span>
+    </div>
+    <div class="row">
+      <label id="unit-wrap" style="display:none; font-size:14px; color:#475569;">
+        Unit
+        <select id="vt-unit" class="vt-input"></select>
+      </label>
+      <label style="font-size:14px; color:#475569;">From <input id="vt-from" type="date" class="vt-input"></label>
+      <label style="font-size:14px; color:#475569;">To <input id="vt-to" type="date" class="vt-input"></label>
+      <button class="btn" id="vt-load">Load</button>
+      <button class="btn secondary" id="vt-export">Export Excel</button>
+      <button class="btn" id="vt-export-pdf" style="background:#10b981;">Export PDF</button>
+    </div>
+  </div>
+
+  <div class="vt-card vt-kpi-panel">
+    <div class="vt-live-note" id="vt-kpi-live-note"></div>
+    <div class="vt-kpi-grid">
+      <div class="vt-kpi-card">
+        <div class="vt-kpi-label">Visit Type Wise</div>
+        <div class="vt-kpi-value" id="kpi-visitsummary">0</div>
+      </div>
+      <div class="vt-kpi-card">
+        <div class="vt-kpi-label">Department Wise</div>
+        <div class="vt-kpi-value" id="kpi-deptcount">0</div>
+        <div class="vt-kpi-details" id="kpi-deptcount-details"></div>
+      </div>
+      <div class="vt-kpi-card">
+        <div class="vt-kpi-label">Corp Type Wise</div>
+        <div class="vt-kpi-value" id="kpi-corptype">0</div>
+        <div class="vt-kpi-details" id="kpi-corptype-details"></div>
+      </div>
+      <div class="vt-kpi-card">
+        <div class="vt-kpi-label">Doctor Wise</div>
+        <div class="vt-kpi-value" id="kpi-doctorcount">0</div>
+        <div class="vt-kpi-details" id="kpi-doctorcount-details"></div>
+      </div>
+      <div class="vt-kpi-card vt-kpi-card-wide">
+        <div class="vt-kpi-label">In-Patient & Daycare Admissions (Per Unit)</div>
+        <div class="vt-kpi-value" id="kpi-admissions-count">0</div>
+        <div class="vt-visit-kpi-controls">
+          <div class="vt-visit-kpi-controls-left">
+            <input type="text" id="kpi-admissions-search" class="vt-input vt-visit-kpi-search" placeholder="Search by patient, reg no, unit, department, doctor, corp type, visit date">
+          </div>
+        </div>
+        <div class="vt-kpi-details vt-admissions" id="kpi-admissions-details"></div>
+      </div>
+      <div class="vt-kpi-card vt-kpi-card-wide">
+        <div class="vt-kpi-label">IPD Discharges by Type (Per Unit & Ward)</div>
+        <div class="vt-kpi-value vt-discharge-value" id="kpi-discharges-count">0</div>
+        <div class="vt-visit-kpi-controls">
+          <div class="vt-visit-kpi-controls-left">
+            <input type="text" id="kpi-discharges-search" class="vt-input vt-visit-kpi-search" placeholder="Search by discharge type, reg no, ward, patient, doctor, unit">
+            <select id="kpi-discharges-pagesize" class="vt-input vt-visit-kpi-size">
+              <option value="10">10 rows</option>
+              <option value="20" selected>20 rows</option>
+              <option value="50">50 rows</option>
+            </select>
+          </div>
+          <div class="vt-visit-kpi-pager">
+            <button type="button" class="vt-visit-kpi-page-btn" id="kpi-discharges-prev">Prev</button>
+            <span class="vt-visit-kpi-page-info" id="kpi-discharges-pageinfo">Page 1 of 1</span>
+            <button type="button" class="vt-visit-kpi-page-btn" id="kpi-discharges-next">Next</button>
+          </div>
+        </div>
+        <div class="vt-kpi-details" id="kpi-discharges-details"></div>
+      </div>
+      <div class="vt-kpi-card vt-kpi-card-wide">
+        <div class="vt-kpi-label">Out Patient Visits (Per Unit)</div>
+        <div class="vt-kpi-value" id="kpi-opd-count">0</div>
+        <div class="vt-visit-kpi-controls">
+          <div class="vt-visit-kpi-controls-left">
+            <input type="text" id="kpi-opd-search" class="vt-input vt-visit-kpi-search" placeholder="Search by patient, reg no, unit, department, doctor, corp type">
+            <select id="kpi-opd-pagesize" class="vt-input vt-visit-kpi-size">
+              <option value="10">10 rows</option>
+              <option value="20" selected>20 rows</option>
+              <option value="50">50 rows</option>
+            </select>
+          </div>
+          <div class="vt-visit-kpi-pager">
+            <button type="button" class="vt-visit-kpi-page-btn" id="kpi-opd-prev">Prev</button>
+            <span class="vt-visit-kpi-page-info" id="kpi-opd-pageinfo">Page 1 of 1</span>
+            <button type="button" class="vt-visit-kpi-page-btn" id="kpi-opd-next">Next</button>
+          </div>
+        </div>
+        <div class="vt-kpi-details vt-visit-kpi-details" id="kpi-opd-details"></div>
+      </div>
+      <div class="vt-kpi-card vt-kpi-card-wide">
+        <div class="vt-kpi-label">Diagnostic Visits (Per Unit)</div>
+        <div class="vt-kpi-value" id="kpi-dpv-count">0</div>
+        <div class="vt-visit-kpi-controls">
+          <div class="vt-visit-kpi-controls-left">
+            <input type="text" id="kpi-dpv-search" class="vt-input vt-visit-kpi-search" placeholder="Search by patient, reg no, unit, department, doctor, corp type">
+            <select id="kpi-dpv-pagesize" class="vt-input vt-visit-kpi-size">
+              <option value="10">10 rows</option>
+              <option value="20" selected>20 rows</option>
+              <option value="50">50 rows</option>
+            </select>
+          </div>
+          <div class="vt-visit-kpi-pager">
+            <button type="button" class="vt-visit-kpi-page-btn" id="kpi-dpv-prev">Prev</button>
+            <span class="vt-visit-kpi-page-info" id="kpi-dpv-pageinfo">Page 1 of 1</span>
+            <button type="button" class="vt-visit-kpi-page-btn" id="kpi-dpv-next">Next</button>
+          </div>
+        </div>
+        <div class="vt-kpi-details vt-visit-kpi-details" id="kpi-dpv-details"></div>
+      </div>
+      <div class="vt-kpi-card vt-kpi-card-wide">
+        <div class="vt-kpi-label">Health Checkup Visits (Per Unit)</div>
+        <div class="vt-kpi-value" id="kpi-hcv-count">0</div>
+        <div class="vt-visit-kpi-controls">
+          <div class="vt-visit-kpi-controls-left">
+            <input type="text" id="kpi-hcv-search" class="vt-input vt-visit-kpi-search" placeholder="Search by patient, reg no, unit, department, doctor, corp type">
+            <select id="kpi-hcv-pagesize" class="vt-input vt-visit-kpi-size">
+              <option value="10">10 rows</option>
+              <option value="20" selected>20 rows</option>
+              <option value="50">50 rows</option>
+            </select>
+          </div>
+          <div class="vt-visit-kpi-pager">
+            <button type="button" class="vt-visit-kpi-page-btn" id="kpi-hcv-prev">Prev</button>
+            <span class="vt-visit-kpi-page-info" id="kpi-hcv-pageinfo">Page 1 of 1</span>
+            <button type="button" class="vt-visit-kpi-page-btn" id="kpi-hcv-next">Next</button>
+          </div>
+        </div>
+        <div class="vt-kpi-details vt-visit-kpi-details" id="kpi-hcv-details"></div>
+      </div>
+      <div class="vt-kpi-card vt-kpi-card-wide">
+        <div class="vt-kpi-label">Healthcheckup Doctor Visits (Per Unit)</div>
+        <div class="vt-kpi-value" id="kpi-hcvdoc-count">0</div>
+        <div class="vt-visit-kpi-controls">
+          <div class="vt-visit-kpi-controls-left">
+            <input type="text" id="kpi-hcvdoc-search" class="vt-input vt-visit-kpi-search" placeholder="Search by patient, reg no, unit, department, doctor, corp type, visit no, package id">
+            <select id="kpi-hcvdoc-pagesize" class="vt-input vt-visit-kpi-size">
+              <option value="10">10 rows</option>
+              <option value="20" selected>20 rows</option>
+              <option value="50">50 rows</option>
+            </select>
+            <button type="button" class="vt-visit-kpi-page-btn" id="kpi-hcvdoc-export">Export Excel</button>
+          </div>
+          <div class="vt-visit-kpi-pager">
+            <button type="button" class="vt-visit-kpi-page-btn" id="kpi-hcvdoc-prev">Prev</button>
+            <span class="vt-visit-kpi-page-info" id="kpi-hcvdoc-pageinfo">Page 1 of 1</span>
+            <button type="button" class="vt-visit-kpi-page-btn" id="kpi-hcvdoc-next">Next</button>
+          </div>
+        </div>
+        <div class="vt-kpi-details vt-visit-kpi-details" id="kpi-hcvdoc-details"></div>
+      </div>
+    </div>
+  </div>
+
+  <div class="vt-grid">
+    <div class="vt-card vt-chart-card">
+      <div class="card-title">
+        <span class="card-title-left">Visit-wise Volume <span class="kpi" id="kpi-visitwise"></span></span>
+        <button class="vt-expand-btn" type="button" data-chart-id="vt-visitwise" data-chart-title="Visit-wise Volume" aria-label="Expand chart">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 3H3v5"></path>
+            <path d="M16 3h5v5"></path>
+            <path d="M21 16v5h-5"></path>
+            <path d="M3 16v5h5"></path>
+          </svg>
+        </button>
+      </div>
+      <div id="vt-visitwise" class="vt-chart" style="height:440px;"></div>
+      <div class="empty" id="e-visitwise" style="display:none;">No records</div>
+    </div>
+    <div class="vt-card vt-chart-card">
+      <div class="card-title">
+        <span class="card-title-left">Department-wise Volume <span class="kpi" id="kpi-deptwise"></span></span>
+        <button class="vt-expand-btn" type="button" data-chart-id="vt-deptwise" data-chart-title="Department-wise Volume" aria-label="Expand chart">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 3H3v5"></path>
+            <path d="M16 3h5v5"></path>
+            <path d="M21 16v5h-5"></path>
+            <path d="M3 16v5h5"></path>
+          </svg>
+        </button>
+      </div>
+      <div id="vt-deptwise" class="vt-chart" style="height:420px;"></div>
+      <div class="empty" id="e-deptwise" style="display:none;">No records</div>
+    </div>
+  </div>
+
+  <div class="vt-grid">
+    <div class="vt-card vt-chart-card">
+      <div class="card-title">
+        <span class="card-title-left">Doctor-wise Volume <span class="kpi" id="kpi-doctorwise"></span></span>
+        <button class="vt-expand-btn" type="button" data-chart-id="vt-doctorwise" data-chart-title="Doctor-wise Volume" aria-label="Expand chart">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 3H3v5"></path>
+            <path d="M16 3h5v5"></path>
+            <path d="M21 16v5h-5"></path>
+            <path d="M3 16v5h5"></path>
+          </svg>
+        </button>
+      </div>
+      <div id="vt-doctorwise" class="vt-chart" style="height:520px;"></div>
+      <div class="empty" id="e-doctorwise" style="display:none;">No records</div>
+    </div>
+    <div class="vt-card vt-chart-card">
+      <div class="card-title">
+        <span class="card-title-left">City-wise Volume <span class="kpi" id="kpi-citywise"></span></span>
+        <button class="vt-expand-btn" type="button" data-chart-id="vt-citywise" data-chart-title="City-wise Volume" aria-label="Expand chart">
+          <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+            <path d="M8 3H3v5"></path>
+            <path d="M16 3h5v5"></path>
+            <path d="M21 16v5h-5"></path>
+            <path d="M3 16v5h5"></path>
+          </svg>
+        </button>
+      </div>
+      <div id="vt-citywise" class="vt-chart" style="height:520px;"></div>
+      <div class="empty" id="e-citywise" style="display:none;">No records</div>
+    </div>
+  </div>
+
+  <div class="vt-card vt-chart-card">
+    <div class="card-title">
+      <span class="card-title-left">Patient Type (hover to see Sub Types) <span class="kpi" id="kpi-pt"></span></span>
+      <button class="vt-expand-btn" type="button" data-chart-id="vt-pt-bar" data-chart-title="Patient Type" aria-label="Expand chart">
+        <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round" aria-hidden="true">
+          <path d="M8 3H3v5"></path>
+          <path d="M16 3h5v5"></path>
+          <path d="M21 16v5h-5"></path>
+          <path d="M3 16v5h5"></path>
+        </svg>
+      </button>
+    </div>
+    <div id="vt-pt-bar" class="vt-chart" style="height:440px;"></div>
+    <div class="empty" id="e-pt" style="display:none;">No records</div>
+  </div>
+</div>
+
+<div id="vt-toast" class="vt-toast"></div>
+<div class="vt-modal" id="vt-chart-modal" aria-hidden="true">
+  <div class="vt-modal-backdrop" data-close></div>
+  <div class="vt-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="vt-modal-title">
+    <div class="vt-modal-header">
+      <div class="vt-modal-title" id="vt-modal-title">Chart</div>
+      <button class="vt-modal-close" id="vt-modal-close" type="button" aria-label="Close chart">
+        <span aria-hidden="true">X</span>
+      </button>
+    </div>
+    <div class="vt-modal-body">
+      <div id="vt-modal-chart"></div>
+    </div>
+  </div>
+</div>
+<div class="vt-modal" id="vt-discharge-modal" aria-hidden="true">
+  <div class="vt-modal-backdrop" data-close-discharge></div>
+  <div class="vt-modal-dialog" role="dialog" aria-modal="true" aria-labelledby="vt-discharge-modal-title">
+    <div class="vt-modal-header">
+      <div class="vt-modal-title" id="vt-discharge-modal-title">Ward Patient List</div>
+      <button class="vt-modal-close" id="vt-discharge-modal-close" type="button" aria-label="Close ward patient list">
+        <span aria-hidden="true">X</span>
+      </button>
+    </div>
+    <div class="vt-modal-body" id="vt-discharge-modal-body"></div>
+  </div>
+</div>
+
+<script>
+(function(){
+  const INITIAL_ALLOWED_UNITS = {{ (allowed_units or []) | tojson }};
+  const fromEl = document.getElementById('vt-from');
+  const toEl   = document.getElementById('vt-to');
+  const unitSel= document.getElementById('vt-unit');
+  const unitWrap = document.getElementById('unit-wrap');
+  const LS_UNIT_KEY = 'vt_unit_choice';
+
+  const today  = new Date();
+  const iso = d => d.toISOString().slice(0,10);
+  fromEl.value = iso(today);
+  toEl.value   = iso(today);
+
+  const countEl = document.getElementById('vt-count');
+  const toastEl = document.getElementById('vt-toast');
+
+  const kpis = {
+    visitwise:  document.getElementById('kpi-visitwise'),
+    deptwise:   document.getElementById('kpi-deptwise'),
+    doctorwise: document.getElementById('kpi-doctorwise'),
+    citywise:   document.getElementById('kpi-citywise'),
+    pt:         document.getElementById('kpi-pt')
+  };
+
+  const summaryKpis = {
+    visitsummary: document.getElementById('kpi-visitsummary'),
+    deptcount: document.getElementById('kpi-deptcount'),
+    corptype: document.getElementById('kpi-corptype'),
+    doctorcount: document.getElementById('kpi-doctorcount')
+  };
+  const summaryDetails = {
+    deptcount: document.getElementById('kpi-deptcount-details'),
+    corptype: document.getElementById('kpi-corptype-details'),
+    doctorcount: document.getElementById('kpi-doctorcount-details')
+  };
+  const admissionsCountEl = document.getElementById('kpi-admissions-count');
+  const admissionsSearchEl = document.getElementById('kpi-admissions-search');
+  const admissionsDetailsEl = document.getElementById('kpi-admissions-details');
+  const dischargeCountEl = document.getElementById('kpi-discharges-count');
+  const dischargeSearchEl = document.getElementById('kpi-discharges-search');
+  const dischargePageSizeEl = document.getElementById('kpi-discharges-pagesize');
+  const dischargePrevEl = document.getElementById('kpi-discharges-prev');
+  const dischargeNextEl = document.getElementById('kpi-discharges-next');
+  const dischargePageInfoEl = document.getElementById('kpi-discharges-pageinfo');
+  const dischargeDetailsEl = document.getElementById('kpi-discharges-details');
+  const liveKpiNoteEl = document.getElementById('vt-kpi-live-note');
+  const hcvDoctorExportBtn = document.getElementById('kpi-hcvdoc-export');
+  const visitDetailKpiCards = {
+    opd: {
+      visitLabel: 'Out Patient Visits',
+      countEl: document.getElementById('kpi-opd-count'),
+      detailsEl: document.getElementById('kpi-opd-details'),
+      searchEl: document.getElementById('kpi-opd-search'),
+      pageSizeEl: document.getElementById('kpi-opd-pagesize'),
+      prevEl: document.getElementById('kpi-opd-prev'),
+      nextEl: document.getElementById('kpi-opd-next'),
+      pageInfoEl: document.getElementById('kpi-opd-pageinfo')
+    },
+    dpv: {
+      visitLabel: 'Diagnostic Visit',
+      countEl: document.getElementById('kpi-dpv-count'),
+      detailsEl: document.getElementById('kpi-dpv-details'),
+      searchEl: document.getElementById('kpi-dpv-search'),
+      pageSizeEl: document.getElementById('kpi-dpv-pagesize'),
+      prevEl: document.getElementById('kpi-dpv-prev'),
+      nextEl: document.getElementById('kpi-dpv-next'),
+      pageInfoEl: document.getElementById('kpi-dpv-pageinfo')
+    },
+    hcv: {
+      visitLabel: 'Health Checkups',
+      countEl: document.getElementById('kpi-hcv-count'),
+      detailsEl: document.getElementById('kpi-hcv-details'),
+      searchEl: document.getElementById('kpi-hcv-search'),
+      pageSizeEl: document.getElementById('kpi-hcv-pagesize'),
+      prevEl: document.getElementById('kpi-hcv-prev'),
+      nextEl: document.getElementById('kpi-hcv-next'),
+      pageInfoEl: document.getElementById('kpi-hcv-pageinfo')
+    },
+    hcvdoc: {
+      visitLabel: 'Healthcheckup Doctor Visits',
+      source: 'hcv_doctor',
+      countEl: document.getElementById('kpi-hcvdoc-count'),
+      detailsEl: document.getElementById('kpi-hcvdoc-details'),
+      searchEl: document.getElementById('kpi-hcvdoc-search'),
+      pageSizeEl: document.getElementById('kpi-hcvdoc-pagesize'),
+      prevEl: document.getElementById('kpi-hcvdoc-prev'),
+      nextEl: document.getElementById('kpi-hcvdoc-next'),
+      pageInfoEl: document.getElementById('kpi-hcvdoc-pageinfo')
+    }
+  };
+
+  const empties = {
+    visitwise: document.getElementById('e-visitwise'),
+    deptwise:  document.getElementById('e-deptwise'),
+    doctorwise:document.getElementById('e-doctorwise'),
+    citywise:  document.getElementById('e-citywise'),
+    pt:        document.getElementById('e-pt')
+  };
+  function showEmpty(k, yes){ if(empties[k]) empties[k].style.display = yes ? '' : 'none'; }
+  function setKPI(k, n){ if(kpis[k]) kpis[k].textContent = (n>0 ? `· ${n.toLocaleString()}` : ''); }
+  function setSummaryKpi(k, html){
+    if(!summaryKpis[k]) return;
+    summaryKpis[k].classList.add('kpi-summary');
+    summaryKpis[k].innerHTML = html || '<div class="kpi-empty">No data</div>';
+  }
+  function setSummaryDetails(k, html){
+    if(summaryDetails[k]) summaryDetails[k].innerHTML = html || '<div class="kpi-empty">No data</div>';
+  }
+  function resetSummaryKpis(){
+    Object.keys(summaryKpis).forEach((k)=>{
+      if(summaryKpis[k]){
+        summaryKpis[k].classList.remove('kpi-summary');
+        summaryKpis[k].textContent = '0';
+      }
+    });
+    Object.keys(summaryDetails).forEach((k)=> setSummaryDetails(k, ''));
+    if(admissionsCountEl){
+      admissionsCountEl.classList.remove('kpi-summary');
+      admissionsCountEl.textContent = '0';
+    }
+    admissionsState.query = '';
+    if(admissionsSearchEl){
+      admissionsSearchEl.value = '';
+    }
+    if(admissionsDetailsEl){
+      admissionsDetailsEl.innerHTML = '';
+    }
+    dischargeState.query = '';
+    dischargeState.page = 1;
+    dischargeState.rows = [];
+    dischargeKpiSource = {};
+    if(dischargeSearchEl){
+      dischargeSearchEl.value = '';
+    }
+    if(dischargePageSizeEl){
+      const defaultSize = Number(dischargePageSizeEl.value || 20);
+      dischargeState.pageSize = Number.isFinite(defaultSize) && defaultSize > 0 ? defaultSize : 20;
+    } else {
+      dischargeState.pageSize = 20;
+    }
+    if(dischargeCountEl){
+      dischargeCountEl.textContent = '0';
+    }
+    if(dischargeDetailsEl){
+      dischargeDetailsEl.innerHTML = '';
+    }
+    setDischargePagerState(1, 1);
+    hcvDoctorKpiRows = [];
+    resetVisitDetailKpis();
+  }
+  function escapeHtml(value){
+    return String(value ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+  function fmtCount(value){
+    const num = Number(value);
+    return Number.isFinite(num) ? num.toLocaleString() : '0';
+  }
+  function fmtPct(value){
+    const num = Number(value);
+    return Number.isFinite(num) ? `${num.toFixed(2)}%` : '0.00%';
+  }
+  function incMap(map, key, delta = 1){
+    map.set(key, (map.get(key) || 0) + delta);
+  }
+  function normalizeLabel(value){
+    return String(value || '').replace(/\s+/g, ' ').trim();
+  }
+  function normalizeVisitLabel(value){
+    const raw = normalizeLabel(value);
+    if(!raw) return 'Unknown';
+    const key = raw.toLowerCase().replace(/[^a-z0-9]+/g, '');
+    const map = {
+      opd: 'Out Patient Visits',
+      outpatientvisits: 'Out Patient Visits',
+      outpatientvisit: 'Out Patient Visits',
+      dpv: 'Diagnostic Visit',
+      diagnosticvisit: 'Diagnostic Visit',
+      hcv: 'Health Checkups',
+      healthcheckups: 'Health Checkups',
+      healthcheckup: 'Health Checkups',
+      ipd: 'In Patient Visits',
+      inpatientvisits: 'In Patient Visits',
+      inpatientvisit: 'In Patient Visits',
+      daycare: 'Daycare',
+      daycarevisit: 'Daycare'
+    };
+    return map[key] || raw;
+  }
+  function normalizeUnit(value){
+    return normalizeLabel(value).toUpperCase() || 'Unknown';
+  }
+  function renderVisitSummary(map){
+    const order = [
+      'Out Patient Visits',
+      'Diagnostic Visit',
+      'In Patient Visits',
+      'Daycare',
+      'Health Checkups',
+      'Other',
+      'Unknown'
+    ];
+    const classMap = {
+      'Out Patient Visits': 'vt-visit-opd',
+      'Diagnostic Visit': 'vt-visit-dpv',
+      'In Patient Visits': 'vt-visit-ipd',
+      'Daycare': 'vt-visit-daycare',
+      'Health Checkups': 'vt-visit-hcv',
+      'Other': 'vt-visit-other',
+      'Unknown': 'vt-visit-unknown'
+    };
+    const rows = order
+      .map((key)=> [key, map.get(key) || 0])
+      .filter(([,count])=> count > 0)
+      .map(([key, count])=> {
+        const cls = classMap[key] || 'vt-visit-other';
+        return (
+          `<div class="kpi-row">` +
+          `<span class="vt-kpi-visit ${cls}">` +
+          `<span class="vt-kpi-dot"></span>${escapeHtml(key)}` +
+          `</span>` +
+          `<span>${fmtCount(count)}</span>` +
+          `</div>`
+        );
+      });
+    return rows.join('');
+  }
+
+  function visitClass(visitLabel){
+    const key = normalizeVisitLabel(visitLabel);
+    if(key === 'Out Patient Visits') return 'vt-visit-opd';
+    if(key === 'Diagnostic Visit') return 'vt-visit-dpv';
+    if(key === 'In Patient Visits') return 'vt-visit-ipd';
+    if(key === 'Daycare') return 'vt-visit-daycare';
+    if(key === 'Health Checkups') return 'vt-visit-hcv';
+    if(key === 'Unknown') return 'vt-visit-unknown';
+    return 'vt-visit-other';
+  }
+
+  let charts = {};
+  const chartOptions = {};
+  const chartEvents = {};
+  let modalChart = null;
+  let activeModalChartId = null;
+
+  function ensureChart(id){
+    if(!window.echarts) return null;
+    if(!charts[id]) charts[id] = echarts.init(document.getElementById(id));
+    return charts[id];
+  }
+  function registerChartConfig(id, option, events){
+    chartOptions[id] = option;
+    chartEvents[id] = events || {};
+  }
+  function applyChartEvents(chart, events){
+    if(!chart) return;
+    chart.off('click');
+    chart.off('mouseover');
+    chart.off('globalout');
+    if(events?.click) chart.on('click', events.click);
+    if(events?.mouseover) chart.on('mouseover', events.mouseover);
+    if(events?.globalout) chart.on('globalout', events.globalout);
+  }
+
+  const labelFormatter = p => {
+    const v = p.value ?? p.data?.value;
+    return (typeof v === 'number') ? v.toLocaleString() : (v ?? '');
+  };
+
+  const mobileQuery = window.matchMedia ? window.matchMedia('(max-width: 900px)') : null;
+  function isMobileView(){
+    return mobileQuery ? mobileQuery.matches : window.innerWidth <= 900;
+  }
+
+  // Clean department names
+  function cleanDeptName(name) {
+    if(!name) return name;
+    const str = name.toString();
+    return str.replace(/^Department\s+of\s+/i, '').trim();
+  }
+
+  // Visit-wise mapping
+  const VISIT_RENAME = { HCV:'Health Checkups', DPV:'Diagnostic Visit', IPD:'In Patient Visits', OPD:'Out Patient Visits' };
+  function applyVisitRename(arr){
+    return (arr||[]).map(o=>({ name: VISIT_RENAME[String(o.name)||''] || String(o.name||''), value:o.value }));
+  }
+
+  // Adaptive height helpers
+  function adjustHeight(id, count, min=360, max=980, per=30){
+    const el = document.getElementById(id);
+    if(!el) return;
+    const mobile = isMobileView();
+    const minH = mobile ? Math.max(240, Math.round(min * 0.75)) : min;
+    const maxH = mobile ? Math.round(max * 0.8) : max;
+    const perH = mobile ? Math.round(per * 0.75) : per;
+    const base = mobile ? 90 : 120;
+    const h = Math.max(minH, Math.min(maxH, perH*count + base));
+    el.style.height = h + 'px';
+  }
+  function leftPaddingFromNames(names){
+    const longest = (names||[]).reduce((m,s)=> Math.max(m,(s||'').length), 0);
+    const cap = isMobileView() ? 60 : 80;
+    return Math.min(cap, Math.max(30, Math.round(longest * 0.5) + 10));
+  }
+
+  const colorPalette = [
+    '#3b82f6', '#8b5cf6', '#ec4899', '#f59e0b', '#10b981', 
+    '#06b6d4', '#6366f1', '#f97316', '#14b8a6', '#a855f7',
+    '#ef4444', '#84cc16', '#0ea5e9', '#f43f5e', '#22c55e'
+  ];
+
+  /* -------- Generic horizontal bar for dept -------- */
+  function setBar(id, cats, vals, opts={}, onClick, hoverKind, breakdownByEntity){
+    const { zoom=true, left=50, top=5, right=10, bottom=12, showLabelsOnHover=false } = opts;
+
+    adjustHeight(id, cats.length, 320, 680, 28);
+    const c = ensureChart(id); if(!c) return; c.clear();
+
+    const baseSeries = {
+      type:'bar', barCategoryGap:'20%', barMaxWidth:24,
+      data: vals.map((v,i)=>({ value:v, name:cats[i] })),
+      itemStyle:{ color:new echarts.graphic.LinearGradient(0,0,1,0,[{offset:0,color:'#60a5fa'},{offset:1,color:'#3b82f6'}]),
+        borderRadius:[0,4,4,0] },
+      emphasis:{ itemStyle:{ color:new echarts.graphic.LinearGradient(0,0,1,0,[{offset:0,color:'#3b82f6'},{offset:1,color:'#2563eb'}]),
+        shadowBlur:6, shadowColor:'rgba(59,130,246,.3)'} }
+    };
+
+    if(showLabelsOnHover){
+      baseSeries.label = { show:false };
+      baseSeries.emphasis = Object.assign({}, baseSeries.emphasis, {
+        label:{ show:true, position:'right', distance:3, formatter:(p)=> p.value.toLocaleString(), color:'#111827', fontWeight:700, fontSize:11 }
+      });
+    }else{
+      baseSeries.label = { show:true, position:'right', distance:3, formatter:(p)=> p.value.toLocaleString(), color:'#1f2937', fontWeight:600, fontSize:10 };
+    }
+
+    const cOpt = {
+      tooltip:{ 
+        trigger:'axis', axisPointer:{ type:'shadow' },
+        backgroundColor: 'rgba(255, 255, 255, 0.97)',
+        borderColor: '#e5e7eb', borderWidth: 1,
+        textStyle: { color: '#1f2937', fontSize: 13 },
+        padding: [10, 14],
+        extraCssText: 'box-shadow: 0 4px 12px rgba(0,0,0,0.1); border-radius: 8px;',
+        formatter: (params) => {
+          if(!params || !params.length) return '';
+          const p = params[0];
+          const name = p.name;
+          
+          // If breakdown data exists, show it like doctor tooltip
+          if(breakdownByEntity && breakdownByEntity.has(name)){
+            const bk = breakdownByEntity.get(name);
+            const fmt = (n)=> (n||0).toLocaleString();
+            const lines = [
+              `<div style="font-weight:700;color:#111827;margin-bottom:4px;">${name}</div>`,
+              `Total: <strong>${fmt(p.value)}</strong>`,
+              `<div style="margin-top:6px;color:#475569">Breakdown</div>`,
+              `OPD: <strong>${fmt(bk.OPD)}</strong>`,
+              `DPV: <strong>${fmt(bk.DPV)}</strong>`,
+              `IPD: <strong>${fmt(bk.IPD)}</strong>`,
+              `Daycare: <strong>${fmt(bk.Daycare)}</strong>`,
+              `HCV: <strong>${fmt(bk.HCV)}</strong>`
+            ];
+            return lines.join('<br/>');
+          }
+          
+          // Default simple tooltip
+          return `<strong>${name}</strong><br/>Count: ${p.value.toLocaleString()}`;
+        }
+      },
+      grid:{ top, right, bottom: zoom ? bottom+18 : bottom, left, containLabel:true },
+      dataZoom: zoom ? [
+        { type:'slider', yAxisIndex:0, width:4, right:0, brushSelect:false,
+          borderColor:'transparent', fillerColor:'rgba(59,130,246,.25)',
+          handleStyle:{ color:'#3b82f6', borderWidth:0 }, moveHandleSize:2,
+          dataBackground:{ lineStyle:{ opacity:0 }, areaStyle:{ opacity:0 } },
+          showDetail:false
+        },
+        { type:'inside', yAxisIndex:0 }
+      ] : [],
+      xAxis:{ 
+        type:'value', axisLine:{ show:false }, axisTick:{ show:false },
+        axisLabel:{ color:'#1f2937', fontSize: 9.5 },
+        splitLine:{ lineStyle:{ color:'#f5f5f5', type:'solid', width:1 } }
+      },
+      yAxis:{
+        type:'category', data: cats,
+        axisLabel:{ show:true, interval:0, overflow:'none', 
+          color:'#1f2937', fontSize:8, fontWeight:500 },
+        axisLine:{ show:false }, axisTick:{ show:false }
+      },
+      series:[baseSeries]
+    };
+
+    const hoverHandler = p => { if(p?.componentType==='series') showHoverSummary(hoverKind, p.name); };
+    const outHandler = () => hideToastSoon();
+    const events = { click: onClick, mouseover: hoverHandler, globalout: outHandler };
+
+    registerChartConfig(id, cOpt, events);
+    c.setOption(cOpt);
+    applyChartEvents(c, events);
+  }
+
+  /* -------- Doctor-wise Dot Plot (scatter on category y) -------- */
+  function setDoctorDot(docArr, breakdownByDoctor){
+    const id = 'vt-doctorwise';
+    const c = ensureChart(id); if(!c) return; c.clear();
+    if(!docArr || !docArr.length){ showEmpty('doctorwise', true); return; }
+    showEmpty('doctorwise', false);
+
+    const mobile = isMobileView();
+    const names = docArr.map(d => (d.name||'').toString());
+    const values = docArr.map(d => +d.value||0);
+
+    adjustHeight('vt-doctorwise', names.length, 520, 520, 0);
+    const leftPad = leftPaddingFromNames(names);
+    const rightPad = mobile ? 8 : 15;
+    const bottomPad = mobile ? 30 : 38;
+    const xLabelSize = mobile ? 9 : 10;
+    const yLabelSize = mobile ? 7 : 8;
+    const nameGap = mobile ? 28 : 38;
+
+    const DEFAULT_TOP_N = 25;
+    const endPct = Math.min(100, Math.round(DEFAULT_TOP_N / names.length * 100));
+
+    const data = names.map((nm, i) => {
+      const bk = breakdownByDoctor.get(nm) || {};
+      return { name: nm, value: values[i], bk };
+    });
+
+    const cOpt = {
+      grid:{ top: 18, left: leftPad, right: rightPad, bottom: bottomPad, containLabel:true },
+      tooltip:{
+        trigger:'item',
+        backgroundColor:'rgba(255,255,255,.97)', borderColor:'#e5e7eb', borderWidth:1,
+        textStyle:{ color:'#1f2937', fontSize:13 }, padding:[10,14],
+        extraCssText:'box-shadow:0 4px 12px rgba(0,0,0,.1); border-radius:8px;',
+        formatter: (p)=>{
+          const bk = p.data?.bk || {};
+          const fmt = (n)=> (n||0).toLocaleString();
+          const lines = [
+            `<div style="font-weight:700;color:#111827;margin-bottom:4px;">${p.name}</div>`,
+            `Total: <strong>${fmt(p.value)}</strong>`,
+            `<div style="margin-top:6px;color:#475569">Breakdown</div>`,
+            `OPD: <strong>${fmt(bk.OPD)}</strong>`,
+            `DPV: <strong>${fmt(bk.DPV)}</strong>`,
+            `IPD: <strong>${fmt(bk.IPD)}</strong>`,
+            `Daycare: <strong>${fmt(bk.Daycare)}</strong>`,
+            `HCV: <strong>${fmt(bk.HCV)}</strong>`
+          ];
+          return lines.join('<br/>');
+        }
+      },
+      dataZoom: [
+        { type:'slider', yAxisIndex:0, start:0, end:endPct, width:4, right:0, brushSelect:false,
+          borderColor:'transparent', fillerColor:'rgba(59,130,246,.25)',
+          handleStyle:{ color:'#3b82f6', borderWidth:0 }, showDetail:false,
+          dataBackground:{ lineStyle:{ opacity:0 }, areaStyle:{ opacity:0 } } },
+        { type:'inside', yAxisIndex:0, start:0, end:endPct }
+      ],
+      xAxis:{
+        type:'value',
+        name:'Volume',
+        nameLocation:'middle', nameGap: nameGap,
+        nameTextStyle:{ color:'#6b7280', fontSize:11, fontWeight:600 },
+        axisLine:{ show:false }, axisTick:{ show:false },
+        axisLabel:{ color:'#1f2937', fontSize:xLabelSize, formatter:(v)=> (+v).toLocaleString() },
+        splitLine:{ lineStyle:{ color:'#f3f4f6' } }
+      },
+      yAxis:{
+        type:'category',
+        data:names,
+        axisLabel:{ interval:0, hideOverlap:false, color:'#1f2937', fontSize:yLabelSize, fontWeight:500 },
+        axisLine:{ show:false }, axisTick:{ show:false }
+      },
+      series:[{
+        name:'Doctors',
+        type:'scatter',
+        encode:{ x:'value', y:'name' },
+        data,
+        symbol:'circle',
+        symbolSize: (val)=> {
+          const v = +val[0] || 0;
+          if(v <= 10) return 6;
+          if(v <= 50) return 7.5;
+          if(v <= 150) return 9;
+          if(v <= 300) return 10.5;
+          return 12;
+        },
+        itemStyle:{
+          color: new echarts.graphic.LinearGradient(0,0,1,0,[
+            {offset:0,color:'#93c5fd'},{offset:1,color:'#3b82f6'}
+          ]),
+          shadowBlur:6, shadowColor:'rgba(59,130,246,.25)'
+        },
+        emphasis:{ focus:'series' }
+      }]
+    };
+
+    const clickHandler = (p)=>{
+      const name = p.name;
+      const fn = r => (r.Consultant||'')===name;
+      fn._k = name;
+      summarizeBy(fn,'Doctor');
+    };
+    const hoverHandler = (p)=>{ if(p?.componentType==='series') showHoverSummary('Doctor', p.name); };
+    const outHandler = () => hideToastSoon();
+    const events = { click: clickHandler, mouseover: hoverHandler, globalout: outHandler };
+
+    registerChartConfig(id, cOpt, events);
+    c.setOption(cOpt);
+    applyChartEvents(c, events);
+  }
+
+  /* -------- Pie for visit-wise (INCREASED SIZE) -------- */
+  function setPie(id, data, onClick, hoverKind){
+    const c = ensureChart(id); if(!c) return; c.clear();
+    const total = (data||[]).reduce((s,i)=>s+(i.value||0),0);
+    const mobile = isMobileView();
+    const cOpt = {
+      tooltip:{
+        trigger:'item',
+        formatter:p=>{
+          const visitLabel = p.name || '';
+          const patients = getVisitPatients(visitLabel);
+          const maxRows = 20;
+          const shown = patients.slice(0, maxRows);
+          const rows = shown.map((item)=>(
+            `<div style="display:grid;grid-template-columns:1fr 2fr 1.4fr;gap:8px;padding:2px 0;">` +
+            `<span>${escapeHtml(item.reg)}</span>` +
+            `<span>${escapeHtml(item.name)}</span>` +
+            `<span>${escapeHtml(item.corp)}</span>` +
+            `</div>`
+          )).join('');
+          const more = patients.length > maxRows
+            ? `<div style="margin-top:6px;color:#64748b;font-size:11px;">+${patients.length - maxRows} more</div>`
+            : '';
+          const pctVal = Number(p.percent);
+          const pct = Number.isFinite(pctVal) ? pctVal.toFixed(1) : '';
+          const countLine = `${(Number(p.value)||0).toLocaleString()}${pct ? ` (${pct}%)` : ''}`;
+          const head = `<div style="font-weight:700;color:#111827;margin-bottom:4px;">${escapeHtml(visitLabel)}</div>` +
+            `<div style="font-size:11px;color:#6b7280;margin-bottom:6px;">${countLine}</div>`;
+          const tableHead = `<div style="display:grid;grid-template-columns:1fr 2fr 1.4fr;gap:8px;font-size:11px;font-weight:700;color:#475569;border-bottom:1px solid #e5e7eb;padding-bottom:4px;margin-bottom:4px;">` +
+            `<span>Reg No</span><span>Patient</span><span>Corp Type</span>` +
+            `</div>`;
+          const body = rows || `<div style="color:#94a3b8;font-style:italic;">No patients</div>`;
+          return head + tableHead + `<div style="max-height:200px;overflow:auto;font-size:11px;color:#1f2937;">${body}${more}</div>`;
+        },
+        backgroundColor:'rgba(255,255,255,.96)',
+        borderColor:'#e5e7eb',
+        borderWidth:1,
+        textStyle:{ color:'#1f2937', fontSize:12, fontWeight:500 },
+        padding:[12,16],
+        confine: true,
+        enterable: true,
+        hideDelay: 200,
+        extraCssText:'box-shadow:0 4px 12px rgba(0,0,0,.15); border-radius:8px; max-width:520px;'
+      },
+      legend:{ 
+        show:true,
+        orient:'horizontal',
+        bottom: mobile ? 4 : 8,
+        left:'center',
+        textStyle:{ color:'#374151', fontSize: mobile ? 10 : 12 },
+        itemWidth: mobile ? 12 : 14,
+        itemHeight: mobile ? 12 : 14,
+        itemGap: mobile ? 10 : 20,
+        type: mobile ? 'scroll' : 'plain',
+        padding:[0,0,0,0]
+      },
+      color: colorPalette,
+      series:[{
+        type:'pie',
+        radius: mobile ? ['30%','55%'] : ['32%','52%'],
+        center:['50%','48%'],
+        avoidLabelOverlap:true,
+        label:{
+          show:true,
+          position:'inside',
+          formatter:p=>((p.value/total)*100<8)? '' : `${Math.round((p.value/total)*100)}%`,
+          color:'#fff',
+          fontSize: mobile ? 11 : 14,
+          fontWeight:700
+        },
+        labelLine:{ show:false },
+        itemStyle:{
+          borderRadius:4,
+          borderColor:'#fff',
+          borderWidth:3
+        },
+        emphasis:{
+          itemStyle:{ shadowBlur:15, shadowColor:'rgba(0,0,0,.3)' },
+          label:{ fontSize:16, fontWeight:800 },
+          scaleSize:10
+        },
+        data: data||[]
+      }]
+    };
+    const hoverHandler = p=>{ if(p?.componentType==='series') showHoverSummary(hoverKind, p.name); };
+    const outHandler = () => hideToastSoon();
+    const events = { click: onClick, mouseover: hoverHandler, globalout: outHandler };
+
+    registerChartConfig(id, cOpt, events);
+    c.setOption(cOpt);
+    applyChartEvents(c, events);
+  }
+
+  /* -------- Patient Type (existing) -------- */
+  function setPtBar(ptTree, onClick, breakdownByPatientType){
+    const c = ensureChart('vt-pt-bar'); if(!c) return; c.clear();
+    if(!ptTree || !ptTree.length){ showEmpty('pt', true); return; }
+    showEmpty('pt', false);
+
+    const mobile = isMobileView();
+    const types=[], totals=[], subtypeMap={};
+    ptTree.forEach(node=>{
+      const pt = (node.name||'Unknown').toString();
+      const list = (node.children||[]).map(ch=>({ name:(ch.name||'Unknown').toString(), value: ch.value||0 }));
+      const total = list.reduce((s,x)=>s+(x.value||0),0);
+      types.push(pt); totals.push(total); subtypeMap[pt]=list.sort((a,b)=>b.value-a.value);
+    });
+
+    adjustHeight('vt-pt-bar', types.length, 360, 640, 36);
+    const leftPad = mobile ? 120 : 170;
+    const rightPad = mobile ? 6 : 10;
+    const yLabelWidth = mobile ? 110 : 160;
+    const yLabelFont = mobile ? 9 : 10;
+    const xLabelFont = mobile ? 9 : 9.5;
+    const yLabelMax = mobile ? 20 : 28;
+
+    const cOpt = {
+      tooltip:{
+        trigger:'axis', axisPointer:{ type:'shadow' },
+        backgroundColor:'rgba(255,255,255,.97)', borderColor:'#e5e7eb', borderWidth:1,
+        textStyle:{ color:'#1f2937', fontSize:13 }, padding:[10,14],
+        extraCssText:'box-shadow:0 4px 12px rgba(0,0,0,.1); border-radius:8px; max-height:400px; max-width:450px; overflow-y:auto; overflow-x:hidden;',
+        confine: true,
+        enterable: true,
+        hideDelay: 300,
+        position: function (point, params, dom, rect, size) {
+          // point: mouse position [x, y]
+          // size: { contentSize: [width, height], viewSize: [width, height] }
+          const tooltipWidth = Math.min(size.contentSize[0], 450);
+          const tooltipHeight = Math.min(size.contentSize[1], 400);
+          const viewWidth = size.viewSize[0];
+          const viewHeight = size.viewSize[1];
+          
+          let x = point[0];
+          let y = point[1];
+          
+          // Adjust horizontal position if tooltip goes off right edge
+          if (x + tooltipWidth > viewWidth) {
+            x = viewWidth - tooltipWidth - 10;
+          }
+          
+          // Adjust vertical position if tooltip goes off top or bottom
+          if (y - tooltipHeight < 0) {
+            y = tooltipHeight / 2 + 10;
+          } else if (y + tooltipHeight > viewHeight) {
+            y = viewHeight - tooltipHeight - 10;
+          }
+          
+          return [x + 10, y - tooltipHeight / 2];
+        },
+        formatter: params => {
+          if(!params?.length) return '';
+          const pt = params[0].name;
+          const subtypes = (subtypeMap[pt]||[]).slice(0,20);
+          
+          // DEBUG: Log first subtype and available keys
+          if(subtypes.length > 0 && breakdownByPatientType){
+            console.log('First subtype name from API:', subtypes[0].name);
+            console.log('First 10 keys in breakdown map:', Array.from(breakdownByPatientType.keys()).slice(0,10));
+            console.log('Has exact match?', breakdownByPatientType.has(subtypes[0].name));
+          }
+          
+          // Build items with breakdown for each subtype
+          const items = subtypes.map(x => {
+            // Calculate total from breakdown instead of using x.value
+            let calculatedTotal = x.value;
+            if(breakdownByPatientType && breakdownByPatientType.has(x.name)){
+              const bk = breakdownByPatientType.get(x.name);
+              calculatedTotal = (bk.OPD || 0) + (bk.DPV || 0) + (bk.IPD || 0) + (bk.Daycare || 0) + (bk.HCV || 0);
+            }
+            
+            let line = `<span style="color:#6b7280;">•</span> ${x.name}: <strong>${calculatedTotal.toLocaleString()}</strong>`;
+            
+            // Add breakdown if available for this subtype
+            if(breakdownByPatientType && breakdownByPatientType.has(x.name)){
+              const bk = breakdownByPatientType.get(x.name);
+              const fmt = (n)=> (n||0).toLocaleString();
+              line += `<div style="margin-left:16px;font-size:11px;color:#64748b;margin-top:2px;">
+                OPD: ${fmt(bk.OPD)} | DPV: ${fmt(bk.DPV)} | IPD: ${fmt(bk.IPD)} | DC: ${fmt(bk.Daycare)} | HCV: ${fmt(bk.HCV)}
+              </div>`;
+            }
+            
+            return line;
+          }).join('<br/>');
+          
+          return `<div style="font-weight:600; margin-bottom:6px; color:#0f172a;">${pt}</div>${items||'No sub types'}`;
+        }
+      },
+      grid:{ top:6, left:leftPad, right:rightPad, bottom:15, containLabel:true },
+      dataZoom:[
+        { type:'slider', yAxisIndex:0, width:4, right:0, brushSelect:false, borderColor:'transparent',
+          fillerColor:'rgba(59,130,246,.25)', handleStyle:{ color:'#3b82f6', borderWidth:0 }, moveHandleSize:2,
+          dataBackground:{ lineStyle:{ opacity:0 }, areaStyle:{ opacity:0 } }, showDetail:false },
+        { type:'inside', yAxisIndex:0 }
+      ],
+      xAxis:{ type:'value', axisLine:{ show:false }, axisTick:{ show:false },
+        axisLabel:{ color:'#1f2937', fontSize:xLabelFont }, splitLine:{ lineStyle:{ color:'#f5f5f5' } } },
+      yAxis:{ type:'category', data:types,
+        axisLabel:{ interval:0, align:'right', margin:6, color:'#1f2937', fontSize:yLabelFont, fontWeight:500,
+          overflow:'truncate', width:yLabelWidth, formatter:(v)=> (v.length>yLabelMax? v.substring(0,yLabelMax-1)+'…' : v) },
+        axisLine:{ show:false }, axisTick:{ show:false } },
+      series:[{ name:'Patients', type:'bar', barCategoryGap:'20%', barMaxWidth: mobile ? 22 : 28, data:totals,
+        itemStyle:{ color:new echarts.graphic.LinearGradient(0,0,1,0,[{offset:0,color:'#60a5fa'},{offset:1,color:'#3b82f6'}]), borderRadius:[0,4,4,0] },
+        emphasis:{ itemStyle:{ color:new echarts.graphic.LinearGradient(0,0,1,0,[{offset:0,color:'#3b82f6'},{offset:1,color:'#2563eb'}]), shadowBlur:6, shadowColor:'rgba(59,130,246,.3)' } },
+        label:{ show:true, position:'right', formatter:p=>labelFormatter(p), color:'#1f2937', fontWeight:600, fontSize:10, distance:3 } }]
+    };
+
+    const hoverHandler = p=>{ if(p?.componentType==='series') showHoverSummary('PatientType', p.name); };
+    const outHandler = () => hideToastSoon();
+    const events = { click: onClick, mouseover: hoverHandler, globalout: outHandler };
+
+    registerChartConfig('vt-pt-bar', cOpt, events);
+    c.setOption(cOpt);
+    applyChartEvents(c, events);
+  }
+
+  function setLoading(on){
+    const cards = document.querySelectorAll('.vt-card');
+    cards.forEach(card=>{
+      let o = card.querySelector('.loading');
+      if(on){
+        if(!o){ o = document.createElement('div'); o.className = 'loading'; o.textContent = 'Loading...'; card.appendChild(o); }
+        else { o.style.display = ''; }
+      } else { if(o) o.style.display = 'none'; }
+    });
+  }
+
+  // Toast helpers
+  let toastTimer = null;
+  function showToast(lines){
+    const html = Array.isArray(lines) ? lines.join('<br/>') : lines;
+    toastEl.innerHTML = html;
+    toastEl.style.display = '';
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(()=> toastEl.style.display='none', 4500);
+  }
+  function hideToastSoon(){ clearTimeout(toastTimer); toastTimer = setTimeout(()=> toastEl.style.display='none', 600); }
+
+  // Chart expand modal
+  const modalEl = document.getElementById('vt-chart-modal');
+  const modalChartEl = document.getElementById('vt-modal-chart');
+  const modalTitleEl = document.getElementById('vt-modal-title');
+  const modalCloseBtn = document.getElementById('vt-modal-close');
+  const dischargeModalEl = document.getElementById('vt-discharge-modal');
+  const dischargeModalTitleEl = document.getElementById('vt-discharge-modal-title');
+  const dischargeModalBodyEl = document.getElementById('vt-discharge-modal-body');
+  const dischargeModalCloseBtn = document.getElementById('vt-discharge-modal-close');
+
+  function syncModalBodyLock(){
+    const anyOpen =
+      (modalEl && modalEl.classList.contains('open')) ||
+      (dischargeModalEl && dischargeModalEl.classList.contains('open'));
+    document.body.classList.toggle('vt-modal-open', !!anyOpen);
+  }
+
+  function openChartModal(chartId, title){
+    if(!window.echarts || !modalEl || !modalChartEl) return;
+    closeDischargeWardModal();
+    const option = chartOptions[chartId];
+    if(!option){
+      showToast('<strong>Chart not ready</strong><br/><small>Please load data first.</small>');
+      return;
+    }
+    activeModalChartId = chartId;
+    modalTitleEl.textContent = title || 'Chart';
+    modalEl.classList.add('open');
+    modalEl.setAttribute('aria-hidden', 'false');
+    syncModalBodyLock();
+    if(modalChart){
+      modalChart.dispose();
+      modalChart = null;
+    }
+    modalChart = echarts.init(modalChartEl);
+    modalChart.setOption(option, true);
+    applyChartEvents(modalChart, chartEvents[chartId]);
+    setTimeout(()=> modalChart && modalChart.resize(), 60);
+  }
+  function closeChartModal(){
+    if(!modalEl) return;
+    modalEl.classList.remove('open');
+    modalEl.setAttribute('aria-hidden', 'true');
+    syncModalBodyLock();
+    activeModalChartId = null;
+    if(modalChart){
+      modalChart.dispose();
+      modalChart = null;
+    }
+  }
+
+  function openDischargeWardModal(payload, wardKey = ''){
+    if(!dischargeModalEl || !dischargeModalTitleEl || !dischargeModalBodyEl) return;
+    closeChartModal();
+    const info = payload && typeof payload === 'object' ? payload : {};
+    if(wardKey){
+      activeDischargeWardKey = String(wardKey);
+    } else if(info && info._ward_key){
+      activeDischargeWardKey = String(info._ward_key);
+    }
+    const unit = normalizeUnit(info.unit || 'Unknown');
+    const ward = normalizeLabel(info.ward) || 'Unknown';
+    const records = Array.isArray(info.records) ? info.records : [];
+    const available = Number(info.available_records || records.length || 0);
+    dischargeModalTitleEl.textContent = `${unit} - ${ward}`;
+
+    const shownText = `${fmtCount(records.length)} shown`;
+    const totalText = available > records.length ? ` of ${fmtCount(available)} discharges` : '';
+    const rows = records.map((row)=>(
+      `<tr>` +
+      `<td>${escapeHtml(normalizeLabel(row.regno) || 'Unknown')}</td>` +
+      `<td>${escapeHtml(normalizeLabel(row.patient) || 'Unknown')}</td>` +
+      `<td>${escapeHtml(normalizeLabel(row.doctor) || 'Unknown')}</td>` +
+      `<td>${escapeHtml(normalizeLabel(row.discharge_type) || 'Unknown')}</td>` +
+      `<td>${escapeHtml(ward)}</td>` +
+      `</tr>`
+    )).join('');
+
+    dischargeModalBodyEl.innerHTML = (
+      `<div class="vt-discharge-modal-meta"><strong>${shownText}</strong>${escapeHtml(totalText)}</div>` +
+      `<div class="vt-discharge-modal-table-wrap">` +
+      `<table class="vt-discharge-modal-table">` +
+      `<thead><tr><th>Reg No</th><th>Patient Name</th><th>Doctor Incharge</th><th>Discharge Type</th><th>Ward</th></tr></thead>` +
+      `<tbody>${rows || '<tr><td colspan="5" class="vt-discharge-modal-empty">No patient records available.</td></tr>'}</tbody>` +
+      `</table>` +
+      `</div>`
+    );
+
+    dischargeModalEl.classList.add('open');
+    dischargeModalEl.setAttribute('aria-hidden', 'false');
+    syncModalBodyLock();
+  }
+
+  function closeDischargeWardModal(){
+    if(!dischargeModalEl) return;
+    dischargeModalEl.classList.remove('open');
+    dischargeModalEl.setAttribute('aria-hidden', 'true');
+    activeDischargeWardKey = '';
+    syncModalBodyLock();
+  }
+
+  // Units
+  function populateUnits(units){
+  if(!units || units.length<=1){ unitWrap.style.display = 'none'; return; }
+  unitWrap.style.display = '';
+  const prev = localStorage.getItem(LS_UNIT_KEY) || '__ALL__';
+  unitSel.innerHTML = '';
+  const all = document.createElement('option');
+  all.value='__ALL__'; all.textContent='All Units (combined)';
+  unitSel.appendChild(all);
+
+  // ✅ Correct forEach syntax
+  units.forEach((u)=>{
+    const opt=document.createElement('option');
+    opt.value=u.toUpperCase();
+    opt.textContent=u.toUpperCase();
+    unitSel.appendChild(opt);
+  });
+
+  if(prev==='__ALL__' || units.map(u=>u.toUpperCase()).includes(prev)){
+    unitSel.value=prev;
+  } else {
+    unitSel.value='__ALL__';
+    localStorage.setItem(LS_UNIT_KEY,'__ALL__');
+  }
+}
+
+  function currentUnitParam(){
+    if(unitWrap.style.display==='none') return '';
+    const val = unitSel.value || '__ALL__';
+    return (val==='__ALL__') ? '' : `&unit=${encodeURIComponent(val)}`;
+  }
+  function currentUnitKey(){
+    if(unitWrap.style.display==='none') return '__ALL__';
+    const val = unitSel.value || '__ALL__';
+    return normalizeUnit(val);
+  }
+
+  const LIVE_KPI_INTERVAL_MS = 10000;
+  let liveKpiTimer = null;
+  let liveKpiInFlight = false;
+  let lastVolumeUnitUsed = [];
+
+  function currentLiveUnitKey(){
+    if(unitWrap.style.display==='none'){
+      return (lastVolumeUnitUsed.length === 1) ? normalizeUnit(lastVolumeUnitUsed[0]) : '__ALL__';
+    }
+    return currentUnitKey();
+  }
+
+  function stopLiveKpiRefresh(){
+    if(liveKpiTimer){
+      clearInterval(liveKpiTimer);
+      liveKpiTimer = null;
+    }
+  }
+
+  function setLiveKpiNote(mode, text){
+    if(!liveKpiNoteEl) return;
+    liveKpiNoteEl.className = 'vt-live-note';
+    if(mode === 'active') liveKpiNoteEl.classList.add('active');
+    if(mode === 'warn') liveKpiNoteEl.classList.add('warn');
+    liveKpiNoteEl.textContent = text || '';
+    liveKpiNoteEl.style.display = text ? 'block' : 'none';
+  }
+
+  function refreshKpiLiveEligibilityNote(){
+    const key = currentLiveUnitKey();
+    if(key && key !== '__ALL__'){
+      setLiveKpiNote('', '');
+      return true;
+    }
+    setLiveKpiNote('warn', 'Live KPI refresh is available only for a single unit. Select a particular unit to view live data every 10 seconds.');
+    return false;
+  }
+
+  let detailsCache = [];
+  let hcvDoctorKpiRows = [];
+  let visitPatientCache = new Map();
+  let visitDetailRowsCache = new Map();
+  let dischargeWardMap = new Map();
+  let activeDischargeWardKey = '';
+  let dischargeKpiSource = {};
+  const admissionsState = { query: '' };
+  const dischargeState = { query: '', page: 1, pageSize: 20, rows: [] };
+  const visitDetailState = {
+    opd: { query: '', page: 1, pageSize: 20 },
+    dpv: { query: '', page: 1, pageSize: 20 },
+    hcv: { query: '', page: 1, pageSize: 20 },
+    hcvdoc: { query: '', page: 1, pageSize: 20 }
+  };
+
+  function parseVisitTimestamp(value){
+    const raw = normalizeLabel(value);
+    if(!raw) return 0;
+    const iso = raw.includes('T') ? raw : raw.replace(' ', 'T');
+    const dt = new Date(iso);
+    return Number.isNaN(dt.getTime()) ? 0 : dt.getTime();
+  }
+
+  function admissionVisitType(value){
+    const norm = normalizeVisitLabel(value);
+    if(norm === 'In Patient Visits') return 'IPD';
+    if(norm === 'Daycare') return 'Daycare';
+    return null;
+  }
+
+  function deptColor(dept){
+    const palette = [
+      '#93c5fd',
+      '#f9a8d4',
+      '#fdba74',
+      '#a7f3d0',
+      '#c4b5fd',
+      '#fcd34d',
+      '#67e8f9',
+      '#fda4af',
+      '#bef264',
+      '#d8b4fe'
+    ];
+    const str = normalizeLabel(dept).toLowerCase();
+    let hash = 0;
+    for(let i=0;i<str.length;i++){ hash = ((hash<<5)-hash) + str.charCodeAt(i); hash |= 0; }
+    const idx = Math.abs(hash) % palette.length;
+    return palette[idx];
+  }
+
+  function buildAdmissionRows(rows){
+    const out = [];
+    (rows || []).forEach((row)=>{
+      const visitType = admissionVisitType(row.TypeOfVisit);
+      if(!visitType) return;
+      const unit = normalizeUnit(row.Unit);
+      const entry = {
+        unit,
+        type: visitType,
+        patient: normalizeLabel(row.PatientName) || 'Unknown',
+        reg: normalizeLabel(row.RegNo || row.Registration_No || row.RegistrationNo) || 'Unknown',
+        corp: normalizeLabel(row.CorpType || row.PatientSubType) || 'Unknown',
+        dept: normalizeLabel(cleanDeptName(row.Dept || '')) || 'Unknown',
+        doctor: normalizeLabel(row.Consultant) || 'Unknown',
+        visitDate: normalizeLabel(row.VisitDate) || 'Unknown',
+        ts: parseVisitTimestamp(row.VisitDate)
+      };
+      entry.searchKey = [
+        entry.unit,
+        entry.type,
+        entry.patient,
+        entry.reg,
+        entry.corp,
+        entry.dept,
+        entry.doctor,
+        entry.visitDate
+      ].join(' ').toLowerCase();
+      out.push(entry);
+    });
+
+    out.sort((a,b)=>{
+      const byUnit = String(a.unit).localeCompare(String(b.unit));
+      if(byUnit !== 0) return byUnit;
+      const byDept = String(a.dept).localeCompare(String(b.dept));
+      if(byDept !== 0) return byDept;
+      return b.ts - a.ts;
+    });
+    return out;
+  }
+
+  function renderAdmissionItem(item){
+    return (
+      `<div class="vt-admissions-item" style="--dept-color:${deptColor(item.dept)}">` +
+      `<div class="vt-admissions-cell"><span class="vt-admissions-label">Patient</span>` +
+      `<span class="vt-admissions-value">${escapeHtml(item.patient)}</span></div>` +
+      `<div class="vt-admissions-cell"><span class="vt-admissions-label">Reg No</span>` +
+      `<span class="vt-admissions-value">${escapeHtml(item.reg)}</span></div>` +
+      `<div class="vt-admissions-cell"><span class="vt-admissions-label">Corp Type</span>` +
+      `<span class="vt-admissions-value">${escapeHtml(item.corp)}</span></div>` +
+      `<div class="vt-admissions-cell"><span class="vt-admissions-label">Department</span>` +
+      `<span class="vt-admissions-value">${escapeHtml(item.dept)}</span></div>` +
+      `<div class="vt-admissions-cell"><span class="vt-admissions-label">Doctor</span>` +
+      `<span class="vt-admissions-value">${escapeHtml(item.doctor)}</span></div>` +
+      `<div class="vt-admissions-cell"><span class="vt-admissions-label">Visit Date</span>` +
+      `<span class="vt-admissions-value">${escapeHtml(item.visitDate)}</span></div>` +
+      `</div>`
+    );
+  }
+
+  function renderAdmissions(){
+    if(!admissionsDetailsEl || !admissionsCountEl) return;
+    const selected = currentUnitKey();
+    const allRowsRaw = buildAdmissionRows(detailsCache);
+    const allRows = selected && selected !== '__ALL__'
+      ? allRowsRaw.filter((row)=> row.unit === selected)
+      : allRowsRaw;
+    const totalRows = allRows.length;
+    const query = normalizeLabel(admissionsState.query).toLowerCase();
+    const filteredRows = query
+      ? allRows.filter((row)=> row.searchKey.includes(query))
+      : allRows;
+
+    if(!filteredRows.length){
+      admissionsCountEl.textContent = query
+        ? `0 / ${fmtCount(totalRows)}`
+        : '0';
+      admissionsDetailsEl.innerHTML = query
+        ? '<div class="kpi-empty">No IPD/Daycare admissions match your search.</div>'
+        : '<div class="kpi-empty">No IPD or Daycare admissions.</div>';
+      return;
+    }
+
+    admissionsCountEl.textContent = query
+      ? `${fmtCount(filteredRows.length)} / ${fmtCount(totalRows)}`
+      : fmtCount(totalRows);
+
+    const totalByUnit = new Map();
+    allRows.forEach((row)=>{
+      const unitRow = totalByUnit.get(row.unit) || { total: 0, totals: { ipd: 0, daycare: 0 } };
+      unitRow.total += 1;
+      if(row.type === 'IPD') unitRow.totals.ipd += 1;
+      if(row.type === 'Daycare') unitRow.totals.daycare += 1;
+      totalByUnit.set(row.unit, unitRow);
+    });
+
+    const unitMap = new Map();
+    filteredRows.forEach((row)=>{
+      const block = unitMap.get(row.unit) || {
+        unit: row.unit,
+        ipd: [],
+        daycare: [],
+        shownTotals: { ipd: 0, daycare: 0 },
+        shown: 0
+      };
+      block.shown += 1;
+      if(row.type === 'IPD'){
+        block.ipd.push(row);
+        block.shownTotals.ipd += 1;
+      } else if(row.type === 'Daycare'){
+        block.daycare.push(row);
+        block.shownTotals.daycare += 1;
+      }
+      unitMap.set(row.unit, block);
+    });
+
+    const units = [...unitMap.values()].sort((a,b)=> String(a.unit).localeCompare(String(b.unit)));
+
+    const html = units.map((unitBlock)=>{
+      const totals = totalByUnit.get(unitBlock.unit) || { total: unitBlock.shown, totals: { ipd: unitBlock.shownTotals.ipd, daycare: unitBlock.shownTotals.daycare } };
+      const unitCountText = query
+        ? `${fmtCount(unitBlock.shown)} / ${fmtCount(totals.total)}`
+        : fmtCount(unitBlock.shown);
+      const unitHeader = (
+        `<div class="vt-admissions-unit-title">` +
+        `${escapeHtml(unitBlock.unit)} <span>${unitCountText}</span>` +
+        `</div>`
+      );
+
+      const renderType = (label, items, shownCount, totalCount) => {
+        const typeCountText = query
+          ? `${fmtCount(shownCount)} / ${fmtCount(totalCount)}`
+          : fmtCount(shownCount);
+        const header = (
+          `<div class="vt-admissions-type-title">` +
+          `${label} <span>${typeCountText}</span>` +
+          `</div>`
+        );
+        if(!items.length){
+          return `<div class="vt-admissions-type">${header}<div class="kpi-empty">No records</div></div>`;
+        }
+        return (
+          `<div class="vt-admissions-type">` +
+          `${header}` +
+          `<div class="vt-admissions-list">${items.map(renderAdmissionItem).join('')}</div>` +
+          `</div>`
+        );
+      };
+
+      return (
+        `<div class="vt-admissions-unit">` +
+        `${unitHeader}` +
+        `${renderType('IPD', unitBlock.ipd, unitBlock.shownTotals.ipd, totals.totals.ipd)}` +
+        `${renderType('Daycare', unitBlock.daycare, unitBlock.shownTotals.daycare, totals.totals.daycare)}` +
+        `</div>`
+      );
+    }).join('');
+
+    admissionsDetailsEl.innerHTML = html;
+  }
+
+  function buildHcvDoctorDetailRows(){
+    const rows = [];
+    (hcvDoctorKpiRows || []).forEach((row)=>{
+      const unit = normalizeUnit(row.Unit || row.unit);
+      const patient = normalizeLabel(row.PatientName || row.patient_name) || 'Unknown';
+      const reg = normalizeLabel(row.RegNo || row.reg_no) || 'Unknown';
+      const corp = normalizeLabel(row.CorpType || row.corp_type) || 'Unknown';
+      const dept = normalizeLabel(cleanDeptName(row.Dept || row.Department || '')) || 'Unknown';
+      const doctor = normalizeLabel(row.Consultant || row.Doctor || '') || 'Unknown';
+      const visitDate = normalizeLabel(row.VisitDate || '') || 'Unknown';
+      const visitNo = normalizeLabel(row.VisitNo || '');
+      const packageId = normalizeLabel(row.PackageId || '');
+      const visitId = normalizeLabel(row.VisitId || '');
+      const hcvId = normalizeLabel(row.HCVId || '');
+      rows.push({
+        unit,
+        patient,
+        reg,
+        corp,
+        dept,
+        doctor,
+        visitDate,
+        visitNo,
+        packageId,
+        visitId,
+        hcvId,
+        ts: parseVisitTimestamp(visitDate)
+      });
+    });
+    rows.sort((a,b)=>{
+      const byUnit = String(a.unit).localeCompare(String(b.unit));
+      if(byUnit !== 0) return byUnit;
+      return b.ts - a.ts;
+    });
+    rows.forEach((row, idx)=>{
+      row.sl = idx + 1;
+      row.searchKey = [
+        row.unit,
+        row.patient,
+        row.reg,
+        row.corp,
+        row.dept,
+        row.doctor,
+        row.visitDate,
+        row.visitNo,
+        row.packageId,
+        row.visitId,
+        row.hcvId
+      ].join(' ').toLowerCase();
+    });
+    return rows;
+  }
+
+  function buildVisitDetailRows(visitLabel){
+    const target = normalizeVisitLabel(visitLabel);
+    const rows = [];
+    (detailsCache || []).forEach((row)=>{
+      if(normalizeVisitLabel(row.TypeOfVisit) !== target) return;
+      const unit = normalizeUnit(row.Unit);
+      const patient = normalizeLabel(row.PatientName) || 'Unknown';
+      const reg = normalizeLabel(row.RegNo || row.Registration_No || row.RegistrationNo) || 'Unknown';
+      const corp = normalizeLabel(row.CorpType || row.PatientSubType) || 'Unknown';
+      const dept = normalizeLabel(cleanDeptName(row.Dept || '')) || 'Unknown';
+      const doctor = normalizeLabel(row.Consultant) || 'Unknown';
+      const visitDate = normalizeLabel(row.VisitDate) || 'Unknown';
+      rows.push({
+        unit,
+        patient,
+        reg,
+        corp,
+        dept,
+        doctor,
+        visitDate,
+        ts: parseVisitTimestamp(visitDate)
+      });
+    });
+    rows.sort((a,b)=>{
+      const byUnit = String(a.unit).localeCompare(String(b.unit));
+      if(byUnit !== 0) return byUnit;
+      return b.ts - a.ts;
+    });
+    rows.forEach((row, idx)=>{
+      row.sl = idx + 1;
+      row.searchKey = [
+        row.unit,
+        row.patient,
+        row.reg,
+        row.corp,
+        row.dept,
+        row.doctor,
+        row.visitDate
+      ].join(' ').toLowerCase();
+    });
+    return rows;
+  }
+
+  function getVisitDetailRows(visitLabel){
+    if(visitLabel === 'Healthcheckup Doctor Visits'){
+      const key = 'Healthcheckup Doctor Visits';
+      if(visitDetailRowsCache.has(key)) return visitDetailRowsCache.get(key) || [];
+      const rows = buildHcvDoctorDetailRows();
+      visitDetailRowsCache.set(key, rows);
+      return rows;
+    }
+    const key = normalizeVisitLabel(visitLabel);
+    if(visitDetailRowsCache.has(key)) return visitDetailRowsCache.get(key) || [];
+    const rows = buildVisitDetailRows(key);
+    visitDetailRowsCache.set(key, rows);
+    return rows;
+  }
+
+  function setVisitKpiPagerState(card, page, pages){
+    if(card.pageInfoEl){
+      card.pageInfoEl.textContent = pages > 0 ? `Page ${page} of ${pages}` : 'Page 0 of 0';
+    }
+    if(card.prevEl) card.prevEl.disabled = page <= 1;
+    if(card.nextEl) card.nextEl.disabled = pages <= 0 || page >= pages;
+  }
+
+  function renderVisitDetailKpi(key){
+    const card = visitDetailKpiCards[key];
+    const state = visitDetailState[key];
+    if(!card || !state || !card.detailsEl || !card.countEl) return;
+
+    const allRows = getVisitDetailRows(card.visitLabel);
+    const totalRows = allRows.length;
+
+    const query = normalizeLabel(state.query).toLowerCase();
+    const filteredRows = query
+      ? allRows.filter((row)=> row.searchKey.includes(query))
+      : allRows;
+
+    card.countEl.textContent = query
+      ? `${fmtCount(filteredRows.length)} / ${fmtCount(totalRows)}`
+      : fmtCount(totalRows);
+
+    if(!filteredRows.length){
+      state.page = 1;
+      setVisitKpiPagerState(card, 0, 0);
+      card.detailsEl.innerHTML = query
+        ? '<div class="vt-visit-kpi-empty">No records match your search.</div>'
+        : '<div class="vt-visit-kpi-empty">No records available for selected period.</div>';
+      return;
+    }
+
+    const pageSize = Math.max(1, Number(state.pageSize) || 20);
+    const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+    state.page = Math.max(1, Math.min(state.page, totalPages));
+    const startIdx = (state.page - 1) * pageSize;
+    const endIdx = Math.min(startIdx + pageSize, filteredRows.length);
+    const pageRows = filteredRows.slice(startIdx, endIdx);
+
+    setVisitKpiPagerState(card, state.page, totalPages);
+
+    const summaryText = query
+      ? `Showing ${fmtCount(startIdx + 1)}-${fmtCount(endIdx)} of ${fmtCount(filteredRows.length)} matching records (Total ${fmtCount(totalRows)}).`
+      : `Showing ${fmtCount(startIdx + 1)}-${fmtCount(endIdx)} of ${fmtCount(totalRows)} records.`;
+    const bodyRows = pageRows.map((row)=>(
+      `<tr>` +
+      `<td class="vt-col-sl">${fmtCount(row.sl)}</td>` +
+      `<td class="vt-col-unit">${escapeHtml(row.unit)}</td>` +
+      `<td>${escapeHtml(row.reg)}</td>` +
+      `<td>${escapeHtml(row.patient)}</td>` +
+      `<td>${escapeHtml(row.corp)}</td>` +
+      `<td>${escapeHtml(row.dept)}</td>` +
+      `<td>${escapeHtml(row.doctor)}</td>` +
+      `<td>${escapeHtml(row.visitDate)}</td>` +
+      `</tr>`
+    )).join('');
+
+    card.detailsEl.innerHTML = (
+      `<div class="vt-visit-kpi-meta">${escapeHtml(summaryText)}</div>` +
+      `<div class="vt-visit-kpi-table-wrap">` +
+      `<table class="vt-visit-kpi-table">` +
+      `<thead><tr><th>SL</th><th>Unit</th><th>Reg No</th><th>Patient Name</th><th>Corp Type</th><th>Department</th><th>Doctor</th><th>Visit Date</th></tr></thead>` +
+      `<tbody>${bodyRows}</tbody>` +
+      `</table>` +
+      `</div>`
+    );
+  }
+
+  function renderVisitDetailKpis(){
+    Object.keys(visitDetailKpiCards).forEach((key)=> renderVisitDetailKpi(key));
+  }
+
+  function resetVisitDetailKpis(){
+    visitDetailRowsCache = new Map();
+    hcvDoctorKpiRows = [];
+    Object.keys(visitDetailKpiCards).forEach((key)=>{
+      const state = visitDetailState[key];
+      const card = visitDetailKpiCards[key];
+      if(state){
+        state.query = '';
+        state.page = 1;
+        const defaultSize = Number(card && card.pageSizeEl ? card.pageSizeEl.value : 20);
+        state.pageSize = Number.isFinite(defaultSize) && defaultSize > 0 ? defaultSize : 20;
+      }
+      if(card){
+        if(card.searchEl) card.searchEl.value = '';
+        if(card.countEl) card.countEl.textContent = '0';
+        setVisitKpiPagerState(card, 1, 1);
+        if(card.detailsEl) card.detailsEl.innerHTML = '<div class="vt-visit-kpi-empty">Load data to view records.</div>';
+      }
+    });
+  }
+
+  function bindVisitDetailKpiEvents(){
+    Object.keys(visitDetailKpiCards).forEach((key)=>{
+      const card = visitDetailKpiCards[key];
+      const state = visitDetailState[key];
+      if(!card || !state) return;
+
+      if(card.searchEl){
+        card.searchEl.addEventListener('input', ()=>{
+          state.query = card.searchEl.value || '';
+          state.page = 1;
+          renderVisitDetailKpi(key);
+        });
+      }
+      if(card.pageSizeEl){
+        card.pageSizeEl.addEventListener('change', ()=>{
+          const selected = Number(card.pageSizeEl.value || 20);
+          state.pageSize = Number.isFinite(selected) && selected > 0 ? selected : 20;
+          state.page = 1;
+          renderVisitDetailKpi(key);
+        });
+      }
+      if(card.prevEl){
+        card.prevEl.addEventListener('click', ()=>{
+          if(state.page <= 1) return;
+          state.page -= 1;
+          renderVisitDetailKpi(key);
+        });
+      }
+      if(card.nextEl){
+        card.nextEl.addEventListener('click', ()=>{
+          state.page += 1;
+          renderVisitDetailKpi(key);
+        });
+      }
+    });
+  }
+
+  async function refreshKpiCardsLive(){
+    const liveUnitKey = currentLiveUnitKey();
+    if(!liveUnitKey || liveUnitKey === '__ALL__'){
+      stopLiveKpiRefresh();
+      refreshKpiLiveEligibilityNote();
+      return;
+    }
+    if(liveKpiInFlight) return;
+
+    liveKpiInFlight = true;
+    try{
+      const f = fromEl.value;
+      const t = toEl.value;
+      const unitQ = currentUnitParam();
+      const res = await fetch(`/api/volume_tracker?from=${f}&to=${t}${unitQ}&kpi_only=1&refresh=1`, { cache: 'no-store' });
+      const js = await res.json();
+      if(!res.ok || (js.status && js.status !== 'success')) return;
+
+      detailsCache = js.details || [];
+      hcvDoctorKpiRows = (js.hcv_doctor_kpi && Array.isArray(js.hcv_doctor_kpi.rows)) ? js.hcv_doctor_kpi.rows : [];
+      visitPatientCache = new Map();
+      visitDetailRowsCache = new Map();
+      if(Array.isArray(js.unit_used)) lastVolumeUnitUsed = js.unit_used.map((u)=> normalizeUnit(u));
+
+      renderSummaryKpiCardsFromDetails(js.visitwise || []);
+      renderAdmissions();
+      renderDischargeKpi(js.discharge_kpi || {});
+      renderVisitDetailKpis();
+
+      const total = (js.meta && js.meta.total) ? js.meta.total : detailsCache.length;
+      if(total > 0){
+        countEl.textContent = `${total} records`;
+        countEl.style.display = '';
+      } else {
+        countEl.style.display = 'none';
+      }
+
+      refreshKpiLiveEligibilityNote();
+    }catch(err){
+      console.error('Live KPI refresh failed:', err);
+    }finally{
+      liveKpiInFlight = false;
+    }
+  }
+
+  function startLiveKpiRefresh(){
+    stopLiveKpiRefresh();
+    if(!refreshKpiLiveEligibilityNote()) return;
+    liveKpiTimer = setInterval(()=>{
+      if(document.hidden) return;
+      refreshKpiCardsLive();
+    }, LIVE_KPI_INTERVAL_MS);
+  }
+
+  function dischargeRate(part, total){
+    if(!total) return 0;
+    return Number(((Number(part || 0) / Number(total || 0)) * 100).toFixed(2));
+  }
+
+  function toBool(value){
+    if(value === true || value === false) return value;
+    if(value === 1 || value === 0) return !!value;
+    const text = String(value || '').trim().toLowerCase();
+    return text === 'true' || text === '1' || text === 'yes' || text === 'y';
+  }
+
+  function inferDischargeFlags(typeId, typeName){
+    const idNum = Number(typeId);
+    const text = String(typeName || '').toUpperCase();
+    return {
+      is_cured: [1, 2].includes(idNum) || /(?:\bCURED\b|\bRELIEV(?:ED|E)?\b)/.test(text),
+      is_lama: [4, 5, 7, 8].includes(idNum) || /(?:LAMA|DOR|LEFT AGAINST|PATIENT REFUSED)/.test(text),
+      is_referred: [3].includes(idNum) || /(?:REFER|REFERRED|REFFERED|REFERR)/.test(text),
+      is_mortality: [6].includes(idNum) || /DEATH/.test(text)
+    };
+  }
+
+  function normalizeDischargeRows(rows){
+    return (rows || []).map((row)=>{
+      const unit = normalizeUnit(row.unit || row.Unit || 'UNKNOWN');
+      const ward = normalizeLabel(row.ward || row.Ward) || 'Unknown';
+      const patient = normalizeLabel(row.patient || row.Patient) || 'Unknown';
+      const regno = normalizeLabel(row.regno || row.Regno || row.reg_no || row.RegNo) || 'Unknown';
+      const doctor = normalizeLabel(row.doctor || row.Doctor) || 'Unknown';
+      const dischargeType = normalizeLabel(row.discharge_type || row.DischargeType) || 'Unknown';
+      const dischargeTypeIdRaw = row.discharge_type_id ?? row.DischargeType_ID ?? null;
+      const dischargeTypeIdNum = Number(dischargeTypeIdRaw);
+      const dischargeTypeId = Number.isFinite(dischargeTypeIdNum) ? dischargeTypeIdNum : null;
+      const dischargeDate = normalizeLabel(row.discharge_date || row.DischargeDate) || '';
+      const inferredFlags = inferDischargeFlags(dischargeTypeId, dischargeType);
+      const item = {
+        unit,
+        ward,
+        patient,
+        regno,
+        doctor,
+        discharge_type: dischargeType,
+        discharge_type_id: dischargeTypeId,
+        discharge_date: dischargeDate,
+        is_cured: toBool(row.is_cured) || inferredFlags.is_cured,
+        is_lama: toBool(row.is_lama) || inferredFlags.is_lama,
+        is_referred: toBool(row.is_referred) || inferredFlags.is_referred,
+        is_mortality: toBool(row.is_mortality) || inferredFlags.is_mortality,
+        ts: parseVisitTimestamp(dischargeDate)
+      };
+      item.searchKey = [
+        item.unit,
+        item.ward,
+        item.patient,
+        item.regno,
+        item.doctor,
+        item.discharge_type,
+        item.discharge_date
+      ].join(' ').toLowerCase();
+      return item;
+    }).sort((a,b)=> b.ts - a.ts);
+  }
+
+  function dischargeMetrics(rows){
+    const total = Number(rows?.length || 0);
+    let cured = 0;
+    let lama = 0;
+    let referred = 0;
+    let mortality = 0;
+    (rows || []).forEach((row)=>{
+      if(row.is_cured) cured += 1;
+      if(row.is_lama) lama += 1;
+      if(row.is_referred) referred += 1;
+      if(row.is_mortality) mortality += 1;
+    });
+    return {
+      total_discharges: total,
+      cured_cases: cured,
+      cured_percent: dischargeRate(cured, total),
+      lama_cases: lama,
+      lama_percent: dischargeRate(lama, total),
+      referred_cases: referred,
+      referred_percent: dischargeRate(referred, total),
+      death_cases: mortality,
+      mortality_ratio: dischargeRate(mortality, total)
+    };
+  }
+
+  function setDischargePagerState(page, pages){
+    if(dischargePageInfoEl){
+      dischargePageInfoEl.textContent = pages > 0 ? `Page ${page} of ${pages}` : 'Page 0 of 0';
+    }
+    if(dischargePrevEl) dischargePrevEl.disabled = page <= 1;
+    if(dischargeNextEl) dischargeNextEl.disabled = pages <= 0 || page >= pages;
+  }
+
+  function setDischargeCountLine(displayMetrics, totalMetrics, filtered){
+    const totalText = filtered
+      ? `${fmtCount(displayMetrics.total_discharges)} / ${fmtCount(totalMetrics.total_discharges)}`
+      : fmtCount(totalMetrics.total_discharges);
+    dischargeCountEl.innerHTML =
+      `<span class="vt-discharge-inline vt-inline-total">${totalText}</span>| ` +
+      `<span class="vt-discharge-inline vt-inline-cured">Cured ${fmtPct(displayMetrics.cured_percent)} (${fmtCount(displayMetrics.cured_cases)})</span>| ` +
+      `<span class="vt-discharge-inline vt-inline-lama">LAMA ${fmtPct(displayMetrics.lama_percent)} (${fmtCount(displayMetrics.lama_cases)})</span>| ` +
+      `<span class="vt-discharge-inline vt-inline-referred">Referred ${fmtPct(displayMetrics.referred_percent)} (${fmtCount(displayMetrics.referred_cases)})</span>| ` +
+      `<span class="vt-discharge-inline vt-inline-mortality">Mortality ${fmtPct(displayMetrics.mortality_ratio)} (${fmtCount(displayMetrics.death_cases)})</span>`;
+  }
+
+  function renderDischargeFilteredRows(filteredRows, totalRows, query){
+    const pageSize = Math.max(1, Number(dischargeState.pageSize) || 20);
+    const totalPages = Math.max(1, Math.ceil(filteredRows.length / pageSize));
+    dischargeState.page = Math.max(1, Math.min(dischargeState.page, totalPages));
+    const startIdx = (dischargeState.page - 1) * pageSize;
+    const endIdx = Math.min(startIdx + pageSize, filteredRows.length);
+    const pageRows = filteredRows.slice(startIdx, endIdx);
+    setDischargePagerState(dischargeState.page, totalPages);
+
+    const summaryText = query
+      ? `Showing ${fmtCount(startIdx + 1)}-${fmtCount(endIdx)} of ${fmtCount(filteredRows.length)} matching discharges (Total ${fmtCount(totalRows)}).`
+      : `Showing ${fmtCount(startIdx + 1)}-${fmtCount(endIdx)} of ${fmtCount(totalRows)} discharges.`;
+    const bodyRows = pageRows.map((row)=>(
+      `<tr>` +
+      `<td class="vt-col-unit">${escapeHtml(row.unit)}</td>` +
+      `<td>${escapeHtml(row.ward)}</td>` +
+      `<td>${escapeHtml(row.regno)}</td>` +
+      `<td>${escapeHtml(row.patient)}</td>` +
+      `<td>${escapeHtml(row.doctor)}</td>` +
+      `<td>${escapeHtml(row.discharge_type)}</td>` +
+      `<td>${escapeHtml(row.discharge_date || '-')}</td>` +
+      `</tr>`
+    )).join('');
+
+    dischargeDetailsEl.innerHTML = (
+      `<div class="vt-visit-kpi-meta">${escapeHtml(summaryText)}</div>` +
+      `<div class="vt-visit-kpi-table-wrap">` +
+      `<table class="vt-visit-kpi-table">` +
+      `<thead><tr><th>Unit</th><th>Ward</th><th>Reg No</th><th>Patient Name</th><th>Doctor Incharge</th><th>Discharge Type</th><th>Discharge Date</th></tr></thead>` +
+      `<tbody>${bodyRows}</tbody>` +
+      `</table>` +
+      `</div>`
+    );
+  }
+
+  function renderDischargeKpi(kpi){
+    if(!dischargeCountEl || !dischargeDetailsEl) return;
+    const modalWasOpen = !!(dischargeModalEl && dischargeModalEl.classList.contains('open'));
+    const modalWardKey = activeDischargeWardKey;
+
+    if(kpi && typeof kpi === 'object'){
+      dischargeKpiSource = kpi;
+      const allRowsRaw = Array.isArray(kpi.all_records) ? kpi.all_records : [];
+      dischargeState.rows = normalizeDischargeRows(allRowsRaw);
+      if(!Number.isFinite(dischargeState.pageSize) || dischargeState.pageSize <= 0){
+        const defaultSize = Number(dischargePageSizeEl ? dischargePageSizeEl.value : 20);
+        dischargeState.pageSize = Number.isFinite(defaultSize) && defaultSize > 0 ? defaultSize : 20;
+      }
+    }
+
+    const src = dischargeKpiSource && typeof dischargeKpiSource === 'object' ? dischargeKpiSource : {};
+    const overall = src.overall && typeof src.overall === 'object' ? src.overall : {};
+    const fallbackTotals = dischargeMetrics(dischargeState.rows);
+    const totalMetrics = {
+      total_discharges: Number(overall.total_discharges || fallbackTotals.total_discharges || 0),
+      cured_cases: Number(overall.cured_cases || fallbackTotals.cured_cases || 0),
+      cured_percent: Number(overall.cured_percent || fallbackTotals.cured_percent || 0),
+      lama_cases: Number(overall.lama_cases || fallbackTotals.lama_cases || 0),
+      lama_percent: Number(overall.lama_percent || fallbackTotals.lama_percent || 0),
+      referred_cases: Number(overall.referred_cases || fallbackTotals.referred_cases || 0),
+      referred_percent: Number(overall.referred_percent || fallbackTotals.referred_percent || 0),
+      death_cases: Number(overall.death_cases || fallbackTotals.death_cases || 0),
+      mortality_ratio: Number(overall.mortality_ratio || fallbackTotals.mortality_ratio || 0)
+    };
+
+    if(totalMetrics.total_discharges <= 0){
+      dischargeCountEl.textContent = '0';
+      dischargeDetailsEl.innerHTML = '<div class="kpi-empty">No IPD discharges in selected period.</div>';
+      dischargeWardMap = new Map();
+      setDischargePagerState(0, 0);
+      if(modalWasOpen) closeDischargeWardModal();
+      return;
+    }
+
+    const query = normalizeLabel(dischargeState.query).toLowerCase();
+    const filteredRows = query
+      ? dischargeState.rows.filter((row)=> row.searchKey.includes(query))
+      : dischargeState.rows;
+    const filteredMetrics = dischargeMetrics(filteredRows);
+
+    if(query){
+      setDischargeCountLine(filteredMetrics, totalMetrics, true);
+      if(!filteredRows.length){
+        dischargeState.page = 1;
+        setDischargePagerState(0, 0);
+        dischargeDetailsEl.innerHTML = '<div class="kpi-empty">No IPD discharges match your search.</div>';
+        if(modalWasOpen) closeDischargeWardModal();
+        return;
+      }
+      if(modalWasOpen) closeDischargeWardModal();
+      renderDischargeFilteredRows(filteredRows, totalMetrics.total_discharges, query);
+      return;
+    }
+
+    setDischargeCountLine(totalMetrics, totalMetrics, false);
+    setDischargePagerState(1, 1);
+    dischargeWardMap = new Map();
+
+    const units = Array.isArray(src.units) ? src.units : [];
+    const topTypeMixHtml = (rows, limit = 4) => {
+      const list = (rows || []).slice(0, limit).map((row)=>{
+        const nm = normalizeLabel(row.discharge_type) || 'Unknown';
+        const count = fmtCount(row.count || 0);
+        let cls = '';
+        if(row.is_cured) cls = 'vt-type-chip-cured';
+        else if(row.is_lama) cls = 'vt-type-chip-lama';
+        else if(row.is_referred) cls = 'vt-type-chip-ref';
+        else if(row.is_mortality) cls = 'vt-type-chip-mort';
+        return `<span class="vt-type-chip ${cls}">${escapeHtml(nm)} ${count}</span>`;
+      });
+      return list.length ? list.join('') : '<span class="vt-discharge-empty">No type breakup</span>';
+    };
+
+    const renderWardTable = (unitName, wardRows) => {
+      const wards = (wardRows || []).slice(0, 8);
+      if(!wards.length) return '<div class="vt-discharge-empty">No ward-wise records</div>';
+      const unit = normalizeUnit(unitName || 'Unknown');
+      const rows = wards.map((ward)=>{
+        const wardName = normalizeLabel(ward.ward) || 'Unknown';
+        const wardKey = encodeURIComponent(`${unit}||${wardName}`);
+        const records = Array.isArray(ward.records)
+          ? ward.records.map((row)=>({
+              regno: normalizeLabel(row.regno) || 'Unknown',
+              patient: normalizeLabel(row.patient) || 'Unknown',
+              doctor: normalizeLabel(row.doctor) || 'Unknown',
+              discharge_type: normalizeLabel(row.discharge_type) || 'Unknown',
+              discharge_date: normalizeLabel(row.discharge_date) || '',
+              ward: wardName
+            }))
+          : [];
+        dischargeWardMap.set(wardKey, {
+          unit,
+          ward: wardName,
+          records,
+          available_records: Number(ward.available_records || ward.total_discharges || records.length || 0)
+        });
+        return (
+          `<div class="vt-discharge-row vt-discharge-row-clickable" data-discharge-ward-key="${escapeHtml(wardKey)}">` +
+          `<div><button type="button" class="vt-discharge-ward-btn" data-discharge-ward-key="${escapeHtml(wardKey)}">${escapeHtml(wardName)}</button></div>` +
+          `<div class="vt-discharge-cell-right">${fmtCount(ward.total_discharges || 0)}</div>` +
+          `<div class="vt-discharge-cell-right vt-metric-cured">${fmtPct(ward.cured_percent || 0)}</div>` +
+          `<div class="vt-discharge-cell-right vt-metric-lama">${fmtPct(ward.lama_percent || 0)}</div>` +
+          `<div class="vt-discharge-cell-right vt-metric-ref">${fmtPct(ward.referred_percent || 0)}</div>` +
+          `<div class="vt-discharge-cell-right vt-metric-mort">${fmtPct(ward.mortality_ratio || 0)}</div>` +
+          `</div>`
+        );
+      }).join('');
+      return (
+        `<div class="vt-discharge-table">` +
+        `<div class="vt-discharge-row vt-discharge-head">` +
+        `<div>Ward</div><div class="vt-discharge-cell-right">Total</div><div class="vt-discharge-cell-right vt-metric-cured">Cured%</div><div class="vt-discharge-cell-right vt-metric-lama">LAMA%</div><div class="vt-discharge-cell-right vt-metric-ref">Ref%</div><div class="vt-discharge-cell-right vt-metric-mort">Mort%</div>` +
+        `</div>` +
+        `${rows}` +
+        `</div>`
+      );
+    };
+
+    const html = units.map((unitBlock)=>{
+      return (
+        `<div class="kpi-group">` +
+        `<div class="kpi-group-title">${escapeHtml(unitBlock.unit || 'Unknown')} <span class="kpi-count">${fmtCount(unitBlock.total_discharges || 0)}</span></div>` +
+        `<div class="vt-discharge-summary">` +
+        `<div class="vt-discharge-pill vt-discharge-pill-cured"><span class="vt-discharge-pill-label">Cured</span><span class="vt-discharge-pill-value">${fmtPct(unitBlock.cured_percent || 0)} (${fmtCount(unitBlock.cured_cases || 0)})</span></div>` +
+        `<div class="vt-discharge-pill vt-discharge-pill-lama"><span class="vt-discharge-pill-label">LAMA</span><span class="vt-discharge-pill-value">${fmtPct(unitBlock.lama_percent || 0)} (${fmtCount(unitBlock.lama_cases || 0)})</span></div>` +
+        `<div class="vt-discharge-pill vt-discharge-pill-referred"><span class="vt-discharge-pill-label">Referred</span><span class="vt-discharge-pill-value">${fmtPct(unitBlock.referred_percent || 0)} (${fmtCount(unitBlock.referred_cases || 0)})</span></div>` +
+        `<div class="vt-discharge-pill vt-discharge-pill-mortality"><span class="vt-discharge-pill-label">Mortality</span><span class="vt-discharge-pill-value">${fmtPct(unitBlock.mortality_ratio || 0)} (${fmtCount(unitBlock.death_cases || 0)})</span></div>` +
+        `</div>` +
+        `<div class="vt-discharge-type-line"><strong>Top Types:</strong> ${topTypeMixHtml(unitBlock.type_breakdown || [])}</div>` +
+        renderWardTable(unitBlock.unit || 'Unknown', unitBlock.ward_breakdown || []) +
+        `</div>`
+      );
+    }).join('');
+
+    dischargeDetailsEl.innerHTML = html || '<div class="kpi-empty">No discharge breakdown available.</div>';
+    if(modalWasOpen && modalWardKey){
+      const refreshedPayload = dischargeWardMap.get(modalWardKey);
+      if(refreshedPayload){
+        refreshedPayload._ward_key = modalWardKey;
+        openDischargeWardModal(refreshedPayload, modalWardKey);
+      } else {
+        closeDischargeWardModal();
+      }
+    }
+  }
+
+  function getVisitPatients(visitLabel){
+    const key = normalizeVisitLabel(visitLabel);
+    if(visitPatientCache.has(key)) return visitPatientCache.get(key);
+    const seen = new Set();
+    const rows = [];
+    detailsCache.forEach((row)=>{
+      if(normalizeVisitLabel(row.TypeOfVisit) !== key) return;
+      const name = normalizeLabel(row.PatientName) || 'Unknown';
+      const reg = normalizeLabel(row.RegNo || row.Registration_No || row.RegistrationNo) || 'Unknown';
+      const corp = normalizeLabel(row.CorpType || row.PatientSubType) || 'Unknown';
+      const rowKey = `${reg}||${name}||${corp}`;
+      if(seen.has(rowKey)) return;
+      seen.add(rowKey);
+      rows.push({ name, reg, corp });
+    });
+    visitPatientCache.set(key, rows);
+    return rows;
+  }
+
+  function summarizeBy(filterFn, title){
+    const f = fromEl.value, t = toEl.value;
+    const rows = detailsCache.filter(filterFn);
+    const total = rows.length;
+
+    function topK(col, k=3){
+      const m = new Map();
+      rows.forEach(r=>{ const key=(r[col]??'').toString().trim() || 'Unknown'; m.set(key,(m.get(key)||0)+1); });
+      return [...m.entries()].sort((a,b)=>b[1]-a[1]).slice(0,k).map(([k,v])=>`${k} (${v})`).join(', ');
+    }
+
+    if(title==='Department'){
+      showToast([`<strong>${total.toLocaleString()}</strong> patients in <strong>${filterFn._k}</strong> between <small>${f}</small> and <small>${t}</small>.`,
+                 `Top consultants: ${topK('Consultant') || 'n/a'}.`]);
+    } else if(title==='Doctor'){
+      showToast([`<strong>${total.toLocaleString()}</strong> patients seen by <strong>${filterFn._k}</strong> (<small>${f}→${t}</small>).`,
+                 `Common patient types: ${topK('PatientType') || 'n/a'}.`]);
+    } else if(title==='City'){
+      showToast([`<strong>${total.toLocaleString()}</strong> patients from <strong>${filterFn._k}</strong> (<small>${f}→${t}</small>).`,
+                 `Top departments: ${topK('Dept') || 'n/a'}.`]);
+    } else if(title==='Visit'){
+      showToast([`<strong>${total.toLocaleString()}</strong> ${filterFn._k}.`,
+                 `Top departments: ${topK('Dept') || 'n/a'}.`]);
+    } else if(title==='PatientType'){
+      showToast([`<strong>${total.toLocaleString()}</strong> patients under <strong>${filterFn._k}</strong> (<small>${f}→${t}</small>).`,
+                 `Top sub types: ${topK('CorpType') || 'n/a'}.`]);
+    }
+  }
+
+  function showHoverSummary(kind, key){
+    if(!key) return;
+    let col = null;
+    if(kind==='Department') col = 'Dept';
+    else if(kind==='Doctor') col = 'Consultant';
+    else if(kind==='City') col = 'City';
+    else if(kind==='Visit') col = 'TypeOfVisit';
+    else if(kind==='PatientType') col = 'PatientType';
+    if(!col) return;
+
+    let matchVal = key;
+    const rev = Object.entries(VISIT_RENAME).find(([k,v]) => v===key);
+    if(kind==='Visit' && rev) matchVal = rev[0];
+
+    const rows = detailsCache.filter(r => (r[col]||'') === matchVal).slice(0,6);
+    if(rows.length===0) return;
+    const lines = rows.map(r => `${(r.PatientName||'').toString()} – ${(r.Registration_No||'').toString()}`);
+    showToast(lines);
+  }
+
+function setCityPareto(dataArr, breakdownByCity){
+  const c = ensureChart('vt-citywise'); if(!c) return; c.clear();
+
+  const data = (dataArr||[]).map(d=>({ name: (d.name||'').toString(), value: d.value||0 }));
+  if(!data.length){ showEmpty('citywise', true); return; }
+  showEmpty('citywise', false);
+
+  const sorted = data.sort((a,b)=> b.value - a.value);
+  const list = sorted;
+
+  const names  = list.map(d=>d.name);
+  const values = list.map(d=>d.value);
+  const total  = values.reduce((s,v)=>s+v,0);
+  const cumPct = [];
+  values.reduce((acc,v,i)=> (cumPct[i] = ((acc+v)/total*100)), 0);
+
+  const mobile = isMobileView();
+  const MAX_SHOWN_LABELS = mobile ? 16 : 22;
+  const step = Math.max(1, Math.ceil(names.length / MAX_SHOWN_LABELS));
+  const baseRot  = names.length > 40 ? 65 : (names.length > 26 ? 45 : 0);
+  const rot = mobile ? (names.length > 24 ? 65 : (names.length > 12 ? 45 : baseRot)) : baseRot;
+  const labFmt = (v)=> v.length > 12 ? (v.slice(0,12) + '…') : v;
+  const axisFont = mobile ? 9 : 10;
+  const gridLeft = mobile ? 46 : 60;
+  const gridRight = mobile ? 40 : 56;
+  const gridBottom = mobile ? 56 : 64;
+  const zoomHeight = mobile ? 12 : 16;
+
+  const DEFAULT_TOP_N = 25;
+  const endPct = Math.min(100, Math.round(DEFAULT_TOP_N / names.length * 100));
+
+  const cOpt = {
+    color: ['#60a5fa', '#f59e0b'],
+    tooltip:{
+      trigger:'axis', axisPointer:{ type:'shadow' },
+      backgroundColor:'rgba(255,255,255,.97)', borderColor:'#e5e7eb', borderWidth:1,
+      textStyle:{ color:'#1f2937', fontSize:13 }, padding:[10,14],
+      extraCssText:'box-shadow:0 4px 12px rgba(0,0,0,.1); border-radius:8px;',
+      formatter: (params)=>{
+        const bar = params.find(p=>p.seriesType==='bar');
+        const line= params.find(p=>p.seriesType==='line');
+        const city = (bar || line)?.name || '';
+        const val  = bar? bar.value : (list.find(d=>d.name===city)?.value||0);
+        const idx  = names.indexOf(city);
+        const pct  = idx>-1 ? (cumPct[idx]) : 0;
+        
+        // Show breakdown if available
+        if(breakdownByCity && breakdownByCity.has(city)){
+          const bk = breakdownByCity.get(city);
+          const fmt = (n)=> (n||0).toLocaleString();
+          const lines = [
+            `<div style="font-weight:700;color:#111827;margin-bottom:4px;">${city}</div>`,
+            `Total: <strong>${fmt(val)}</strong>`,
+            `Cumulative: ${pct.toFixed(1)}%`,
+            `<div style="margin-top:6px;color:#475569">Breakdown</div>`,
+            `OPD: <strong>${fmt(bk.OPD)}</strong>`,
+            `DPV: <strong>${fmt(bk.DPV)}</strong>`,
+            `IPD: <strong>${fmt(bk.IPD)}</strong>`,
+            `Daycare: <strong>${fmt(bk.Daycare)}</strong>`,
+            `HCV: <strong>${fmt(bk.HCV)}</strong>`
+          ];
+          return lines.join('<br/>');
+        }
+        
+        return `<strong>${city}</strong><br/>Count: ${(+val).toLocaleString()}<br/>Cumulative: ${pct.toFixed(1)}%`;
+      }
+    },
+    grid:{ top: 46, left: gridLeft, right: gridRight, bottom: gridBottom, containLabel:true },
+    dataZoom: [
+      { type:'slider', xAxisIndex:0, start:0, end:endPct, height: zoomHeight, bottom:8,
+        borderColor:'transparent', fillerColor:'rgba(59,130,246,.25)',
+        handleStyle:{ color:'#3b82f6', borderWidth:0 }, showDetail:false,
+        dataBackground:{ lineStyle:{ opacity:0 }, areaStyle:{ opacity:0 } }
+      },
+      { type:'inside', xAxisIndex:0, start:0, end:endPct }
+    ],
+    xAxis:{
+      type:'category', data:names,
+      axisLabel:{
+        color:'#1f2937', fontSize:axisFont, rotate:rot,
+        interval: function (index){ return index % step === 0; },
+        formatter: labFmt, hideOverlap: true
+      },
+      axisLine:{ lineStyle:{ color:'#e5e7eb' } }, axisTick:{ show:false }
+    },
+    yAxis:[
+      { type:'value', name:'Count', nameLocation:'middle', nameGap: 42,
+        nameTextStyle:{ color:'#6b7280', fontSize: mobile ? 10 : 11, fontWeight:600 },
+        axisLabel:{ color:'#1f2937', fontSize:axisFont },
+        splitLine:{ lineStyle:{ color:'#f3f4f6' } } },
+      { type:'value', name:'Cumulative %', nameLocation:'middle', nameGap: 50, position:'right',
+        min:0, max:100, axisLabel:{ formatter:'{value}%', color:'#1f2937', fontSize:axisFont }, splitLine:{ show:false } }
+    ],
+    series:[
+      { name:'Volume', type:'bar', data:values, barMaxWidth: 26,
+        itemStyle:{ color: new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#93c5fd'},{offset:1,color:'#3b82f6'}]), borderRadius:[4,4,0,0] },
+        emphasis:{ itemStyle:{ color:new echarts.graphic.LinearGradient(0,0,0,1,[{offset:0,color:'#60a5fa'},{offset:1,color:'#2563eb'}]) },
+          label:{ show:true, position:'top', formatter:(p)=> p.value.toLocaleString(), color:'#111827', fontSize:11, fontWeight:700 } },
+        label:{ show:false } },
+      { name:'Cumulative %', type:'line', yAxisIndex:1, data:cumPct.map(x=>+x.toFixed(1)), smooth:true, symbol:'circle', symbolSize:6,
+        lineStyle:{ width:2 }, itemStyle:{ color:'#f59e0b' } }
+    ]
+  };
+
+  const clickHandler = (p)=>{
+    if(p.seriesType!=='bar') return;
+    const name = p.name;
+    const fn = r => (r.City||'')===name;
+    fn._k = name;
+    summarizeBy(fn,'City');
+  };
+  const hoverHandler = (p)=>{
+    if(p.seriesType==='bar' || p.seriesType==='line') showHoverSummary('City', p.name);
+  };
+  const outHandler = () => hideToastSoon();
+  const events = { click: clickHandler, mouseover: hoverHandler, globalout: outHandler };
+
+  registerChartConfig('vt-citywise', cOpt, events);
+  c.setOption(cOpt);
+  applyChartEvents(c, events);
+}
+
+  function renderSummaryKpiCardsFromDetails(visitwiseRaw){
+    const deptByUnit = new Map();
+    const corpByVisit = new Map();
+    const doctorByVisitCorp = new Map();
+    const deptVisitTotals = new Map();
+    const corpVisitTotals = new Map();
+    const doctorVisitTotals = new Map();
+
+    detailsCache.forEach((row)=>{
+      const unit = normalizeUnit(row.Unit);
+      const visit = normalizeVisitLabel(row.TypeOfVisit);
+      const dept = normalizeLabel(cleanDeptName(row.Dept || '')) || 'Unknown';
+      const corp = normalizeLabel(row.CorpType) || 'Unknown';
+      const doctor = normalizeLabel(row.Consultant) || 'Unknown';
+
+      const unitGroup = deptByUnit.get(unit) || { total: 0, depts: new Map() };
+      unitGroup.total += 1;
+      const deptGroup = unitGroup.depts.get(dept) || { total: 0, visits: new Map() };
+      deptGroup.total += 1;
+      incMap(deptGroup.visits, visit);
+      incMap(deptVisitTotals, visit);
+      unitGroup.depts.set(dept, deptGroup);
+      deptByUnit.set(unit, unitGroup);
+
+      const corpGroup = corpByVisit.get(corp) || { total: 0, visits: new Map() };
+      corpGroup.total += 1;
+      incMap(corpGroup.visits, visit);
+      incMap(corpVisitTotals, visit);
+      corpByVisit.set(corp, corpGroup);
+
+      const docGroup = doctorByVisitCorp.get(doctor) || { total: 0, visits: new Map() };
+      docGroup.total += 1;
+      const visitGroup = docGroup.visits.get(visit) || new Map();
+      incMap(visitGroup, corp);
+      docGroup.visits.set(visit, visitGroup);
+      doctorByVisitCorp.set(doctor, docGroup);
+      incMap(doctorVisitTotals, visit);
+    });
+
+    const deptUnique = new Set();
+    deptByUnit.forEach((unitData)=> {
+      unitData.depts.forEach((_v, dept)=> deptUnique.add(dept));
+    });
+
+    const visitSummaryMap = new Map();
+    if(Array.isArray(visitwiseRaw) && visitwiseRaw.length){
+      const visitSummary = applyVisitRename(visitwiseRaw);
+      visitSummary.forEach((d)=> visitSummaryMap.set(normalizeVisitLabel(d.name), d.value || 0));
+    }else{
+      detailsCache.forEach((row)=> incMap(visitSummaryMap, normalizeVisitLabel(row.TypeOfVisit)));
+    }
+    setSummaryKpi('visitsummary', renderVisitSummary(visitSummaryMap));
+
+    if(summaryKpis.deptcount) summaryKpis.deptcount.textContent = fmtCount(deptUnique.size);
+    if(summaryKpis.corptype) summaryKpis.corptype.textContent = fmtCount(corpByVisit.size);
+    if(summaryKpis.doctorcount) summaryKpis.doctorcount.textContent = fmtCount(doctorByVisitCorp.size);
+
+    const deptDetails = [...deptByUnit.entries()]
+      .sort((a,b)=> (b[1].total - a[1].total) || String(a[0]).localeCompare(String(b[0])))
+      .map(([unit, unitData])=>{
+        const deptLines = [...unitData.depts.entries()]
+          .sort((a,b)=> (b[1].total - a[1].total) || String(a[0]).localeCompare(String(b[0])))
+          .map(([deptName, deptData])=>{
+            const visitLines = [...deptData.visits.entries()]
+              .sort((a,b)=> b[1]-a[1])
+              .map(([visit, count])=> {
+                const cls = visitClass(visit);
+                return (
+                  `<div class="kpi-sub kpi-level-2">` +
+                  `<span class="kpi-sub-label vt-kpi-visit ${cls}">` +
+                  `<span class="vt-kpi-dot"></span>${escapeHtml(visit)}` +
+                  `</span>` +
+                  `<span class="kpi-sub-value">${fmtCount(count)}</span></div>`
+                );
+              }).join('');
+            return (
+              `<div class="kpi-sub kpi-level-1"><span class="kpi-sub-label">${escapeHtml(deptName)}</span>` +
+              `<span class="kpi-sub-value">${fmtCount(deptData.total)}</span></div>${visitLines}`
+            );
+          }).join('');
+        return `<div class="kpi-group"><div class="kpi-group-title">${escapeHtml(unit)} <span class="kpi-count">${fmtCount(unitData.total)}</span></div>${deptLines}</div>`;
+      }).join('');
+    setSummaryDetails('deptcount', deptDetails);
+
+    const corpDetails = [...corpByVisit.entries()]
+      .sort((a,b)=> (b[1].total - a[1].total) || String(a[0]).localeCompare(String(b[0])))
+      .map(([corpName, corpData])=>{
+        const visitLines = [...corpData.visits.entries()]
+          .sort((a,b)=> b[1]-a[1])
+          .map(([visit, count])=> {
+            const cls = visitClass(visit);
+            return (
+              `<div class="kpi-sub kpi-level-2">` +
+              `<span class="kpi-sub-label vt-kpi-visit ${cls}">` +
+              `<span class="vt-kpi-dot"></span>${escapeHtml(visit)}` +
+              `</span>` +
+              `<span class="kpi-sub-value">${fmtCount(count)}</span></div>`
+            );
+          }).join('');
+        return `<div class="kpi-group"><div class="kpi-group-title">${escapeHtml(corpName)} <span class="kpi-count">${fmtCount(corpData.total)}</span></div>${visitLines}</div>`;
+      }).join('');
+    setSummaryDetails('corptype', corpDetails);
+
+    const doctorDetails = [...doctorByVisitCorp.entries()]
+      .sort((a,b)=> (b[1].total - a[1].total) || String(a[0]).localeCompare(String(b[0])))
+      .map(([doctorName, doctorData])=>{
+        const visitLines = [...doctorData.visits.entries()]
+          .map(([visit, corpMap])=>{
+            const total = [...corpMap.values()].reduce((s,v)=> s+v, 0);
+            return { visit, corpMap, total };
+          })
+          .sort((a,b)=> (b.total - a.total) || String(a.visit).localeCompare(String(b.visit)))
+          .map(({ visit, corpMap })=>{
+            const corpLines = [...corpMap.entries()]
+              .sort((a,b)=> b[1]-a[1])
+              .map(([corpName, count])=> (
+                `<div class="kpi-sub kpi-level-3"><span class="kpi-sub-label">${escapeHtml(corpName)}</span><span class="kpi-sub-value">${fmtCount(count)}</span></div>`
+              )).join('');
+            const cls = visitClass(visit);
+            return (
+              `<div class="kpi-sub kpi-level-1">` +
+              `<span class="kpi-sub-label vt-kpi-visit ${cls}">` +
+              `<span class="vt-kpi-dot"></span>${escapeHtml(visit)}` +
+              `</span>` +
+              `<span class="kpi-sub-value">${fmtCount([...corpMap.values()].reduce((s,v)=> s+v, 0))}</span></div>${corpLines}`
+            );
+          }).join('');
+        return `<div class="kpi-group"><div class="kpi-group-title">${escapeHtml(doctorName)} <span class="kpi-count">${fmtCount(doctorData.total)}</span></div>${visitLines}</div>`;
+      }).join('');
+    setSummaryDetails('doctorcount', doctorDetails);
+  }
+
+  async function load(){
+    stopLiveKpiRefresh();
+    setLoading(true);
+    resetSummaryKpis();
+    try{
+      const f = fromEl.value, t = toEl.value;
+      const res = await fetch(`/api/volume_tracker?from=${f}&to=${t}${currentUnitParam()}`);
+      const js = await res.json();
+
+      if(js.status && js.status !== 'success'){
+        console.error(js);
+        Object.values(empties).forEach(el => el.style.display='');
+        countEl.style.display = 'none';
+        return;
+      }
+
+      if(js.units){ populateUnits(js.units); }
+      if(unitWrap.style.display !== 'none'){
+        localStorage.setItem(LS_UNIT_KEY, unitSel.value || '__ALL__');
+      }
+
+      detailsCache = js.details || [];
+      hcvDoctorKpiRows = (js.hcv_doctor_kpi && Array.isArray(js.hcv_doctor_kpi.rows)) ? js.hcv_doctor_kpi.rows : [];
+      visitPatientCache = new Map();
+      visitDetailRowsCache = new Map();
+      lastVolumeUnitUsed = Array.isArray(js.unit_used) ? js.unit_used.map((u)=> normalizeUnit(u)) : [];
+      renderSummaryKpiCardsFromDetails(js.visitwise || []);
+      renderAdmissions();
+      renderDischargeKpi(js.discharge_kpi || {});
+      renderVisitDetailKpis();
+
+      const total = (js.meta && js.meta.total) ? js.meta.total : detailsCache.length;
+      if(total > 0){ countEl.textContent = `${total} records`; countEl.style.display = ''; }
+      else { countEl.style.display = 'none'; }
+
+      // Visit-wise
+      const visitRaw = js.visitwise || [];
+      const visit = applyVisitRename(visitRaw);
+      setPie('vt-visitwise', visit, (p)=>{
+        const label = p.name;
+        const canonical = Object.keys(VISIT_RENAME).find(k=>VISIT_RENAME[k]===label) || label;
+        const fn = r => (r.TypeOfVisit||'') === (canonical || r.TypeOfVisit);
+        fn._k = label;
+        summarizeBy(fn, 'Visit');
+      }, 'Visit');
+      setKPI('visitwise', visit.reduce((s,d)=>s+(d.value||0),0));
+      showEmpty('visitwise', visit.length===0);
+
+      const dept  = js.deptwise || [];
+      const doc   = js.doctorwise || [];
+      const city  = js.citywise || [];
+      const ptree = js.patienttype_patsubtype || [];
+
+      const deptCleaned = dept.map(d => ({ name: cleanDeptName(d.name), value: d.value, originalName: d.name }));
+
+      /* ===== Build breakdown per entity (doctor/dept/city) for tooltips ===== */
+      function normVisit(v){
+        const s = (v||'').toString().trim().toUpperCase();
+        if(s==='DC' || s==='DAYCARE' || s==='DAY CARE') return 'Daycare';
+        if(s==='OPD' || s==='OUT PATIENT VISITS') return 'OPD';
+        if(s==='IPD' || s==='IN PATIENT VISITS') return 'IPD';
+        if(s==='DPV' || s==='DIAGNOSTIC VISIT') return 'DPV';
+        if(s==='HCV' || s==='HEALTH CHECKUPS') return 'HCV';
+        return 'Other';
+      }
+
+      const bkMapDoctor = new Map();
+      const bkMapDept = new Map();
+      const bkMapCity = new Map();
+      const bkMapSubType = new Map();
+
+      for(const r of detailsCache){
+        const tp = normVisit(r.TypeOfVisit);
+        
+        // Doctor breakdown
+        const docName = (r.Consultant||'').toString();
+        if(docName){
+          const objDoc = bkMapDoctor.get(docName) || { OPD:0, DPV:0, IPD:0, Daycare:0, HCV:0, Other:0 };
+          objDoc[tp] = (objDoc[tp]||0) + 1;
+          bkMapDoctor.set(docName, objDoc);
+        }
+
+        // Department breakdown (use original name)
+        const deptName = (r.Dept||'').toString();
+        if(deptName){
+          const objDept = bkMapDept.get(deptName) || { OPD:0, DPV:0, IPD:0, Daycare:0, HCV:0, Other:0 };
+          objDept[tp] = (objDept[tp]||0) + 1;
+          bkMapDept.set(deptName, objDept);
+        }
+
+        // City breakdown
+        const cityName = (r.City||'').toString();
+        if(cityName){
+          const objCity = bkMapCity.get(cityName) || { OPD:0, DPV:0, IPD:0, Daycare:0, HCV:0, Other:0 };
+          objCity[tp] = (objCity[tp]||0) + 1;
+          bkMapCity.set(cityName, objCity);
+        }
+
+        // SubType breakdown (CorpType field - mapped from PatSubType in backend)
+        const subTypeName = (r.CorpType||'').toString().trim();
+        if(subTypeName){
+          const objSt = bkMapSubType.get(subTypeName) || { OPD:0, DPV:0, IPD:0, Daycare:0, HCV:0, Other:0 };
+          objSt[tp] = (objSt[tp]||0) + 1;
+          bkMapSubType.set(subTypeName, objSt);
+        }
+      }
+
+      // Map cleaned dept names to breakdown data using original names
+      const bkMapDeptCleaned = new Map();
+      deptCleaned.forEach(d => {
+        if(bkMapDept.has(d.originalName)){
+          bkMapDeptCleaned.set(d.name, bkMapDept.get(d.originalName));
+        }
+      });
+
+      // Department-wise bar chart with breakdown
+      setBar('vt-deptwise',
+        deptCleaned.map(x=>x.name), deptCleaned.map(x=>x.value), {},
+        (p)=>{ const cleaned=p.name; const original=deptCleaned.find(d=>d.name===cleaned)?.originalName||cleaned;
+               const fn=r=>(r.Dept||'')===original; fn._k=cleaned; summarizeBy(fn,'Department'); },
+        'Department',
+        bkMapDeptCleaned
+      );
+
+      // Doctor-wise dot plot with breakdown
+      setDoctorDot(doc, bkMapDoctor);
+
+      // City-wise chart with breakdown
+      setCityPareto(city, bkMapCity);
+
+      // Patient Type
+      setPtBar(ptree, (p)=>{
+        const name = (p.name||'').trim();
+        const fn = r => (r.PatientType||'')===name;
+        fn._k = name;
+        summarizeBy(fn,'PatientType');
+      }, bkMapSubType);
+
+      // KPIs
+      setKPI('deptwise', dept.reduce((s,d)=>s+(d.value||0),0));
+      setKPI('doctorwise', doc.reduce((s,d)=>s+(d.value||0),0));
+      setKPI('citywise', city.reduce((s,d)=>s+(d.value||0),0));
+      setKPI('pt', ptree.reduce((s,node)=>s+(node.children||[]).reduce((ss,ch)=>ss+(ch.value||0),0),0));
+
+    }catch(err){
+      console.error(err);
+      Object.values(empties).forEach(el => el.style.display='');
+      countEl.style.display = 'none';
+    }finally{
+      setLoading(false);
+      startLiveKpiRefresh();
+      if(window.echarts){
+        Object.values(charts).forEach(c=>c && c.resize());
+        if(modalChart && activeModalChartId && chartOptions[activeModalChartId]){
+          modalChart.setOption(chartOptions[activeModalChartId], true);
+          applyChartEvents(modalChart, chartEvents[activeModalChartId]);
+          modalChart.resize();
+        }
+      }
+    }
+  }
+
+  /* FAB user menu JS (navigation only) */
+  const fabToggle = document.getElementById('fabToggle');
+  const fabMenu = document.getElementById('fabMenu');
+  const fabTimer = document.getElementById('fabTimer');
+  fabToggle.addEventListener('click', () => fabMenu.classList.toggle('open'));
+  document.addEventListener('click', (e)=>{
+    if(!e.target.closest('.fab-user')) fabMenu.classList.remove('open');
+  });
+
+  // Session timer
+  function fmtSecs(s){
+    s = Math.max(0, Math.floor(s||0));
+    const m = Math.floor(s/60).toString().padStart(2,'0');
+    const sec = (s%60).toString().padStart(2,'0');
+    return `${m}:${sec}`;
+  }
+  let remainingSec = 0;
+  function updateTimerDisplay(){ if(fabTimer) fabTimer.textContent = fmtSecs(remainingSec); }
+  async function refreshSessionTimer(){
+    try{
+      const res = await fetch('/session_remaining');
+      const data = await res.json();
+      if(res.ok && typeof data.remaining_seconds !== 'undefined'){
+        remainingSec = Math.max(0, Math.floor(data.remaining_seconds));
+        updateTimerDisplay();
+      }
+    }catch(e){}
+  }
+  setInterval(()=>{ if(remainingSec>0){ remainingSec -= 1; updateTimerDisplay(); } }, 1000);
+  setInterval(refreshSessionTimer, 20000);
+  refreshSessionTimer();
+
+  window.addEventListener('sessionRefreshed', () => {
+  
+    refreshSessionTimer();
+  });
+  bindVisitDetailKpiEvents();
+  if(admissionsSearchEl){
+    admissionsSearchEl.addEventListener('input', ()=>{
+      admissionsState.query = admissionsSearchEl.value || '';
+      renderAdmissions();
+    });
+  }
+  if(dischargePageSizeEl){
+    const defaultDischargeSize = Number(dischargePageSizeEl.value || 20);
+    dischargeState.pageSize = Number.isFinite(defaultDischargeSize) && defaultDischargeSize > 0 ? defaultDischargeSize : 20;
+    dischargePageSizeEl.addEventListener('change', ()=>{
+      const selected = Number(dischargePageSizeEl.value || 20);
+      dischargeState.pageSize = Number.isFinite(selected) && selected > 0 ? selected : 20;
+      dischargeState.page = 1;
+      renderDischargeKpi();
+    });
+  }
+  if(dischargeSearchEl){
+    dischargeSearchEl.addEventListener('input', ()=>{
+      dischargeState.query = dischargeSearchEl.value || '';
+      dischargeState.page = 1;
+      renderDischargeKpi();
+    });
+  }
+  if(dischargePrevEl){
+    dischargePrevEl.addEventListener('click', ()=>{
+      if(dischargeState.page <= 1) return;
+      dischargeState.page -= 1;
+      renderDischargeKpi();
+    });
+  }
+  if(dischargeNextEl){
+    dischargeNextEl.addEventListener('click', ()=>{
+      dischargeState.page += 1;
+      renderDischargeKpi();
+    });
+  }
+  resetVisitDetailKpis();
+  if(dischargeDetailsEl){
+    dischargeDetailsEl.addEventListener('click', (e)=>{
+      const trigger = e.target && e.target.closest ? e.target.closest('[data-discharge-ward-key]') : null;
+      if(!trigger) return;
+      const key = String(trigger.getAttribute('data-discharge-ward-key') || '').trim();
+      if(!key) return;
+      const payload = dischargeWardMap.get(key);
+      if(!payload){
+        showToast('<strong>Ward details not available</strong><br/><small>Please reload and try again.</small>');
+        return;
+      }
+      payload._ward_key = key;
+      openDischargeWardModal(payload, key);
+    });
+  }
+  document.querySelectorAll('.vt-expand-btn').forEach(btn=>{
+    btn.addEventListener('click', ()=>{
+      openChartModal(btn.dataset.chartId, btn.dataset.chartTitle);
+    });
+  });
+  if(modalCloseBtn){
+    modalCloseBtn.addEventListener('click', closeChartModal);
+  }
+  if(modalEl){
+    modalEl.addEventListener('click', (e)=>{
+      if(e.target && e.target.closest('[data-close]')) closeChartModal();
+    });
+  }
+  if(dischargeModalCloseBtn){
+    dischargeModalCloseBtn.addEventListener('click', closeDischargeWardModal);
+  }
+  if(dischargeModalEl){
+    dischargeModalEl.addEventListener('click', (e)=>{
+      if(e.target && e.target.closest('[data-close-discharge]')) closeDischargeWardModal();
+    });
+  }
+  document.addEventListener('keydown', (e)=>{
+    if(e.key !== 'Escape') return;
+    if(dischargeModalEl && dischargeModalEl.classList.contains('open')){
+      closeDischargeWardModal();
+      return;
+    }
+    if(modalEl && modalEl.classList.contains('open')) closeChartModal();
+  });
+  document.getElementById('vt-load').addEventListener('click', load);
+  unitSel.addEventListener('change', ()=>{ localStorage.setItem(LS_UNIT_KEY, unitSel.value || '__ALL__'); load(); });
+  window.addEventListener('resize', ()=>{
+    if(window.echarts){
+      Object.values(charts).forEach(c=>c && c.resize());
+      if(modalChart) modalChart.resize();
+    }
+  });
+  document.getElementById('vt-export').addEventListener('click', ()=>{
+    const f = fromEl.value, t = toEl.value;
+    const unitQ = currentUnitParam();
+    window.location.href = `/api/volume_export?from=${f}&to=${t}${unitQ}`;
+  });
+  if(hcvDoctorExportBtn){
+    hcvDoctorExportBtn.addEventListener('click', ()=>{
+      const f = fromEl.value, t = toEl.value;
+      const unitQ = currentUnitParam();
+      const searchVal = ((visitDetailKpiCards.hcvdoc && visitDetailKpiCards.hcvdoc.searchEl)
+        ? visitDetailKpiCards.hcvdoc.searchEl.value
+        : '') || '';
+      const trimmedSearch = searchVal.trim();
+      const originalText = hcvDoctorExportBtn.textContent;
+      hcvDoctorExportBtn.disabled = true;
+      hcvDoctorExportBtn.textContent = 'Exporting...';
+      let url = `/api/volume_hcv_doctor_export?from=${f}&to=${t}${unitQ}`;
+      if(trimmedSearch){
+        url += `&search=${encodeURIComponent(trimmedSearch)}`;
+      }
+      window.location.href = url;
+      setTimeout(()=>{
+        hcvDoctorExportBtn.disabled = false;
+        hcvDoctorExportBtn.textContent = originalText;
+      }, 1600);
+    });
+  }
+// PDF Export functionality - TWO-STEP APPROACH
+document.getElementById('vt-export-pdf').addEventListener('click', async ()=>{
+  const f = fromEl.value, t = toEl.value;
+  const unitVal = unitWrap.style.display === 'none' ? '__ALL__' : (unitSel.value || '__ALL__');
+
+  const btn = document.getElementById('vt-export-pdf');
+  const originalText = btn.textContent;
+  btn.textContent = 'Preparing PDF...';
+  btn.disabled = true;
+
+  try {
+    const captureChart = (chartId) => {
+      const chart = charts[chartId];
+      if(!chart) return '';
+      return chart.getDataURL({
+        type: 'png',
+        pixelRatio: 2,
+        backgroundColor: '#fff'
+      });
+    };
+
+    const chartData = {
+      visitwise: captureChart('vt-visitwise'),
+      deptwise: captureChart('vt-deptwise'),
+      doctorwise: captureChart('vt-doctorwise'),
+      citywise: captureChart('vt-citywise'),
+      pt: captureChart('vt-pt-bar')
+    };
+
+    btn.textContent = 'Uploading charts...';
+
+    const storeResponse = await fetch('/api/volume_store_charts', {
+      method: 'POST',
+      headers: { 'Content-Type': 'application/json' },
+      body: JSON.stringify(chartData)
+    });
+
+    if (!storeResponse.ok) {
+      throw new Error('Failed to store chart data');
+    }
+
+    const storeResult = await storeResponse.json();
+    const chartToken = storeResult.token;
+
+    btn.textContent = 'Generating PDF...';
+
+    let pdfUrl = `/api/volume_export_pdf?from=${f}&to=${t}&token=${chartToken}`;
+    if(unitVal && unitVal !== '__ALL__') {
+      pdfUrl += `&unit=${encodeURIComponent(unitVal)}`;
+    }
+
+    window.open(pdfUrl, '_blank');
+    showToast('<strong>PDF Export Started</strong><br/><small>Your download will begin shortly...</small>');
+
+  } catch(err) {
+    console.error('PDF export error:', err);
+    showToast('<strong>Export Failed</strong><br/><small>' + err.message + '</small>');
+  } finally {
+    setTimeout(() => {
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }, 2000);
+  }
+});
+  if(Array.isArray(INITIAL_ALLOWED_UNITS) && INITIAL_ALLOWED_UNITS.length){
+    populateUnits(INITIAL_ALLOWED_UNITS);
+  }
+  load();
+})();
+</script>
+{% endblock %}

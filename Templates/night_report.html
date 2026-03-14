@@ -1,0 +1,1510 @@
+{% extends "layout.html" %}
+{% block content %}
+<style>
+  .night-wrap {
+    width: min(1180px, 100%);
+    display: grid;
+    gap: 16px;
+  }
+  .night-hero {
+    background: linear-gradient(120deg, #1e3a8a, #2563eb 55%, #38bdf8);
+    color: #fff;
+    border-radius: 18px;
+    padding: 22px 26px;
+    box-shadow: 0 14px 30px rgba(30, 58, 138, 0.22);
+  }
+  .night-hero h2 {
+    margin: 0;
+    font-size: 22px;
+    font-weight: 800;
+    letter-spacing: 0.3px;
+  }
+  .night-hero p {
+    margin: 6px 0 0;
+    font-size: 14px;
+    color: rgba(255,255,255,0.9);
+  }
+  .controls {
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    padding: 16px;
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(160px, 1fr));
+    gap: 12px;
+    align-items: end;
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.08);
+  }
+  .control {
+    display: grid;
+    gap: 6px;
+  }
+  .control label {
+    font-size: 12px;
+    color: #475569;
+    font-weight: 700;
+  }
+  .control input,
+  .control select {
+    padding: 8px 10px;
+    border-radius: 10px;
+    border: 1px solid #cbd5e1;
+    font-size: 13px;
+  }
+  .btn-row {
+    display: flex;
+    gap: 10px;
+    flex-wrap: wrap;
+  }
+  .btn {
+    border: none;
+    border-radius: 12px;
+    padding: 10px 14px;
+    font-weight: 700;
+    cursor: pointer;
+    box-shadow: 0 6px 14px rgba(15, 23, 42, 0.12);
+  }
+  .btn.primary {
+    background: linear-gradient(90deg, #2563eb, #1e3a8a);
+    color: #fff;
+  }
+  .btn.secondary {
+    background: #e0f2fe;
+    color: #0f172a;
+    border: 1px solid #bae6fd;
+  }
+  .btn.ghost {
+    background: #eef2ff;
+    color: #1e3a8a;
+    border: 1px solid #c7d2fe;
+  }
+  .btn.save {
+    background: #22c55e;
+    color: #fff;
+  }
+  .status {
+    font-size: 13px;
+    color: #475569;
+  }
+  .status.warn { color: #b91c1c; }
+  .fab-user {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    display: flex;
+    align-items: center;
+    z-index: 50;
+  }
+  .fab-btn {
+    width: 44px;
+    height: 44px;
+    border-radius: 50%;
+    border: none;
+    background: linear-gradient(135deg, #1e40af, #3b82f6);
+    color: #fff;
+    cursor: pointer;
+    display: grid;
+    place-items: center;
+    box-shadow: 0 8px 18px rgba(30, 64, 175, 0.3);
+  }
+  .fab-icon {
+    display: flex;
+    flex-direction: column;
+    gap: 4px;
+  }
+  .fab-icon span {
+    width: 16px;
+    height: 3px;
+    background: #fff;
+    border-radius: 3px;
+    display: block;
+  }
+  .fab-menu {
+    position: absolute;
+    top: 52px;
+    right: 0;
+    background: rgba(255,255,255,0.98);
+    border: 1px solid rgba(0,0,0,0.08);
+    box-shadow: 0 12px 24px rgba(15, 23, 42, 0.18);
+    border-radius: 12px;
+    padding: 10px;
+    min-width: 200px;
+    display: none;
+    z-index: 10;
+  }
+  .fab-menu.open { display: block; }
+  .fab-menu a, .fab-menu div {
+    display: block;
+    padding: 8px 10px;
+    border-radius: 8px;
+    font-size: 13px;
+    color: #0f172a;
+    font-weight: 600;
+    text-decoration: none;
+  }
+  .fab-menu a:hover { background: #e0f2fe; color: #1e40af; }
+  .fab-user-name { color: #64748b; font-weight: 700; }
+
+  .table-wrap {
+    overflow: auto;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  }
+  table.night-table {
+    width: 100%;
+    border-collapse: collapse;
+    min-width: 980px;
+  }
+  table.night-table th,
+  table.night-table td {
+    border: 1px solid #1f2937;
+    padding: 6px 8px;
+    font-size: 13px;
+    text-align: center;
+  }
+  table.night-table td.left { text-align: left; }
+  table.night-table .title-row th {
+    background: #f3c3e6;
+    font-size: 16px;
+    font-weight: 800;
+  }
+  table.night-table .date-row th {
+    background: #f6d5ec;
+    font-weight: 700;
+  }
+  table.night-table .meta-row th {
+    background: #f7e8f4;
+    font-size: 12px;
+    color: #475569;
+    font-weight: 600;
+  }
+  table.night-table .col-row th {
+    background: #f3b58d;
+    font-weight: 800;
+  }
+  table.night-table td.data-cell {
+    background: #cfe5f7;
+  }
+  table.night-table td.total-cell {
+    background: #d9d9d9;
+    font-weight: 800;
+  }
+  .nr-input {
+    width: 100%;
+    min-width: 60px;
+    padding: 4px 6px;
+    border-radius: 6px;
+    border: 1px solid #94a3b8;
+    font-size: 12px;
+    background: #fff;
+  }
+  .nr-input.num {
+    text-align: right;
+  }
+
+  .lower-grid {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(320px, 1fr));
+    gap: 16px;
+  }
+  .panel {
+    background: #fff;
+    border-radius: 16px;
+    border: 1px solid #e2e8f0;
+    padding: 12px;
+    box-shadow: 0 10px 24px rgba(15, 23, 42, 0.08);
+  }
+  .panel table {
+    width: 100%;
+    border-collapse: collapse;
+    font-size: 13px;
+  }
+  .panel th, .panel td {
+    border: 1px solid #1f2937;
+    padding: 6px 8px;
+    text-align: center;
+  }
+  .panel th {
+    background: #f3b58d;
+    font-weight: 800;
+  }
+  .panel td {
+    background: #cfe5f7;
+  }
+  .panel td.left { text-align: left; }
+  .panel td.total-cell {
+    background: #d9d9d9;
+    font-weight: 800;
+  }
+  .ward-header-note {
+    display: block;
+    font-size: 11px;
+    font-weight: 600;
+    margin-top: 2px;
+  }
+  .ward-patient-cell {
+    display: flex;
+    flex-direction: column;
+    align-items: center;
+    gap: 2px;
+    line-height: 1.15;
+  }
+  .ward-patient-count {
+    font-weight: 700;
+  }
+  .ward-patient-seg {
+    font-size: 11px;
+    color: #1f2937;
+  }
+  .action-row th {
+    background: #eef2ff;
+    text-align: right;
+    padding: 4px 8px;
+  }
+  .action-row .action-buttons {
+    display: flex;
+    justify-content: flex-end;
+    gap: 6px;
+  }
+  .btn.danger {
+    background: #fee2e2;
+    color: #991b1b;
+    border: 1px solid #fca5a5;
+  }
+  .btn.tiny {
+    padding: 4px 8px;
+    font-size: 12px;
+    border-radius: 6px;
+  }
+  .nr-input.mini {
+    width: 46px;
+    padding: 2px 4px;
+    font-size: 11px;
+  }
+
+  @media (max-width: 768px) {
+    .btn-row { flex-direction: column; }
+    .table-wrap { border-radius: 12px; }
+  }
+</style>
+
+<section class="night-wrap">
+  <div class="fab-user">
+    <button class="fab-btn" id="fabToggle" title="User Menu">
+      <span class="fab-icon"><span></span><span></span><span></span></span>
+    </button>
+    <div class="fab-menu" id="fabMenu">
+      <div class="fab-user-name">{{ session.get('username','User') }}</div>
+      <a href="{{ url_for('dashboard') }}">Dashboard</a>
+      <a href="{{ url_for('mod_reports_dashboard') }}">MOD Reports</a>
+      <a href="{{ url_for('logout') }}" style="color:#dc2626;">Logout</a>
+    </div>
+  </div>
+  <div class="night-hero">
+    <h2>Night Report</h2>
+    <p>Admissions, occupancy, and doctor counts in the night shift format.</p>
+  </div>
+
+  <div class="controls">
+    <div class="control">
+      <label>Date</label>
+      <select id="nightDate" disabled>
+        <option value="">Loading snapshots...</option>
+      </select>
+    </div>
+    <div class="control">
+      <label>Unit</label>
+      <select id="nightUnit">
+        {% if allowed_units and allowed_units|length %}
+          {% for u in allowed_units %}
+            <option value="{{ u }}" {% if u == selected_unit %}selected{% endif %}>{{ u }}</option>
+          {% endfor %}
+        {% else %}
+          <option value="">No units</option>
+        {% endif %}
+      </select>
+    </div>
+    <div class="control">
+      <label>Actions</label>
+      <div class="btn-row">
+        <button class="btn primary" type="button" id="loadSnapshotBtn">Load Snapshot</button>
+        <button class="btn secondary" type="button" id="loadLiveBtn">Fetch Current</button>
+        <button class="btn ghost" type="button" id="exportBtn">Export Excel</button>
+        <button class="btn ghost" type="button" id="exportPdfBtn">Export PDF</button>
+        <button class="btn ghost" type="button" id="exportJpgBtn">Export JPG</button>
+        <button class="btn save" type="button" id="saveBtn">Save Manual</button>
+      </div>
+    </div>
+    <div class="control">
+      <label>Status</label>
+      <div class="status" id="nightStatus">Ready.</div>
+    </div>
+  </div>
+
+  <div class="table-wrap">
+    <table class="night-table" id="nightTable"></table>
+  </div>
+
+  <div class="lower-grid">
+    <div class="panel">
+      <table id="wardTable">
+        <thead>
+          <tr class="action-row">
+            <th colspan="4">
+              <div class="action-buttons">
+                <button class="btn ghost tiny" type="button" id="addWardRowBtn">Add Row</button>
+                <button class="btn danger tiny" type="button" id="removeWardRowBtn">Remove Row</button>
+              </div>
+            </th>
+          </tr>
+          <tr>
+            <th>WARD / CABIN</th>
+            <th>Patient Count<span class="ward-header-note">Occupied + Clinically discharged</span></th>
+            <th>Physical Count</th>
+            <th>No. Of Beds</th>
+          </tr>
+        </thead>
+        <tbody id="wardTableBody">
+          <tr><td colspan="4">No data loaded.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="panel">
+      <table id="doctorTable">
+        <thead>
+          <tr class="action-row">
+            <th colspan="2">
+              <div class="action-buttons">
+                <button class="btn ghost tiny" type="button" id="addDoctorCountRowBtn">Add Row</button>
+                <button class="btn danger tiny" type="button" id="removeDoctorCountRowBtn">Remove Row</button>
+              </div>
+            </th>
+          </tr>
+          <tr>
+            <th>Doctor's Name</th>
+            <th>Count</th>
+          </tr>
+        </thead>
+        <tbody id="doctorTableBody">
+          <tr><td colspan="2">No data loaded.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</section>
+
+<script>
+  const nightDate = document.getElementById('nightDate');
+  const nightUnit = document.getElementById('nightUnit');
+  const loadSnapshotBtn = document.getElementById('loadSnapshotBtn');
+  const loadLiveBtn = document.getElementById('loadLiveBtn');
+  const exportBtn = document.getElementById('exportBtn');
+  const exportPdfBtn = document.getElementById('exportPdfBtn');
+  const exportJpgBtn = document.getElementById('exportJpgBtn');
+  const saveBtn = document.getElementById('saveBtn');
+  const nightStatus = document.getElementById('nightStatus');
+  const nightTable = document.getElementById('nightTable');
+  const wardTableBody = document.getElementById('wardTableBody');
+  const doctorTableBody = document.getElementById('doctorTableBody');
+  const addWardRowBtn = document.getElementById('addWardRowBtn');
+  const removeWardRowBtn = document.getElementById('removeWardRowBtn');
+  const addDoctorCountRowBtn = document.getElementById('addDoctorCountRowBtn');
+  const removeDoctorCountRowBtn = document.getElementById('removeDoctorCountRowBtn');
+  const nightWrap = document.querySelector('.night-wrap');
+  const fabToggle = document.getElementById('fabToggle');
+  const fabMenu = document.getElementById('fabMenu');
+
+  let currentMode = 'snapshot';
+  let currentPayload = null;
+  let snapshotDates = [];
+  let latestSnapshotStamp = '';
+  let editLocked = false;
+
+  function escapeHtml(text) {
+    return String(text ?? '')
+      .replace(/&/g, '&amp;')
+      .replace(/</g, '&lt;')
+      .replace(/>/g, '&gt;')
+      .replace(/\"/g, '&quot;')
+      .replace(/'/g, '&#39;');
+  }
+
+  function setStatus(text, warn=false) {
+    if (!nightStatus) return;
+    nightStatus.textContent = text;
+    nightStatus.classList.toggle('warn', !!warn);
+  }
+
+  function applyEditLock(locked, message) {
+    editLocked = !!locked;
+    if (saveBtn) saveBtn.disabled = editLocked;
+    [addWardRowBtn, removeWardRowBtn, addDoctorCountRowBtn, removeDoctorCountRowBtn].forEach((btn) => {
+      if (btn) btn.disabled = editLocked;
+    });
+    nightTable?.querySelectorAll('button[data-action]').forEach((btn) => {
+      btn.disabled = editLocked;
+    });
+    nightWrap?.querySelectorAll('input.nr-input').forEach((input) => {
+      input.disabled = editLocked;
+    });
+    if (editLocked && message) {
+      setStatus(message, true);
+    }
+  }
+
+  async function readJsonResponse(res) {
+    const text = await res.text();
+    try {
+      return JSON.parse(text);
+    } catch (err) {
+      const trimmed = String(text || '').trim();
+      const isHtml = /^<!doctype|^<html/i.test(trimmed);
+      if (isHtml) {
+        const msg = (res.redirected || res.status === 401 || res.status === 302)
+          ? 'Session expired. Please login again.'
+          : `Server returned HTML (HTTP ${res.status}). Check server logs.`;
+        throw new Error(msg);
+      }
+      if (trimmed) {
+        throw new Error(trimmed.slice(0, 200));
+      }
+      throw new Error(`Unexpected response (HTTP ${res.status}).`);
+    }
+  }
+
+  function formatSnapshotDateLabel(dateStr) {
+    const match = String(dateStr || '').match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!match) return String(dateStr || '');
+    return `${match[3]}-${match[2]}-${match[1]}`;
+  }
+
+  function formatSnapshotStamp(snapshotTime, snapshotDate) {
+    const raw = String(snapshotTime || snapshotDate || '').trim();
+    const match = raw.match(/^(\d{4})-(\d{2})-(\d{2})(?:[ T](\d{2}:\d{2}(?::\d{2})?)?)?/);
+    if (!match) return raw;
+    const formattedDate = `${match[3]}-${match[2]}-${match[1]}`;
+    const timePart = match[4] ? ` ${match[4]}` : '';
+    return `${formattedDate}${timePart}`;
+  }
+
+  function setSnapshotDateOptions(dates, preferred) {
+    if (!nightDate) return;
+    nightDate.innerHTML = '';
+    snapshotDates = Array.isArray(dates) ? dates.filter(Boolean) : [];
+    if (!snapshotDates.length) {
+      const opt = document.createElement('option');
+      opt.value = '';
+      opt.textContent = 'No snapshots available';
+      nightDate.appendChild(opt);
+      nightDate.disabled = true;
+      return;
+    }
+    const fragment = document.createDocumentFragment();
+    snapshotDates.forEach((dateStr) => {
+      const opt = document.createElement('option');
+      opt.value = dateStr;
+      opt.textContent = formatSnapshotDateLabel(dateStr);
+      fragment.appendChild(opt);
+    });
+    nightDate.appendChild(fragment);
+    const nextValue = preferred && snapshotDates.includes(preferred)
+      ? preferred
+      : snapshotDates[0];
+    nightDate.value = nextValue;
+    nightDate.disabled = false;
+  }
+
+  async function loadSnapshotDates(preferredDate) {
+    if (!nightDate) return;
+    const unit = nightUnit?.value || '';
+    if (!unit) {
+      setSnapshotDateOptions([], null);
+      return;
+    }
+    nightDate.disabled = true;
+    nightDate.innerHTML = '<option value="">Loading snapshots...</option>';
+    try {
+      const res = await fetch(`/api/mod_reports/night_report/snapshot_dates?unit=${encodeURIComponent(unit)}`, {
+        credentials: 'same-origin',
+        cache: 'no-store'
+      });
+      const data = await readJsonResponse(res);
+      if (!res.ok || data.status !== 'success') {
+        throw new Error(data.message || 'Failed to load snapshot dates');
+      }
+      setSnapshotDateOptions(data.dates || [], preferredDate);
+    } catch (err) {
+      setSnapshotDateOptions([], null);
+      setStatus(`Failed to load snapshot dates: ${err.message}`, true);
+    }
+  }
+
+  function buildCombinedRows(data) {
+    const particulars = data.particulars || [];
+    const equipment = data.equipment_rows || [];
+    const doctorEntries = data.doctor_entries || [];
+    const occupancy = data.occupancy_paytype || [];
+
+    const splitTotal = (rows, key) => {
+      let totalRow = null;
+      const list = [];
+      rows.forEach((row) => {
+        const label = String(row?.[key] || '').trim().toUpperCase();
+        if (label === 'TOTAL') {
+          totalRow = row;
+        } else {
+          list.push(row);
+        }
+      });
+      return { list, totalRow };
+    };
+
+    const partSplit = splitTotal(particulars, 'label');
+    const equipSplit = splitTotal(equipment, 'equipment');
+    const occSplit = splitTotal(occupancy, 'label');
+
+    const partList = partSplit.list.map((row, idx) => ({ ...row, _idx: idx, _is_total: false }));
+    const partTotal = partSplit.totalRow ? { ...partSplit.totalRow, _idx: partList.length, _is_total: true } : null;
+    const equipList = equipSplit.list.map((row, idx) => ({ ...row, _idx: idx, _is_total: false }));
+    const equipTotal = equipSplit.totalRow ? { ...equipSplit.totalRow, _idx: equipList.length, _is_total: true } : null;
+    const occList = occSplit.list.map((row, idx) => ({ ...row, _idx: idx, _is_total: false }));
+    const occTotal = occSplit.totalRow ? { ...occSplit.totalRow, _idx: occList.length, _is_total: true } : null;
+    const docList = doctorEntries.map((row, idx) => ({ ...row, _idx: idx, _is_pad: false }));
+
+    const baseLen = Math.max(partList.length, equipList.length, docList.length, occList.length, 1);
+    while (docList.length < baseLen) {
+      docList.push({ doctor_name: "", entry_time: "", _idx: docList.length, _is_pad: true });
+    }
+    const rows = [];
+
+    for (let i = 0; i < baseLen; i += 1) {
+      rows.push({
+        particulars: partList[i] || {},
+        equipment: equipList[i] || {},
+        doctor: docList[i] || {},
+        occupancy: occList[i] || {}
+      });
+    }
+
+    const isRowEmpty = (row) => {
+      const partLabel = String(row.particulars?.label || '').trim();
+      const equipLabel = String(row.equipment?.equipment || '').trim();
+      const occLabel = String(row.occupancy?.label || '').trim();
+      const docName = String(row.doctor?.doctor_name || '').trim();
+      const docTime = String(row.doctor?.entry_time || '').trim();
+      const docPad = row.doctor && row.doctor._is_pad;
+      const keepDoctorRow = row.doctor && !docPad;
+      const equipHasValue = Object.entries(row.equipment || {}).some(([key, val]) => {
+        if (key === 'equipment' || key === '_idx' || key === '_is_total') return false;
+        if (val === null || val === undefined) return false;
+        return String(val).trim() !== '';
+      });
+      return !(partLabel || equipLabel || occLabel || docName || docTime || keepDoctorRow || equipHasValue);
+    };
+
+    while (rows.length > 1 && isRowEmpty(rows[rows.length - 1])) {
+      rows.pop();
+    }
+
+    if (partTotal || equipTotal || occTotal) {
+      rows.push({
+        particulars: partTotal || {},
+        equipment: equipTotal || {},
+        doctor: {},
+        occupancy: occTotal || {}
+      });
+    }
+
+    return rows;
+  }
+
+  function renderNightTable(data) {
+    const equipCols = data.equipment_columns || ["Neuro ICU","NICU","PICU","MICU","CCU"];
+    const equipKeys = equipCols.map((col) => String(col || '').toLowerCase().replace(/[^a-z0-9]+/g, '_'));
+    const headerCols = [
+      "PARTICULARS","Admission","Discharge","Equipment",
+      ...equipCols,
+      "Doctor's Name","Entry Time","Occupancy","Count"
+    ];
+
+    const sourceLabel = data.source === 'snapshot'
+      ? `Snapshot${data.snapshot_time ? ' @ ' + data.snapshot_time : ''}`
+      : 'Live';
+    const metaText = `Unit: ${data.unit || '-'} | Source: ${sourceLabel}`;
+
+    const rows = buildCombinedRows(data);
+    const rowHtml = rows.map((row) => {
+      const partLabel = row.particulars.label || '';
+      const equipLabel = row.equipment.equipment || '';
+      const occLabel = row.occupancy.label || '';
+      const partIdx = Number.isInteger(row.particulars._idx) ? row.particulars._idx : null;
+      const occIdx = Number.isInteger(row.occupancy._idx) ? row.occupancy._idx : null;
+      const docIdx = Number.isInteger(row.doctor._idx) ? row.doctor._idx : null;
+      const equipIdx = Number.isInteger(row.equipment._idx) ? row.equipment._idx : null;
+      const isTotalPart = String(partLabel).trim().toUpperCase() === 'TOTAL';
+      const isTotalEquip = String(equipLabel).trim().toUpperCase() === 'TOTAL';
+      const isTotalOcc = String(occLabel).trim().toUpperCase() === 'TOTAL';
+
+      const admissionVal = row.particulars.admission ?? '';
+      const dischargeVal = row.particulars.discharge ?? '';
+      const occVal = row.occupancy.count ?? '';
+      const docNameVal = row.doctor.doctor_name || '';
+      const docTimeVal = row.doctor.entry_time || '';
+
+      const cells = [];
+      cells.push(`<td class="data-cell left${isTotalPart ? ' total-cell' : ''}">${escapeHtml(partLabel)}</td>`);
+      if (partLabel) {
+        let admissionCell = '';
+        let dischargeCell = '';
+        if (isTotalPart) {
+          admissionCell = `<span data-total-field="admission">${escapeHtml(admissionVal)}</span>`;
+          dischargeCell = `<span data-total-field="discharge">${escapeHtml(dischargeVal)}</span>`;
+        } else if (partIdx !== null) {
+          admissionCell = `<input class="nr-input num" type="number" min="0" data-section="PARTICULARS" data-index="${partIdx}" data-field="admission" value="${escapeHtml(admissionVal)}">`;
+          dischargeCell = `<input class="nr-input num" type="number" min="0" data-section="PARTICULARS" data-index="${partIdx}" data-field="discharge" value="${escapeHtml(dischargeVal)}">`;
+        } else {
+          admissionCell = `${escapeHtml(admissionVal)}`;
+          dischargeCell = `${escapeHtml(dischargeVal)}`;
+        }
+        cells.push(`<td class="data-cell${isTotalPart ? ' total-cell' : ''}">${admissionCell}</td>`);
+        cells.push(`<td class="data-cell${isTotalPart ? ' total-cell' : ''}">${dischargeCell}</td>`);
+      } else {
+        cells.push(`<td class="data-cell"></td>`);
+        cells.push(`<td class="data-cell"></td>`);
+      }
+      let equipNameCell = '';
+      if (isTotalEquip) {
+        equipNameCell = `${escapeHtml(equipLabel)}`;
+      } else if (equipIdx !== null) {
+        equipNameCell = `<input class="nr-input" type="text" data-section="EQUIPMENT" data-index="${equipIdx}" data-field="equipment" value="${escapeHtml(equipLabel)}">`;
+      } else {
+        equipNameCell = `${escapeHtml(equipLabel)}`;
+      }
+      cells.push(`<td class="data-cell left${isTotalEquip ? ' total-cell' : ''}">${equipNameCell}</td>`);
+      equipCols.forEach((col, idx) => {
+        const key = equipKeys[idx] || `col_${idx}`;
+        const val = row.equipment?.[key] ?? '';
+        let equipCell = '';
+        if (equipIdx !== null && !isTotalEquip) {
+          equipCell = `<input class="nr-input num" type="number" min="0" data-section="EQUIPMENT" data-index="${equipIdx}" data-field="${key}" value="${escapeHtml(val)}">`;
+        } else if (isTotalEquip) {
+          equipCell = `<span data-equip-total="${key}">${escapeHtml(val)}</span>`;
+        }
+        cells.push(`<td class="data-cell${isTotalEquip ? ' total-cell' : ''}">${equipCell}</td>`);
+      });
+      if (docIdx !== null) {
+        cells.push(`<td class="data-cell left"><input class="nr-input" type="text" data-section="DOCTOR_ENTRY" data-index="${docIdx}" data-field="doctor_name" value="${escapeHtml(docNameVal)}"></td>`);
+        cells.push(`<td class="data-cell"><input class="nr-input" type="text" data-section="DOCTOR_ENTRY" data-index="${docIdx}" data-field="entry_time" value="${escapeHtml(docTimeVal)}"></td>`);
+      } else {
+        cells.push(`<td class="data-cell left"></td>`);
+        cells.push(`<td class="data-cell"></td>`);
+      }
+      cells.push(`<td class="data-cell left${isTotalOcc ? ' total-cell' : ''}">${escapeHtml(occLabel)}</td>`);
+      if (occLabel) {
+        const occCell = isTotalOcc
+          ? `<span data-total-field="occupancy">${escapeHtml(occVal)}</span>`
+          : `${escapeHtml(occVal)}`;
+        cells.push(`<td class="data-cell${isTotalOcc ? ' total-cell' : ''}">${occCell}</td>`);
+      } else {
+        cells.push(`<td class="data-cell"></td>`);
+      }
+      return `<tr>${cells.join('')}</tr>`;
+    }).join('');
+
+    nightTable.innerHTML = `
+      <thead>
+        <tr class="title-row"><th colspan="${headerCols.length}">Night Report</th></tr>
+        <tr class="date-row"><th colspan="${headerCols.length}">Date ${escapeHtml(data.date || '')}</th></tr>
+        <tr class="meta-row"><th colspan="${headerCols.length}">${escapeHtml(metaText)}</th></tr>
+        <tr class="action-row">
+          <th colspan="${headerCols.length}">
+            <div class="action-buttons">
+              <button class="btn ghost tiny" type="button" data-action="add-doctor-row">Add Doctor Row</button>
+              <button class="btn danger tiny" type="button" data-action="remove-doctor-row">Remove Doctor Row</button>
+              <button class="btn ghost tiny" type="button" data-action="add-equipment-row">Add Equipment Row</button>
+              <button class="btn danger tiny" type="button" data-action="remove-equipment-row">Remove Equipment Row</button>
+            </div>
+          </th>
+        </tr>
+        <tr class="col-row">${headerCols.map(col => `<th>${escapeHtml(col)}</th>`).join('')}</tr>
+      </thead>
+      <tbody>${rowHtml}</tbody>
+    `;
+  }
+
+  function renderWardTable(rows) {
+    if (!rows || !rows.length) {
+      wardTableBody.innerHTML = '<tr class="empty-row"><td colspan="4">No data.</td></tr>';
+      return;
+    }
+    const dataRows = rows.filter((row) => String(row.ward || '').trim().toUpperCase() !== 'TOTAL');
+    const bodyRows = dataRows.map((row, idx) => {
+      const wardVal = row.ward ?? '';
+      const occVal = row.occupied_count ?? '';
+      const clinVal = row.clinically_discharged_count ?? '';
+      const physVal = row.physical_count ?? '';
+      const bedsVal = row.beds ?? '';
+      let patientVal = row.patient_count ?? '';
+      if ((patientVal === null || patientVal === undefined || patientVal === '') && (occVal || clinVal)) {
+        const occNum = parseInt(occVal || '0', 10) || 0;
+        const clinNum = parseInt(clinVal || '0', 10) || 0;
+        const totalVal = occNum + clinNum;
+        patientVal = totalVal ? totalVal : '';
+      }
+      return `
+        <tr data-ward-row>
+          <td class="left"><input class="nr-input text" type="text" data-ward-field="ward" value="${escapeHtml(wardVal)}"></td>
+          <td>
+            <div class="ward-patient-cell">
+              <div class="ward-patient-count" data-ward-display="patient_count">${escapeHtml(patientVal)}</div>
+              <div class="ward-patient-seg" data-ward-subtext>
+                <span data-ward-display="occupied_count">${escapeHtml(occVal)}</span>
+                <span>+</span>
+                <span data-ward-display="clinically_discharged_count">${escapeHtml(clinVal)}</span>
+              </div>
+              <input type="hidden" data-ward-field="patient_count" value="${escapeHtml(patientVal)}">
+              <input type="hidden" data-ward-field="occupied_count" value="${escapeHtml(occVal)}">
+              <input type="hidden" data-ward-field="clinically_discharged_count" value="${escapeHtml(clinVal)}">
+            </div>
+          </td>
+          <td><input class="nr-input num" type="number" min="0" data-ward-field="physical_count" value="${escapeHtml(physVal)}"></td>
+          <td><input class="nr-input num" type="number" min="0" data-ward-field="beds" value="${escapeHtml(bedsVal)}"></td>
+        </tr>
+      `;
+    }).join('');
+    const totalRow = `
+      <tr class="total-row">
+        <td class="left">TOTAL</td>
+        <td>
+          <div class="ward-patient-cell">
+            <div class="ward-patient-count" data-ward-total="patient_count"></div>
+            <div class="ward-patient-seg" data-ward-total-subtext>
+              <span data-ward-total="occupied_count"></span>
+              <span>+</span>
+              <span data-ward-total="clinically_discharged_count"></span>
+            </div>
+          </div>
+        </td>
+        <td data-ward-total="physical_count"></td>
+        <td data-ward-total="beds"></td>
+      </tr>
+    `;
+    wardTableBody.innerHTML = (bodyRows || '<tr class="empty-row"><td colspan="4">No data.</td></tr>') + totalRow;
+    updateWardTotals();
+  }
+
+  function renderDoctorTable(rows) {
+    if (!rows || !rows.length) {
+      doctorTableBody.innerHTML = '<tr class="empty-row"><td colspan="2">No data.</td></tr>';
+      return;
+    }
+    const dataRows = rows.filter((row) => String(row.doctor || '').trim().toUpperCase() !== 'TOTAL');
+    const bodyRows = dataRows.map((row, idx) => {
+      const nameVal = row.doctor || '';
+      const countVal = row.count ?? '';
+      return `
+        <tr data-doctor-row>
+          <td class="left"><input class="nr-input text" type="text" data-section="DOCTOR_VOLUME" data-field="doctor" value="${escapeHtml(nameVal)}"></td>
+          <td><input class="nr-input num" type="number" min="0" data-section="DOCTOR_VOLUME" data-field="count" value="${escapeHtml(countVal)}"></td>
+        </tr>
+      `;
+    }).join('');
+    const totalRow = `
+      <tr class="total-row">
+        <td class="left">TOTAL</td>
+        <td data-doctor-total="count"></td>
+      </tr>
+    `;
+    doctorTableBody.innerHTML = (bodyRows || '<tr class="empty-row"><td colspan="2">No data.</td></tr>') + totalRow;
+    updateDoctorTotals();
+  }
+
+  function readNumber(input) {
+    if (!input) return null;
+    const raw = String(input.value ?? '').trim();
+    if (!raw) return null;
+    const num = Number(raw);
+    return Number.isFinite(num) ? num : null;
+  }
+
+  function computeEquipmentTotals() {
+    const totals = {};
+    document.querySelectorAll('input[data-section="EQUIPMENT"]').forEach((input) => {
+      const key = input.dataset.field || '';
+      const raw = String(input.value ?? '').trim();
+      if (!key || key === 'equipment' || raw === '') return;
+      const val = Number(raw) || 0;
+      totals[key] = (totals[key] || 0) + val;
+    });
+    return totals;
+  }
+
+  function updateTotals() {
+    updateWardTotals();
+    const equipTotals = computeEquipmentTotals();
+    document.querySelectorAll('[data-equip-total]').forEach((span) => {
+      const key = span.getAttribute('data-equip-total') || '';
+      const val = Object.prototype.hasOwnProperty.call(equipTotals, key) ? equipTotals[key] : '';
+      span.textContent = val === '' ? '' : val;
+    });
+    updateDoctorTotals();
+  }
+
+  function updateWardTotals() {
+    if (!wardTableBody) return;
+    let totalPatient = 0;
+    let totalOcc = 0;
+    let totalClin = 0;
+    let totalPhys = 0;
+    let totalBeds = 0;
+    let hasAny = false;
+    wardTableBody.querySelectorAll('tr[data-ward-row]').forEach((row) => {
+      const occVal = parseInt(row.querySelector('[data-ward-field="occupied_count"]')?.value || '0', 10) || 0;
+      const clinVal = parseInt(row.querySelector('[data-ward-field="clinically_discharged_count"]')?.value || '0', 10) || 0;
+      const physVal = parseInt(row.querySelector('[data-ward-field="physical_count"]')?.value || '0', 10) || 0;
+      const bedsVal = parseInt(row.querySelector('[data-ward-field="beds"]')?.value || '0', 10) || 0;
+      const basePatient = parseInt(row.querySelector('[data-ward-field="patient_count"]')?.value || '0', 10) || 0;
+      const patientVal = (occVal || clinVal) ? (occVal + clinVal) : basePatient;
+      const patientDisplay = row.querySelector('[data-ward-display="patient_count"]');
+      const occDisplay = row.querySelector('[data-ward-display="occupied_count"]');
+      const clinDisplay = row.querySelector('[data-ward-display="clinically_discharged_count"]');
+      const subtext = row.querySelector('[data-ward-subtext]');
+      const patientHidden = row.querySelector('[data-ward-field="patient_count"]');
+      if (patientDisplay) patientDisplay.textContent = patientVal ? patientVal : '';
+      if (occDisplay) occDisplay.textContent = occVal ? occVal : '';
+      if (clinDisplay) clinDisplay.textContent = clinVal ? clinVal : '';
+      if (subtext) subtext.style.display = clinVal ? 'flex' : 'none';
+      if (patientHidden) patientHidden.value = patientVal ? String(patientVal) : '';
+      if (patientVal || occVal || clinVal || physVal || bedsVal) {
+        hasAny = true;
+        totalPatient += patientVal;
+        totalOcc += occVal;
+        totalClin += clinVal;
+        totalPhys += physVal;
+        totalBeds += bedsVal;
+      }
+    });
+    const patientCell = wardTableBody.querySelector('[data-ward-total="patient_count"]');
+    const occCell = wardTableBody.querySelector('[data-ward-total="occupied_count"]');
+    const clinCell = wardTableBody.querySelector('[data-ward-total="clinically_discharged_count"]');
+    const physCell = wardTableBody.querySelector('[data-ward-total="physical_count"]');
+    const bedsCell = wardTableBody.querySelector('[data-ward-total="beds"]');
+    if (patientCell) patientCell.textContent = hasAny ? totalPatient : '';
+    if (occCell) occCell.textContent = hasAny ? totalOcc : '';
+    if (clinCell) clinCell.textContent = hasAny ? totalClin : '';
+    const totalSubtext = wardTableBody.querySelector('[data-ward-total-subtext]');
+    if (totalSubtext) totalSubtext.style.display = totalClin ? 'flex' : 'none';
+    if (physCell) physCell.textContent = hasAny ? totalPhys : '';
+    if (bedsCell) bedsCell.textContent = hasAny ? totalBeds : '';
+  }
+
+  function updateDoctorTotals() {
+    if (!doctorTableBody) return;
+    let total = 0;
+    let hasAny = false;
+    doctorTableBody.querySelectorAll('tr[data-doctor-row]').forEach((row) => {
+      const countVal = parseInt(row.querySelector('[data-section="DOCTOR_VOLUME"][data-field="count"]')?.value || '0', 10) || 0;
+      if (countVal) {
+        hasAny = true;
+        total += countVal;
+      }
+    });
+    const totalCell = doctorTableBody.querySelector('[data-doctor-total="count"]');
+    if (totalCell) totalCell.textContent = hasAny ? total : '';
+  }
+
+  function collectParticulars() {
+    const rows = currentPayload?.particulars || [];
+    const inputExists = document.querySelector('input[data-section="PARTICULARS"]');
+    if (!inputExists) {
+      return rows.map((row) => ({
+        label: row?.label || '',
+        admission: row?.admission ?? null,
+        discharge: row?.discharge ?? null
+      }));
+    }
+    let totalAdm = 0;
+    let totalDis = 0;
+    let hasAny = false;
+    return rows.map((row, idx) => {
+      const label = row?.label || '';
+      const isTotal = String(label).trim().toUpperCase() === 'TOTAL';
+      if (isTotal) {
+        return {
+          label,
+          admission: hasAny ? totalAdm : (row?.admission ?? null),
+          discharge: hasAny ? totalDis : (row?.discharge ?? null)
+        };
+      }
+      const admInput = document.querySelector(`input[data-section="PARTICULARS"][data-index="${idx}"][data-field="admission"]`);
+      const disInput = document.querySelector(`input[data-section="PARTICULARS"][data-index="${idx}"][data-field="discharge"]`);
+      const admVal = readNumber(admInput);
+      const disVal = readNumber(disInput);
+      if (admVal !== null) {
+        totalAdm += admVal;
+        hasAny = true;
+      }
+      if (disVal !== null) {
+        totalDis += disVal;
+        hasAny = true;
+      }
+      return { label, admission: admVal, discharge: disVal };
+    });
+  }
+
+  function collectOccupancy() {
+    const rows = currentPayload?.occupancy_paytype || [];
+    const inputExists = document.querySelector('input[data-section="OCCUPANCY"]');
+    if (!inputExists) {
+      return rows.map((row) => ({
+        label: row?.label || '',
+        count: row?.count ?? null
+      }));
+    }
+    let total = 0;
+    let hasAny = false;
+    return rows.map((row, idx) => {
+      const label = row?.label || '';
+      const isTotal = String(label).trim().toUpperCase() === 'TOTAL';
+      if (isTotal) {
+        return {
+          label,
+          count: hasAny ? total : (row?.count ?? null)
+        };
+      }
+      const countInput = document.querySelector(`input[data-section="OCCUPANCY"][data-index="${idx}"][data-field="count"]`);
+      const countVal = readNumber(countInput);
+      if (countVal !== null) {
+        total += countVal;
+        hasAny = true;
+      }
+      return { label, count: countVal };
+    });
+  }
+
+  function collectEquipmentRows() {
+    const rows = currentPayload?.equipment_rows || [];
+    const equipCols = currentPayload?.equipment_columns || ["Neuro ICU","NICU","PICU","MICU","CCU"];
+    const equipKeys = equipCols.map((col) => String(col || '').toLowerCase().replace(/[^a-z0-9]+/g, '_'));
+    const equipTotals = computeEquipmentTotals();
+    return rows.map((row, idx) => {
+      const labelInput = document.querySelector(`input[data-section="EQUIPMENT"][data-index="${idx}"][data-field="equipment"]`);
+      const originalLabel = String(row?.equipment || '').trim();
+      const isTotal = originalLabel.toUpperCase() === 'TOTAL';
+      const editedLabel = String(labelInput?.value ?? originalLabel).trim();
+      const out = { equipment: isTotal ? originalLabel : editedLabel };
+      equipKeys.forEach((key) => {
+        if (isTotal) {
+          out[key] = Object.prototype.hasOwnProperty.call(equipTotals, key) ? equipTotals[key] : null;
+          return;
+        }
+        const input = document.querySelector(`input[data-section="EQUIPMENT"][data-index="${idx}"][data-field="${key}"]`);
+        out[key] = readNumber(input);
+      });
+      return out;
+    });
+  }
+
+  function collectDoctorEntries() {
+    const nameInputs = Array.from(document.querySelectorAll('input[data-section="DOCTOR_ENTRY"][data-field="doctor_name"]'));
+    if (!nameInputs.length) {
+      const rows = currentPayload?.doctor_entries || [];
+      return rows.map((row, idx) => {
+        const nameInput = document.querySelector(`input[data-section="DOCTOR_ENTRY"][data-index="${idx}"][data-field="doctor_name"]`);
+        const timeInput = document.querySelector(`input[data-section="DOCTOR_ENTRY"][data-index="${idx}"][data-field="entry_time"]`);
+        return {
+          doctor_name: String(nameInput?.value || row?.doctor_name || '').trim(),
+          entry_time: String(timeInput?.value || row?.entry_time || '').trim()
+        };
+      });
+    }
+    const indices = nameInputs
+      .map((input) => Number.parseInt(String(input.dataset.index || ""), 10))
+      .filter((idx) => Number.isInteger(idx) && idx >= 0);
+    const maxIdx = indices.length ? Math.max(...indices) : -1;
+    const out = Array.from({ length: maxIdx + 1 }, () => ({ doctor_name: "", entry_time: "" }));
+    for (let i = 0; i <= maxIdx; i += 1) {
+      const nameInput = document.querySelector(`input[data-section="DOCTOR_ENTRY"][data-index="${i}"][data-field="doctor_name"]`);
+      const timeInput = document.querySelector(`input[data-section="DOCTOR_ENTRY"][data-index="${i}"][data-field="entry_time"]`);
+      if (!nameInput && !timeInput) continue;
+      out[i] = {
+        doctor_name: String(nameInput?.value || "").trim(),
+        entry_time: String(timeInput?.value || "").trim()
+      };
+    }
+    return out;
+  }
+
+  function captureCurrentMainTableEdits() {
+    if (!currentPayload) return;
+    currentPayload.particulars = collectParticulars();
+    currentPayload.occupancy_paytype = collectOccupancy();
+    currentPayload.equipment_rows = collectEquipmentRows();
+    currentPayload.doctor_entries = collectDoctorEntries();
+  }
+
+  function addDoctorEntryRow() {
+    if (!currentPayload) {
+      setStatus('Load a report before adding rows.', true);
+      return;
+    }
+    captureCurrentMainTableEdits();
+    if (!Array.isArray(currentPayload.doctor_entries)) {
+      currentPayload.doctor_entries = [];
+    }
+    currentPayload.doctor_entries.push({ doctor_name: "", entry_time: "" });
+    renderNightTable(currentPayload);
+    updateTotals();
+    setStatus('Added a doctor row.');
+  }
+
+  function addEquipmentRow() {
+    if (!currentPayload) {
+      setStatus('Load a report before adding rows.', true);
+      return;
+    }
+    captureCurrentMainTableEdits();
+    if (!Array.isArray(currentPayload.equipment_rows)) {
+      currentPayload.equipment_rows = [];
+    }
+    const equipCols = currentPayload.equipment_columns || ["Neuro ICU","NICU","PICU","MICU","CCU"];
+    const equipKeys = equipCols.map((col) => String(col || '').toLowerCase().replace(/[^a-z0-9]+/g, '_'));
+    const rows = currentPayload.equipment_rows;
+    const usedLabels = new Set(
+      rows
+        .map((row) => String(row?.equipment || '').trim().toLowerCase())
+        .filter((label) => label && label !== 'total')
+    );
+    let nextIdx = 1;
+    let newLabel = `Equipment ${nextIdx}`;
+    while (usedLabels.has(newLabel.toLowerCase())) {
+      nextIdx += 1;
+      newLabel = `Equipment ${nextIdx}`;
+    }
+
+    const blankRow = { equipment: newLabel };
+    equipKeys.forEach((key) => {
+      blankRow[key] = null;
+    });
+    const totalIdx = rows.findIndex((row) => String(row?.equipment || '').trim().toUpperCase() === 'TOTAL');
+    if (totalIdx >= 0) {
+      rows.splice(totalIdx, 0, blankRow);
+    } else {
+      rows.push(blankRow);
+    }
+    renderNightTable(currentPayload);
+    updateTotals();
+    setStatus(`Added equipment row "${newLabel}".`);
+  }
+
+  function removeDoctorEntryRow() {
+    if (!currentPayload) {
+      setStatus('Load a report before removing rows.', true);
+      return;
+    }
+    captureCurrentMainTableEdits();
+    if (!Array.isArray(currentPayload.doctor_entries) || !currentPayload.doctor_entries.length) {
+      return;
+    }
+    currentPayload.doctor_entries.pop();
+    renderNightTable(currentPayload);
+    updateTotals();
+  }
+
+  function removeEquipmentRow() {
+    if (!currentPayload) {
+      setStatus('Load a report before removing rows.', true);
+      return;
+    }
+    captureCurrentMainTableEdits();
+    if (!Array.isArray(currentPayload.equipment_rows) || !currentPayload.equipment_rows.length) {
+      return;
+    }
+    const rows = currentPayload.equipment_rows;
+    let idx = rows.length - 1;
+    while (idx >= 0 && String(rows[idx]?.equipment || '').trim().toUpperCase() === 'TOTAL') {
+      idx -= 1;
+    }
+    if (idx < 0) return;
+    rows.splice(idx, 1);
+    renderNightTable(currentPayload);
+    updateTotals();
+  }
+
+  function addWardRow() {
+    if (editLocked) return;
+    const rows = collectWardRows().filter((r) => String(r.ward || '').trim().toUpperCase() !== 'TOTAL');
+    rows.push({
+      ward: "",
+      patient_count: null,
+      occupied_count: null,
+      clinically_discharged_count: null,
+      physical_count: null,
+      beds: null
+    });
+    renderWardTable(rows);
+    updateTotals();
+  }
+
+  function removeWardRow() {
+    if (editLocked) return;
+    const rows = collectWardRows().filter((r) => String(r.ward || '').trim().toUpperCase() !== 'TOTAL');
+    if (!rows.length) return;
+    rows.pop();
+    renderWardTable(rows);
+    updateTotals();
+  }
+
+  function addDoctorCountRow() {
+    if (editLocked) return;
+    const rows = collectDoctorVolume().filter((r) => String(r.doctor || '').trim().toUpperCase() !== 'TOTAL');
+    rows.push({ doctor: "", count: null });
+    renderDoctorTable(rows);
+    updateTotals();
+  }
+
+  function removeDoctorCountRow() {
+    if (editLocked) return;
+    const rows = collectDoctorVolume().filter((r) => String(r.doctor || '').trim().toUpperCase() !== 'TOTAL');
+    if (!rows.length) return;
+    rows.pop();
+    renderDoctorTable(rows);
+    updateTotals();
+  }
+
+  function collectDoctorVolume() {
+    const rows = [];
+    doctorTableBody?.querySelectorAll('tr[data-doctor-row]').forEach((row) => {
+      const nameVal = row.querySelector('[data-section="DOCTOR_VOLUME"][data-field="doctor"]')?.value || '';
+      const countVal = row.querySelector('[data-section="DOCTOR_VOLUME"][data-field="count"]')?.value || '';
+      if (!String(nameVal).trim() && !String(countVal).trim()) return;
+      const countNum = Number(String(countVal).trim());
+      rows.push({
+        doctor: nameVal,
+        count: Number.isFinite(countNum) ? countNum : null
+      });
+    });
+    if (rows.length) {
+      const total = rows.reduce((sum, r) => sum + (Number(r.count) || 0), 0);
+      rows.push({
+        doctor: 'TOTAL',
+        count: total ? total : null
+      });
+    }
+    return rows;
+  }
+
+  function collectWardRows() {
+    const rows = [];
+    wardTableBody?.querySelectorAll('tr[data-ward-row]').forEach((row) => {
+      const ward = row.querySelector('[data-ward-field="ward"]')?.value || '';
+      const occ = row.querySelector('[data-ward-field="occupied_count"]')?.value || '';
+      const clin = row.querySelector('[data-ward-field="clinically_discharged_count"]')?.value || '';
+      const phys = row.querySelector('[data-ward-field="physical_count"]')?.value || '';
+      const beds = row.querySelector('[data-ward-field="beds"]')?.value || '';
+      if (!String(ward).trim() && !String(occ).trim() && !String(clin).trim() && !String(phys).trim() && !String(beds).trim()) {
+        return;
+      }
+      const occNum = Number(String(occ).trim());
+      const clinNum = Number(String(clin).trim());
+      const physNum = Number(String(phys).trim());
+      const bedsNum = Number(String(beds).trim());
+      const patientNum = (Number.isFinite(occNum) ? occNum : 0) + (Number.isFinite(clinNum) ? clinNum : 0);
+      rows.push({
+        ward,
+        patient_count: patientNum ? patientNum : null,
+        occupied_count: Number.isFinite(occNum) ? occNum : null,
+        clinically_discharged_count: Number.isFinite(clinNum) ? clinNum : null,
+        physical_count: Number.isFinite(physNum) ? physNum : null,
+        beds: Number.isFinite(bedsNum) ? bedsNum : null
+      });
+    });
+    if (rows.length) {
+      const totalPatient = rows.reduce((sum, r) => sum + (Number(r.patient_count) || 0), 0);
+      const totalOcc = rows.reduce((sum, r) => sum + (Number(r.occupied_count) || 0), 0);
+      const totalClin = rows.reduce((sum, r) => sum + (Number(r.clinically_discharged_count) || 0), 0);
+      const totalPhys = rows.reduce((sum, r) => sum + (Number(r.physical_count) || 0), 0);
+      const totalBeds = rows.reduce((sum, r) => sum + (Number(r.beds) || 0), 0);
+      rows.push({
+        ward: 'TOTAL',
+        patient_count: totalPatient ? totalPatient : null,
+        occupied_count: totalOcc ? totalOcc : null,
+        clinically_discharged_count: totalClin ? totalClin : null,
+        physical_count: totalPhys ? totalPhys : null,
+        beds: totalBeds ? totalBeds : null
+      });
+    }
+    return rows;
+  }
+
+  async function saveManualData() {
+    if (editLocked) {
+      setStatus('Editing locked. Contact IT for changes.', true);
+      return;
+    }
+    if (!currentPayload) {
+      setStatus('Load a report before saving.', true);
+      return;
+    }
+    const date = nightDate?.value || '';
+    const unit = nightUnit?.value || '';
+    if (!unit) {
+      setStatus('Select a unit.', true);
+      return;
+    }
+    setStatus('Saving manual data...');
+    try {
+      const payload = {
+        unit,
+        date,
+        particulars: collectParticulars(),
+        occupancy_paytype: collectOccupancy(),
+        equipment_rows: collectEquipmentRows(),
+        doctor_entries: collectDoctorEntries(),
+        doctor_volume: collectDoctorVolume(),
+        ward_occupancy: collectWardRows()
+      };
+      const res = await fetch('/api/mod_reports/night_report/save', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(payload)
+      });
+      const data = await readJsonResponse(res);
+      if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Save failed');
+      setStatus('Manual data saved.');
+      await loadSnapshotDates(date);
+      if (nightDate?.value) {
+        await loadNightReport('snapshot');
+      }
+    } catch (err) {
+      setStatus(`Error: ${err.message}`, true);
+    }
+  }
+
+  async function loadNightReport(mode) {
+    const date = nightDate?.value || '';
+    const unit = nightUnit?.value || '';
+    if (!unit) {
+      setStatus('Select a unit.', true);
+      return;
+    }
+    if (mode === 'snapshot' && !date) {
+      setStatus('No snapshot dates available.', true);
+      return;
+    }
+    setStatus(mode === 'snapshot' ? 'Loading snapshot...' : 'Fetching live data...');
+    try {
+      const res = await fetch(`/api/mod_reports/night_report?date=${encodeURIComponent(date)}&unit=${encodeURIComponent(unit)}&mode=${encodeURIComponent(mode)}`, {
+        credentials: 'same-origin'
+      });
+      const data = await readJsonResponse(res);
+      if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Load failed');
+      currentMode = mode;
+      currentPayload = data.data;
+      renderNightTable(currentPayload);
+      renderWardTable(currentPayload.ward_occupancy || []);
+      renderDoctorTable(currentPayload.doctor_volume || []);
+      updateTotals();
+      if (mode === 'snapshot') {
+        latestSnapshotStamp = formatSnapshotStamp(currentPayload?.snapshot_time, currentPayload?.date || date);
+        const stampText = latestSnapshotStamp ? ` Last saved: ${latestSnapshotStamp}` : '';
+        setStatus(`Snapshot loaded.${stampText}`);
+      } else {
+        const stampText = latestSnapshotStamp ? ` Last snapshot: ${latestSnapshotStamp}` : '';
+        setStatus(`Live data loaded.${stampText}`);
+      }
+      applyEditLock(!!currentPayload?.edit_locked, currentPayload?.edit_lock_message || '');
+    } catch (err) {
+      setStatus(`Error: ${err.message}`, true);
+    }
+  }
+
+  async function exportNightPdf() {
+    if (!currentPayload) {
+      setStatus('Load data before PDF export.', true);
+      return;
+    }
+    const date = nightDate?.value || '';
+    const unit = nightUnit?.value || '';
+    if (!unit) {
+      setStatus('Select a unit before export.', true);
+      return;
+    }
+    try {
+      if (exportPdfBtn) exportPdfBtn.disabled = true;
+      setStatus('Preparing PDF...');
+      const payload = {
+        unit,
+        date: date || currentPayload?.date || '',
+        source: currentMode || currentPayload?.source || 'snapshot',
+        snapshot_time: currentPayload?.snapshot_time || null,
+        equipment_columns: currentPayload?.equipment_columns || [],
+        particulars: collectParticulars(),
+        occupancy_paytype: collectOccupancy(),
+        equipment_rows: collectEquipmentRows(),
+        doctor_entries: collectDoctorEntries(),
+        doctor_volume: collectDoctorVolume(),
+        ward_occupancy: collectWardRows()
+      };
+      const res = await fetch('/api/mod_reports/night_report/export_pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        const err = await res.json().catch(() => ({}));
+        throw new Error(err.message || 'Export failed');
+      }
+      const blob = await res.blob();
+      const filename = `Night_Report_${unit}_${payload.date || ''}.pdf`;
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setStatus('PDF export ready.');
+    } catch (err) {
+      setStatus(`PDF export failed: ${err.message}`, true);
+    } finally {
+      if (exportPdfBtn) exportPdfBtn.disabled = false;
+    }
+  }
+
+  async function exportNightJpg() {
+    if (!currentPayload) {
+      setStatus('Load data before JPG export.', true);
+      return;
+    }
+    const date = nightDate?.value || '';
+    const unit = nightUnit?.value || '';
+    if (!unit) {
+      setStatus('Select a unit before export.', true);
+      return;
+    }
+    try {
+      if (exportJpgBtn) exportJpgBtn.disabled = true;
+      setStatus('Preparing JPG...');
+      const payload = {
+        unit,
+        date: date || currentPayload?.date || '',
+        source: currentMode || currentPayload?.source || 'snapshot',
+        snapshot_time: currentPayload?.snapshot_time || null,
+        equipment_columns: currentPayload?.equipment_columns || [],
+        particulars: collectParticulars(),
+        occupancy_paytype: collectOccupancy(),
+        equipment_rows: collectEquipmentRows(),
+        doctor_entries: collectDoctorEntries(),
+        doctor_volume: collectDoctorVolume(),
+        ward_occupancy: collectWardRows()
+      };
+      const res = await fetch('/api/mod_reports/night_report/export_jpg', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        credentials: 'same-origin',
+        body: JSON.stringify(payload)
+      });
+      if (!res.ok) {
+        let msg = 'Export failed';
+        try {
+          const err = await readJsonResponse(res);
+          msg = err?.message || msg;
+        } catch (e) {
+          msg = e?.message || msg;
+        }
+        throw new Error(msg);
+      }
+      const blob = await res.blob();
+      const filename = `Night_Report_${unit}_${payload.date || ''}.jpg`;
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = filename;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      setStatus('JPG export ready.');
+    } catch (err) {
+      setStatus(`JPG export failed: ${err.message}`, true);
+    } finally {
+      if (exportJpgBtn) exportJpgBtn.disabled = false;
+    }
+  }
+
+  loadSnapshotBtn?.addEventListener('click', () => loadNightReport('snapshot'));
+  loadLiveBtn?.addEventListener('click', () => loadNightReport('live'));
+  nightTable?.addEventListener('click', (event) => {
+    const btn = event.target.closest('button[data-action]');
+    if (!btn) return;
+    if (editLocked) {
+      setStatus('Editing locked. Contact IT for changes.', true);
+      return;
+    }
+    const action = btn.getAttribute('data-action');
+    if (action === 'add-doctor-row') {
+      addDoctorEntryRow();
+    } else if (action === 'remove-doctor-row') {
+      removeDoctorEntryRow();
+    } else if (action === 'add-equipment-row') {
+      addEquipmentRow();
+    } else if (action === 'remove-equipment-row') {
+      removeEquipmentRow();
+    }
+  });
+  addWardRowBtn?.addEventListener('click', addWardRow);
+  removeWardRowBtn?.addEventListener('click', removeWardRow);
+  addDoctorCountRowBtn?.addEventListener('click', addDoctorCountRow);
+  removeDoctorCountRowBtn?.addEventListener('click', removeDoctorCountRow);
+  saveBtn?.addEventListener('click', saveManualData);
+  exportBtn?.addEventListener('click', () => {
+    const date = nightDate?.value || '';
+    const unit = nightUnit?.value || '';
+    if (!unit) {
+      setStatus('Select a unit before export.', true);
+      return;
+    }
+    const mode = currentMode || 'snapshot';
+    window.location.href = `/api/mod_reports/night_report/export?date=${encodeURIComponent(date)}&unit=${encodeURIComponent(unit)}&mode=${encodeURIComponent(mode)}`;
+  });
+  exportPdfBtn?.addEventListener('click', exportNightPdf);
+  exportJpgBtn?.addEventListener('click', exportNightJpg);
+
+  nightUnit?.addEventListener('change', async () => {
+    const previous = nightDate?.value || '';
+    await loadSnapshotDates(previous);
+    if (nightDate?.value) {
+      await loadNightReport('snapshot');
+    }
+  });
+
+  // Auto-load latest snapshot on first render
+  (async () => {
+    await loadSnapshotDates();
+    if (nightDate?.value) {
+      await loadNightReport('snapshot');
+    } else {
+      setStatus('No snapshots available for the selected unit.', true);
+    }
+  })();
+
+  nightWrap?.addEventListener('input', (event) => {
+    if (event.target && event.target.classList.contains('nr-input')) {
+      updateTotals();
+    }
+  });
+
+  fabToggle?.addEventListener('click', (event) => {
+    event.stopPropagation();
+    fabMenu?.classList.toggle('open');
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!fabMenu || !fabToggle) return;
+    if (!fabMenu.contains(event.target) && !fabToggle.contains(event.target)) {
+      fabMenu.classList.remove('open');
+    }
+  });
+</script>
+{% endblock %}
