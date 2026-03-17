@@ -23,6 +23,7 @@ import importlib
 from decimal import Decimal, ROUND_HALF_UP
 import re
 import copy
+from html import unescape
 # --- ADD for Volume Tracker (safe import-only)
 import io
 from openpyxl import Workbook, load_workbook
@@ -55,6 +56,9 @@ except Exception:
     pass
 
 app = Flask(__name__)
+app.config["TEMPLATES_AUTO_RELOAD"] = True
+app.config["SEND_FILE_MAX_AGE_DEFAULT"] = 0
+app.jinja_env.auto_reload = True
 # Use IST everywhere for date/times used in snapshots/analytics
 LOCAL_TZ = ZoneInfo(getattr(config, "LOCAL_TZ", "Asia/Kolkata"))
 
@@ -1177,6 +1181,7 @@ ROUTE_SECTION_MAP = {
     "/api/mis/admission_discharge_summary": "mis_marketing",
     "/api/mis/admission_discharge_summary/export_pdf": "mis_marketing",
     "/api/mis/old_new_patient_visits": "mis_marketing",
+    "/api/mis/old_new_patient_visits/detail_page": "mis_marketing",
     "/api/mis/old_new_patient_visits/export_excel_job": "mis_marketing",
     "/api/mis/old_new_patient_visits/export_excel_job_status": "mis_marketing",
     "/api/mis/old_new_patient_visits/export_excel_job_result": "mis_marketing",
@@ -1338,6 +1343,15 @@ ROUTE_SECTION_MAP = {
     "/api/purchase/indents": "purchase",
     "/api/purchase/indent": "purchase",
     "/api/purchase/items_last_rate": "purchase",
+    "/api/purchase/work_order/init": "purchase",
+    "/api/purchase/work_order_list": "purchase",
+    "/api/purchase/work_order_lookup": "purchase",
+    "/api/purchase/work_order_update": "purchase",
+    "/api/purchase/work_order_approve": "purchase",
+    "/api/purchase/work_order_resend_otp": "purchase",
+    "/api/purchase/work_order_print": "purchase",
+    "/api/purchase/work_order_email_pdf": "purchase",
+    "/api/purchase/work_order": "purchase",
     "/api/purchase/po_list": "purchase",
     "/api/purchase/po_valuation_storewise": "purchase",
     "/api/purchase/po_valuation_export_pdf_job": "purchase",
@@ -22769,10 +22783,19 @@ def api_ip_package_submit():
 def purchase_module():
     allowed_units = _allowed_purchase_units_for_session()
     role = (session.get("role") or "").strip()
-    return render_template(
-        'purchase.html',
-        allowed_units=allowed_units,
-        is_executive=_role_base(role) == "Executive",
+    return (
+        render_template(
+            'purchase.html',
+            allowed_units=allowed_units,
+            is_executive=_role_base(role) == "Executive",
+            can_use_po_def_format=_can_use_def_po_print_format("AHLSTORE"),
+        ),
+        200,
+        {
+            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
+            "Pragma": "no-cache",
+            "Expires": "0",
+        },
     )
 
 
@@ -22781,6 +22804,7 @@ def purchase_module():
 # ============================================================
 OTP_CENTER_UNIT = "AHL"
 OTP_PO_REQUEST_TYPE = "PO_APPROVAL"
+OTP_WORK_ORDER_REQUEST_TYPE = "WORK_ORDER_APPROVAL"
 OTP_BILL_EDIT_REQUEST_TYPE = "BILL_EDIT"
 OTP_VISIT_EDIT_REQUEST_TYPE = "VISIT_EDIT"
 PO_VALUATION_START_DATE = "2026-01-06"
@@ -22804,6 +22828,50 @@ def _get_purchase_unit():
     return unit, None
 
 
+def _is_non_medical_purchase_unit(unit: str) -> bool:
+    return str(unit or "").strip().upper() in NON_MEDICAL_ITEM_UNITS
+
+
+def _get_work_order_unit():
+    unit, error = _get_purchase_unit()
+    if error:
+        return unit, error
+    if not _is_non_medical_purchase_unit(unit):
+        return None, (jsonify({"status": "error", "message": f"Unit {unit} does not support Work Orders"}), 400)
+    return unit, None
+
+
+def _ensure_work_order_schema(unit: str):
+    try:
+        data_fetch.ensure_iv_po_mst_document_type_column(unit)
+    except Exception:
+        pass
+    try:
+        data_fetch.ensure_work_order_detail_table(unit)
+    except Exception:
+        pass
+    try:
+        data_fetch.ensure_po_purchasing_dept_column(unit)
+    except Exception:
+        pass
+    try:
+        data_fetch.ensure_po_special_notes_column(unit)
+    except Exception:
+        pass
+    try:
+        data_fetch.ensure_po_work_order_body_html_column(unit)
+    except Exception:
+        pass
+    try:
+        data_fetch.ensure_po_senior_approval_authority_column(unit)
+    except Exception:
+        pass
+    try:
+        data_fetch.ensure_po_senior_approval_designation_column(unit)
+    except Exception:
+        pass
+
+
 def _purchase_normalize_email(raw_value) -> str:
     return str(raw_value or "").strip().lower()
 
@@ -22812,6 +22880,112 @@ def _purchase_is_valid_email(email: str) -> bool:
     if not email:
         return False
     return bool(re.match(r"^[A-Z0-9._%+\-]+@[A-Z0-9.\-]+\.[A-Z]{2,}$", email, flags=re.IGNORECASE))
+
+
+def _normalize_po_print_format(value, default: str = "standard") -> str:
+    fmt = str(value or "").strip().lower()
+    if fmt == "def":
+        return "def"
+    if fmt == "standard":
+        return "standard"
+    return default
+
+
+def _saved_po_print_format(header_row: dict | None) -> str:
+    row = header_row or {}
+    return _normalize_po_print_format(
+        row.get("POPrintFormat") or row.get("po_print_format") or row.get("print_format"),
+        default="standard",
+    )
+
+
+def _purchase_session_identity_tokens() -> set[str]:
+    values = set()
+    for raw_value in (
+        session.get("username"),
+        session.get("user"),
+        session.get("email"),
+        session.get("name"),
+    ):
+        token = str(raw_value or "").strip().lower()
+        if token:
+            values.add(token)
+            email_token = _purchase_normalize_email(token)
+            if email_token:
+                values.add(email_token)
+    return values
+
+
+def _can_use_def_po_print_format(unit: str, purchasing_dept_id: int | None = None) -> bool:
+    if _role_base(session.get("role") or "") == "IT":
+        return True
+    unit_key = str(unit or "").strip().upper()
+    if unit_key != "AHLSTORE":
+        return False
+    identity_tokens = _purchase_session_identity_tokens()
+    if "purchase@asarfihospital.com" in identity_tokens or "ankit.ahl" in identity_tokens:
+        return True
+    try:
+        dept_id = int(purchasing_dept_id or 0)
+    except Exception:
+        dept_id = 0
+    for row in (_fetch_purchase_incharges() or []):
+        try:
+            is_active = bool(int(row.get("IsActive", 1)))
+        except Exception:
+            is_active = bool(row.get("IsActive", 1))
+        if not is_active:
+            continue
+        row_unit = str(row.get("Unit") or "").strip().upper()
+        if row_unit not in {"", "ALL", unit_key}:
+            continue
+        row_email = _purchase_normalize_email(row.get("Email"))
+        if not row_email or row_email not in identity_tokens:
+            continue
+        row_dept = _safe_int(row.get("PurchasingDeptId"))
+        if dept_id > 0 and row_dept not in {0, dept_id}:
+            continue
+        return True
+    return False
+
+
+def _resolve_po_print_format_for_persistence(
+    unit: str,
+    requested_format,
+    existing_format=None,
+    purchasing_dept_id: int | None = None,
+) -> str:
+    existing_norm = _normalize_po_print_format(existing_format, default="standard")
+    requested_raw = str(requested_format or "").strip()
+    if not requested_raw:
+        return existing_norm
+    requested_norm = _normalize_po_print_format(requested_raw, default=existing_norm)
+    if requested_norm != "def":
+        return "standard"
+    if existing_norm == "def":
+        return "def"
+    return "def" if _can_use_def_po_print_format(unit, purchasing_dept_id) else "standard"
+
+
+def _resolve_po_print_format_for_render(
+    unit: str,
+    requested_format=None,
+    header_row: dict | None = None,
+    purchasing_dept_id: int | None = None,
+) -> str:
+    saved_format = _saved_po_print_format(header_row)
+    requested_raw = str(requested_format or "").strip()
+    if not requested_raw:
+        return saved_format
+    requested_norm = _normalize_po_print_format(requested_raw, default=saved_format)
+    if requested_norm != "def":
+        return "standard"
+    if saved_format == "def":
+        return "def"
+    dept_id = purchasing_dept_id
+    if dept_id is None and isinstance(header_row, dict):
+        dept_id = _safe_int(header_row.get("PurchasingDeptId"))
+    return "def" if _can_use_def_po_print_format(unit, dept_id) else saved_format
 
 
 def _build_purchase_department_payload(unit: str):
@@ -24040,12 +24214,765 @@ def _send_purchase_po_approval_email(unit: str, po_id: int, header_row: dict, re
     header_row = dict(header_row)
     header_row["Status"] = "A"
     header_row["PurchasingDeptName"] = _resolve_purchasing_department_name(_safe_int(header_row.get("PurchasingDeptId")))
-    pdf_buffer = _build_po_pdf_buffer(unit, header_row, items, approval_meta)
+    po_print_format = _resolve_po_print_format_for_render(
+        unit,
+        header_row=header_row,
+        purchasing_dept_id=purchasing_dept_id,
+    )
+    pdf_buffer = _build_po_pdf_buffer(unit, header_row, items, approval_meta, print_format=po_print_format)
     pdf_bytes = pdf_buffer.getvalue() if pdf_buffer else b""
 
     subject = f"PO Approved - {po_no}"
     body = _build_po_approval_email_body(snapshot)
     filename = f"PO_{po_no}.pdf"
+    return _send_graph_mail_with_attachment(subject, body, email_list, filename, pdf_bytes)
+
+
+def _create_work_order_otp_request(
+    unit: str,
+    wo_no: str,
+    wo_id: int,
+    amount,
+    supplier_name: str,
+    reason: str,
+    requested_by: str,
+    purchasing_dept_id: int | None = None,
+):
+    from modules.db_connection import get_sql_connection
+
+    try:
+        amount_val = Decimal(str(amount or 0))
+    except Exception:
+        amount_val = Decimal("0")
+    try:
+        conn = get_sql_connection(OTP_CENTER_UNIT)
+        if not conn:
+            return {"error": "Unable to connect to OTP database"}
+        try:
+            conn.autocommit = True
+        except Exception:
+            pass
+        cursor = conn.cursor()
+        request_type = OTP_WORK_ORDER_REQUEST_TYPE
+        bill_no = str(wo_no or "")
+        receipt_no = str(wo_id or "")
+        reason_val = (reason or "").strip()
+        supplier_val = (supplier_name or "").strip()
+        requested_by_val = (requested_by or "").strip()
+
+        try:
+            cursor.execute(
+                """
+                DECLARE @id INT, @otp VARCHAR(10);
+                EXEC dbo.usp_CreateDiscountApprovalRequest
+                    @Unit=?, @BillNo=?, @ReceiptNo=?, @RequestType=?, @RequestedAmount=?,
+                    @Reason=?, @RequestedByUserName=?, @UHIDNo=?, @PatientName=?,
+                    @RequestId=@id OUTPUT, @OtpPlainOut=@otp OUTPUT;
+                SELECT @id, @otp;
+                """,
+                (unit, bill_no, receipt_no, request_type, amount_val, reason_val, requested_by_val, "", supplier_val),
+            )
+        except Exception as e:
+            if "8144" in str(e) or "too many arguments" in str(e).lower():
+                cursor.execute(
+                    """
+                    DECLARE @id INT, @otp VARCHAR(10);
+                    EXEC dbo.usp_CreateDiscountApprovalRequest
+                        @BillNo=?, @ReceiptNo=?, @RequestType=?, @RequestedAmount=?,
+                        @Reason=?, @RequestedByUserName=?, @UHIDNo=?, @PatientName=?,
+                        @RequestId=@id OUTPUT, @OtpPlainOut=@otp OUTPUT;
+                    SELECT @id, @otp;
+                    """,
+                    (bill_no, receipt_no, request_type, amount_val, reason_val, requested_by_val, "", supplier_val),
+                )
+            else:
+                raise
+
+        row = cursor.fetchone()
+        if not row or not row[0]:
+            return {"error": "OTP request not created"}
+        request_id = int(row[0])
+        otp_plain = str(row[1] or "").strip() if len(row) > 1 else ""
+
+        try:
+            cursor.execute(
+                """
+                UPDATE DiscountApprovalRequest
+                SET Unit = ?, EmailSent = 1, EmailSentAt = GETDATE()
+                WHERE Id = ?;
+                """,
+                (unit, request_id),
+            )
+            conn.commit()
+        except Exception:
+            pass
+
+        email_kwargs = {
+            "unit": unit,
+            "wo_no": bill_no,
+            "wo_id": receipt_no,
+            "otp_plain": otp_plain,
+            "amount": amount_val,
+            "supplier_name": supplier_val,
+            "reason": reason_val,
+            "requested_by": requested_by_val,
+            "purchasing_dept_id": purchasing_dept_id,
+        }
+        use_async_mail = bool(getattr(config, "PURCHASE_OTP_EMAIL_ASYNC", True))
+        if use_async_mail:
+            try:
+
+                def _send_wo_otp_mail_job():
+                    try:
+                        _send_work_order_otp_email(**email_kwargs)
+                    except Exception as mail_err:
+                        print(f"Work Order OTP email send failed: {mail_err}")
+
+                mail_thread = Thread(
+                    target=_send_wo_otp_mail_job,
+                    daemon=True,
+                    name=f"wo-otp-mail-{request_id}",
+                )
+                mail_thread.start()
+            except Exception as e:
+                print(f"Work Order OTP async dispatch failed: {e}")
+        else:
+            try:
+                _send_work_order_otp_email(**email_kwargs)
+            except Exception as e:
+                print(f"Work Order OTP email send failed: {e}")
+        conn.close()
+        return {"request_id": request_id, "otp": otp_plain}
+    except Exception as e:
+        return {"error": str(e)}
+
+
+def _build_work_order_otp_email_body(snapshot: dict, otp_plain: str):
+    from html import escape
+
+    return f"""
+    <html>
+    <head>
+      <style>
+        body {{
+          font-family: Arial, sans-serif;
+          font-size: 14px;
+          color: #333;
+        }}
+        .box {{
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          padding: 16px 18px;
+          max-width: 650px;
+          background: #ffffff;
+        }}
+        .otp {{
+          font-size: 26px;
+          font-weight: bold;
+          color: #1e3a8a;
+          letter-spacing: 6px;
+          margin: 8px 0 4px;
+        }}
+        table {{
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 10px;
+        }}
+        td {{
+          padding: 4px 6px;
+          font-size: 13px;
+          vertical-align: top;
+        }}
+        .label {{
+          width: 35%;
+          font-weight: bold;
+          color: #555;
+          white-space: nowrap;
+        }}
+        .footer {{
+          margin-top: 20px;
+          font-size: 12px;
+          color: #777;
+        }}
+      </style>
+    </head>
+    <body>
+      <div class="box">
+        <p>Dear Sir/Madam,</p>
+        <p>A Work Order approval request has been raised.</p>
+        <p><b>OTP for approval:</b></p>
+        <div class="otp">{escape(otp_plain)}</div>
+        <p style="font-size:12px; color:#666;">
+          Please share this OTP with the requesting user after verification.
+        </p>
+        <h3>Work Order Snapshot</h3>
+        <table>
+          <tr><td class="label">Unit</td><td>: {escape(snapshot.get('unit', ''))}</td></tr>
+          <tr><td class="label">Purchasing Dept</td><td>: {escape(snapshot.get('purchasing_dept', ''))}</td></tr>
+          <tr><td class="label">WO No</td><td>: {escape(snapshot.get('wo_no', ''))}</td></tr>
+          <tr><td class="label">WO Id</td><td>: {escape(snapshot.get('wo_id', ''))}</td></tr>
+          <tr><td class="label">Supplier</td><td>: {escape(snapshot.get('supplier', ''))}</td></tr>
+          <tr><td class="label">Requested Amount</td><td>: {escape(snapshot.get('amount', ''))}</td></tr>
+          <tr><td class="label">Requested By</td><td>: {escape(snapshot.get('requested_by', ''))}</td></tr>
+          <tr><td class="label">Requested At</td><td>: {escape(snapshot.get('requested_at', ''))}</td></tr>
+          <tr><td class="label">Subject/Notes</td><td>: {escape(snapshot.get('reason', ''))}</td></tr>
+        </table>
+        <p class="footer">
+          This is an automated email from the Work Order Approval Module.<br>
+          This is a computer-generated copy and does not require a physical signature.
+        </p>
+      </div>
+    </body>
+    </html>
+    """
+
+
+def _send_work_order_otp_email(
+    unit: str,
+    wo_no: str,
+    wo_id: str,
+    otp_plain: str,
+    amount,
+    supplier_name: str,
+    reason: str,
+    requested_by: str,
+    purchasing_dept_id: int | None = None,
+):
+    recipients = _fetch_purchase_incharge_emails_for_unit(unit, purchasing_dept_id=purchasing_dept_id)
+    email_list = [str(e or "").strip() for e in recipients if e]
+    email_list = [e for e in dict.fromkeys(email_list) if e]
+    if not email_list:
+        return {"status": "skipped", "message": "No purchase incharge recipients configured"}
+    purchasing_dept_name = _resolve_purchasing_department_name(purchasing_dept_id) or "Not selected"
+    now_str = datetime.now(tz=LOCAL_TZ).strftime("%d-%b-%Y %H:%M")
+    snapshot = {
+        "unit": unit,
+        "purchasing_dept": purchasing_dept_name,
+        "wo_no": str(wo_no),
+        "wo_id": str(wo_id),
+        "supplier": str(supplier_name or ""),
+        "amount": _format_indian_currency(amount),
+        "requested_by": str(requested_by or ""),
+        "requested_at": now_str,
+        "reason": str(reason or ""),
+    }
+    subject = f"OTP Approval - Work Order {wo_no}"
+    body = _build_work_order_otp_email_body(snapshot, otp_plain)
+    return _send_graph_mail(subject, body, email_list)
+
+
+def _build_work_order_approval_email_body(snapshot: dict):
+    from html import escape
+
+    return f"""
+    <html>
+    <head>
+      <style>
+        body {{
+          font-family: Arial, sans-serif;
+          font-size: 14px;
+          color: #333;
+        }}
+        .box {{
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          padding: 16px 18px;
+          max-width: 650px;
+          background: #ffffff;
+        }}
+        table {{
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 10px;
+        }}
+        td {{
+          padding: 4px 6px;
+          font-size: 13px;
+          vertical-align: top;
+        }}
+        .label {{
+          width: 35%;
+          font-weight: bold;
+          color: #555;
+          white-space: nowrap;
+        }}
+        .footer {{
+          margin-top: 20px;
+          font-size: 12px;
+          color: #777;
+        }}
+      </style>
+    </head>
+    <body>
+      <div class="box">
+        <p>Dear Sir/Madam,</p>
+        <p>A Work Order has been approved.</p>
+        <h3>Work Order Snapshot</h3>
+        <table>
+          <tr><td class="label">Unit</td><td>: {escape(snapshot.get('unit', ''))}</td></tr>
+          <tr><td class="label">Purchasing Dept</td><td>: {escape(snapshot.get('purchasing_dept', ''))}</td></tr>
+          <tr><td class="label">WO No</td><td>: {escape(snapshot.get('wo_no', ''))}</td></tr>
+          <tr><td class="label">WO Id</td><td>: {escape(snapshot.get('wo_id', ''))}</td></tr>
+          <tr><td class="label">Supplier</td><td>: {escape(snapshot.get('supplier', ''))}</td></tr>
+          <tr><td class="label">Requested Amount</td><td>: {escape(snapshot.get('amount', ''))}</td></tr>
+          <tr><td class="label">Requested By</td><td>: {escape(snapshot.get('requested_by', ''))}</td></tr>
+          <tr><td class="label">Requested At</td><td>: {escape(snapshot.get('requested_at', ''))}</td></tr>
+          <tr><td class="label">Subject/Notes</td><td>: {escape(snapshot.get('reason', ''))}</td></tr>
+        </table>
+        <p class="footer">
+          This is an automated email from the Work Order Approval Module.
+        </p>
+      </div>
+    </body>
+    </html>
+    """
+
+
+def _build_work_order_supplier_dispatch_email_body(snapshot: dict):
+    from html import escape
+
+    return f"""
+    <html>
+    <head>
+      <style>
+        body {{
+          font-family: Arial, sans-serif;
+          font-size: 14px;
+          color: #333;
+        }}
+        .box {{
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          padding: 16px 18px;
+          max-width: 700px;
+          background: #ffffff;
+        }}
+        table {{
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 10px;
+        }}
+        td {{
+          padding: 4px 6px;
+          font-size: 13px;
+          vertical-align: top;
+        }}
+        .label {{
+          width: 35%;
+          font-weight: bold;
+          color: #555;
+          white-space: nowrap;
+        }}
+        .footer {{
+          margin-top: 20px;
+          font-size: 12px;
+          color: #777;
+        }}
+      </style>
+    </head>
+    <body>
+      <div class="box">
+        <p>Dear Supplier,</p>
+        <p>Please find attached the approved Work Order PDF for your reference and action.</p>
+        <h3>Work Order Snapshot</h3>
+        <table>
+          <tr><td class="label">Unit</td><td>: {escape(snapshot.get('unit', ''))}</td></tr>
+          <tr><td class="label">WO No</td><td>: {escape(snapshot.get('wo_no', ''))}</td></tr>
+          <tr><td class="label">WO Date</td><td>: {escape(snapshot.get('wo_date', ''))}</td></tr>
+          <tr><td class="label">Supplier</td><td>: {escape(snapshot.get('supplier', ''))}</td></tr>
+          <tr><td class="label">Amount</td><td>: {escape(snapshot.get('amount', ''))}</td></tr>
+          <tr><td class="label">Subject</td><td>: {escape(snapshot.get('subject', ''))}</td></tr>
+        </table>
+        <p class="footer">
+          This is an automated email from the Work Order Module.
+        </p>
+      </div>
+    </body>
+    </html>
+    """
+
+
+def _resolve_work_order_status_label(status_code) -> str:
+    code = str(status_code or "").strip().upper()
+    return {
+        "D": "Draft",
+        "P": "Pending Approval",
+        "A": "Approved",
+    }.get(code, "Draft")
+
+
+def _normalize_work_order_header_for_audit(header: dict, totals: dict | None = None, status_code: str | None = None) -> dict:
+    header = header or {}
+    totals = totals or {}
+    return {
+        "wo_id": _safe_int(header.get("wo_id") or header.get("ID")),
+        "wo_no": str(header.get("wo_no") or header.get("PONo") or "").strip(),
+        "wo_date": str(header.get("wo_date") or header.get("PODate") or "").strip(),
+        "supplier_id": _safe_int(header.get("supplier_id") or header.get("SupplierID")),
+        "supplier_name": str(header.get("supplier_name") or header.get("SupplierName") or "").strip(),
+        "purchasing_dept_id": _safe_int(header.get("purchasing_dept_id") or header.get("PurchasingDeptId")),
+        "senior_approval_authority_name": str(
+            header.get("senior_approval_authority_name") or header.get("SeniorApprovalAuthorityName") or ""
+        ).strip(),
+        "senior_approval_authority_designation": str(
+            header.get("senior_approval_authority_designation") or header.get("SeniorApprovalAuthorityDesignation") or ""
+        ).strip(),
+        "status": str(status_code or header.get("status") or header.get("Status") or "").strip(),
+        "amount": _safe_float(totals.get("grand_total") if totals else header.get("Amount")),
+        "tax_total": _safe_float(totals.get("tax_total")),
+        "discount_total": _safe_float(totals.get("discount_total")),
+        "item_count": len(header.get("items") or []),
+    }
+
+
+def _normalize_work_order_body_html(body_html) -> str:
+    raw = str(body_html or "").replace("\r", "").strip()
+    if not raw:
+        return ""
+    raw = re.sub(r"(?is)<(script|style)[^>]*>.*?</\1>", "", raw)
+    if not raw.strip():
+        return ""
+    text_only = re.sub(r"(?is)<br\s*/?>", "\n", raw)
+    text_only = re.sub(r"(?is)</(p|div|li|blockquote|h[1-6])\s*>", "\n", text_only)
+    text_only = re.sub(r"(?is)<li[^>]*>", "- ", text_only)
+    text_only = re.sub(r"(?is)<[^>]+>", " ", text_only)
+    text_only = unescape(text_only).replace("\xa0", " ")
+    text_only = re.sub(r"[ \t]+", " ", text_only)
+    text_only = re.sub(r"\n\s*\n+", "\n", text_only)
+    if not text_only.strip():
+        return ""
+    return raw
+
+
+def _work_order_body_to_plain_text(body_html) -> str:
+    normalized_html = _normalize_work_order_body_html(body_html)
+    if not normalized_html:
+        return ""
+    text = re.sub(r"(?is)<br\s*/?>", "\n", normalized_html)
+    text = re.sub(r"(?is)</(p|div|li|blockquote|h[1-6])\s*>", "\n", text)
+    text = re.sub(r"(?is)<li[^>]*>", "- ", text)
+    text = re.sub(r"(?is)<[^>]+>", " ", text)
+    text = unescape(text).replace("\xa0", " ")
+    lines = []
+    for line in text.split("\n"):
+        cleaned = re.sub(r"\s+", " ", str(line or "")).strip()
+        if cleaned:
+            lines.append(cleaned)
+    return "\n".join(lines)
+
+
+def _normalize_work_order_summary_payload(summary_payload: dict | None) -> dict:
+    summary_payload = summary_payload or {}
+    gross_total = max(0.0, _safe_float(summary_payload.get("gross_total")))
+    discount_total = max(0.0, _safe_float(summary_payload.get("discount_total")))
+    taxable_total = max(0.0, _safe_float(summary_payload.get("taxable_total")))
+    tax_total = max(0.0, _safe_float(summary_payload.get("tax_total")))
+    for_total = max(0.0, _safe_float(summary_payload.get("for_total")))
+    grand_total = max(0.0, _safe_float(summary_payload.get("grand_total")))
+
+    if gross_total <= 0 and taxable_total > 0:
+        gross_total = taxable_total + discount_total
+    if taxable_total <= 0:
+        taxable_total = max(gross_total - discount_total, 0.0)
+    if gross_total < taxable_total:
+        gross_total = taxable_total + discount_total
+    if tax_total <= 0 and grand_total > 0:
+        tax_total = max(grand_total - taxable_total - for_total, 0.0)
+    if grand_total <= 0:
+        grand_total = max(taxable_total + tax_total + for_total, 0.0)
+
+    summary = {
+        "gross_total": gross_total,
+        "discount_total": min(discount_total, gross_total),
+        "taxable_total": taxable_total,
+        "cgst_total": 0.0,
+        "sgst_total": 0.0,
+        "igst_total": round(tax_total, 2),
+        "tax_total": tax_total,
+        "for_total": for_total,
+        "grand_total": grand_total,
+    }
+    for key, value in list(summary.items()):
+        summary[key] = round(max(0.0, _safe_float(value)), 2)
+    return summary
+
+
+def _resolve_work_order_totals(items: list[dict], summary_payload: dict | None = None) -> dict:
+    if items:
+        return _summarize_work_order_totals(items)
+    return _normalize_work_order_summary_payload(summary_payload)
+
+
+def _fallback_work_order_summary_from_header(header_row: dict, base_summary: dict | None = None) -> dict:
+    summary = dict(base_summary or {})
+    if summary and any(_safe_float(summary.get(key)) > 0 for key in ("gross_total", "taxable_total", "tax_total", "for_total", "grand_total")):
+        return _normalize_work_order_summary_payload(summary)
+    grand_total = _safe_float((header_row or {}).get("Amount"))
+    discount_total = _safe_float((header_row or {}).get("Discount"))
+    tax_total = _safe_float((header_row or {}).get("Tax"))
+    for_total = _safe_float((header_row or {}).get("TotalFORe"))
+    taxable_total = max(grand_total - tax_total - for_total, 0.0)
+    gross_total = taxable_total + discount_total
+    return _normalize_work_order_summary_payload(
+        {
+            "gross_total": gross_total,
+            "discount_total": discount_total,
+            "taxable_total": taxable_total,
+            "tax_total": tax_total,
+            "for_total": for_total,
+            "grand_total": grand_total,
+        }
+    )
+
+
+def _build_work_order_fallback_item(header: dict, body_text: str, totals: dict) -> dict:
+    lines = [re.sub(r"\s+", " ", line).strip(" -\t") for line in str(body_text or "").splitlines()]
+    lines = [line for line in lines if line]
+    subject = re.sub(r"\s+", " ", str((header or {}).get("subject") or "").strip())
+    item_name = subject or (lines[0] if lines else "Work Order Narrative")
+    item_name = item_name[:250] if item_name else "Work Order Narrative"
+    line_notes = "\n".join(lines[:8]).strip() or None
+    if line_notes and len(line_notes) > 950:
+        line_notes = line_notes[:947].rstrip() + "..."
+
+    gross_total = max(0.0, _safe_float((totals or {}).get("gross_total")))
+    discount_total = max(0.0, _safe_float((totals or {}).get("discount_total")))
+    taxable_total = max(0.0, _safe_float((totals or {}).get("taxable_total")))
+    tax_total = max(0.0, _safe_float((totals or {}).get("tax_total")))
+    for_total = max(0.0, _safe_float((totals or {}).get("for_total")))
+    grand_total = max(0.0, _safe_float((totals or {}).get("grand_total")))
+    rate = gross_total or taxable_total or grand_total or 0.0
+    discount_pct = round((discount_total * 100.0) / gross_total, 2) if gross_total > 0 else 0.0
+    igst_pct = round((tax_total * 100.0) / taxable_total, 2) if taxable_total > 0 and tax_total > 0 else 0.0
+
+    return {
+        "line_no": 1,
+        "detail_id": 0,
+        "item_name": item_name,
+        "unit_name": "PC",
+        "qty": 1.0,
+        "rate": round(rate, 4),
+        "discount_pct": round(discount_pct, 2),
+        "gross_amount": round(gross_total, 2),
+        "taxable_amount": round(taxable_total, 2),
+        "cgst_pct": 0.0,
+        "sgst_pct": 0.0,
+        "igst_pct": round(igst_pct, 2),
+        "cgst_amt": 0.0,
+        "sgst_amt": 0.0,
+        "igst_amt": round(tax_total, 2),
+        "gst_pct": round(igst_pct, 2),
+        "gst_amt": round(tax_total, 2),
+        "for_amount": round(for_total, 2),
+        "net_amount": round(grand_total, 2),
+        "line_notes": line_notes,
+    }
+
+
+def _normalize_work_order_items(items: list[dict]) -> tuple[list[dict], list[str]]:
+    normalized = []
+    errors = []
+    for row_idx, item in enumerate(items or [], start=1):
+        item = item or {}
+        item_name = str(item.get("item_name") or item.get("description") or item.get("work_description") or "").strip()
+        item_name = re.sub(r"\s+", " ", item_name)
+        if not item_name:
+            errors.append(f"Row {row_idx}: work description is required")
+            continue
+        if len(item_name) > 250:
+            item_name = item_name[:250].rstrip()
+
+        qty = _safe_float(item.get("qty"))
+        rate = _safe_float(item.get("rate"))
+        if qty <= 0:
+            errors.append(f"Row {row_idx}: quantity must be greater than zero")
+            continue
+        if rate < 0:
+            errors.append(f"Row {row_idx}: rate cannot be negative")
+            continue
+
+        discount_pct = max(0.0, _safe_float(item.get("discount_pct")))
+        gross_amount = qty * rate
+        taxable_amount = _safe_float(item.get("taxable_amt"))
+        if taxable_amount <= 0 and gross_amount >= 0:
+            taxable_amount = round(max(gross_amount - ((gross_amount * discount_pct) / 100.0), 0.0), 2)
+        elif taxable_amount < 0:
+            taxable_amount = 0.0
+
+        cgst_pct = _safe_float(item.get("cgst_pct"))
+        sgst_pct = _safe_float(item.get("sgst_pct"))
+        igst_pct = _safe_float(item.get("igst_pct"))
+        gst_pct = _safe_float(item.get("gst_pct"))
+        if gst_pct > 0 and not (cgst_pct or sgst_pct or igst_pct):
+            cgst_pct = round(gst_pct / 2.0, 2)
+            sgst_pct = round(gst_pct / 2.0, 2)
+
+        cgst_amt = _safe_float(item.get("cgst_amt"))
+        sgst_amt = _safe_float(item.get("sgst_amt"))
+        igst_amt = _safe_float(item.get("igst_amt"))
+        if cgst_amt <= 0 and cgst_pct:
+            cgst_amt = round((taxable_amount * cgst_pct) / 100.0, 2)
+        if sgst_amt <= 0 and sgst_pct:
+            sgst_amt = round((taxable_amount * sgst_pct) / 100.0, 2)
+        if igst_amt <= 0 and igst_pct and not (cgst_pct or sgst_pct):
+            igst_amt = round((taxable_amount * igst_pct) / 100.0, 2)
+
+        for_amount = _safe_float(item.get("for_amt") or item.get("for_amount") or item.get("fore"))
+        gst_amount = cgst_amt + sgst_amt + igst_amt
+        net_amount = _safe_float(item.get("net_amt"))
+        if net_amount <= 0:
+            net_amount = round(taxable_amount + gst_amount + for_amount, 2)
+
+        normalized.append(
+            {
+                "line_no": row_idx,
+                "detail_id": _safe_int(item.get("detail_id") or item.get("id")),
+                "item_name": item_name,
+                "unit_name": str(item.get("unit") or item.get("unit_name") or "PC").strip() or "PC",
+                "qty": round(qty, 3),
+                "rate": round(rate, 4),
+                "discount_pct": round(discount_pct, 2),
+                "gross_amount": round(gross_amount, 2),
+                "taxable_amount": round(taxable_amount, 2),
+                "cgst_pct": round(cgst_pct, 2),
+                "sgst_pct": round(sgst_pct, 2),
+                "igst_pct": round(igst_pct, 2),
+                "cgst_amt": round(cgst_amt, 2),
+                "sgst_amt": round(sgst_amt, 2),
+                "igst_amt": round(igst_amt, 2),
+                "gst_pct": round((cgst_pct + sgst_pct) if (cgst_pct or sgst_pct) else igst_pct, 2),
+                "gst_amt": round(gst_amount, 2),
+                "for_amount": round(for_amount, 2),
+                "net_amount": round(net_amount, 2),
+                "line_notes": (str(item.get("line_notes") or "").strip()[:1000] or None),
+            }
+        )
+    return normalized, errors
+
+
+def _summarize_work_order_totals(items: list[dict]) -> dict:
+    summary = {
+        "gross_total": 0.0,
+        "discount_total": 0.0,
+        "taxable_total": 0.0,
+        "cgst_total": 0.0,
+        "sgst_total": 0.0,
+        "igst_total": 0.0,
+        "tax_total": 0.0,
+        "for_total": 0.0,
+        "grand_total": 0.0,
+    }
+    for item in items or []:
+        gross_amount = _safe_float(item.get("gross_amount"))
+        taxable_amount = _safe_float(item.get("taxable_amount"))
+        cgst_amt = _safe_float(item.get("cgst_amt"))
+        sgst_amt = _safe_float(item.get("sgst_amt"))
+        igst_amt = _safe_float(item.get("igst_amt"))
+        for_amount = _safe_float(item.get("for_amount") or item.get("for_amt"))
+        net_amount = _safe_float(item.get("net_amount") or item.get("net_amt"))
+
+        summary["gross_total"] += gross_amount
+        summary["taxable_total"] += taxable_amount
+        summary["discount_total"] += max(gross_amount - taxable_amount, 0.0)
+        summary["cgst_total"] += cgst_amt
+        summary["sgst_total"] += sgst_amt
+        summary["igst_total"] += igst_amt
+        summary["for_total"] += for_amount
+        summary["grand_total"] += net_amount
+    summary["tax_total"] = summary["cgst_total"] + summary["sgst_total"] + summary["igst_total"]
+    for key, value in list(summary.items()):
+        summary[key] = round(value, 2)
+    return summary
+
+
+def _build_work_order_header_payload(header_row: dict, status_code: str | None = None) -> dict:
+    header_row = header_row or {}
+    resolved_status = status_code or header_row.get("Status")
+    return _sanitize_json_payload(
+        {
+            "wo_id": header_row.get("ID"),
+            "wo_no": header_row.get("PONo"),
+            "wo_date": header_row.get("PODate"),
+            "supplier_id": header_row.get("SupplierID"),
+            "supplier_name": header_row.get("SupplierName"),
+            "supplier_code": header_row.get("SupplierCode"),
+            "supplier_email": header_row.get("SupplierEmail"),
+            "supplier_gstin": header_row.get("SupplierGSTIN"),
+            "supplier_address_1": header_row.get("SupplierAddress1"),
+            "supplier_address_2": header_row.get("SupplierAddress2"),
+            "supplier_city": header_row.get("SupplierCity"),
+            "supplier_state": header_row.get("SupplierState"),
+            "supplier_pin": header_row.get("SupplierPin"),
+            "supplier_country": header_row.get("SupplierCountry"),
+            "ref_no": header_row.get("RefNo"),
+            "subject": header_row.get("Subject"),
+            "credit_days": header_row.get("CreditDays"),
+            "notes": header_row.get("Notes"),
+            "special_notes": header_row.get("SpecialNotes"),
+            "body_html": header_row.get("WorkOrderBodyHtml"),
+            "senior_approval_authority_name": header_row.get("SeniorApprovalAuthorityName"),
+            "senior_approval_authority_designation": header_row.get("SeniorApprovalAuthorityDesignation"),
+            "prepared_by": header_row.get("Preparedby"),
+            "delivery_terms": header_row.get("DeliveryTerms"),
+            "payment_terms": header_row.get("PaymentsTerms"),
+            "other_terms": header_row.get("OtherTerms"),
+            "freight_charges": header_row.get("Custom1") or 0,
+            "packing_charges": header_row.get("Custom2") or 0,
+            "purchasing_dept_id": header_row.get("PurchasingDeptId"),
+            "purchasing_dept_name": _resolve_purchasing_department_name(_safe_int(header_row.get("PurchasingDeptId"))),
+            "status_code": str(resolved_status or "D").strip().upper() or "D",
+            "status_label": _resolve_work_order_status_label(resolved_status),
+        }
+    )
+
+
+def _send_purchase_work_order_approval_email(unit: str, wo_id: int, header_row: dict, request_meta: dict | None):
+    purchasing_dept_id = _safe_int(header_row.get("PurchasingDeptId"))
+    recipients = _fetch_purchase_approval_recipients(unit, purchasing_dept_id=purchasing_dept_id)
+    email_list = [str(r.get("Email") or "").strip() for r in recipients if r.get("Email")]
+    email_list = [e for e in dict.fromkeys(email_list) if e]
+    if not email_list:
+        return {"status": "skipped", "message": "No approval recipients configured"}
+
+    wo_no = header_row.get("PONo") or f"WO-{wo_id}"
+    amount_val = header_row.get("Amount") or 0
+    requested_by = (request_meta or {}).get("requested_by") or ""
+    requested_at = (request_meta or {}).get("requested_at")
+    if isinstance(requested_at, datetime):
+        requested_at_str = requested_at.strftime("%d-%b-%Y %H:%M")
+    else:
+        requested_at_str = str(requested_at or "")
+    reason = header_row.get("Subject") or header_row.get("Notes") or ""
+
+    snapshot = {
+        "unit": unit,
+        "purchasing_dept": _resolve_purchasing_department_name(purchasing_dept_id) or "Not selected",
+        "wo_no": str(wo_no),
+        "wo_id": str(wo_id),
+        "supplier": str(header_row.get("SupplierName") or ""),
+        "amount": _format_indian_currency(amount_val),
+        "requested_by": str(requested_by),
+        "requested_at": str(requested_at_str),
+        "reason": str(reason),
+    }
+
+    items_df = data_fetch.fetch_work_order_items(unit, wo_id)
+    if items_df is None:
+        items = []
+    else:
+        items_df = _clean_df_columns(items_df)
+        items = items_df.to_dict(orient="records") if not items_df.empty else []
+
+    approval_meta = _fetch_purchase_approval_meta(wo_id)
+    header_row = dict(header_row)
+    header_row["Status"] = "A"
+    header_row["PurchasingDeptName"] = _resolve_purchasing_department_name(_safe_int(header_row.get("PurchasingDeptId")))
+    pdf_buffer = _build_work_order_pdf_buffer(unit, header_row, items, approval_meta)
+    pdf_bytes = pdf_buffer.getvalue() if pdf_buffer else b""
+
+    subject = f"Work Order Approved - {wo_no}"
+    body = _build_work_order_approval_email_body(snapshot)
+    filename = f"WO_{wo_no}.pdf"
     return _send_graph_mail_with_attachment(subject, body, email_list, filename, pdf_bytes)
 
 
@@ -24953,6 +25880,891 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
     return buffer
 
 
+def _build_work_order_pdf_buffer(unit: str, header: dict, items: list[dict], approval_meta: dict, print_format: str | None = None):
+    import io
+    from html.parser import HTMLParser
+    from xml.sax.saxutils import escape
+    from reportlab.lib import colors
+    from reportlab.lib.pagesizes import A4
+    from reportlab.lib.units import inch
+    from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
+    from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    page_width, _ = A4
+
+    def fmt_date(value):
+        if isinstance(value, datetime):
+            return value.strftime("%d-%b-%Y")
+        if isinstance(value, date):
+            return value.strftime("%d-%b-%Y")
+        raw = str(value or "").strip()
+        if not raw:
+            return ""
+        for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%Y/%m/%d", "%m/%d/%Y", "%m-%d-%Y"):
+            try:
+                return datetime.strptime(raw[:10], fmt).strftime("%d-%b-%Y")
+            except Exception:
+                continue
+        try:
+            return pd.to_datetime(raw, errors="coerce", dayfirst=True).strftime("%d-%b-%Y")
+        except Exception:
+            return raw[:10]
+
+    def split_terms(text):
+        raw = str(text or "").replace("\r\n", "\n").replace("\r", "\n").strip()
+        if not raw:
+            return []
+        entries = []
+        for entry in raw.split("\n"):
+            cleaned = re.sub(r"^\s*(?:[-*]|\d+[\.\)])\s*", "", entry).strip()
+            if cleaned:
+                entries.append(cleaned)
+        if not entries and raw:
+            entries.append(raw)
+        return entries
+
+    def header_lines(unit_name: str):
+        key = str(unit_name or "").strip().upper().replace(" ", "")
+        if key == "BALLIASTORE":
+            return [
+                "Asarfi Hospital",
+                "(A unit of ASAP Impact Pvt. Ltd.)",
+                "Tikhampur, Polytechnic Road, Ballia, UP",
+                "Non-Medical Purchase: 8227996514 | purchase@asarfihospital.com",
+            ]
+        if key == "CANCERUNITSTORE":
+            return [
+                "Asarfi Cancer Institute",
+                "(A unit of Asarfi Hospital Ltd.)",
+                "Ranguni, Bhuli, Dhanbad, Jharkhand",
+                "Non-Medical Purchase: 8227996514 | purchase@asarfihospital.com",
+            ]
+        if key == "AHLSTORE":
+            return [
+                "Asarfi Hospital Ltd.",
+                "Baramuri, B-Polytechnic, Dhanbad, Jharkhand",
+                "Non-Medical Purchase: 8227996514 | purchase@asarfihospital.com",
+            ]
+        return [
+            "Asarfi Hospital Ltd.",
+            "Baramuri, B-Polytechnic, Dhanbad, Jharkhand",
+            "Purchase Dept.: purchase@asarfihospital.com",
+        ]
+
+    def company_lines(unit_name: str):
+        key = str(unit_name or "").strip().upper().replace(" ", "")
+        if key == "BALLIASTORE":
+            return "For ASAP Impact Pvt. Ltd.", "ASAP Impact Pvt. Ltd."
+        return "For Asarfi Hospital Ltd.", "Asarfi Hospital Ltd."
+
+    prepared_by_footer = str(header.get("Preparedby") or header.get("prepared_by") or "").strip()
+
+    def draw_footer(canvas, doc_obj):
+        canvas.saveState()
+        footer_y = 0.3 * inch
+        footer_line_y = 0.5 * inch
+        canvas.setStrokeColor(colors.HexColor("#cbd5e1"))
+        canvas.setLineWidth(0.5)
+        canvas.line(doc_obj.leftMargin, footer_line_y, page_width - doc_obj.rightMargin, footer_line_y)
+        canvas.setFont("Helvetica", 8)
+        canvas.setFillColor(colors.HexColor("#64748b"))
+        canvas.drawString(doc_obj.leftMargin, footer_y, f"Prepared By: {prepared_by_footer or '-'}")
+        canvas.drawCentredString(page_width / 2, footer_y, f"Page {canvas.getPageNumber()}")
+        canvas.drawRightString(page_width - doc_obj.rightMargin, footer_y, "Copyright (c) ASARFI HOSPITAL")
+        canvas.restoreState()
+
+    def supplier_address_text():
+        parts = []
+        for key in ("SupplierAddress1", "SupplierAddress2"):
+            val = str(header.get(key) or "").strip()
+            if val:
+                parts.append(val)
+        city = str(header.get("SupplierCity") or "").strip()
+        state = str(header.get("SupplierState") or "").strip()
+        pin = str(header.get("SupplierPin") or "").strip()
+        country = str(header.get("SupplierCountry") or "").strip()
+        place_parts = [value for value in [city, state] if value]
+        place_text = ", ".join(place_parts)
+        if pin:
+            place_text = f"{place_text} - {pin}" if place_text else pin
+        if country:
+            place_text = f"{place_text}, {country}" if place_text else country
+        if place_text:
+            parts.append(place_text)
+        return ", ".join(parts)
+
+    def two_digit_words(num: int) -> str:
+        ones = ["", "One", "Two", "Three", "Four", "Five", "Six", "Seven", "Eight", "Nine"]
+        teens = ["Ten", "Eleven", "Twelve", "Thirteen", "Fourteen", "Fifteen", "Sixteen", "Seventeen", "Eighteen", "Nineteen"]
+        tens = ["", "", "Twenty", "Thirty", "Forty", "Fifty", "Sixty", "Seventy", "Eighty", "Ninety"]
+        if num < 10:
+            return ones[num]
+        if num < 20:
+            return teens[num - 10]
+        ten = tens[num // 10]
+        one = ones[num % 10]
+        return f"{ten} {one}".strip()
+
+    def three_digit_words(num: int) -> str:
+        if num >= 100:
+            head = f"{two_digit_words(num // 100)} Hundred"
+            tail = two_digit_words(num % 100)
+            return f"{head} {tail}".strip()
+        return two_digit_words(num)
+
+    def indian_number_to_words(num: int) -> str:
+        if num == 0:
+            return "Zero"
+        words = []
+        crore = num // 10000000
+        if crore:
+            words.append(f"{three_digit_words(crore)} Crore")
+        num %= 10000000
+        lakh = num // 100000
+        if lakh:
+            words.append(f"{two_digit_words(lakh)} Lakh")
+        num %= 100000
+        thousand = num // 1000
+        if thousand:
+            words.append(f"{two_digit_words(thousand)} Thousand")
+        num %= 1000
+        if num:
+            words.append(three_digit_words(num))
+        return " ".join([word for word in words if word]).strip()
+
+    def amount_in_words(amount_val) -> str:
+        try:
+            amt = Decimal(str(amount_val or 0)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP)
+        except Exception:
+            amt = Decimal("0.00")
+        rupees = int(amt)
+        paise = int((amt - Decimal(rupees)) * 100)
+        if paise == 100:
+            rupees += 1
+            paise = 0
+        rupees_words = indian_number_to_words(rupees)
+        if paise:
+            return f"Rupees {rupees_words} and Paise {indian_number_to_words(paise)} Only"
+        return f"Rupees {rupees_words} Only"
+
+    buffer = io.BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=A4,
+        topMargin=0.55 * inch,
+        bottomMargin=0.55 * inch,
+        leftMargin=0.55 * inch,
+        rightMargin=0.55 * inch,
+    )
+
+    styles = getSampleStyleSheet()
+    header_style = ParagraphStyle("WoHeader", parent=styles["Heading1"], fontSize=17, leading=20, alignment=TA_CENTER, textColor=colors.HexColor("#7c2d12"))
+    subheader_style = ParagraphStyle("WoSubHeader", parent=styles["Normal"], fontSize=9, leading=11, alignment=TA_CENTER, textColor=colors.HexColor("#475569"))
+    title_style = ParagraphStyle("WoTitle", parent=styles["Heading2"], fontSize=13, leading=16, alignment=TA_CENTER, textColor=colors.HexColor("#0f172a"))
+    section_style = ParagraphStyle("WoSection", parent=styles["Heading3"], fontSize=10, leading=12, textColor=colors.HexColor("#1e3a8a"), spaceBefore=6, spaceAfter=4)
+    label_style = ParagraphStyle("WoLabel", parent=styles["Normal"], fontSize=8, leading=10, fontName="Helvetica-Bold", textColor=colors.HexColor("#334155"))
+    value_style = ParagraphStyle("WoValue", parent=styles["Normal"], fontSize=8.7, leading=11, textColor=colors.black)
+    intro_style = ParagraphStyle("WoIntro", parent=styles["Normal"], fontSize=9, leading=12, textColor=colors.HexColor("#111827"))
+    item_text_style = ParagraphStyle("WoItemText", parent=styles["Normal"], fontSize=8, leading=10, textColor=colors.black)
+    item_num_style = ParagraphStyle("WoItemNum", parent=styles["Normal"], fontSize=7.6, leading=9, alignment=TA_RIGHT, textColor=colors.black)
+    item_center_style = ParagraphStyle("WoItemCenter", parent=styles["Normal"], fontSize=7.6, leading=9, alignment=TA_CENTER, textColor=colors.black)
+    term_style = ParagraphStyle("WoTerm", parent=styles["Normal"], fontSize=8.5, leading=11, leftIndent=12, textColor=colors.HexColor("#111827"))
+    summary_label_style = ParagraphStyle("WoSummaryLabel", parent=styles["Normal"], fontSize=8.5, leading=10.5, fontName="Helvetica-Bold", textColor=colors.HexColor("#334155"))
+    summary_value_style = ParagraphStyle("WoSummaryValue", parent=styles["Normal"], fontSize=8.5, leading=10.5, alignment=TA_RIGHT, textColor=colors.black)
+    sign_title_style = ParagraphStyle("WoSignTitle", parent=styles["Normal"], fontSize=8.5, leading=10.5, fontName="Helvetica-Bold", textColor=colors.HexColor("#1e3a8a"))
+    sign_body_style = ParagraphStyle("WoSignBody", parent=styles["Normal"], fontSize=8.3, leading=10, textColor=colors.HexColor("#111827"))
+    pending_style = ParagraphStyle("WoPending", parent=styles["Normal"], fontSize=10, leading=12, alignment=TA_CENTER, textColor=colors.HexColor("#b45309"))
+
+    body_html = _normalize_work_order_body_html(header.get("WorkOrderBodyHtml") or header.get("body_html"))
+    if body_html:
+        class WorkOrderBodyParser(HTMLParser):
+            def __init__(self):
+                super().__init__(convert_charrefs=False)
+                self.blocks = []
+                self.current = None
+                self.list_stack = []
+                self.inline_stack = []
+
+            @staticmethod
+            def _attrs_map(attrs):
+                return {str(key or "").lower(): str(value or "") for key, value in attrs}
+
+            def _resolve_alignment(self, attrs):
+                class_name = str(attrs.get("class") or "").lower()
+                style_text = str(attrs.get("style") or "").lower().replace(" ", "")
+                if "ql-align-center" in class_name or "text-align:center" in style_text:
+                    return "center"
+                if "ql-align-right" in class_name or "text-align:right" in style_text:
+                    return "right"
+                if "ql-align-justify" in class_name or "text-align:justify" in style_text:
+                    return "justify"
+                return "left"
+
+            def _ensure_block(self, tag="p", attrs=None):
+                if self.current is None:
+                    self.current = {
+                        "tag": tag,
+                        "text": "",
+                        "align": self._resolve_alignment(attrs or {}),
+                        "bullet": None,
+                    }
+
+            def _append_text(self, text):
+                self._ensure_block()
+                self.current["text"] += text
+
+            def _flush_block(self):
+                if not self.current:
+                    return
+                text = re.sub(r"(?:<br/>\s*){3,}", "<br/><br/>", str(self.current.get("text") or "")).strip()
+                plain = re.sub(r"(?is)<[^>]+>", "", text).replace("\xa0", " ").strip()
+                if plain:
+                    block = dict(self.current)
+                    block["text"] = text
+                    self.blocks.append(block)
+                self.current = None
+
+            def handle_starttag(self, tag, attrs):
+                tag = str(tag or "").lower()
+                attrs_map = self._attrs_map(attrs)
+                if tag in {"p", "div", "blockquote", "h1", "h2", "h3", "h4"}:
+                    self._flush_block()
+                    self.current = {
+                        "tag": tag,
+                        "text": "",
+                        "align": self._resolve_alignment(attrs_map),
+                        "bullet": None,
+                    }
+                    return
+                if tag in {"ul", "ol"}:
+                    self._flush_block()
+                    self.list_stack.append({"ordered": tag == "ol", "index": 0})
+                    return
+                if tag == "li":
+                    self._flush_block()
+                    bullet = "-"
+                    if self.list_stack:
+                        ctx = self.list_stack[-1]
+                        ctx["index"] += 1
+                        bullet = f"{ctx['index']}." if ctx.get("ordered") else "-"
+                    self.current = {
+                        "tag": "li",
+                        "text": "",
+                        "align": self._resolve_alignment(attrs_map),
+                        "bullet": bullet,
+                    }
+                    return
+                if tag == "br":
+                    self._append_text("<br/>")
+                    return
+                if tag in {"strong", "b"}:
+                    self._append_text("<b>")
+                    self.inline_stack.append("</b>")
+                    return
+                if tag in {"em", "i"}:
+                    self._append_text("<i>")
+                    self.inline_stack.append("</i>")
+                    return
+                if tag == "u":
+                    self._append_text("<u>")
+                    self.inline_stack.append("</u>")
+                    return
+                if tag == "a":
+                    self._append_text("<u>")
+                    self.inline_stack.append("</u>")
+                    return
+
+            def handle_endtag(self, tag):
+                tag = str(tag or "").lower()
+                if tag in {"p", "div", "blockquote", "h1", "h2", "h3", "h4", "li"}:
+                    self._flush_block()
+                    return
+                if tag in {"ul", "ol"}:
+                    self._flush_block()
+                    if self.list_stack:
+                        self.list_stack.pop()
+                    return
+                if tag in {"strong", "b", "em", "i", "u", "a"} and self.inline_stack:
+                    self._append_text(self.inline_stack.pop())
+
+            def handle_data(self, data):
+                if data is None:
+                    return
+                text = escape(str(data), {"'": "&apos;", '"': "&quot;"}).replace("\n", " ")
+                if text:
+                    self._append_text(text)
+
+            def handle_entityref(self, name):
+                self.handle_data(f"&{name};")
+
+            def handle_charref(self, name):
+                self.handle_data(f"&#{name};")
+
+            def close(self):
+                super().close()
+                self._flush_block()
+
+        def style_with_alignment(name: str, parent_style, align_key: str, **kwargs):
+            align_map = {
+                "left": TA_LEFT,
+                "center": TA_CENTER,
+                "right": TA_RIGHT,
+                "justify": TA_JUSTIFY,
+            }
+            return ParagraphStyle(name, parent=parent_style, alignment=align_map.get(align_key, TA_LEFT), **kwargs)
+
+        letter_body_left = ParagraphStyle(
+            "WoLetterBodyLeft",
+            parent=styles["Normal"],
+            fontSize=9.4,
+            leading=14,
+            textColor=colors.HexColor("#111827"),
+            alignment=TA_JUSTIFY,
+            spaceAfter=4,
+        )
+        letter_body_styles = {
+            "left": letter_body_left,
+            "center": style_with_alignment("WoLetterBodyCenter", letter_body_left, "center"),
+            "right": style_with_alignment("WoLetterBodyRight", letter_body_left, "right"),
+            "justify": style_with_alignment("WoLetterBodyJustify", letter_body_left, "justify"),
+        }
+        letter_bullet_styles = {
+            key: ParagraphStyle(
+                f"WoLetterBullet{key.title()}",
+                parent=style,
+                leftIndent=14,
+                firstLineIndent=0,
+            )
+            for key, style in letter_body_styles.items()
+        }
+        heading_styles = {
+            "h1": ParagraphStyle("WoLetterH1", parent=letter_body_left, fontSize=13.5, leading=17, fontName="Helvetica-Bold", spaceBefore=3, spaceAfter=5),
+            "h2": ParagraphStyle("WoLetterH2", parent=letter_body_left, fontSize=12.2, leading=15, fontName="Helvetica-Bold", spaceBefore=3, spaceAfter=5),
+            "h3": ParagraphStyle("WoLetterH3", parent=letter_body_left, fontSize=11.1, leading=14, fontName="Helvetica-Bold", spaceBefore=3, spaceAfter=4),
+            "h4": ParagraphStyle("WoLetterH4", parent=letter_body_left, fontSize=10.2, leading=13, fontName="Helvetica-Bold", spaceBefore=2, spaceAfter=4),
+        }
+        recipient_label_style = ParagraphStyle("WoRecipientLabel", parent=styles["Normal"], fontSize=9.1, leading=12, fontName="Helvetica-Bold", textColor=colors.HexColor("#1f2937"))
+        recipient_value_style = ParagraphStyle("WoRecipientValue", parent=styles["Normal"], fontSize=9.1, leading=12.3, textColor=colors.HexColor("#111827"))
+        subject_style = ParagraphStyle("WoSubject", parent=letter_body_left, fontSize=9.7, leading=13, fontName="Helvetica-Bold", textColor=colors.HexColor("#0f172a"), spaceBefore=2, spaceAfter=3)
+        detail_heading_style = ParagraphStyle("WoDetailHeading", parent=styles["Normal"], fontSize=8.1, leading=10.2, fontName="Helvetica-Bold", textColor=colors.HexColor("#1e3a8a"), spaceBefore=2, spaceAfter=4)
+        detail_line_style = ParagraphStyle("WoDetailLine", parent=styles["Normal"], fontSize=9.1, leading=13.1, textColor=colors.HexColor("#111827"), spaceAfter=3)
+        closing_style = ParagraphStyle("WoClosing", parent=letter_body_left, alignment=TA_LEFT, spaceBefore=8, spaceAfter=2)
+        summary_heading_style = ParagraphStyle("WoSummaryHeading", parent=styles["Normal"], fontSize=8.1, leading=10.2, fontName="Helvetica-Bold", textColor=colors.HexColor("#1e3a8a"), spaceBefore=8, spaceAfter=4)
+        summary_line_style = ParagraphStyle("WoSummaryLine", parent=styles["Normal"], fontSize=9.1, leading=13.1, textColor=colors.HexColor("#111827"), spaceAfter=3)
+        summary_total_line_style = ParagraphStyle("WoSummaryTotalLine", parent=summary_line_style, fontName="Helvetica-Bold", textColor=colors.HexColor("#0f172a"), spaceBefore=2, spaceAfter=4)
+        sign_title_left_style = ParagraphStyle("WoSignTitleLeft", parent=styles["Normal"], fontSize=8.7, leading=10.5, fontName="Helvetica-Bold", textColor=colors.HexColor("#1e3a8a"), alignment=TA_LEFT)
+        sign_title_right_style = ParagraphStyle("WoSignTitleRight", parent=sign_title_left_style, alignment=TA_RIGHT)
+        sign_body_left_style = ParagraphStyle("WoSignBodyLeft", parent=styles["Normal"], fontSize=8.6, leading=11.2, textColor=colors.HexColor("#111827"), alignment=TA_LEFT, spaceAfter=2)
+        sign_body_right_style = ParagraphStyle("WoSignBodyRight", parent=sign_body_left_style, alignment=TA_RIGHT, rightIndent=0)
+        sign_name_right_style = ParagraphStyle("WoSignNameRight", parent=sign_body_right_style, fontName="Helvetica-Bold", fontSize=9.0, leading=11.6, textColor=colors.HexColor("#0f172a"))
+        sign_company_right_style = ParagraphStyle("WoSignCompanyRight", parent=sign_title_right_style, fontSize=9.0, leading=11.4, textColor=colors.HexColor("#111827"))
+        sign_salutation_right_style = ParagraphStyle("WoSignSalutationRight", parent=sign_body_right_style, fontSize=9.0, leading=11.4, textColor=colors.HexColor("#111827"), spaceAfter=2)
+
+        def build_letter_blocks(html_text: str):
+            parser = WorkOrderBodyParser()
+            try:
+                parser.feed(html_text)
+                parser.close()
+            except Exception:
+                fallback_text = _work_order_body_to_plain_text(html_text)
+                return [{"tag": "p", "text": escape(line), "align": "left", "bullet": None} for line in fallback_text.splitlines() if line.strip()]
+            if parser.blocks:
+                return parser.blocks
+            fallback_text = _work_order_body_to_plain_text(html_text)
+            return [{"tag": "p", "text": escape(line), "align": "left", "bullet": None} for line in fallback_text.splitlines() if line.strip()]
+
+        def clean_text(value, default="-"):
+            text = str(value or "").strip()
+            return text if text else default
+
+        def format_quantity(value):
+            qty = _safe_float(value)
+            if abs(qty - round(qty)) < 0.0001:
+                return f"{qty:,.0f}"
+            return f"{qty:,.2f}"
+
+        def join_phrases(parts: list[str]):
+            phrases = [str(part or "").strip() for part in parts if str(part or "").strip()]
+            if not phrases:
+                return ""
+            if len(phrases) == 1:
+                return phrases[0]
+            if len(phrases) == 2:
+                return f"{phrases[0]} and {phrases[1]}"
+            return f"{', '.join(phrases[:-1])}, and {phrases[-1]}"
+
+        wo_no = str(header.get("PONo") or header.get("wo_no") or (f"WO-{header.get('ID')}" if header.get("ID") else "")).strip()
+        wo_date = fmt_date(header.get("PODate") or header.get("wo_date"))
+        status_code = str(header.get("Status") or header.get("status_code") or "").strip().upper()
+        status_label = _resolve_work_order_status_label(status_code)
+        supplier_name = str(header.get("SupplierName") or header.get("supplier_name") or "").strip()
+        supplier_email = str(header.get("SupplierEmail") or header.get("supplier_email") or "").strip()
+        supplier_gstin = str(header.get("SupplierGSTIN") or header.get("supplier_gstin") or "").strip()
+        ref_no = str(header.get("RefNo") or header.get("ref_no") or "").strip()
+        subject = str(header.get("Subject") or header.get("subject") or "").strip() or "Work Order"
+        notes = str(header.get("Notes") or header.get("notes") or "").strip()
+        special_notes = str(header.get("SpecialNotes") or header.get("special_notes") or "").strip()
+        delivery_terms = str(header.get("DeliveryTerms") or header.get("delivery_terms") or "").strip()
+        payment_terms = str(header.get("PaymentsTerms") or header.get("payment_terms") or "").strip()
+        other_terms = str(header.get("OtherTerms") or header.get("other_terms") or "").strip()
+        senior_name = str(header.get("SeniorApprovalAuthorityName") or header.get("senior_approval_authority_name") or "").strip()
+        senior_designation = str(header.get("SeniorApprovalAuthorityDesignation") or header.get("senior_approval_authority_designation") or "").strip()
+        prepared_by = str(header.get("Preparedby") or header.get("prepared_by") or "").strip()
+        purchasing_dept_id = _safe_int(header.get("PurchasingDeptId") or header.get("purchasing_dept_id"))
+        purchasing_dept_name = str(
+            header.get("PurchasingDeptName")
+            or header.get("purchasing_dept_name")
+            or _resolve_purchasing_department_name(purchasing_dept_id)
+            or ""
+        ).strip()
+        supplier_address = supplier_address_text()
+
+        totals = _fallback_work_order_summary_from_header(header, _summarize_work_order_totals(items or []))
+        amount_words = amount_in_words(totals.get("grand_total") or 0)
+
+        signatory_profile = _pick_purchase_incharge_signatory(unit, purchasing_dept_id) or {}
+        sign_name = str(
+            signatory_profile.get("Name")
+            or header.get("ApproverName")
+            or header.get("ApprovedBy")
+            or (approval_meta or {}).get("approved_by")
+            or ""
+        ).strip()
+        sign_designation = str(
+            signatory_profile.get("ApproverDesignation")
+            or header.get("ApproverDesignation")
+            or "Authorized Signatory"
+        ).strip()
+        sign_phone = str(signatory_profile.get("ApproverPhone") or header.get("ApproverPhone") or "").strip()
+        company_line_1, _ = company_lines(unit)
+        approved_at = fmt_date((approval_meta or {}).get("approved_at"))
+        primary_item = dict(items[0] or {}) if items else {}
+        primary_qty = _safe_float(primary_item.get("Qty") or primary_item.get("qty"))
+        primary_rate = _safe_float(primary_item.get("Rate") or primary_item.get("rate"))
+        primary_discount_pct = _safe_float(primary_item.get("Discount") or primary_item.get("discount_pct"))
+        primary_cgst_pct = _safe_float(primary_item.get("CGSTPct") or primary_item.get("cgst_pct"))
+        primary_sgst_pct = _safe_float(primary_item.get("SGSTPct") or primary_item.get("sgst_pct"))
+        primary_igst_pct = _safe_float(primary_item.get("IGSTPct") or primary_item.get("igst_pct"))
+        primary_tax_pct = primary_cgst_pct + primary_sgst_pct + primary_igst_pct
+        primary_for_amt = _safe_float(primary_item.get("ForAmount") or primary_item.get("for_amt"))
+
+        elements = []
+        for idx, line in enumerate(header_lines(unit)):
+            elements.append(Paragraph(line, header_style if idx == 0 else subheader_style))
+        elements.append(Spacer(1, 8))
+        elements.append(Paragraph("Work Order", title_style))
+        if status_code and status_code != "A":
+            elements.append(Spacer(1, 3))
+            elements.append(Paragraph(status_label.upper(), pending_style))
+        elements.append(Spacer(1, 8))
+
+        elements.append(Paragraph("Work Order Reference", detail_heading_style))
+        elements.append(
+            Paragraph(
+                (
+                    f"This Work Order no. <b>{escape(clean_text(wo_no))}</b> is issued on "
+                    f"<b>{escape(clean_text(wo_date))}</b>."
+                ),
+                detail_line_style,
+            )
+        )
+        reference_notes = []
+        if purchasing_dept_name:
+            reference_notes.append(f"The issuing department for this document is <b>{escape(purchasing_dept_name)}</b>.")
+        if ref_no:
+            reference_notes.append(f"Internal reference no. <b>{escape(ref_no)}</b> applies to this Work Order.")
+        if reference_notes:
+            elements.append(Paragraph(" ".join(reference_notes), detail_line_style))
+        elements.append(Spacer(1, 10))
+
+        elements.append(Paragraph("To,", recipient_label_style))
+        elements.append(Paragraph(escape(supplier_name or "-"), recipient_value_style))
+        if supplier_address:
+            elements.append(Paragraph(escape(supplier_address), recipient_value_style))
+        if supplier_email:
+            elements.append(Paragraph(f"Email: {escape(supplier_email)}", recipient_value_style))
+        if supplier_gstin:
+            elements.append(Paragraph(f"GSTIN: {escape(supplier_gstin)}", recipient_value_style))
+        elements.append(Spacer(1, 8))
+        elements.append(Paragraph(f"<b>Subject:</b> {escape(subject)}", subject_style))
+        elements.append(Spacer(1, 2))
+        elements.append(Paragraph("Dear Sir / Madam,", letter_body_styles["left"]))
+        elements.append(
+            Paragraph(
+                "Please execute the following work / service as discussed and in line with the approved commercial terms mentioned below.",
+                letter_body_styles["justify"],
+            )
+        )
+        elements.append(Spacer(1, 4))
+
+        for block in build_letter_blocks(body_html):
+            tag = str(block.get("tag") or "p").lower()
+            align_key = str(block.get("align") or "left").lower()
+            if tag == "li":
+                style = letter_bullet_styles.get(align_key, letter_bullet_styles["left"])
+                elements.append(Paragraph(block.get("text") or "", style, bulletText=str(block.get("bullet") or "-")))
+                continue
+            if tag in heading_styles:
+                heading_style = heading_styles[tag]
+                if align_key != "left":
+                    heading_style = style_with_alignment(f"{heading_style.name}{align_key.title()}", heading_style, align_key)
+                elements.append(Paragraph(block.get("text") or "", heading_style))
+                continue
+            elements.append(Paragraph(block.get("text") or "", letter_body_styles.get(align_key, letter_body_styles["left"])))
+
+        elements.append(Spacer(1, 10))
+        elements.append(Paragraph("Commercial Terms", summary_heading_style))
+        commercial_parts = []
+        if items:
+            commercial_parts.append(f"Qty <b>{format_quantity(primary_qty)}</b>")
+            commercial_parts.append(f"Rate <b>{_format_indian_currency(primary_rate)}</b>")
+            if primary_discount_pct:
+                commercial_parts.append(f"Discount <b>{primary_discount_pct:,.2f}%</b>")
+            commercial_parts.append(f"GST <b>{primary_tax_pct:,.2f}%</b>")
+            if primary_for_amt:
+                commercial_parts.append(f"F.O.R <b>{_format_indian_currency(primary_for_amt)}</b>")
+        if commercial_parts:
+            elements.append(
+                Paragraph(
+                    f"Approved commercial terms: {', '.join(commercial_parts)}.",
+                    summary_line_style,
+                )
+            )
+        elements.append(
+            Paragraph(
+                f"Grand Total: <b>{_format_indian_currency(totals.get('grand_total') or 0)}</b>",
+                summary_total_line_style,
+            )
+        )
+        elements.append(Spacer(1, 6))
+        elements.append(Paragraph(f"Amount in Words: <b>{escape(amount_words)}</b>", letter_body_styles["left"]))
+
+        elements.append(Spacer(1, 10))
+        elements.append(
+            Paragraph(
+                "Kindly ensure the above work is completed as agreed and any publication or execution is released only after our final confirmation.",
+                closing_style,
+            )
+        )
+        elements.append(Spacer(1, 10))
+
+        if senior_name:
+            elements.append(
+                KeepTogether(
+                    [
+                        Spacer(1, 10),
+                        Paragraph("Special Approval", sign_title_left_style),
+                        Spacer(1, 20),
+                        Paragraph(escape(senior_name), sign_body_left_style),
+                        Paragraph(escape(senior_designation), sign_body_left_style) if senior_designation else Spacer(1, 0),
+                    ]
+                )
+            )
+
+        right_sign_block = [
+            Spacer(1, 16),
+            Paragraph("Sincerely,", sign_salutation_right_style),
+            Paragraph(escape(company_line_1), sign_company_right_style),
+            Spacer(1, 26),
+        ]
+        if sign_name:
+            right_sign_block.append(Paragraph(escape(sign_name), sign_name_right_style))
+        if sign_designation:
+            right_sign_block.append(Paragraph(escape(sign_designation), sign_body_right_style))
+        elif not sign_name:
+            right_sign_block.append(Paragraph("Authorized Signatory", sign_body_right_style))
+        if sign_phone:
+            right_sign_block.append(Paragraph(f"Phone: {escape(sign_phone)}", sign_body_right_style))
+        if approved_at:
+            right_sign_block.append(Paragraph(f"Approved On: {escape(approved_at)}", sign_body_right_style))
+        elements.append(KeepTogether(right_sign_block))
+
+        doc.build(elements, onFirstPage=draw_footer, onLaterPages=draw_footer)
+        buffer.seek(0)
+        return buffer
+
+    wo_no = str(header.get("PONo") or header.get("wo_no") or (f"WO-{header.get('ID')}" if header.get("ID") else "")).strip()
+    wo_date = fmt_date(header.get("PODate") or header.get("wo_date"))
+    status_code = str(header.get("Status") or header.get("status_code") or "").strip().upper()
+    status_label = _resolve_work_order_status_label(status_code)
+    supplier_name = str(header.get("SupplierName") or "").strip()
+    supplier_email = str(header.get("SupplierEmail") or "").strip()
+    supplier_gstin = str(header.get("SupplierGSTIN") or "").strip()
+    ref_no = str(header.get("RefNo") or "").strip()
+    subject = str(header.get("Subject") or "").strip()
+    notes = str(header.get("Notes") or "").strip()
+    special_notes = str(header.get("SpecialNotes") or "").strip()
+    delivery_terms = str(header.get("DeliveryTerms") or "").strip()
+    payment_terms = str(header.get("PaymentsTerms") or "").strip()
+    other_terms = str(header.get("OtherTerms") or "").strip()
+    senior_name = str(header.get("SeniorApprovalAuthorityName") or header.get("senior_approval_authority_name") or "").strip()
+    senior_designation = str(header.get("SeniorApprovalAuthorityDesignation") or header.get("senior_approval_authority_designation") or "").strip()
+    prepared_by = str(header.get("Preparedby") or header.get("prepared_by") or "").strip()
+    purchasing_dept_id = _safe_int(header.get("PurchasingDeptId"))
+    purchasing_dept_name = str(
+        header.get("PurchasingDeptName") or header.get("purchasing_dept_name") or _resolve_purchasing_department_name(purchasing_dept_id) or ""
+    ).strip()
+    supplier_address = supplier_address_text()
+
+    signatory_profile = _pick_purchase_incharge_signatory(unit, purchasing_dept_id) or {}
+    sign_name = str(
+        signatory_profile.get("Name")
+        or header.get("ApproverName")
+        or header.get("ApprovedBy")
+        or (approval_meta or {}).get("approved_by")
+        or prepared_by
+        or ""
+    ).strip()
+    sign_designation = str(
+        signatory_profile.get("ApproverDesignation")
+        or header.get("ApproverDesignation")
+        or "Authorized Signatory"
+    ).strip()
+    sign_phone = str(signatory_profile.get("ApproverPhone") or header.get("ApproverPhone") or "").strip()
+    company_line_1, company_line_2 = company_lines(unit)
+
+    row_items = []
+    for idx, row in enumerate(items or [], start=1):
+        qty = _safe_float(row.get("Qty") or row.get("qty"))
+        rate = _safe_float(row.get("Rate") or row.get("rate"))
+        discount_pct = _safe_float(row.get("Discount") or row.get("discount_pct"))
+        taxable_amount = _safe_float(row.get("TaxableAmount") or row.get("taxable_amount"))
+        cgst_pct = _safe_float(row.get("CGSTPct") or row.get("cgst_pct"))
+        sgst_pct = _safe_float(row.get("SGSTPct") or row.get("sgst_pct"))
+        igst_pct = _safe_float(row.get("IGSTPct") or row.get("igst_pct"))
+        cgst_amt = _safe_float(row.get("CGSTAmt") or row.get("cgst_amt"))
+        sgst_amt = _safe_float(row.get("SGSTAmt") or row.get("sgst_amt"))
+        igst_amt = _safe_float(row.get("IGSTAmt") or row.get("igst_amt"))
+        gst_pct = (cgst_pct + sgst_pct) if (cgst_pct or sgst_pct) else igst_pct
+        gst_amt = cgst_amt + sgst_amt + igst_amt
+        for_amount = _safe_float(row.get("ForAmount") or row.get("Fore") or row.get("for_amt"))
+        net_amount = _safe_float(row.get("NetAmount") or row.get("net_amt"))
+        line_notes = str(row.get("LineNotes") or row.get("line_notes") or "").strip()
+        item_name = str(row.get("ItemName") or row.get("item_name") or "").strip()
+        item_text = escape(item_name or "-")
+        if line_notes:
+            item_text = f"{item_text}<br/><font size='7' color='#475569'>{escape(line_notes)}</font>"
+        row_items.append(
+            {
+                "idx": idx,
+                "item_text": item_text,
+                "qty": qty,
+                "rate": rate,
+                "discount_pct": discount_pct,
+                "taxable_amount": taxable_amount,
+                "gst_pct": gst_pct,
+                "gst_amt": gst_amt,
+                "for_amount": for_amount,
+                "net_amount": net_amount,
+            }
+        )
+
+    totals = _summarize_work_order_totals(
+        [
+            {
+                "gross_amount": _safe_float(r.get("qty")) * _safe_float(r.get("rate")),
+                "taxable_amount": r.get("taxable_amount"),
+                "cgst_amt": (_safe_float(items[i].get("CGSTAmt") or items[i].get("cgst_amt")) if i < len(items) else 0),
+                "sgst_amt": (_safe_float(items[i].get("SGSTAmt") or items[i].get("sgst_amt")) if i < len(items) else 0),
+                "igst_amt": (_safe_float(items[i].get("IGSTAmt") or items[i].get("igst_amt")) if i < len(items) else 0),
+                "for_amount": r.get("for_amount"),
+                "net_amount": r.get("net_amount"),
+            }
+            for i, r in enumerate(row_items)
+        ]
+    )
+    if not row_items:
+        totals["grand_total"] = _safe_float(header.get("Amount"))
+    amount_words = amount_in_words(totals.get("grand_total") or 0)
+
+    elements = []
+    for idx, line in enumerate(header_lines(unit)):
+        elements.append(Paragraph(line, header_style if idx == 0 else subheader_style))
+    elements.append(Spacer(1, 8))
+    elements.append(Paragraph("Work Order", title_style))
+    if status_code and status_code != "A":
+        elements.append(Spacer(1, 4))
+        elements.append(Paragraph(status_label.upper(), pending_style))
+    elements.append(Spacer(1, 8))
+
+    details = [
+        [Paragraph("WO No", label_style), Paragraph(escape(wo_no or "-"), value_style), Paragraph("WO Date", label_style), Paragraph(escape(wo_date or "-"), value_style)],
+        [Paragraph("Status", label_style), Paragraph(escape(status_label), value_style), Paragraph("Purchasing Dept", label_style), Paragraph(escape(purchasing_dept_name or "-"), value_style)],
+        [Paragraph("Vendor", label_style), Paragraph(escape(supplier_name or "-"), value_style), Paragraph("Vendor Email", label_style), Paragraph(escape(supplier_email or "-"), value_style)],
+        [Paragraph("Vendor GSTIN", label_style), Paragraph(escape(supplier_gstin or "-"), value_style), Paragraph("Reference No", label_style), Paragraph(escape(ref_no or "-"), value_style)],
+        [Paragraph("Vendor Address", label_style), Paragraph(escape(supplier_address or "-"), value_style), Paragraph("Prepared By", label_style), Paragraph(escape(prepared_by or "-"), value_style)],
+        [Paragraph("Subject", label_style), Paragraph(escape(subject or "-"), value_style), Paragraph("", label_style), Paragraph("", value_style)],
+    ]
+    details_table = Table(details, colWidths=[70, 190, 92, 154])
+    details_table.setStyle(
+        TableStyle(
+            [
+                ("SPAN", (1, 5), (3, 5)),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("LINEABOVE", (0, 0), (-1, 0), 0.4, colors.HexColor("#cbd5e1")),
+                ("LINEBELOW", (0, -1), (-1, -1), 0.4, colors.HexColor("#cbd5e1")),
+            ]
+        )
+    )
+    elements.append(details_table)
+    elements.append(Spacer(1, 10))
+
+    intro_text = (
+        "Please execute the following work / service as agreed and ensure completion in line with the terms mentioned below."
+    )
+    elements.append(Paragraph(intro_text, intro_style))
+    elements.append(Spacer(1, 8))
+
+    item_rows = [
+        [
+            Paragraph("#", item_center_style),
+            Paragraph("Work / Service Description", item_center_style),
+            Paragraph("Qty", item_center_style),
+            Paragraph("Rate", item_center_style),
+            Paragraph("Disc %", item_center_style),
+            Paragraph("Taxable", item_center_style),
+            Paragraph("GST %", item_center_style),
+            Paragraph("GST Amt", item_center_style),
+            Paragraph("F.O.R", item_center_style),
+            Paragraph("Net Amt", item_center_style),
+        ]
+    ]
+    for row in row_items:
+        item_rows.append(
+            [
+                Paragraph(str(row["idx"]), item_center_style),
+                Paragraph(row["item_text"], item_text_style),
+                Paragraph(_format_indian_currency(row["qty"]), item_num_style),
+                Paragraph(_format_indian_currency(row["rate"]), item_num_style),
+                Paragraph(_format_indian_currency(row["discount_pct"]), item_num_style),
+                Paragraph(_format_indian_currency(row["taxable_amount"]), item_num_style),
+                Paragraph(_format_indian_currency(row["gst_pct"]), item_num_style),
+                Paragraph(_format_indian_currency(row["gst_amt"]), item_num_style),
+                Paragraph(_format_indian_currency(row["for_amount"]), item_num_style),
+                Paragraph(_format_indian_currency(row["net_amount"]), item_num_style),
+            ]
+        )
+    if len(item_rows) == 1:
+        item_rows.append(
+            [
+                Paragraph("-", item_center_style),
+                Paragraph("No line items available", item_text_style),
+                Paragraph("-", item_num_style),
+                Paragraph("-", item_num_style),
+                Paragraph("-", item_num_style),
+                Paragraph("-", item_num_style),
+                Paragraph("-", item_num_style),
+                Paragraph("-", item_num_style),
+                Paragraph("-", item_num_style),
+                Paragraph("-", item_num_style),
+            ]
+        )
+    item_table = Table(item_rows, colWidths=[20, 203, 36, 48, 42, 50, 40, 48, 42, 52], repeatRows=1)
+    item_table.setStyle(
+        TableStyle(
+            [
+                ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e3a8a")),
+                ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e2e8f0")),
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+            ]
+        )
+    )
+    elements.append(item_table)
+    elements.append(Spacer(1, 10))
+
+    summary_rows = [
+        [Paragraph("Gross Amount", summary_label_style), Paragraph(_format_indian_currency(totals.get("gross_total") or 0), summary_value_style)],
+        [Paragraph("Discount", summary_label_style), Paragraph(_format_indian_currency(totals.get("discount_total") or 0), summary_value_style)],
+        [Paragraph("Taxable Amount", summary_label_style), Paragraph(_format_indian_currency(totals.get("taxable_total") or 0), summary_value_style)],
+        [Paragraph("CGST", summary_label_style), Paragraph(_format_indian_currency(totals.get("cgst_total") or 0), summary_value_style)],
+        [Paragraph("SGST", summary_label_style), Paragraph(_format_indian_currency(totals.get("sgst_total") or 0), summary_value_style)],
+        [Paragraph("IGST", summary_label_style), Paragraph(_format_indian_currency(totals.get("igst_total") or 0), summary_value_style)],
+        [Paragraph("F.O.R", summary_label_style), Paragraph(_format_indian_currency(totals.get("for_total") or 0), summary_value_style)],
+        [Paragraph("Grand Total", summary_label_style), Paragraph(_format_indian_currency(totals.get("grand_total") or 0), summary_value_style)],
+    ]
+    summary_table = Table(summary_rows, colWidths=[120, 100], hAlign="RIGHT")
+    summary_table.setStyle(
+        TableStyle(
+            [
+                ("BOX", (0, 0), (-1, -1), 0.3, colors.HexColor("#cbd5e1")),
+                ("INNERGRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e2e8f0")),
+                ("LEFTPADDING", (0, 0), (-1, -1), 5),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 5),
+                ("TOPPADDING", (0, 0), (-1, -1), 4),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 4),
+                ("BACKGROUND", (0, -1), (-1, -1), colors.HexColor("#eff6ff")),
+            ]
+        )
+    )
+    elements.append(summary_table)
+    elements.append(Spacer(1, 6))
+    elements.append(Paragraph(f"Amount in Words: <b>{escape(amount_words)}</b>", intro_style))
+
+    def add_term_block(title: str, text: str):
+        entries = split_terms(text)
+        if not entries:
+            return
+        elements.append(Spacer(1, 6))
+        elements.append(Paragraph(title, section_style))
+        for entry in entries:
+            elements.append(Paragraph(escape(entry), term_style, bulletText="-"))
+
+    add_term_block("Notes", notes)
+    add_term_block("Special Notes", special_notes)
+    add_term_block("Delivery Terms", delivery_terms)
+    add_term_block("Payment Terms", payment_terms)
+    add_term_block("Other Terms", other_terms)
+
+    elements.append(Spacer(1, 14))
+    approved_at = fmt_date((approval_meta or {}).get("approved_at"))
+    left_lines = [Paragraph("Special Approval", sign_title_style)]
+    if senior_name:
+        left_lines.append(Paragraph(escape(senior_name), sign_body_style))
+        if senior_designation:
+            left_lines.append(Paragraph(escape(senior_designation), sign_body_style))
+    else:
+        left_lines.append(Paragraph("Not Applicable", sign_body_style))
+
+    right_lines = [Paragraph("Authorized Signatory", sign_title_style)]
+    right_lines.append(Paragraph(escape(company_line_1), sign_body_style))
+    if sign_name:
+        right_lines.append(Paragraph(escape(sign_name), sign_body_style))
+    if sign_designation:
+        right_lines.append(Paragraph(escape(sign_designation), sign_body_style))
+    if sign_phone:
+        right_lines.append(Paragraph(f"Phone: {escape(sign_phone)}", sign_body_style))
+    if approved_at:
+        right_lines.append(Paragraph(f"Approved On: {escape(approved_at)}", sign_body_style))
+
+    sign_table = Table([[left_lines, right_lines]], colWidths=[doc.width / 2.0, doc.width / 2.0])
+    sign_table.setStyle(
+        TableStyle(
+            [
+                ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                ("TOPPADDING", (0, 0), (-1, -1), 2),
+                ("BOTTOMPADDING", (0, 0), (-1, -1), 2),
+            ]
+        )
+    )
+    elements.append(sign_table)
+
+    doc.build(elements, onFirstPage=draw_footer, onLaterPages=draw_footer)
+    buffer.seek(0)
+    return buffer
+
+
 @app.route('/api/purchase/init')
 @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
 def api_purchase_init():
@@ -24970,6 +26782,10 @@ def api_purchase_init():
         pass
     try:
         data_fetch.ensure_po_special_notes_column(unit)
+    except Exception:
+        pass
+    try:
+        data_fetch.ensure_po_print_format_column(unit)
     except Exception:
         pass
     try:
@@ -27644,6 +29460,7 @@ def api_purchase_po_lookup():
         "other_terms": header_row.get("OtherTerms"),
         "freight_charges": header_row.get("Custom1") or 0,
         "packing_charges": header_row.get("Custom2") or 0,
+        "print_format": _saved_po_print_format(header_row),
         "against": header_row.get("Against"),
         "against_id": header_row.get("AgainstId"),
         "indent_id": header_row.get("PurchaseIndentId"),
@@ -28901,6 +30718,10 @@ def api_purchase_create_po():
     except Exception:
         pass
     try:
+        data_fetch.ensure_po_print_format_column(unit)
+    except Exception:
+        pass
+    try:
         data_fetch.ensure_po_senior_approval_authority_column(unit)
     except Exception:
         pass
@@ -29002,6 +30823,12 @@ def api_purchase_create_po():
     }
     status_code = status_map.get(status_raw, "D")
     purchasing_dept_id = _safe_int(header.get("purchasing_dept_id"))
+    selected_po_print_format = _resolve_po_print_format_for_persistence(
+        unit,
+        header.get("print_format"),
+        existing_format=None,
+        purchasing_dept_id=purchasing_dept_id,
+    )
     if status_code == "P" and purchasing_dept_id <= 0:
         _audit_log_event(
             "purchase",
@@ -29078,6 +30905,7 @@ def api_purchase_create_po():
         "AgainstId": int(header.get("against_id") or 0),
         "Status": status_code,
         "PurchasingDeptId": purchasing_dept_id if purchasing_dept_id > 0 else None,
+        "POPrintFormat": selected_po_print_format,
     }
 
     mst_result = data_fetch.add_iv_po_mst_with_autonumber(unit, po_params)
@@ -29421,6 +31249,12 @@ def api_purchase_update_po():
     }
     status_code = status_map.get(status_raw, "D")
     purchasing_dept_id = _safe_int(header.get("purchasing_dept_id"))
+    selected_po_print_format = _resolve_po_print_format_for_persistence(
+        unit,
+        header.get("print_format"),
+        existing_format=existing_header.get("POPrintFormat"),
+        purchasing_dept_id=purchasing_dept_id,
+    )
     if status_code == "P" and purchasing_dept_id <= 0:
         _audit_log_event(
             "purchase",
@@ -29492,6 +31326,7 @@ def api_purchase_update_po():
         "AgainstId": int(header.get("against_id") or 0),
         "Status": status_code,
         "PurchasingDeptId": purchasing_dept_id if purchasing_dept_id > 0 else None,
+        "POPrintFormat": selected_po_print_format,
         "pUpdatedby": int(header.get("updated_by") or 0),
         "pUpdatedon": now.strftime("%Y-%m-%d %H:%M:%S"),
     }
@@ -29691,8 +31526,7 @@ def api_purchase_po_approve():
         payload.get("supplier_email") or payload.get("to_email") or payload.get("email")
     )
     raw_auto_email_format = str(payload.get("auto_email_format") or payload.get("format") or "").strip().lower()
-    is_it = (session.get("role") or "").strip() == "IT"
-    auto_email_print_format = "def" if is_it and raw_auto_email_format == "def" else None
+    auto_email_print_format = "standard"
 
     if not po_id or not request_id or not otp:
         _audit_log_event(
@@ -30128,8 +31962,6 @@ def api_purchase_po_print():
     po_no = (request.args.get("po_no") or "").strip()
     po_id = int(po_id_raw) if str(po_id_raw or "").isdigit() else None
     raw_format = (request.args.get("format") or "").strip().lower()
-    is_it = (session.get("role") or "").strip() == "IT"
-    print_format = "def" if is_it and raw_format == "def" else None
     if not po_id and not po_no:
         return jsonify({"status": "error", "message": "PO ID or PO number is required"}), 400
 
@@ -30141,6 +31973,12 @@ def api_purchase_po_print():
     header_df = _clean_df_columns(header_df)
     header = header_df.iloc[0].to_dict()
     header["PurchasingDeptName"] = _resolve_purchasing_department_name(_safe_int(header.get("PurchasingDeptId")))
+    print_format = _resolve_po_print_format_for_render(
+        unit,
+        requested_format=raw_format,
+        header_row=header,
+        purchasing_dept_id=_safe_int(header.get("PurchasingDeptId")),
+    )
     po_id = int(header.get("ID") or po_id or 0)
     if po_id > 0 and not str(header.get("PONo") or "").strip():
         try:
@@ -30179,8 +32017,6 @@ def api_purchase_po_email_pdf():
     po_no = str(payload.get("po_no") or "").strip()
     to_email = _purchase_normalize_email(payload.get("to_email") or payload.get("email"))
     raw_format = str(payload.get("format") or "").strip().lower()
-    is_it = (session.get("role") or "").strip() == "IT"
-    print_format = "def" if is_it and raw_format == "def" else None
 
     if po_id <= 0 and not po_no:
         _audit_log_event(
@@ -30237,6 +32073,12 @@ def api_purchase_po_email_pdf():
 
     header_df = _clean_df_columns(header_df)
     header_row = header_df.iloc[0].to_dict()
+    print_format = _resolve_po_print_format_for_render(
+        unit,
+        requested_format=raw_format,
+        header_row=header_row,
+        purchasing_dept_id=_safe_int(header_row.get("PurchasingDeptId")),
+    )
     po_id_val = _safe_int(header_row.get("ID"), po_id)
     if po_id_val > 0 and not str(header_row.get("PONo") or "").strip():
         try:
@@ -30379,6 +32221,1445 @@ def api_purchase_po_email_pdf():
         "recipient": to_email,
         "mail_status": mail_result,
     })
+
+
+@app.route('/api/purchase/work_order/init')
+@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+def api_purchase_work_order_init():
+    unit, error = _get_work_order_unit()
+    if error:
+        return error
+    _ensure_work_order_schema(unit)
+
+    unit_df = data_fetch.fetch_purchase_unit_master(unit, include_inactive=False)
+    supplier_df = data_fetch.fetch_iv_suppliers(unit)
+    purchasing_departments_payload, default_purchasing_dept_id = _build_purchase_department_payload(unit)
+
+    units = []
+    if unit_df is not None and not unit_df.empty:
+        unit_df = _clean_df_columns(unit_df)
+        cols_map = {str(c).strip().lower(): c for c in unit_df.columns}
+        id_col = cols_map.get("id")
+        name_col = cols_map.get("name")
+        code_col = cols_map.get("code")
+        for _, row in unit_df.iterrows():
+            name_val = _normalize_purchase_unit_text(row.get(name_col) if name_col else "")
+            code_val = _normalize_purchase_unit_text(row.get(code_col) if code_col else "")
+            if not name_val and not code_val:
+                continue
+            if not name_val:
+                name_val = code_val
+            units.append(
+                {
+                    "id": row.get(id_col) if id_col else None,
+                    "code": code_val,
+                    "name": name_val,
+                    "unit": unit,
+                }
+            )
+
+    suppliers = []
+    if supplier_df is not None and not supplier_df.empty:
+        supplier_df = _clean_df_columns(supplier_df)
+        cols_map = {str(c).strip().lower(): c for c in supplier_df.columns}
+        id_col = cols_map.get("supplierid") or cols_map.get("id")
+        name_col = cols_map.get("suppliername") or cols_map.get("name")
+        code_col = cols_map.get("suppliercode") or cols_map.get("code")
+        email_col = (
+            cols_map.get("email")
+            or cols_map.get("emailid")
+            or cols_map.get("email_id")
+            or cols_map.get("e_mail")
+            or cols_map.get("e_mail_id")
+        )
+        for _, row in supplier_df.iterrows():
+            suppliers.append(
+                {
+                    "id": row.get(id_col),
+                    "name": str(row.get(name_col) or "").strip(),
+                    "code": str(row.get(code_col) or "").strip(),
+                    "email": str(row.get(email_col) or "").strip(),
+                }
+            )
+
+    return jsonify(
+        {
+            "status": "success",
+            "unit": unit,
+            "wo_no": None,
+            "units": _sanitize_json_payload(units),
+            "suppliers": suppliers,
+            "purchasing_departments": _sanitize_json_payload(purchasing_departments_payload),
+            "default_purchasing_dept_id": default_purchasing_dept_id,
+        }
+    )
+
+
+@app.route('/api/purchase/work_order_lookup')
+@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+def api_purchase_work_order_lookup():
+    unit, error = _get_work_order_unit()
+    if error:
+        return error
+    _ensure_work_order_schema(unit)
+
+    query = (request.args.get("q") or "").strip()
+    if not query:
+        return jsonify({"status": "error", "message": "Please enter a Work Order number or ID"}), 400
+
+    wo_id = None
+    wo_no = None
+    if query.isdigit():
+        wo_id = int(query)
+    else:
+        wo_no = query.upper() if query.upper().startswith("WO-") else query
+
+    header_df = data_fetch.fetch_work_order_header(unit, wo_id=wo_id, wo_no=wo_no)
+    if header_df is None:
+        return jsonify({"status": "error", "message": "Failed to fetch Work Order"}), 500
+    if header_df.empty:
+        return jsonify({"status": "error", "message": "Work Order not found"}), 404
+
+    header_df = _clean_df_columns(header_df)
+    header_row = header_df.iloc[0].to_dict()
+    wo_id_val = _safe_int(header_row.get("ID"))
+    if wo_id_val > 0 and not str(header_row.get("PONo") or "").strip():
+        try:
+            wo_no_fix = data_fetch.ensure_work_order_number(unit, wo_id_val, preferred_wo_no=wo_no)
+            ensured_wo_no = str(wo_no_fix.get("wo_no") or "").strip()
+            if ensured_wo_no:
+                header_row["PONo"] = ensured_wo_no
+        except Exception:
+            pass
+    status_code = str(header_row.get("Status") or "").strip().upper()
+    header_payload = _build_work_order_header_payload(header_row, status_code=status_code)
+
+    if status_code == "P":
+        otp_rec = _fetch_latest_purchase_otp_request(wo_id_val)
+        if otp_rec:
+            header_payload["otp_request_id"] = otp_rec.get("request_id")
+
+    items_df = data_fetch.fetch_work_order_items(unit, wo_id_val)
+    if items_df is None:
+        return jsonify({"status": "error", "message": "Failed to fetch Work Order items"}), 500
+
+    items_payload = []
+    if not items_df.empty:
+        items_df = _clean_df_columns(items_df)
+        for row in items_df.to_dict(orient="records"):
+            cgst_pct = _safe_float(row.get("CGSTPct"))
+            sgst_pct = _safe_float(row.get("SGSTPct"))
+            igst_pct = _safe_float(row.get("IGSTPct"))
+            cgst_amt = _safe_float(row.get("CGSTAmt"))
+            sgst_amt = _safe_float(row.get("SGSTAmt"))
+            igst_amt = _safe_float(row.get("IGSTAmt"))
+            items_payload.append(
+                _sanitize_json_payload(
+                    {
+                        "detail_id": row.get("DetailID"),
+                        "line_no": row.get("LineNo"),
+                        "item_name": row.get("ItemName"),
+                        "unit": row.get("UnitName"),
+                        "qty": row.get("Qty"),
+                        "rate": row.get("Rate"),
+                        "discount_pct": row.get("Discount"),
+                        "taxable_amt": row.get("TaxableAmount"),
+                        "cgst_pct": cgst_pct,
+                        "sgst_pct": sgst_pct,
+                        "igst_pct": igst_pct,
+                        "gst_pct": (cgst_pct + sgst_pct) if (cgst_pct or sgst_pct) else igst_pct,
+                        "cgst_amt": cgst_amt,
+                        "sgst_amt": sgst_amt,
+                        "igst_amt": igst_amt,
+                        "gst_amt": cgst_amt + sgst_amt + igst_amt,
+                        "for_amt": row.get("ForAmount"),
+                        "net_amt": row.get("NetAmount"),
+                        "line_notes": row.get("LineNotes"),
+                    }
+                )
+            )
+
+    header_payload["totals"] = _sanitize_json_payload(
+        _fallback_work_order_summary_from_header(header_row, _summarize_work_order_totals(items_payload))
+    )
+    return jsonify({"status": "success", "header": header_payload, "items": items_payload, "unit": unit})
+
+
+@app.route('/api/purchase/work_order_list')
+@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+def api_purchase_work_order_list():
+    unit, error = _get_work_order_unit()
+    if error:
+        return error
+    _ensure_work_order_schema(unit)
+
+    status = request.args.get("status") or "open"
+    limit_raw = request.args.get("limit") or "200"
+    query = request.args.get("q")
+    item_query = request.args.get("item_q")
+    try:
+        limit = int(limit_raw)
+    except Exception:
+        limit = 200
+    df = data_fetch.fetch_work_order_list(unit, status=status, limit=limit, query=query, item_query=item_query)
+    if df is None:
+        return jsonify({"status": "error", "message": "Failed to fetch Work Order list"}), 500
+    if df.empty:
+        return jsonify({"status": "success", "items": [], "unit": unit})
+    df = _clean_df_columns(df)
+    rows = _sanitize_json_payload(df.to_dict(orient="records"))
+    return jsonify({"status": "success", "items": rows, "unit": unit})
+
+
+@app.route('/api/purchase/work_order', methods=['POST'])
+@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+def api_purchase_create_work_order():
+    unit, error = _get_work_order_unit()
+    if error:
+        return error
+    _ensure_work_order_schema(unit)
+
+    payload = request.get_json(silent=True) or {}
+    header = payload.get("header") or {}
+    items = payload.get("items") or []
+    body_html = _normalize_work_order_body_html(header.get("body_html"))
+    body_text = _work_order_body_to_plain_text(body_html)
+
+    supplier_id = _safe_int(header.get("supplier_id"))
+    if supplier_id <= 0:
+        _audit_log_event(
+            "purchase",
+            "work_order_create",
+            status="error",
+            entity_type="work_order",
+            unit=unit,
+            summary="Supplier is required",
+            details={"wo_no": header.get("wo_no"), "item_count": len(items)},
+        )
+        return jsonify({"status": "error", "message": "Supplier is required"}), 400
+    if not items and not body_text:
+        _audit_log_event(
+            "purchase",
+            "work_order_create",
+            status="error",
+            entity_type="work_order",
+            unit=unit,
+            summary="Work Order body is required",
+            details={"wo_no": header.get("wo_no")},
+        )
+        return jsonify({"status": "error", "message": "Enter the Work Order body before saving."}), 400
+
+    normalized_items, item_errors = _normalize_work_order_items(items)
+    if item_errors:
+        _audit_log_event(
+            "purchase",
+            "work_order_create",
+            status="error",
+            entity_type="work_order",
+            unit=unit,
+            summary="Invalid Work Order lines",
+            details={"errors": item_errors, "wo_no": header.get("wo_no")},
+        )
+        return jsonify({"status": "error", "message": "Invalid Work Order lines", "errors": item_errors}), 400
+
+    totals = _resolve_work_order_totals(normalized_items, header.get("totals"))
+    if not normalized_items:
+        if totals.get("grand_total", 0) <= 0 and totals.get("gross_total", 0) <= 0 and totals.get("taxable_total", 0) <= 0:
+            _audit_log_event(
+                "purchase",
+                "work_order_create",
+                status="error",
+                entity_type="work_order",
+                unit=unit,
+                summary="Work Order totals are required",
+                details={"wo_no": header.get("wo_no")},
+            )
+            return jsonify({"status": "error", "message": "Enter Work Order totals before saving."}), 400
+        normalized_items = [_build_work_order_fallback_item(header, body_text, totals)]
+
+    status_raw = str(header.get("status") or "Draft").strip().lower()
+    status_map = {"draft": "D", "pending approval": "P", "approved": "A"}
+    status_code = status_map.get(status_raw, "D")
+    purchasing_dept_id = _safe_int(header.get("purchasing_dept_id"))
+    if status_code == "P" and purchasing_dept_id <= 0:
+        _audit_log_event(
+            "purchase",
+            "work_order_create",
+            status="error",
+            entity_type="work_order",
+            unit=unit,
+            summary="Purchasing department is required for approval",
+            details={"wo_no": header.get("wo_no")},
+        )
+        return jsonify({"status": "error", "message": "Please select Purchasing Dept before submitting for approval."}), 400
+
+    now = datetime.now(tz=LOCAL_TZ)
+
+    def _num_or_text(val):
+        try:
+            if val is None or val == "":
+                return None
+            return float(val)
+        except Exception:
+            return val
+
+    wo_params = {
+        "pId": _safe_int(header.get("wo_id")),
+        "pSupplierid": supplier_id,
+        "pTenderid": _safe_int(header.get("tender_id")),
+        "pPono": header.get("wo_no"),
+        "pPodate": header.get("wo_date"),
+        "pDeliveryterms": header.get("delivery_terms"),
+        "pPaymentsterms": header.get("payment_terms"),
+        "pOtherterms": header.get("other_terms"),
+        "pTaxid": _safe_int(header.get("tax_id")),
+        "pTax": totals.get("tax_total") or 0,
+        "pDiscount": totals.get("discount_total") or 0,
+        "pAmount": totals.get("grand_total") or 0,
+        "pCreditdays": _safe_int(header.get("credit_days")),
+        "pPocomplete": 0,
+        "pNotes": header.get("notes"),
+        "pSpecialNotes": header.get("special_notes"),
+        "WorkOrderBodyHtml": body_html,
+        "SeniorApprovalAuthorityName": header.get("senior_approval_authority_name"),
+        "SeniorApprovalAuthorityDesignation": header.get("senior_approval_authority_designation"),
+        "pPreparedby": header.get("prepared_by"),
+        "pCustom1": _num_or_text(header.get("freight_charges")),
+        "pCustom2": _num_or_text(header.get("packing_charges")),
+        "pUpdatedby": _safe_int(header.get("updated_by")),
+        "pUpdatedon": header.get("updated_on"),
+        "pSignauthorityperson": header.get("sign_authority_person"),
+        "pSignauthoritypdesig": header.get("sign_authority_desig"),
+        "pRefno": header.get("ref_no"),
+        "pSubject": header.get("subject"),
+        "pAuthorizationid": _safe_int(header.get("authorization_id")),
+        "pPurchaseIndentId": 0,
+        "pInsertedByUserID": session.get("username") or session.get("user"),
+        "pInsertedON": now.strftime("%Y-%m-%d %H:%M:%S"),
+        "pInsertedMacName": header.get("mac_name"),
+        "pInsertedMacID": header.get("mac_id"),
+        "pInsertedIPAddress": request.remote_addr,
+        "Against": "Work Order",
+        "QuotationId": _safe_int(header.get("quotation_id")),
+        "TotalFORe": totals.get("for_total") or 0,
+        "TotalExciseAmt": totals.get("tax_total") or 0,
+        "AgainstId": 0,
+        "Status": status_code,
+        "PurchasingDeptId": purchasing_dept_id if purchasing_dept_id > 0 else None,
+    }
+
+    mst_result = data_fetch.add_iv_work_order_mst(unit, wo_params)
+    if mst_result.get("error"):
+        _audit_log_event(
+            "purchase",
+            "work_order_create",
+            status="error",
+            entity_type="work_order",
+            unit=unit,
+            summary="Work Order creation failed",
+            details={"error": mst_result.get("error"), "wo_no": header.get("wo_no")},
+        )
+        return jsonify({"status": "error", "message": mst_result["error"]}), 500
+    wo_id = mst_result.get("wo_id")
+    if not wo_id:
+        _audit_log_event(
+            "purchase",
+            "work_order_create",
+            status="error",
+            entity_type="work_order",
+            unit=unit,
+            summary="Work Order creation failed (missing ID)",
+            details={"wo_no": header.get("wo_no")},
+        )
+        return jsonify({"status": "error", "message": "Failed to create Work Order"}), 500
+
+    wo_no = str(mst_result.get("wo_no") or "").strip()
+    if not wo_no:
+        try:
+            wo_no_fix = data_fetch.ensure_work_order_number(unit, int(wo_id), preferred_wo_no=header.get("wo_no"))
+            ensured_wo_no = str(wo_no_fix.get("wo_no") or "").strip()
+            if ensured_wo_no:
+                wo_no = ensured_wo_no
+        except Exception:
+            pass
+    if not wo_no:
+        wo_no = f"WO-{wo_id}"
+
+    detail_params = []
+    for item in normalized_items:
+        detail_params.append(
+            {
+                "WOID": int(wo_id),
+                "LineNo": item.get("line_no"),
+                "ItemName": item.get("item_name"),
+                "UnitName": item.get("unit_name"),
+                "Qty": item.get("qty"),
+                "Rate": item.get("rate"),
+                "DiscountPct": item.get("discount_pct"),
+                "TaxableAmount": item.get("taxable_amount"),
+                "CGSTPct": item.get("cgst_pct"),
+                "SGSTPct": item.get("sgst_pct"),
+                "IGSTPct": item.get("igst_pct"),
+                "CGSTAmt": item.get("cgst_amt"),
+                "SGSTAmt": item.get("sgst_amt"),
+                "IGSTAmt": item.get("igst_amt"),
+                "ForAmount": item.get("for_amount"),
+                "NetAmount": item.get("net_amount"),
+                "LineNotes": item.get("line_notes"),
+                "CreatedBy": session.get("username") or session.get("user"),
+                "UpdatedBy": session.get("username") or session.get("user"),
+                "_row_no": item.get("line_no"),
+            }
+        )
+    bulk_result = data_fetch.add_work_order_dtl_many(unit, detail_params)
+    if bulk_result.get("error"):
+        _audit_log_event(
+            "purchase",
+            "work_order_create",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Failed to save Work Order detail rows",
+            details={"wo_no": wo_no, "error": bulk_result.get("error")},
+        )
+        return jsonify({"status": "error", "message": bulk_result.get("error")}), 500
+    detail_errors = list(bulk_result.get("errors") or [])
+    if detail_errors:
+        _audit_log_event(
+            "purchase",
+            "work_order_create",
+            status="partial",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Work Order created but some rows failed",
+            details={"wo_no": wo_no, "errors": detail_errors},
+        )
+        return jsonify({"status": "partial", "wo_id": wo_id, "wo_no": wo_no, "errors": detail_errors}), 207
+
+    otp_request_id = None
+    if status_code == "P":
+        otp_result = _create_work_order_otp_request(
+            unit=unit,
+            wo_no=wo_no,
+            wo_id=wo_id,
+            amount=totals.get("grand_total") or 0,
+            supplier_name=header.get("supplier_name") or "",
+            reason=header.get("subject") or header.get("notes") or "",
+            requested_by=session.get("username") or session.get("user") or "",
+            purchasing_dept_id=purchasing_dept_id if purchasing_dept_id > 0 else None,
+        )
+        if otp_result.get("error"):
+            _audit_log_event(
+                "purchase",
+                "work_order_create",
+                status="error",
+                entity_type="work_order",
+                entity_id=str(wo_id),
+                unit=unit,
+                summary="OTP request failed",
+                details={"error": otp_result.get("error"), "wo_no": wo_no},
+            )
+            return jsonify({"status": "error", "message": otp_result["error"]}), 500
+        otp_request_id = otp_result.get("request_id")
+        if otp_request_id:
+            _insert_purchase_otp_request(wo_id, wo_no, unit, int(otp_request_id), session.get("username") or session.get("user"))
+
+    response = {"status": "success", "wo_id": wo_id, "wo_no": wo_no}
+    if otp_request_id:
+        response["request_id"] = otp_request_id
+    _audit_log_event(
+        "purchase",
+        "work_order_create",
+        status="success",
+        entity_type="work_order",
+        entity_id=str(wo_id),
+        unit=unit,
+        summary="Work Order created",
+        details={
+            "wo_no": wo_no,
+            "header": _normalize_work_order_header_for_audit(header, totals, status_code),
+            "item_count": len(normalized_items),
+            "otp_request_id": otp_request_id,
+        },
+        request_id=str(otp_request_id) if otp_request_id else None,
+    )
+    return jsonify(response)
+
+
+@app.route('/api/purchase/work_order_update', methods=['POST'])
+@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+def api_purchase_update_work_order():
+    unit, error = _get_work_order_unit()
+    if error:
+        return error
+    _ensure_work_order_schema(unit)
+
+    payload = request.get_json(silent=True) or {}
+    header = payload.get("header") or {}
+    items = payload.get("items") or []
+    body_html = _normalize_work_order_body_html(header.get("body_html"))
+    body_text = _work_order_body_to_plain_text(body_html)
+
+    wo_id = _safe_int(header.get("wo_id"))
+    if wo_id <= 0:
+        _audit_log_event(
+            "purchase",
+            "work_order_update",
+            status="error",
+            entity_type="work_order",
+            unit=unit,
+            summary="Work Order ID is required for update",
+            details={"wo_no": header.get("wo_no")},
+        )
+        return jsonify({"status": "error", "message": "Work Order ID is required for update"}), 400
+    if not items and not body_text:
+        _audit_log_event(
+            "purchase",
+            "work_order_update",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Work Order body is required",
+            details={"wo_no": header.get("wo_no")},
+        )
+        return jsonify({"status": "error", "message": "Enter the Work Order body before saving."}), 400
+
+    normalized_items, item_errors = _normalize_work_order_items(items)
+    if item_errors:
+        _audit_log_event(
+            "purchase",
+            "work_order_update",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Invalid Work Order lines",
+            details={"errors": item_errors, "wo_no": header.get("wo_no")},
+        )
+        return jsonify({"status": "error", "message": "Invalid Work Order lines", "errors": item_errors}), 400
+
+    header_df = data_fetch.fetch_work_order_header(unit, wo_id=wo_id)
+    if header_df is None:
+        _audit_log_event(
+            "purchase",
+            "work_order_update",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Failed to fetch Work Order for update",
+        )
+        return jsonify({"status": "error", "message": "Failed to fetch Work Order for update"}), 500
+    if header_df.empty:
+        _audit_log_event(
+            "purchase",
+            "work_order_update",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Work Order not found",
+        )
+        return jsonify({"status": "error", "message": "Work Order not found"}), 404
+    header_df = _clean_df_columns(header_df)
+    existing_header = header_df.iloc[0].to_dict()
+    current_status = str(existing_header.get("Status") or "").strip().upper()
+    if current_status not in {"D", "P"}:
+        _audit_log_event(
+            "purchase",
+            "work_order_update",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Only Draft or Pending Approval Work Orders can be updated",
+            details={"current_status": current_status},
+        )
+        return jsonify({"status": "error", "message": "Only Draft or Pending Approval Work Orders can be updated"}), 400
+
+    totals = _resolve_work_order_totals(normalized_items, header.get("totals"))
+    if not normalized_items:
+        if totals.get("grand_total", 0) <= 0 and totals.get("gross_total", 0) <= 0 and totals.get("taxable_total", 0) <= 0:
+            _audit_log_event(
+                "purchase",
+                "work_order_update",
+                status="error",
+                entity_type="work_order",
+                entity_id=str(wo_id),
+                unit=unit,
+                summary="Work Order totals are required",
+                details={"wo_no": header.get("wo_no")},
+            )
+            return jsonify({"status": "error", "message": "Enter Work Order totals before saving."}), 400
+        normalized_items = [_build_work_order_fallback_item(header, body_text, totals)]
+    status_raw = str(header.get("status") or "Draft").strip().lower()
+    status_map = {"draft": "D", "pending approval": "P", "approved": "A"}
+    status_code = status_map.get(status_raw, "D")
+    purchasing_dept_id = _safe_int(header.get("purchasing_dept_id"))
+    if status_code == "P" and purchasing_dept_id <= 0:
+        _audit_log_event(
+            "purchase",
+            "work_order_update",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Purchasing department is required for approval",
+            details={"wo_no": header.get("wo_no")},
+        )
+        return jsonify({"status": "error", "message": "Please select Purchasing Dept before submitting for approval."}), 400
+
+    now = datetime.now(tz=LOCAL_TZ)
+
+    def _num_or_text(val):
+        try:
+            if val is None or val == "":
+                return None
+            return float(val)
+        except Exception:
+            return val
+
+    wo_params = {
+        "pId": wo_id,
+        "pSupplierid": _safe_int(header.get("supplier_id") or existing_header.get("SupplierID")),
+        "pTenderid": _safe_int(header.get("tender_id")),
+        "pPono": header.get("wo_no") or existing_header.get("PONo"),
+        "pPodate": header.get("wo_date"),
+        "pDeliveryterms": header.get("delivery_terms"),
+        "pPaymentsterms": header.get("payment_terms"),
+        "pOtherterms": header.get("other_terms"),
+        "pTaxid": _safe_int(header.get("tax_id")),
+        "pTax": totals.get("tax_total") or 0,
+        "pDiscount": totals.get("discount_total") or 0,
+        "pAmount": totals.get("grand_total") or 0,
+        "pCreditdays": _safe_int(header.get("credit_days")),
+        "pPocomplete": 0,
+        "pNotes": header.get("notes"),
+        "pSpecialNotes": header.get("special_notes"),
+        "WorkOrderBodyHtml": body_html,
+        "SeniorApprovalAuthorityName": header.get("senior_approval_authority_name"),
+        "SeniorApprovalAuthorityDesignation": header.get("senior_approval_authority_designation"),
+        "pPreparedby": header.get("prepared_by"),
+        "pCustom1": _num_or_text(header.get("freight_charges")),
+        "pCustom2": _num_or_text(header.get("packing_charges")),
+        "pSignauthorityperson": header.get("sign_authority_person"),
+        "pSignauthoritypdesig": header.get("sign_authority_desig"),
+        "pRefno": header.get("ref_no"),
+        "pSubject": header.get("subject"),
+        "pAuthorizationid": _safe_int(header.get("authorization_id")),
+        "pPurchaseIndentId": 0,
+        "Against": "Work Order",
+        "QuotationId": _safe_int(header.get("quotation_id")),
+        "TotalFORe": totals.get("for_total") or 0,
+        "TotalExciseAmt": totals.get("tax_total") or 0,
+        "AgainstId": 0,
+        "Status": status_code,
+        "PurchasingDeptId": purchasing_dept_id if purchasing_dept_id > 0 else None,
+        "pUpdatedby": _safe_int(header.get("updated_by")),
+        "pUpdatedon": now.strftime("%Y-%m-%d %H:%M:%S"),
+    }
+
+    mst_result = data_fetch.update_iv_work_order_mst(unit, wo_params)
+    if mst_result.get("error"):
+        _audit_log_event(
+            "purchase",
+            "work_order_update",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Work Order update failed",
+            details={"error": mst_result.get("error"), "wo_no": header.get("wo_no")},
+        )
+        return jsonify({"status": "error", "message": mst_result["error"]}), 500
+
+    wo_no = str(mst_result.get("wo_no") or header.get("wo_no") or existing_header.get("PONo") or "").strip()
+    if not wo_no:
+        try:
+            wo_no_fix = data_fetch.ensure_work_order_number(unit, int(wo_id), preferred_wo_no=header.get("wo_no"))
+            ensured_wo_no = str(wo_no_fix.get("wo_no") or "").strip()
+            if ensured_wo_no:
+                wo_no = ensured_wo_no
+        except Exception:
+            pass
+    if not wo_no:
+        wo_no = f"WO-{wo_id}"
+
+    clear_result = data_fetch.clear_work_order_dtl(unit, wo_id)
+    if clear_result.get("error"):
+        _audit_log_event(
+            "purchase",
+            "work_order_update",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Failed to clear Work Order lines before update",
+            details={"error": clear_result.get("error")},
+        )
+        return jsonify({"status": "error", "message": clear_result["error"]}), 500
+
+    detail_params = []
+    for item in normalized_items:
+        detail_params.append(
+            {
+                "WOID": int(wo_id),
+                "LineNo": item.get("line_no"),
+                "ItemName": item.get("item_name"),
+                "UnitName": item.get("unit_name"),
+                "Qty": item.get("qty"),
+                "Rate": item.get("rate"),
+                "DiscountPct": item.get("discount_pct"),
+                "TaxableAmount": item.get("taxable_amount"),
+                "CGSTPct": item.get("cgst_pct"),
+                "SGSTPct": item.get("sgst_pct"),
+                "IGSTPct": item.get("igst_pct"),
+                "CGSTAmt": item.get("cgst_amt"),
+                "SGSTAmt": item.get("sgst_amt"),
+                "IGSTAmt": item.get("igst_amt"),
+                "ForAmount": item.get("for_amount"),
+                "NetAmount": item.get("net_amount"),
+                "LineNotes": item.get("line_notes"),
+                "CreatedBy": session.get("username") or session.get("user"),
+                "UpdatedBy": session.get("username") or session.get("user"),
+                "_row_no": item.get("line_no"),
+            }
+        )
+    bulk_result = data_fetch.add_work_order_dtl_many(unit, detail_params)
+    if bulk_result.get("error"):
+        _audit_log_event(
+            "purchase",
+            "work_order_update",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Failed to save Work Order detail rows",
+            details={"wo_no": wo_no, "error": bulk_result.get("error")},
+        )
+        return jsonify({"status": "error", "message": bulk_result.get("error")}), 500
+    detail_errors = list(bulk_result.get("errors") or [])
+    if detail_errors:
+        _audit_log_event(
+            "purchase",
+            "work_order_update",
+            status="partial",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Work Order updated but some rows failed",
+            details={"wo_no": wo_no, "errors": detail_errors},
+        )
+        return jsonify({"status": "partial", "wo_id": wo_id, "wo_no": wo_no, "errors": detail_errors}), 207
+
+    otp_request_id = None
+    if status_code == "P":
+        otp_result = _create_work_order_otp_request(
+            unit=unit,
+            wo_no=wo_no,
+            wo_id=wo_id,
+            amount=totals.get("grand_total") or 0,
+            supplier_name=header.get("supplier_name") or existing_header.get("SupplierName") or "",
+            reason=header.get("subject") or header.get("notes") or "",
+            requested_by=session.get("username") or session.get("user") or "",
+            purchasing_dept_id=purchasing_dept_id if purchasing_dept_id > 0 else None,
+        )
+        if otp_result.get("error"):
+            _audit_log_event(
+                "purchase",
+                "work_order_update",
+                status="error",
+                entity_type="work_order",
+                entity_id=str(wo_id),
+                unit=unit,
+                summary="OTP request failed",
+                details={"error": otp_result.get("error"), "wo_no": wo_no},
+            )
+            return jsonify({"status": "error", "message": otp_result["error"]}), 500
+        otp_request_id = otp_result.get("request_id")
+        if otp_request_id:
+            _insert_purchase_otp_request(wo_id, wo_no, unit, int(otp_request_id), session.get("username") or session.get("user"))
+
+    response = {"status": "success", "wo_id": wo_id, "wo_no": wo_no}
+    if otp_request_id:
+        response["request_id"] = otp_request_id
+    _audit_log_event(
+        "purchase",
+        "work_order_update",
+        status="success",
+        entity_type="work_order",
+        entity_id=str(wo_id),
+        unit=unit,
+        summary="Work Order updated",
+        details={
+            "wo_no": wo_no,
+            "old_header": _normalize_work_order_header_for_audit(existing_header),
+            "new_header": _normalize_work_order_header_for_audit(header, totals, status_code),
+            "item_count": len(normalized_items),
+            "otp_request_id": otp_request_id,
+        },
+        request_id=str(otp_request_id) if otp_request_id else None,
+    )
+    return jsonify(response)
+
+
+@app.route('/api/purchase/work_order_approve', methods=['POST'])
+@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+def api_purchase_work_order_approve():
+    unit, error = _get_work_order_unit()
+    if error:
+        return error
+    _ensure_work_order_schema(unit)
+
+    payload = request.get_json(silent=True) or {}
+    wo_id = _safe_int(payload.get("wo_id"))
+    request_id = _safe_int(payload.get("request_id"))
+    otp = str(payload.get("otp") or "").strip()
+    auto_email_requested = _is_truthy(payload.get("auto_email_supplier_pdf"))
+    supplier_email_override = _purchase_normalize_email(payload.get("supplier_email") or payload.get("to_email") or payload.get("email"))
+    raw_auto_email_format = str(payload.get("auto_email_format") or payload.get("format") or "").strip().lower()
+    is_it = (session.get("role") or "").strip() == "IT"
+    auto_email_print_format = "def" if is_it and raw_auto_email_format == "def" else None
+
+    if wo_id <= 0 or request_id <= 0 or not otp:
+        _audit_log_event(
+            "purchase",
+            "work_order_approve",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id) if wo_id > 0 else None,
+            unit=unit,
+            summary="Work Order ID, request ID, and OTP are required",
+        )
+        return jsonify({"status": "error", "message": "Work Order ID, request ID, and OTP are required"}), 400
+
+    header_df = data_fetch.fetch_work_order_header(unit, wo_id=wo_id)
+    if header_df is None:
+        _audit_log_event(
+            "purchase",
+            "work_order_approve",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Failed to fetch Work Order",
+        )
+        return jsonify({"status": "error", "message": "Failed to fetch Work Order"}), 500
+    if header_df.empty:
+        _audit_log_event(
+            "purchase",
+            "work_order_approve",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Work Order not found",
+        )
+        return jsonify({"status": "error", "message": "Work Order not found"}), 404
+    header_df = _clean_df_columns(header_df)
+    header_row = header_df.iloc[0].to_dict()
+    auto_email_print_format = _resolve_po_print_format_for_render(
+        unit,
+        requested_format=raw_auto_email_format,
+        header_row=header_row,
+        purchasing_dept_id=_safe_int(header_row.get("PurchasingDeptId")),
+    )
+    status_code = str(header_row.get("Status") or "").strip().upper()
+    if status_code != "P":
+        _audit_log_event(
+            "purchase",
+            "work_order_approve",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Only Pending Approval Work Orders can be approved",
+            details={"current_status": status_code},
+        )
+        return jsonify({"status": "error", "message": "Only Pending Approval Work Orders can be approved"}), 400
+
+    otp_result = _validate_purchase_otp(request_id, otp)
+    if otp_result.get("error"):
+        _audit_log_event(
+            "purchase",
+            "work_order_approve",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="OTP validation failed",
+            details={"error": otp_result.get("error")},
+            request_id=str(request_id),
+        )
+        return jsonify({"status": "error", "message": otp_result["error"]}), 500
+    if not otp_result.get("valid"):
+        _audit_log_event(
+            "purchase",
+            "work_order_approve",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Invalid OTP",
+            details={"message": otp_result.get("message")},
+            request_id=str(request_id),
+        )
+        return jsonify({"status": "error", "message": otp_result.get("message") or "Invalid OTP"}), 400
+
+    req_type = str(otp_result.get("request_type") or "").strip().upper()
+    if req_type and req_type != OTP_WORK_ORDER_REQUEST_TYPE:
+        _audit_log_event(
+            "purchase",
+            "work_order_approve",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="OTP request type mismatch",
+            details={"request_type": req_type},
+            request_id=str(request_id),
+        )
+        return jsonify({"status": "error", "message": "OTP request type mismatch"}), 400
+
+    otp_wo_no = str(otp_result.get("bill_no") or "").strip().upper()
+    if wo_id > 0 and not str(header_row.get("PONo") or "").strip():
+        try:
+            wo_no_fix = data_fetch.ensure_work_order_number(unit, wo_id, preferred_wo_no=otp_wo_no or None)
+            ensured_wo_no = str(wo_no_fix.get("wo_no") or "").strip()
+            if ensured_wo_no:
+                header_row["PONo"] = ensured_wo_no
+        except Exception:
+            pass
+    wo_no = str(header_row.get("PONo") or "").strip().upper()
+    if wo_no and otp_wo_no and wo_no != otp_wo_no:
+        _audit_log_event(
+            "purchase",
+            "work_order_approve",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="OTP does not match this Work Order",
+            details={"wo_no": wo_no, "otp_wo_no": otp_wo_no},
+            request_id=str(request_id),
+        )
+        return jsonify({"status": "error", "message": "OTP does not match this Work Order"}), 400
+
+    status_result = data_fetch.update_work_order_status(unit, wo_id, "A")
+    if status_result.get("error"):
+        _audit_log_event(
+            "purchase",
+            "work_order_approve",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Work Order approval failed",
+            details={"error": status_result.get("error")},
+            request_id=str(request_id),
+        )
+        return jsonify({"status": "error", "message": status_result["error"]}), 500
+
+    user = session.get("username") or session.get("user") or ""
+    _mark_central_otp_used(request_id, user)
+    _mark_purchase_otp_used(wo_id, request_id, user)
+    try:
+        req_meta = _fetch_purchase_otp_request_by_id(request_id)
+        mail_result = _send_purchase_work_order_approval_email(unit, wo_id, header_row, req_meta)
+        if mail_result.get("status") == "error":
+            print(f"Work Order approval email failed: {mail_result.get('message')}")
+    except Exception as e:
+        print(f"Work Order approval email error: {e}")
+
+    auto_email_result = {"requested": bool(auto_email_requested), "status": "skipped", "message": "Auto email option not selected"}
+    if auto_email_requested:
+        wo_no_val = str(header_row.get("PONo") or f"WO-{wo_id}")
+        supplier_id = _safe_int(header_row.get("SupplierID"))
+        supplier_email = _purchase_normalize_email(header_row.get("SupplierEmail"))
+        if _purchase_is_valid_email(supplier_email_override):
+            supplier_email = supplier_email_override
+            header_row["SupplierEmail"] = supplier_email
+        if not _purchase_is_valid_email(supplier_email):
+            auto_email_result = {
+                "requested": True,
+                "status": "skipped",
+                "message": "Supplier email is missing or invalid",
+                "recipient": supplier_email,
+            }
+            _audit_log_event(
+                "purchase",
+                "work_order_auto_email_on_approve",
+                status="error",
+                entity_type="work_order",
+                entity_id=str(wo_id),
+                unit=unit,
+                summary="Supplier auto-email skipped due to invalid email",
+                details={"wo_no": wo_no_val, "supplier_id": supplier_id, "recipient": supplier_email},
+                request_id=str(request_id),
+            )
+        else:
+            try:
+                items_df = data_fetch.fetch_work_order_items(unit, wo_id)
+                if items_df is None:
+                    raise RuntimeError("Failed to fetch Work Order items for supplier email")
+                items_df = _clean_df_columns(items_df)
+                items_rows = items_df.to_dict(orient="records") if not items_df.empty else []
+
+                approval_meta = _fetch_purchase_approval_meta(wo_id)
+                header_pdf = dict(header_row)
+                header_pdf["Status"] = "A"
+                header_pdf["SupplierEmail"] = supplier_email
+                header_pdf["PurchasingDeptName"] = _resolve_purchasing_department_name(_safe_int(header_row.get("PurchasingDeptId")))
+                pdf_buffer = _build_work_order_pdf_buffer(
+                    unit,
+                    header_pdf,
+                    items_rows,
+                    approval_meta,
+                    print_format=auto_email_print_format,
+                )
+                pdf_bytes = pdf_buffer.getvalue() if pdf_buffer else b""
+
+                snapshot = {
+                    "unit": unit,
+                    "wo_no": wo_no_val,
+                    "wo_date": header_row.get("PODate").strftime("%d-%b-%Y")
+                    if isinstance(header_row.get("PODate"), (datetime, date))
+                    else str(header_row.get("PODate") or "")[:10],
+                    "supplier": str(header_row.get("SupplierName") or ""),
+                    "amount": _format_indian_currency(header_row.get("Amount") or 0),
+                    "subject": str(header_row.get("Subject") or ""),
+                }
+                mail_subject = f"Work Order {wo_no_val}"
+                mail_body = _build_work_order_supplier_dispatch_email_body(snapshot)
+                mail_filename = f"WO_{wo_no_val}.pdf"
+                mail_result_supplier = _send_graph_mail_with_attachment(
+                    subject=mail_subject,
+                    body_html=mail_body,
+                    to_recipients=[supplier_email],
+                    filename=mail_filename,
+                    content_bytes=pdf_bytes,
+                )
+                if str(mail_result_supplier.get("status") or "").strip().lower() == "success":
+                    auto_email_result = {"requested": True, "status": "success", "recipient": supplier_email}
+                    _audit_log_event(
+                        "purchase",
+                        "work_order_auto_email_on_approve",
+                        status="success",
+                        entity_type="work_order",
+                        entity_id=str(wo_id),
+                        unit=unit,
+                        summary="Supplier Work Order PDF auto-emailed on approval",
+                        details={"wo_no": wo_no_val, "supplier_id": supplier_id, "recipient": supplier_email},
+                        request_id=str(request_id),
+                    )
+                else:
+                    err_msg = str(mail_result_supplier.get("message") or "Failed to send supplier email")
+                    auto_email_result = {
+                        "requested": True,
+                        "status": "error",
+                        "recipient": supplier_email,
+                        "message": err_msg,
+                    }
+                    _audit_log_event(
+                        "purchase",
+                        "work_order_auto_email_on_approve",
+                        status="error",
+                        entity_type="work_order",
+                        entity_id=str(wo_id),
+                        unit=unit,
+                        summary="Supplier Work Order PDF auto-email failed",
+                        details={
+                            "wo_no": wo_no_val,
+                            "supplier_id": supplier_id,
+                            "recipient": supplier_email,
+                            "mail_result": mail_result_supplier,
+                        },
+                        request_id=str(request_id),
+                    )
+            except Exception as e:
+                auto_email_result = {
+                    "requested": True,
+                    "status": "error",
+                    "recipient": supplier_email,
+                    "message": str(e),
+                }
+                _audit_log_event(
+                    "purchase",
+                    "work_order_auto_email_on_approve",
+                    status="error",
+                    entity_type="work_order",
+                    entity_id=str(wo_id),
+                    unit=unit,
+                    summary="Supplier Work Order PDF auto-email error",
+                    details={"wo_no": wo_no_val, "supplier_id": supplier_id, "recipient": supplier_email, "error": str(e)},
+                    request_id=str(request_id),
+                )
+
+    _audit_log_event(
+        "purchase",
+        "work_order_approve",
+        status="success",
+        entity_type="work_order",
+        entity_id=str(wo_id),
+        unit=unit,
+        summary="Work Order approved",
+        details={"wo_no": header_row.get("PONo"), "auto_email": auto_email_result if auto_email_result.get("requested") else None},
+        request_id=str(request_id),
+    )
+    return jsonify({"status": "success", "wo_id": wo_id, "wo_no": header_row.get("PONo"), "auto_email": auto_email_result})
+
+
+@app.route('/api/purchase/work_order_resend_otp', methods=['POST'])
+@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+def api_purchase_work_order_resend_otp():
+    unit, error = _get_work_order_unit()
+    if error:
+        return error
+    _ensure_work_order_schema(unit)
+
+    payload = request.get_json(silent=True) or {}
+    wo_id = _safe_int(payload.get("wo_id"))
+    if wo_id <= 0:
+        _audit_log_event(
+            "purchase",
+            "work_order_resend_otp",
+            status="error",
+            entity_type="work_order",
+            unit=unit,
+            summary="Work Order ID is required",
+        )
+        return jsonify({"status": "error", "message": "Work Order ID is required"}), 400
+
+    header_df = data_fetch.fetch_work_order_header(unit, wo_id=wo_id)
+    if header_df is None:
+        _audit_log_event(
+            "purchase",
+            "work_order_resend_otp",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Failed to fetch Work Order",
+        )
+        return jsonify({"status": "error", "message": "Failed to fetch Work Order"}), 500
+    if header_df.empty:
+        _audit_log_event(
+            "purchase",
+            "work_order_resend_otp",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="Work Order not found",
+        )
+        return jsonify({"status": "error", "message": "Work Order not found"}), 404
+    header_df = _clean_df_columns(header_df)
+    header_row = header_df.iloc[0].to_dict()
+    status_code = str(header_row.get("Status") or "").strip().upper()
+    if status_code != "P":
+        _audit_log_event(
+            "purchase",
+            "work_order_resend_otp",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="OTP can be resent only for Pending Approval Work Orders",
+            details={"current_status": status_code},
+        )
+        return jsonify({"status": "error", "message": "OTP can be resent only for Pending Approval Work Orders"}), 400
+
+    wo_no = str(header_row.get("PONo") or f"WO-{wo_id}")
+    amount_total = header_row.get("Amount") or 0
+    purchasing_dept_id = _safe_int(header_row.get("PurchasingDeptId"))
+    otp_result = _create_work_order_otp_request(
+        unit=unit,
+        wo_no=wo_no,
+        wo_id=wo_id,
+        amount=amount_total,
+        supplier_name=header_row.get("SupplierName") or "",
+        reason=header_row.get("Subject") or header_row.get("Notes") or "",
+        requested_by=session.get("username") or session.get("user") or "",
+        purchasing_dept_id=purchasing_dept_id if purchasing_dept_id > 0 else None,
+    )
+    if otp_result.get("error"):
+        _audit_log_event(
+            "purchase",
+            "work_order_resend_otp",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id),
+            unit=unit,
+            summary="OTP request failed",
+            details={"error": otp_result.get("error"), "wo_no": wo_no},
+        )
+        return jsonify({"status": "error", "message": otp_result["error"]}), 500
+    otp_request_id = otp_result.get("request_id")
+    if otp_request_id:
+        _insert_purchase_otp_request(wo_id, wo_no, unit, int(otp_request_id), session.get("username") or session.get("user"))
+
+    _audit_log_event(
+        "purchase",
+        "work_order_resend_otp",
+        status="success",
+        entity_type="work_order",
+        entity_id=str(wo_id),
+        unit=unit,
+        summary="OTP resent",
+        details={"wo_no": wo_no, "request_id": otp_request_id},
+        request_id=str(otp_request_id) if otp_request_id else None,
+    )
+    return jsonify({"status": "success", "wo_id": wo_id, "wo_no": wo_no, "request_id": otp_request_id})
+
+
+@app.route('/api/purchase/work_order_print')
+@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+def api_purchase_work_order_print():
+    unit, error = _get_work_order_unit()
+    if error:
+        return error
+    _ensure_work_order_schema(unit)
+
+    wo_id_raw = request.args.get("wo_id")
+    wo_no = (request.args.get("wo_no") or "").strip()
+    wo_id = int(wo_id_raw) if str(wo_id_raw or "").isdigit() else None
+    raw_format = (request.args.get("format") or "").strip().lower()
+    is_it = (session.get("role") or "").strip() == "IT"
+    print_format = "def" if is_it and raw_format == "def" else None
+    if not wo_id and not wo_no:
+        return jsonify({"status": "error", "message": "Work Order ID or number is required"}), 400
+
+    header_df = data_fetch.fetch_work_order_header(unit, wo_id=wo_id, wo_no=wo_no)
+    if header_df is None:
+        return jsonify({"status": "error", "message": "Failed to fetch Work Order"}), 500
+    if header_df.empty:
+        return jsonify({"status": "error", "message": "Work Order not found"}), 404
+    header_df = _clean_df_columns(header_df)
+    header = header_df.iloc[0].to_dict()
+    header["PurchasingDeptName"] = _resolve_purchasing_department_name(_safe_int(header.get("PurchasingDeptId")))
+    wo_id_val = _safe_int(header.get("ID"), wo_id)
+    if wo_id_val > 0 and not str(header.get("PONo") or "").strip():
+        try:
+            wo_no_fix = data_fetch.ensure_work_order_number(unit, wo_id_val, preferred_wo_no=wo_no)
+            ensured_wo_no = str(wo_no_fix.get("wo_no") or "").strip()
+            if ensured_wo_no:
+                header["PONo"] = ensured_wo_no
+        except Exception:
+            pass
+
+    items_df = data_fetch.fetch_work_order_items(unit, wo_id_val)
+    if items_df is None:
+        return jsonify({"status": "error", "message": "Failed to fetch Work Order items"}), 500
+    items_df = _clean_df_columns(items_df)
+    items_rows = items_df.to_dict(orient="records") if not items_df.empty else []
+    approval_meta = _fetch_purchase_approval_meta(wo_id_val)
+
+    pdf_buffer = _build_work_order_pdf_buffer(unit, header, items_rows, approval_meta, print_format=print_format)
+    filename = f"WO_{header.get('PONo') or wo_no or wo_id_val}.pdf"
+    return send_file(pdf_buffer, mimetype="application/pdf", as_attachment=False, download_name=filename)
+
+
+@app.route('/api/purchase/work_order_email_pdf', methods=['POST'])
+@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+def api_purchase_work_order_email_pdf():
+    unit, error = _get_work_order_unit()
+    if error:
+        return error
+    _ensure_work_order_schema(unit)
+
+    payload = request.get_json(silent=True) or {}
+    wo_id = _safe_int(payload.get("wo_id"))
+    wo_no = str(payload.get("wo_no") or "").strip()
+    to_email = _purchase_normalize_email(payload.get("to_email") or payload.get("email"))
+    raw_format = str(payload.get("format") or "").strip().lower()
+    is_it = (session.get("role") or "").strip() == "IT"
+    print_format = "def" if is_it and raw_format == "def" else None
+
+    if wo_id <= 0 and not wo_no:
+        _audit_log_event(
+            "purchase",
+            "work_order_email_pdf",
+            status="error",
+            entity_type="work_order",
+            unit=unit,
+            summary="Work Order ID or number is required",
+        )
+        return jsonify({"status": "error", "message": "Work Order ID or number is required"}), 400
+    if not _purchase_is_valid_email(to_email):
+        _audit_log_event(
+            "purchase",
+            "work_order_email_pdf",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id) if wo_id > 0 else None,
+            unit=unit,
+            summary="Invalid recipient email",
+            details={"to_email": to_email, "wo_no": wo_no},
+        )
+        return jsonify({"status": "error", "message": "Enter a valid recipient email address"}), 400
+
+    header_df = data_fetch.fetch_work_order_header(unit, wo_id=wo_id if wo_id > 0 else None, wo_no=wo_no)
+    if header_df is None:
+        _audit_log_event(
+            "purchase",
+            "work_order_email_pdf",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id) if wo_id > 0 else None,
+            unit=unit,
+            summary="Failed to fetch Work Order",
+            details={"wo_no": wo_no},
+        )
+        return jsonify({"status": "error", "message": "Failed to fetch Work Order"}), 500
+    if header_df.empty:
+        _audit_log_event(
+            "purchase",
+            "work_order_email_pdf",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id) if wo_id > 0 else None,
+            unit=unit,
+            summary="Work Order not found",
+            details={"wo_no": wo_no},
+        )
+        return jsonify({"status": "error", "message": "Work Order not found"}), 404
+
+    header_df = _clean_df_columns(header_df)
+    header_row = header_df.iloc[0].to_dict()
+    wo_id_val = _safe_int(header_row.get("ID"), wo_id)
+    if wo_id_val > 0 and not str(header_row.get("PONo") or "").strip():
+        try:
+            wo_no_fix = data_fetch.ensure_work_order_number(unit, wo_id_val, preferred_wo_no=wo_no)
+            ensured_wo_no = str(wo_no_fix.get("wo_no") or "").strip()
+            if ensured_wo_no:
+                header_row["PONo"] = ensured_wo_no
+        except Exception:
+            pass
+    wo_no_val = str(header_row.get("PONo") or wo_no or f"WO-{wo_id_val}")
+    status_code = str(header_row.get("Status") or "").strip().upper()
+    if status_code != "A":
+        _audit_log_event(
+            "purchase",
+            "work_order_email_pdf",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id_val),
+            unit=unit,
+            summary="Only approved Work Orders can be emailed",
+            details={"wo_no": wo_no_val, "status": status_code},
+        )
+        return jsonify({"status": "error", "message": "Only approved Work Orders can be emailed"}), 400
+
+    supplier_id = _safe_int(header_row.get("SupplierID"))
+    if supplier_id <= 0:
+        _audit_log_event(
+            "purchase",
+            "work_order_email_pdf",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id_val),
+            unit=unit,
+            summary="Supplier not linked to Work Order",
+            details={"wo_no": wo_no_val},
+        )
+        return jsonify({"status": "error", "message": "Supplier not linked to Work Order"}), 400
+
+    email_update_result = data_fetch.update_iv_supplier_email(unit, supplier_id, to_email)
+    if email_update_result.get("error"):
+        err_msg = str(email_update_result.get("error") or "Failed to update supplier email")
+        http_status = 404 if "not found" in err_msg.lower() else 500
+        _audit_log_event(
+            "purchase",
+            "work_order_email_pdf",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id_val),
+            unit=unit,
+            summary="Failed to update supplier email before dispatch",
+            details={"wo_no": wo_no_val, "supplier_id": supplier_id, "to_email": to_email, "error": err_msg},
+        )
+        return jsonify({"status": "error", "message": err_msg}), http_status
+
+    items_df = data_fetch.fetch_work_order_items(unit, wo_id_val)
+    if items_df is None:
+        _audit_log_event(
+            "purchase",
+            "work_order_email_pdf",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id_val),
+            unit=unit,
+            summary="Failed to fetch Work Order items",
+            details={"wo_no": wo_no_val},
+        )
+        return jsonify({"status": "error", "message": "Failed to fetch Work Order items"}), 500
+    items_df = _clean_df_columns(items_df)
+    items_rows = items_df.to_dict(orient="records") if not items_df.empty else []
+
+    approval_meta = _fetch_purchase_approval_meta(wo_id_val)
+    header_pdf = dict(header_row)
+    header_pdf["PurchasingDeptName"] = _resolve_purchasing_department_name(_safe_int(header_row.get("PurchasingDeptId")))
+    header_pdf["SupplierEmail"] = to_email
+    pdf_buffer = _build_work_order_pdf_buffer(unit, header_pdf, items_rows, approval_meta, print_format=print_format)
+    pdf_bytes = pdf_buffer.getvalue() if pdf_buffer else b""
+
+    snapshot = {
+        "unit": unit,
+        "wo_no": wo_no_val,
+        "wo_date": header_row.get("PODate").strftime("%d-%b-%Y")
+        if isinstance(header_row.get("PODate"), (datetime, date))
+        else str(header_row.get("PODate") or "")[:10],
+        "supplier": str(header_row.get("SupplierName") or ""),
+        "amount": _format_indian_currency(header_row.get("Amount") or 0),
+        "subject": str(header_row.get("Subject") or ""),
+    }
+    mail_subject = f"Work Order {wo_no_val}"
+    mail_body = _build_work_order_supplier_dispatch_email_body(snapshot)
+    mail_filename = f"WO_{wo_no_val}.pdf"
+    mail_result = _send_graph_mail_with_attachment(
+        subject=mail_subject,
+        body_html=mail_body,
+        to_recipients=[to_email],
+        filename=mail_filename,
+        content_bytes=pdf_bytes,
+    )
+    if str(mail_result.get("status") or "").strip().lower() != "success":
+        err_msg = str(mail_result.get("message") or "Failed to send email")
+        _audit_log_event(
+            "purchase",
+            "work_order_email_pdf",
+            status="error",
+            entity_type="work_order",
+            entity_id=str(wo_id_val),
+            unit=unit,
+            summary="Work Order email send failed",
+            details={"wo_no": wo_no_val, "supplier_id": supplier_id, "recipient": to_email, "mail_result": mail_result},
+        )
+        return jsonify({"status": "error", "message": err_msg, "mail_status": mail_result}), 500
+
+    _audit_log_event(
+        "purchase",
+        "work_order_email_pdf",
+        status="success",
+        entity_type="work_order",
+        entity_id=str(wo_id_val),
+        unit=unit,
+        summary="Work Order PDF emailed to supplier",
+        details={"wo_no": wo_no_val, "supplier_id": supplier_id, "recipient": to_email, "mail_result": mail_result},
+    )
+    return jsonify(
+        {
+            "status": "success",
+            "message": f"Work Order PDF emailed to {to_email}",
+            "wo_id": wo_id_val,
+            "wo_no": wo_no_val,
+            "recipient": to_email,
+            "mail_status": mail_result,
+        }
+    )
 
 
 @app.route('/discount-module')
@@ -31913,10 +35194,14 @@ def api_modification_virtual_visit_create():
 
     result = _create_virtual_visit_duplicate(
         unit=unit,
+        mode=data.get("mode"),
+        source_visit_id=data.get("source_visit_id", data.get("sourceVisitId")),
         patient_id=data.get("patient_id", data.get("patientId")),
         visit_date=data.get("visit_date", data.get("visitDate")),
         discharge_date=data.get("discharge_date", data.get("dischargeDate")),
         patient_sub_type_id=data.get("patient_sub_type_id", data.get("patientSubTypeId")),
+        patient_type_id=data.get("patient_type_id", data.get("patientTypeId")),
+        pay_type=data.get("pay_type", data.get("payType")),
         visit_type_id=data.get("visit_type_id", data.get("visitTypeId")),
         doc_id=data.get("doc_id", data.get("docId")),
         discharge_type_id=data.get("discharge_type_id", data.get("dischargeTypeId")),
@@ -31924,13 +35209,31 @@ def api_modification_virtual_visit_create():
         username=username,
     )
     if result.get("error"):
-        return jsonify({"success": False, "message": result["error"]}), 400
+        status_code = int(result.get("status_code") or (409 if result.get("error_code") == "duplicate_exists" else 400))
+        response = {
+            "success": False,
+            "message": result["error"],
+            "error_code": result.get("error_code"),
+            "existing_visit_id": result.get("existing_visit_id"),
+            "source_visit_id": result.get("source_visit_id"),
+            "mode": result.get("mode"),
+        }
+        return jsonify(response), status_code
     return jsonify({
         "success": True,
         "visit_id": result.get("visit_id"),
         "patient_id": result.get("patient_id"),
         "reg_no": result.get("reg_no"),
         "patient_name": result.get("patient_name"),
+        "mode": result.get("mode"),
+        "source_visit_id": result.get("source_visit_id"),
+        "patient_type_id": result.get("patient_type_id"),
+        "pay_type": result.get("pay_type"),
+        "settled_bill_count": result.get("settled_bill_count"),
+        "settled_total_amount": result.get("settled_total_amount"),
+        "receipt_count": result.get("receipt_count"),
+        "receipt_numbers": result.get("receipt_numbers"),
+        "settled_invoice_ids": result.get("settled_invoice_ids"),
     })
 
 
@@ -31956,10 +35259,14 @@ def api_modification_virtual_visit_update():
     result = _update_virtual_visit_duplicate(
         unit=unit,
         visit_id=data.get("visit_id", data.get("visitId")),
+        mode=data.get("mode"),
+        source_visit_id=data.get("source_visit_id", data.get("sourceVisitId")),
         patient_id=data.get("patient_id", data.get("patientId")),
         visit_date=data.get("visit_date", data.get("visitDate")),
         discharge_date=data.get("discharge_date", data.get("dischargeDate")),
         patient_sub_type_id=data.get("patient_sub_type_id", data.get("patientSubTypeId")),
+        patient_type_id=data.get("patient_type_id", data.get("patientTypeId")),
+        pay_type=data.get("pay_type", data.get("payType")),
         visit_type_id=data.get("visit_type_id", data.get("visitTypeId")),
         doc_id=data.get("doc_id", data.get("docId")),
         discharge_type_id=data.get("discharge_type_id", data.get("dischargeTypeId")),
@@ -31968,14 +35275,69 @@ def api_modification_virtual_visit_update():
         username=username,
     )
     if result.get("error"):
-        return jsonify({"success": False, "message": result["error"]}), 400
+        status_code = int(result.get("status_code") or (409 if result.get("error_code") == "duplicate_exists" else 400))
+        response = {
+            "success": False,
+            "message": result["error"],
+            "error_code": result.get("error_code"),
+            "existing_visit_id": result.get("existing_visit_id"),
+            "source_visit_id": result.get("source_visit_id"),
+            "mode": result.get("mode"),
+        }
+        return jsonify(response), status_code
     return jsonify({
         "success": True,
         "visit_id": result.get("visit_id"),
         "patient_id": result.get("patient_id"),
         "reg_no": result.get("reg_no"),
         "patient_name": result.get("patient_name"),
+        "mode": result.get("mode"),
+        "source_visit_id": result.get("source_visit_id"),
+        "patient_type_id": result.get("patient_type_id"),
+        "pay_type": result.get("pay_type"),
+        "settled_bill_count": result.get("settled_bill_count"),
+        "settled_total_amount": result.get("settled_total_amount"),
+        "receipt_count": result.get("receipt_count"),
+        "receipt_numbers": result.get("receipt_numbers"),
+        "settled_invoice_ids": result.get("settled_invoice_ids"),
     })
+
+
+@app.route('/api/modifications/virtual_visit/source_visits')
+@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+def api_modification_virtual_visit_source_visits():
+    unit = (request.args.get("unit") or "").strip() or None
+    patient_id = request.args.get("patient_id", request.args.get("patientId"))
+    patient_id_val = _coerce_int(patient_id, allow_none=True)
+    if not patient_id_val:
+        return jsonify({"status": "error", "message": "Patient ID required"}), 400
+    limit_raw = request.args.get("limit")
+    try:
+        limit = int(limit_raw) if limit_raw is not None else 200
+    except Exception:
+        limit = 200
+    limit = max(1, min(limit, 1000))
+
+    allowed_units = _modification_units(_allowed_units_for_session())
+    target_unit = (unit or (allowed_units[0] if allowed_units else None))
+    if not target_unit:
+        return jsonify({"status": "error", "message": "No unit available"}), 400
+    target_unit = target_unit.strip().upper()
+    if allowed_units and target_unit not in allowed_units:
+        return jsonify({"status": "error", "message": "Unit not allowed"}), 403
+
+    df = data_fetch.fetch_virtual_visit_source_visits(target_unit, patient_id_val, limit=limit)
+    if df is None:
+        return jsonify({"status": "error", "message": "Database error"}), 500
+    if df.empty:
+        return jsonify({"status": "success", "data": [], "unit": target_unit, "count": 0}), 200
+
+    for col in df.columns:
+        if pd.api.types.is_datetime64_any_dtype(df[col]):
+            df[col] = pd.to_datetime(df[col], errors="coerce").dt.strftime("%Y-%m-%d %H:%M:%S")
+    df = df.replace({np.nan: None, np.inf: None, -np.inf: None})
+    records = df.to_dict(orient="records")
+    return jsonify({"status": "success", "data": records, "unit": target_unit, "count": len(records)})
 
 
 @app.route('/api/modifications/virtual_visit/history')
@@ -33895,6 +37257,1645 @@ def _update_virtual_visit_duplicate(
             conn.close()
         except Exception:
             pass
+
+
+def _virtual_visit_is_provided(value) -> bool:
+    return value is not None and str(value).strip() != ""
+
+
+def _virtual_visit_error(message: str, error_code: str | None = None, status_code: int = 400, **extra):
+    payload = {"error": message, "status_code": status_code}
+    if error_code:
+        payload["error_code"] = error_code
+    for key, value in extra.items():
+        if value is not None:
+            payload[key] = value
+    return payload
+
+
+def _virtual_visit_rollout_path() -> str:
+    return os.path.abspath(os.path.join(os.path.dirname(__file__), "sql", "virtual_visit_rollout.sql"))
+
+
+def _virtual_visit_migration_error(unit: str, object_name: str, missing_columns: list[str]):
+    missing = ", ".join(missing_columns)
+    return _virtual_visit_error(
+        f"{unit} is missing linked virtual visit rollout columns on {object_name}: {missing}. "
+        f"Apply {_virtual_visit_rollout_path()} and try again.",
+        error_code="migration_required",
+        status_code=409,
+    )
+
+
+def _virtual_visit_missing_columns(section: dict[str, object], required: list[tuple[str, str]]) -> list[str]:
+    return [label for label, key in required if not section.get(key)]
+
+
+def _virtual_visit_sql_expr(alias: str, column_name: str | None, alias_name: str) -> str:
+    if not column_name:
+        return f"NULL AS {alias_name}"
+    return f"{alias}.{column_name} AS {alias_name}"
+
+
+def _normalize_virtual_visit_pay_type(raw_value):
+    raw = str(raw_value or "").strip()
+    if not raw:
+        return None, None
+    lowered = raw.lower()
+    if lowered in ("1", "cash", "cash category", "cash-category"):
+        return 1, None
+    if lowered in ("2", "cashless", "cashless category", "cashless-category", "post facto", "post-facto"):
+        return 2, None
+    pay_type_val = _coerce_int(raw_value, allow_none=True)
+    if pay_type_val in (1, 2):
+        return pay_type_val, None
+    return None, "Patient Category must be Cash (1) or Cashless (2)."
+
+
+def _virtual_visit_resolve_schema(conn):
+    vd_map = _get_table_columns_map(conn, "Visit_Duplicate")
+    visit_map = _get_table_columns_map(conn, "Visit")
+    patient_map = _get_table_columns_map(conn, "Patient")
+    pt_map = _get_table_columns_map(conn, "PatientType_mst")
+    pst_map = _get_table_columns_map(conn, "PatientSubType_Mst")
+    employee_map = _get_table_columns_map(conn, "employee_mst")
+    billing_map = _get_table_columns_map(conn, "Billing_Mst")
+    receipt_map = _get_table_columns_map(conn, "Receipt_mst")
+    receipt_dtl_map = _get_table_columns_map(conn, "Receipt_Dtls")
+
+    schema = {
+        "vd": {
+            "visit_id": _resolve_column(vd_map, ["visitId", "VisitId", "VisitID", "Visit_ID"]),
+            "patient_id": _resolve_column(vd_map, ["patientId", "PatientId", "PatientID", "Patient_ID"]),
+            "visit_date": _resolve_column(vd_map, ["visitDate", "VisitDate", "Visit_Date"]),
+            "discharge_date": _resolve_column(vd_map, ["dischargeDate", "DischargeDate", "Discharge_Date"]),
+            "patient_subtype_id": _resolve_column(vd_map, ["patientSubTypeId", "PatientSubTypeId", "PatientSubTypeID", "PatientSubType_ID"]),
+            "patient_type_id": _resolve_column(vd_map, ["patientTypeId", "PatientTypeId", "PatientTypeID"]),
+            "pay_type": _resolve_column(vd_map, ["payType", "PayType"]),
+            "doc_id": _resolve_column(vd_map, ["docId", "DocId", "DocID", "DoctorId", "DoctorID"]),
+            "discharge_type_id": _resolve_column(vd_map, ["dischargeTypeId", "DischargeTypeId", "DischargeTypeID", "DischargeType_ID"]),
+            "visit_type_id": _resolve_column(vd_map, ["visitTypeId", "VisitTypeId", "VisitTypeID", "VisitType_ID"]),
+            "visit_status": _resolve_column(vd_map, ["visitStatus", "VisitStatus"]),
+            "inserted_by": _resolve_column(vd_map, ["insertedBy", "InsertedBy", "InsertedByUserID"]),
+            "inserted_on": _resolve_column(vd_map, ["insertedOn", "InsertedOn", "InsertedON", "Inserted_On"]),
+            "updated_by": _resolve_column(vd_map, ["updatedBy", "UpdatedBy", "UpdatedByUserID"]),
+            "updated_on": _resolve_column(vd_map, ["updatedOn", "UpdatedOn", "UpdatedON", "Updated_On"]),
+            "cbill_id": _resolve_column(vd_map, ["CBillId", "CBillID", "CBill_Id"]),
+            "source_visit_id": _resolve_column(vd_map, ["sourceVisitId", "SourceVisitId", "SourceVisitID"]),
+            "source_visit_no": _resolve_column(vd_map, ["sourceVisitNo", "SourceVisitNo", "SourceVisitNO"]),
+            "source_admission_no": _resolve_column(vd_map, ["sourceAdmissionNo", "SourceAdmissionNo", "SourceAdmissionNO"]),
+        },
+        "visit": {
+            "visit_id": _resolve_column(visit_map, ["Visit_ID", "VisitID", "visitId", "visit_id"]),
+            "patient_id": _resolve_column(visit_map, ["PatientID", "PatientId", "patientId", "patient_id"]),
+            "visit_no": _resolve_column(visit_map, ["VisitNo", "Visit_No"]),
+            "admission_no": _resolve_column(visit_map, ["AdmissionNo", "Admission_No"]),
+            "visit_type_id": _resolve_column(visit_map, ["VisitTypeID", "VisitTypeId", "VisitType_ID"]),
+            "visit_date": _resolve_column(visit_map, ["VisitDate", "Visit_Date"]),
+            "discharge_date": _resolve_column(visit_map, ["DischargeDate", "Discharge_Date"]),
+            "doc_id": _resolve_column(visit_map, ["DocInCharge", "DocIncharge", "DoctorInCharge", "DoctorIncharge"]),
+            "patient_type_id": _resolve_column(visit_map, ["PatientType_ID", "PatientTypeId", "PatientTypeID"]),
+            "patient_subtype_id": _resolve_column(visit_map, ["PatientSubType_ID", "PatientSubTypeId", "PatientSubTypeID"]),
+            "pay_type": _resolve_column(visit_map, ["payType", "PayType"]),
+            "discharge_type_id": _resolve_column(visit_map, ["DischargeType", "DischargeTypeId", "DischargeTypeID"]),
+            "has_duplicate": _resolve_column(visit_map, ["HasVirtualVisitDuplicate"]),
+            "duplicate_id": _resolve_column(visit_map, ["VirtualVisitDuplicateId"]),
+            "updated_by": _resolve_column(visit_map, ["VirtualVisitUpdatedBy"]),
+            "updated_on": _resolve_column(visit_map, ["VirtualVisitUpdatedOn"]),
+        },
+        "patient": {
+            "patient_id": _resolve_column(patient_map, ["PatientId", "patientId", "PatientID", "Patient_ID"]),
+            "reg_no": _resolve_column(patient_map, ["Registration_No", "RegistrationNo", "RegNo"]),
+            "title": _resolve_column(patient_map, ["Title"]),
+            "first_name": _resolve_column(patient_map, ["First_Name", "FirstName", "FName"]),
+            "middle_name": _resolve_column(patient_map, ["Middle_Name", "MiddleName", "MName"]),
+            "last_name": _resolve_column(patient_map, ["Last_Name", "LastName", "LName"]),
+            "deactive": _resolve_column(patient_map, ["Deactive", "Inactive", "inactive"]),
+        },
+        "pt": {
+            "id": _resolve_column(pt_map, ["PatientType_ID", "PatientTypeId", "PatientTypeID", "TypeID", "TypeId", "Id"]),
+            "name": _resolve_column(pt_map, ["PatientType", "PatientTypeName", "TypeName", "Name"]),
+            "deactive": _resolve_column(pt_map, ["Deactive", "Inactive", "inactive"]),
+        },
+        "pst": {
+            "id": _resolve_column(pst_map, ["PatientSubType_ID", "PatientSubTypeId", "PatientSubTypeID", "SubTypeID", "SubTypeId", "Id"]),
+            "name": _resolve_column(pst_map, ["PatientSubType_Desc", "PatientSubTypeDesc", "PatientSubTypeName", "PatientSubType", "Name"]),
+            "type_id": _resolve_column(pst_map, ["PatientType_ID", "PatientTypeId", "PatientTypeID", "TypeID", "TypeId", "PatientType"]),
+            "deactive": _resolve_column(pst_map, ["Deactive", "Inactive", "inactive"]),
+        },
+        "employee": {
+            "id": _resolve_column(employee_map, ["empid", "EmpId", "EmployeeId", "EmployeeID"]),
+            "deactive": _resolve_column(employee_map, ["deactive", "Deactive", "Inactive", "inactive"]),
+            "emp_type": _resolve_column(employee_map, ["emptype", "EmpType", "EmployeeType"]),
+            "doc_unit": _resolve_column(employee_map, ["docunit_id", "DocUnit_Id", "DocUnitID", "DocUnitId"]),
+        },
+        "billing": {
+            "bill_id": _resolve_column(billing_map, ["Bill_ID", "BillId", "BillID", "bill_id"]),
+            "visit_id": _resolve_column(billing_map, ["Visit_ID", "VisitId", "VisitID", "visit_id"]),
+            "bill_no": _resolve_column(billing_map, ["BillNo", "Bill_No", "billNo", "bill_no"]),
+            "bill_date": _resolve_column(billing_map, ["BillDate", "Bill_Date", "billDate", "bill_date"]),
+            "bill_type": _resolve_column(billing_map, ["BillType", "Bill_Type", "billType", "bill_type"]),
+            "net_amount": _resolve_column(billing_map, ["NetAmount", "Net_Amt", "netAmount", "net_amt"]),
+            "due_amount": _resolve_column(billing_map, ["DueAmount", "Due_Amt", "dueAmount", "due_amt"]),
+            "cancel_status": _resolve_column(billing_map, ["CancelStatus", "Cancel_Status", "Canceled", "Cancelled"]),
+            "updated_by": _resolve_column(billing_map, ["UpdatedBy", "Updated_By", "UpdatedByUserID"]),
+            "updated_on": _resolve_column(billing_map, ["UpdatedOn", "Updated_On", "UpdatedON"]),
+        },
+        "receipt": {
+            "receipt_id": _resolve_column(receipt_map, ["Receipt_ID", "ReceiptId", "ReceiptID", "receipt_id"]),
+            "receipt_no": _resolve_column(receipt_map, ["Receipt_No", "ReceiptNo", "ReceiptNO", "receipt_no"]),
+            "patient_id": _resolve_column(receipt_map, ["PatientID", "PatientId", "patientId", "patient_id"]),
+            "visit_id": _resolve_column(receipt_map, ["Visit_ID", "VisitId", "VisitID", "visit_id"]),
+            "amount": _resolve_column(receipt_map, ["Amount", "ReceiptAmount"]),
+            "receipt_date": _resolve_column(receipt_map, ["Receipt_Date", "ReceiptDate", "ReceiptDt"]),
+            "receipt_time": _resolve_column(receipt_map, ["Receipt_Time", "ReceiptTime", "ReceiptTm"]),
+            "note": _resolve_column(receipt_map, ["Note", "Remarks", "Remark"]),
+            "invoice_no": _resolve_column(receipt_map, ["InvoiceNo", "Invoice_No", "Bill_ID", "BillId"]),
+            "payment_against": _resolve_column(receipt_map, ["PaymentAgainst", "Payment_Against"]),
+            "payment_mode": _resolve_column(receipt_map, ["PaymentMode", "Payment_Mode", "PModeId"]),
+            "updated_on": _resolve_column(receipt_map, ["UpdatedOn", "Updated_On", "UpdatedON"]),
+            "updated_by": _resolve_column(receipt_map, ["UpdatedBy", "Updated_By", "UpdatedByUserID"]),
+            "receipt_type": _resolve_column(receipt_map, ["ReceiptType", "Receipt_Type", "Type"]),
+            "inserted_by": _resolve_column(receipt_map, ["InsertedByUserID", "InsertedBy", "insertedBy"]),
+            "inserted_on": _resolve_column(receipt_map, ["InsertedON", "InsertedOn", "insertedOn"]),
+            "inserted_ip": _resolve_column(receipt_map, ["InsertedIPAddress", "InsertedIP", "Inserted_IpAddress"]),
+            "updated_ip": _resolve_column(receipt_map, ["UpdatedIPAddress", "UpdatedIP", "Updated_IpAddress"]),
+        },
+        "receipt_dtl": {
+            "receipt_dtl_id": _resolve_column(receipt_dtl_map, ["Receipt_Dtl_ID", "ReceiptDtlId", "Receipt_DtlID", "receipt_dtl_id"]),
+            "receipt_id": _resolve_column(receipt_dtl_map, ["Receipt_ID", "ReceiptId", "ReceiptID", "receipt_id"]),
+            "amount": _resolve_column(receipt_dtl_map, ["Amount", "ReceiptAmount"]),
+            "invoice_no": _resolve_column(receipt_dtl_map, ["InvoiceNo", "Invoice_No", "Bill_ID", "BillId"]),
+            "updated_by": _resolve_column(receipt_dtl_map, ["UpdatedBy", "Updated_By", "UpdatedByUserID"]),
+            "updated_on": _resolve_column(receipt_dtl_map, ["UpdatedON", "UpdatedOn", "Updated_On"]),
+            "inserted_by": _resolve_column(receipt_dtl_map, ["InsertedByUserID", "InsertedBy", "insertedBy"]),
+            "inserted_on": _resolve_column(receipt_dtl_map, ["InsertedON", "InsertedOn", "insertedOn"]),
+            "adjusted_amount": _resolve_column(receipt_dtl_map, ["AdjustedAmount", "Adjusted_Amt", "adjustedAmount"]),
+            "inserted_ip": _resolve_column(receipt_dtl_map, ["InsertedIPAddress", "InsertedIP", "Inserted_IpAddress"]),
+            "updated_ip": _resolve_column(receipt_dtl_map, ["UpdatedIPAddress", "UpdatedIP", "Updated_IpAddress"]),
+        },
+    }
+
+    schema["vd"]["visit_id_is_identity"] = False
+    if schema["vd"].get("visit_id"):
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT c.is_identity FROM sys.columns c WHERE c.object_id = OBJECT_ID(?) AND c.name = ?",
+                ("dbo.Visit_Duplicate", schema["vd"]["visit_id"]),
+            )
+            row = cursor.fetchone()
+            schema["vd"]["visit_id_is_identity"] = bool(row and int(row[0]) == 1)
+        except Exception:
+            schema["vd"]["visit_id_is_identity"] = False
+    schema["receipt"]["receipt_id_is_identity"] = False
+    if schema["receipt"].get("receipt_id"):
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT c.is_identity FROM sys.columns c WHERE c.object_id = OBJECT_ID(?) AND c.name = ?",
+                ("dbo.Receipt_mst", schema["receipt"]["receipt_id"]),
+            )
+            row = cursor.fetchone()
+            schema["receipt"]["receipt_id_is_identity"] = bool(row and int(row[0]) == 1)
+        except Exception:
+            schema["receipt"]["receipt_id_is_identity"] = False
+    schema["receipt_dtl"]["receipt_dtl_id_is_identity"] = False
+    if schema["receipt_dtl"].get("receipt_dtl_id"):
+        try:
+            cursor = conn.cursor()
+            cursor.execute(
+                "SELECT c.is_identity FROM sys.columns c WHERE c.object_id = OBJECT_ID(?) AND c.name = ?",
+                ("dbo.Receipt_Dtls", schema["receipt_dtl"]["receipt_dtl_id"]),
+            )
+            row = cursor.fetchone()
+            schema["receipt_dtl"]["receipt_dtl_id_is_identity"] = bool(row and int(row[0]) == 1)
+        except Exception:
+            schema["receipt_dtl"]["receipt_dtl_id_is_identity"] = False
+    return schema
+
+
+def _virtual_visit_column_meta(conn, table_name: str, column_name: str | None):
+    if not column_name:
+        return {
+            "is_identity": False,
+            "is_nullable": True,
+            "has_default": False,
+            "data_type": "",
+        }
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            """
+            SELECT
+                c.is_identity,
+                c.is_nullable,
+                t.name AS DataType,
+                CASE WHEN dc.object_id IS NULL THEN 0 ELSE 1 END AS HasDefault
+            FROM sys.columns c
+            LEFT JOIN sys.types t
+                ON t.user_type_id = c.user_type_id
+            LEFT JOIN sys.default_constraints dc
+                ON dc.parent_object_id = c.object_id
+               AND dc.parent_column_id = c.column_id
+            WHERE c.object_id = OBJECT_ID(?)
+              AND c.name = ?
+            """,
+            (table_name, column_name),
+        )
+        row = cursor.fetchone()
+        return {
+            "is_identity": bool(row and int(getattr(row, "is_identity", row[0] if len(row) > 0 else 0) or 0) == 1),
+            "is_nullable": bool(row and int(getattr(row, "is_nullable", row[1] if len(row) > 1 else 1) or 0) == 1),
+            "has_default": bool(row and int(getattr(row, "HasDefault", row[3] if len(row) > 3 else 0) or 0) == 1),
+            "data_type": str((getattr(row, "DataType", row[2] if len(row) > 2 else "") if row else "") or "").strip().lower(),
+        }
+    except Exception:
+        return {
+            "is_identity": False,
+            "is_nullable": True,
+            "has_default": False,
+            "data_type": "",
+        }
+
+
+def _virtual_visit_table_has_insert_trigger(conn, table_name: str) -> bool:
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            "SELECT CAST(OBJECTPROPERTY(OBJECT_ID(?), 'TableHasInsertTrigger') AS INT) AS HasInsertTrigger",
+            (table_name,),
+        )
+        row = cursor.fetchone()
+        return bool(row and int(getattr(row, "HasInsertTrigger", row[0] if len(row) > 0 else 0) or 0) == 1)
+    except Exception:
+        return False
+
+
+def _virtual_visit_next_table_id(cursor, table_name: str, id_column: str | None):
+    if not id_column:
+        return None
+    cursor.execute(
+        f"SELECT ISNULL(MAX({id_column}), 0) + 1 AS NextId FROM {table_name} WITH (UPDLOCK, HOLDLOCK)"
+    )
+    row = cursor.fetchone()
+    return _coerce_int(getattr(row, "NextId", None), allow_none=True) or 1
+
+
+def _virtual_visit_fetch_source_due_bills(cursor, schema, source_visit_id_val: int):
+    bill_cols = schema["billing"]
+    required = [
+        ("Bill_ID", "bill_id"),
+        ("Visit_ID", "visit_id"),
+        ("DueAmount", "due_amount"),
+    ]
+    missing = _virtual_visit_missing_columns(bill_cols, required)
+    if missing:
+        return _virtual_visit_error(
+            f"Billing_Mst is missing required columns for virtual visit settlement: {', '.join(missing)}."
+        )
+
+    bill_no_expr = _virtual_visit_sql_expr("bm", bill_cols.get("bill_no"), "BillNo")
+    bill_date_expr = _virtual_visit_sql_expr("bm", bill_cols.get("bill_date"), "BillDate")
+    bill_type_expr = _virtual_visit_sql_expr("bm", bill_cols.get("bill_type"), "BillType")
+    net_amount_expr = (
+        f"CAST(ISNULL(bm.{bill_cols['net_amount']}, 0) AS FLOAT) AS NetAmount"
+        if bill_cols.get("net_amount")
+        else "CAST(0 AS FLOAT) AS NetAmount"
+    )
+    cancel_filter = f" AND ISNULL(bm.{bill_cols['cancel_status']}, 0) = 0" if bill_cols.get("cancel_status") else ""
+    order_parts = []
+    if bill_cols.get("bill_date"):
+        order_parts.append(f"bm.{bill_cols['bill_date']} DESC")
+    order_parts.append(f"bm.{bill_cols['bill_id']} DESC")
+    cursor.execute(
+        f"""
+        SELECT
+            bm.{bill_cols['bill_id']} AS BillId,
+            {bill_no_expr},
+            {bill_type_expr},
+            {bill_date_expr},
+            {net_amount_expr},
+            CAST(ISNULL(bm.{bill_cols['due_amount']}, 0) AS FLOAT) AS DueAmount
+        FROM dbo.Billing_Mst bm WITH (ROWLOCK, UPDLOCK, HOLDLOCK)
+        WHERE bm.{bill_cols['visit_id']} = ?
+          AND ISNULL(bm.{bill_cols['due_amount']}, 0) > 0
+          {cancel_filter}
+        ORDER BY {", ".join(order_parts)}
+        """,
+        (source_visit_id_val,),
+    )
+    rows = cursor.fetchall()
+    due_rows = []
+    for row in rows or []:
+        due_rows.append(
+            {
+                "bill_id": _coerce_int(getattr(row, "BillId", None), allow_none=True),
+                "bill_no": str(getattr(row, "BillNo", "") or "").strip(),
+                "bill_type": str(getattr(row, "BillType", "") or "").strip().upper(),
+                "bill_date": getattr(row, "BillDate", None),
+                "net_amount": Decimal(str(getattr(row, "NetAmount", 0) or 0)),
+                "due_amount": Decimal(str(getattr(row, "DueAmount", 0) or 0)),
+            }
+        )
+    return {"rows": due_rows}
+
+
+def _virtual_visit_receipt_timestamp(cursor):
+    try:
+        cursor.execute("SELECT GETDATE() AS ConversionTs")
+        row = cursor.fetchone()
+        conversion_dt = getattr(row, "ConversionTs", None) if row else None
+        if conversion_dt:
+            return conversion_dt
+    except Exception:
+        pass
+    try:
+        return datetime.now(tz=LOCAL_TZ).replace(tzinfo=None)
+    except Exception:
+        return datetime.now()
+
+
+def _virtual_visit_format_receipt_no(receipt_id_val: int | None, conversion_dt=None) -> str:
+    receipt_id_int = _coerce_int(receipt_id_val, allow_none=True)
+    if not receipt_id_int:
+        return ""
+    dt_val = conversion_dt
+    if not isinstance(dt_val, datetime):
+        try:
+            dt_val = datetime.now(tz=LOCAL_TZ).replace(tzinfo=None)
+        except Exception:
+            dt_val = datetime.now()
+    return f"RC/{dt_val.strftime('%d%m%y')}/{receipt_id_int}"
+
+
+def _virtual_visit_temporary_receipt_no(bill_row: dict[str, object], conversion_dt=None) -> str:
+    dt_val = conversion_dt
+    if not isinstance(dt_val, datetime):
+        try:
+            dt_val = datetime.now(tz=LOCAL_TZ).replace(tzinfo=None)
+        except Exception:
+            dt_val = datetime.now()
+    bill_id_token = str(_coerce_int(bill_row.get("bill_id"), allow_none=True) or int(time.time() * 1000000))
+    return f"RC/{dt_val.strftime('%d%m%y')}/TMP{bill_id_token[-12:]}"
+
+
+def _virtual_visit_insert_receipt_mst(conn, cursor, schema, source_row: dict[str, object], bill_row: dict[str, object], account_id: int):
+    receipt_cols = schema["receipt"]
+    required = [
+        ("Receipt_ID", "receipt_id"),
+        ("PatientID", "patient_id"),
+        ("Visit_ID", "visit_id"),
+        ("Amount", "amount"),
+        ("PaymentMode", "payment_mode"),
+        ("ReceiptType", "receipt_type"),
+    ]
+    missing = _virtual_visit_missing_columns(receipt_cols, required)
+    if missing:
+        return _virtual_visit_error(
+            f"Receipt_mst is missing required columns for virtual visit settlement: {', '.join(missing)}."
+        )
+
+    receipt_id_val = None
+    insert_cols = []
+    insert_vals = []
+    insert_params = []
+    conversion_dt = _virtual_visit_receipt_timestamp(cursor)
+    receipt_no_col = receipt_cols.get("receipt_no")
+    receipt_no_meta = _virtual_visit_column_meta(conn, "dbo.Receipt_mst", receipt_no_col)
+    final_receipt_no = ""
+
+    if not receipt_cols.get("receipt_id_is_identity"):
+        receipt_id_val = _virtual_visit_next_table_id(cursor, "dbo.Receipt_mst", receipt_cols.get("receipt_id"))
+        insert_cols.append(receipt_cols["receipt_id"])
+        insert_vals.append("?")
+        insert_params.append(receipt_id_val)
+        final_receipt_no = _virtual_visit_format_receipt_no(receipt_id_val, conversion_dt)
+        if receipt_no_col and final_receipt_no:
+            insert_cols.append(receipt_no_col)
+            insert_vals.append("?")
+            insert_params.append(final_receipt_no)
+    elif receipt_no_col and not receipt_no_meta.get("is_nullable"):
+        insert_cols.append(receipt_no_col)
+        insert_vals.append("?")
+        insert_params.append(_virtual_visit_temporary_receipt_no(bill_row, conversion_dt))
+
+    amount_val = float(Decimal(str(bill_row.get("due_amount") or 0)))
+    note_text = f"Auto-settled during virtual visit conversion from source visit {source_row.get('visit_id')}"
+    receipt_type = "PH" if str(bill_row.get("bill_type") or "").strip().upper() == "PH" else "P"
+    remote_ip = request.remote_addr if request else None
+
+    ordered_pairs = [
+        ("patient_id", source_row.get("patient_id")),
+        ("visit_id", source_row.get("visit_id")),
+        ("amount", amount_val),
+        ("note", note_text),
+        ("invoice_no", bill_row.get("bill_id")),
+        ("payment_against", "Bill"),
+        ("payment_mode", 11),
+        ("receipt_type", receipt_type),
+        ("updated_by", account_id),
+        ("inserted_by", account_id),
+        ("inserted_ip", remote_ip),
+        ("updated_ip", remote_ip),
+    ]
+    for key, value in ordered_pairs:
+        column_name = receipt_cols.get(key)
+        if not column_name:
+            continue
+        insert_cols.append(column_name)
+        insert_vals.append("?")
+        insert_params.append(value)
+
+    if receipt_cols.get("receipt_date"):
+        insert_cols.append(receipt_cols["receipt_date"])
+        insert_vals.append("?")
+        insert_params.append(conversion_dt)
+    if receipt_cols.get("receipt_time"):
+        insert_cols.append(receipt_cols["receipt_time"])
+        insert_vals.append("?")
+        insert_params.append(conversion_dt)
+    if receipt_cols.get("updated_on"):
+        insert_cols.append(receipt_cols["updated_on"])
+        insert_vals.append("?")
+        insert_params.append(conversion_dt)
+    if receipt_cols.get("inserted_on"):
+        insert_cols.append(receipt_cols["inserted_on"])
+        insert_vals.append("?")
+        insert_params.append(conversion_dt)
+
+    cursor.execute(
+        f"""
+        INSERT INTO dbo.Receipt_mst ({", ".join(insert_cols)})
+        VALUES ({", ".join(insert_vals)})
+        """,
+        tuple(insert_params),
+    )
+
+    if receipt_cols.get("receipt_id_is_identity"):
+        cursor.execute("SELECT CAST(SCOPE_IDENTITY() AS INT) AS NewReceiptId")
+        row = cursor.fetchone()
+        receipt_id_val = _coerce_int(getattr(row, "NewReceiptId", None), allow_none=True)
+        if not receipt_id_val:
+            cursor.execute(
+                f"SELECT MAX({receipt_cols['receipt_id']}) AS NewReceiptId FROM dbo.Receipt_mst WITH (NOLOCK)"
+            )
+            row = cursor.fetchone()
+            receipt_id_val = _coerce_int(getattr(row, "NewReceiptId", None), allow_none=True)
+    if not receipt_id_val:
+        return _virtual_visit_error("Unable to resolve the new receipt ID during virtual visit settlement.")
+
+    actual_receipt_no = final_receipt_no
+    if receipt_no_col and receipt_id_val:
+        actual_receipt_no = _virtual_visit_format_receipt_no(receipt_id_val, conversion_dt)
+        if receipt_cols.get("receipt_id_is_identity") and actual_receipt_no:
+            cursor.execute(
+                f"""
+                UPDATE dbo.Receipt_mst
+                SET {receipt_no_col} = ?
+                WHERE {receipt_cols['receipt_id']} = ?
+                """,
+                (actual_receipt_no, receipt_id_val),
+            )
+
+    return {
+        "receipt_id": receipt_id_val,
+        "receipt_no": actual_receipt_no,
+        "receipt_type": receipt_type,
+    }
+
+
+def _virtual_visit_insert_receipt_dtl(cursor, schema, receipt_id_val: int, bill_row: dict[str, object], account_id: int):
+    detail_cols = schema["receipt_dtl"]
+    required = [
+        ("Receipt_Dtl_ID", "receipt_dtl_id"),
+        ("Receipt_ID", "receipt_id"),
+        ("Amount", "amount"),
+        ("InvoiceNo", "invoice_no"),
+    ]
+    missing = _virtual_visit_missing_columns(detail_cols, required)
+    if missing:
+        return _virtual_visit_error(
+            f"Receipt_Dtls is missing required columns for virtual visit settlement: {', '.join(missing)}."
+        )
+
+    insert_cols = []
+    insert_vals = []
+    insert_params = []
+    if not detail_cols.get("receipt_dtl_id_is_identity"):
+        next_detail_id = _virtual_visit_next_table_id(cursor, "dbo.Receipt_Dtls", detail_cols.get("receipt_dtl_id"))
+        insert_cols.append(detail_cols["receipt_dtl_id"])
+        insert_vals.append("?")
+        insert_params.append(next_detail_id)
+
+    amount_val = float(Decimal(str(bill_row.get("due_amount") or 0)))
+    remote_ip = request.remote_addr if request else None
+    ordered_pairs = [
+        ("receipt_id", receipt_id_val),
+        ("amount", amount_val),
+        ("invoice_no", bill_row.get("bill_id")),
+        ("adjusted_amount", amount_val),
+        ("updated_by", account_id),
+        ("inserted_by", account_id),
+        ("inserted_ip", remote_ip),
+        ("updated_ip", remote_ip),
+    ]
+    for key, value in ordered_pairs:
+        column_name = detail_cols.get(key)
+        if not column_name:
+            continue
+        insert_cols.append(column_name)
+        insert_vals.append("?")
+        insert_params.append(value)
+
+    if detail_cols.get("updated_on"):
+        insert_cols.append(detail_cols["updated_on"])
+        insert_vals.append("GETDATE()")
+    if detail_cols.get("inserted_on"):
+        insert_cols.append(detail_cols["inserted_on"])
+        insert_vals.append("GETDATE()")
+
+    cursor.execute(
+        f"""
+        INSERT INTO dbo.Receipt_Dtls ({", ".join(insert_cols)})
+        VALUES ({", ".join(insert_vals)})
+        """,
+        tuple(insert_params),
+    )
+    return {"success": True}
+
+
+def _virtual_visit_zero_bill_due(cursor, schema, bill_row: dict[str, object], account_id: int):
+    bill_cols = schema["billing"]
+    updates = [f"{bill_cols['due_amount']} = 0"]
+    params = []
+    if bill_cols.get("updated_by"):
+        updates.append(f"{bill_cols['updated_by']} = ?")
+        params.append(account_id)
+    if bill_cols.get("updated_on"):
+        updates.append(f"{bill_cols['updated_on']} = GETDATE()")
+    cursor.execute(
+        f"""
+        UPDATE dbo.Billing_Mst
+        SET {", ".join(updates)}
+        WHERE {bill_cols['bill_id']} = ?
+        """,
+        (*params, bill_row.get("bill_id")),
+    )
+
+
+def _virtual_visit_settle_source_bills(
+    conn,
+    cursor,
+    schema,
+    source_row: dict[str, object],
+    account_id: int,
+    due_rows: list[dict[str, object]] | None = None,
+):
+    if due_rows is None:
+        due_result = _virtual_visit_fetch_source_due_bills(cursor, schema, int(source_row.get("visit_id") or 0))
+        if due_result.get("error"):
+            return due_result
+        due_rows = due_result.get("rows") or []
+    if not due_rows:
+        return _virtual_visit_error(
+            "No pending due amount was found for this visit. Please consult IT/Accounts department before continuing.",
+            error_code="source_due_zero",
+            status_code=409,
+            source_visit_id=source_row.get("visit_id"),
+            mode="linked",
+        )
+
+    receipt_numbers = []
+    invoice_ids = []
+    total_amount = Decimal("0")
+    for bill_row in due_rows:
+        receipt_result = _virtual_visit_insert_receipt_mst(conn, cursor, schema, source_row, bill_row, account_id)
+        if receipt_result.get("error"):
+            return receipt_result
+        if not receipt_result.get("receipt_id"):
+            return _virtual_visit_error("Unable to resolve receipt ID during virtual visit settlement.")
+        detail_result = _virtual_visit_insert_receipt_dtl(
+            cursor,
+            schema,
+            int(receipt_result.get("receipt_id") or 0),
+            bill_row,
+            account_id,
+        )
+        if detail_result.get("error"):
+            return detail_result
+        _virtual_visit_zero_bill_due(cursor, schema, bill_row, account_id)
+        total_amount += Decimal(str(bill_row.get("due_amount") or 0))
+        bill_id_val = _coerce_int(bill_row.get("bill_id"), allow_none=True)
+        if bill_id_val:
+            invoice_ids.append(bill_id_val)
+        receipt_no = str(receipt_result.get("receipt_no") or "").strip()
+        if receipt_no:
+            receipt_numbers.append(receipt_no)
+
+    return {
+        "settled_bill_count": len(due_rows),
+        "settled_total_amount": float(total_amount),
+        "receipt_count": len(due_rows),
+        "receipt_numbers": receipt_numbers,
+        "settled_invoice_ids": invoice_ids,
+    }
+
+
+def _virtual_visit_fetch_patient(cursor, schema, patient_id_val: int):
+    patient_cols = schema["patient"]
+    if not patient_cols.get("patient_id"):
+        return _virtual_visit_error("Patient master is missing PatientId column.")
+    deactive_sql = f" AND ISNULL(p.{patient_cols['deactive']}, 0) = 0" if patient_cols.get("deactive") else ""
+    cursor.execute(
+        f"""
+        SELECT TOP 1
+            p.{patient_cols['patient_id']} AS PatientId,
+            {_virtual_visit_sql_expr('p', patient_cols.get('reg_no'), 'RegistrationNo')},
+            {_virtual_visit_sql_expr('p', patient_cols.get('title'), 'Title')},
+            {_virtual_visit_sql_expr('p', patient_cols.get('first_name'), 'FirstName')},
+            {_virtual_visit_sql_expr('p', patient_cols.get('middle_name'), 'MiddleName')},
+            {_virtual_visit_sql_expr('p', patient_cols.get('last_name'), 'LastName')}
+        FROM dbo.Patient p WITH (NOLOCK)
+        WHERE p.{patient_cols['patient_id']} = ?{deactive_sql}
+        """,
+        (patient_id_val,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return _virtual_visit_error("Patient not found for this unit.")
+    parts = [
+        str(getattr(row, "Title", "") or "").strip(),
+        str(getattr(row, "FirstName", "") or "").strip(),
+        str(getattr(row, "MiddleName", "") or "").strip(),
+        str(getattr(row, "LastName", "") or "").strip(),
+    ]
+    return {
+        "patient_id": patient_id_val,
+        "reg_no": str(getattr(row, "RegistrationNo", "") or "").strip(),
+        "patient_name": " ".join([part for part in parts if part]).strip(),
+    }
+
+
+def _virtual_visit_fetch_patient_type(cursor, schema, patient_type_value):
+    raw = str(patient_type_value or "").strip()
+    if not raw:
+        return {"patient_type_id": None, "patient_type_name": ""}
+    patient_type_id_val = _coerce_int(patient_type_value, allow_none=True)
+    pt_cols = schema["pt"]
+    if not pt_cols.get("id"):
+        if patient_type_id_val is None:
+            return _virtual_visit_error("Patient Type is invalid.")
+        return {"patient_type_id": patient_type_id_val, "patient_type_name": ""}
+    deactive_sql = f" AND ISNULL(pt.{pt_cols['deactive']}, 0) = 0" if pt_cols.get("deactive") else ""
+    if patient_type_id_val is not None:
+        cursor.execute(
+            f"""
+            SELECT TOP 1
+                pt.{pt_cols['id']} AS PatientTypeID,
+                {_virtual_visit_sql_expr('pt', pt_cols.get('name'), 'PatientTypeName')}
+            FROM dbo.PatientType_mst pt WITH (NOLOCK)
+            WHERE pt.{pt_cols['id']} = ?{deactive_sql}
+            """,
+            (patient_type_id_val,),
+        )
+    elif pt_cols.get("name"):
+        cursor.execute(
+            f"""
+            SELECT TOP 1
+                pt.{pt_cols['id']} AS PatientTypeID,
+                {_virtual_visit_sql_expr('pt', pt_cols.get('name'), 'PatientTypeName')}
+            FROM dbo.PatientType_mst pt WITH (NOLOCK)
+            WHERE LTRIM(RTRIM(CAST(pt.{pt_cols['name']} AS NVARCHAR(255)))) = ?{deactive_sql}
+            ORDER BY pt.{pt_cols['id']}
+            """,
+            (raw,),
+        )
+    else:
+        return _virtual_visit_error("Patient Type is invalid.")
+    row = cursor.fetchone()
+    if not row:
+        if patient_type_id_val is not None:
+            return {"patient_type_id": patient_type_id_val, "patient_type_name": ""}
+        return _virtual_visit_error("Invalid Patient Type.")
+    return {
+        "patient_type_id": _coerce_int(getattr(row, "PatientTypeID", None), allow_none=True),
+        "patient_type_name": str(getattr(row, "PatientTypeName", "") or "").strip(),
+    }
+
+
+def _virtual_visit_fetch_patient_subtype(cursor, schema, patient_subtype_value):
+    raw = str(patient_subtype_value or "").strip()
+    if not raw:
+        return _virtual_visit_error("Patient SubType is required.")
+    patient_subtype_id_val = _coerce_int(patient_subtype_value, allow_none=True)
+    pst_cols = schema["pst"]
+    if not pst_cols.get("id"):
+        return _virtual_visit_error("PatientSubType master is missing ID column.")
+    deactive_sql = f" AND ISNULL(pst.{pst_cols['deactive']}, 0) = 0" if pst_cols.get("deactive") else ""
+    if patient_subtype_id_val is not None:
+        cursor.execute(
+            f"""
+            SELECT TOP 1
+                pst.{pst_cols['id']} AS PatientSubTypeID,
+                {_virtual_visit_sql_expr('pst', pst_cols.get('name'), 'PatientSubTypeName')},
+                {_virtual_visit_sql_expr('pst', pst_cols.get('type_id'), 'PatientTypeID')}
+            FROM dbo.PatientSubType_Mst pst WITH (NOLOCK)
+            WHERE pst.{pst_cols['id']} = ?{deactive_sql}
+            """,
+            (patient_subtype_id_val,),
+        )
+    elif pst_cols.get("name"):
+        cursor.execute(
+            f"""
+            SELECT TOP 1
+                pst.{pst_cols['id']} AS PatientSubTypeID,
+                {_virtual_visit_sql_expr('pst', pst_cols.get('name'), 'PatientSubTypeName')},
+                {_virtual_visit_sql_expr('pst', pst_cols.get('type_id'), 'PatientTypeID')}
+            FROM dbo.PatientSubType_Mst pst WITH (NOLOCK)
+            WHERE LTRIM(RTRIM(CAST(pst.{pst_cols['name']} AS NVARCHAR(255)))) = ?{deactive_sql}
+            ORDER BY pst.{pst_cols['id']}
+            """,
+            (raw,),
+        )
+    else:
+        return _virtual_visit_error("Invalid Patient SubType.")
+    row = cursor.fetchone()
+    if not row:
+        return _virtual_visit_error("Invalid Patient SubType.")
+    return {
+        "patient_subtype_id": _coerce_int(getattr(row, "PatientSubTypeID", None), allow_none=True),
+        "patient_subtype_name": str(getattr(row, "PatientSubTypeName", "") or "").strip(),
+        "patient_type_id": _coerce_int(getattr(row, "PatientTypeID", None), allow_none=True),
+    }
+
+
+def _virtual_visit_validate_doctor(cursor, schema, doc_id_val):
+    doc_id_int = _coerce_int(doc_id_val, allow_none=True)
+    if doc_id_int in (None, 0):
+        return {"doc_id": 0}
+    employee_cols = schema["employee"]
+    if not employee_cols.get("id"):
+        return {"doc_id": doc_id_int}
+    where_parts = [f"e.{employee_cols['id']} = ?"]
+    params = [doc_id_int]
+    if employee_cols.get("emp_type"):
+        where_parts.append(f"e.{employee_cols['emp_type']} = 'Doc'")
+    if employee_cols.get("deactive"):
+        where_parts.append(f"ISNULL(e.{employee_cols['deactive']}, 0) = 0")
+    if employee_cols.get("doc_unit"):
+        where_parts.append(f"ISNULL(e.{employee_cols['doc_unit']}, 0) IN (1, 2, 3)")
+    cursor.execute(
+        f"""
+        SELECT TOP 1 e.{employee_cols['id']} AS DoctorId
+        FROM dbo.employee_mst e WITH (NOLOCK)
+        WHERE {' AND '.join(where_parts)}
+        """,
+        tuple(params),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return _virtual_visit_error("Invalid Doctor ID.")
+    return {"doc_id": doc_id_int}
+
+
+def _virtual_visit_fetch_source_visit(cursor, schema, source_visit_id_val: int):
+    visit_cols = schema["visit"]
+    if not visit_cols.get("visit_id"):
+        return _virtual_visit_error("Visit table is missing Visit_ID column.")
+    cursor.execute(
+        f"""
+        SELECT TOP 1
+            v.{visit_cols['visit_id']} AS VisitId,
+            {_virtual_visit_sql_expr('v', visit_cols.get('patient_id'), 'PatientId')},
+            {_virtual_visit_sql_expr('v', visit_cols.get('visit_no'), 'VisitNo')},
+            {_virtual_visit_sql_expr('v', visit_cols.get('admission_no'), 'AdmissionNo')},
+            {_virtual_visit_sql_expr('v', visit_cols.get('visit_type_id'), 'VisitTypeId')},
+            {_virtual_visit_sql_expr('v', visit_cols.get('visit_date'), 'VisitDate')},
+            {_virtual_visit_sql_expr('v', visit_cols.get('discharge_date'), 'DischargeDate')},
+            {_virtual_visit_sql_expr('v', visit_cols.get('doc_id'), 'DocId')},
+            {_virtual_visit_sql_expr('v', visit_cols.get('patient_type_id'), 'PatientTypeId')},
+            {_virtual_visit_sql_expr('v', visit_cols.get('patient_subtype_id'), 'PatientSubTypeId')},
+            {_virtual_visit_sql_expr('v', visit_cols.get('pay_type'), 'PayType')},
+            {_virtual_visit_sql_expr('v', visit_cols.get('discharge_type_id'), 'DischargeTypeId')},
+            {_virtual_visit_sql_expr('v', visit_cols.get('has_duplicate'), 'HasVirtualVisitDuplicate')},
+            {_virtual_visit_sql_expr('v', visit_cols.get('duplicate_id'), 'VirtualVisitDuplicateId')}
+        FROM dbo.Visit v WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
+        WHERE v.{visit_cols['visit_id']} = ?
+        """,
+        (source_visit_id_val,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return _virtual_visit_error("Source visit not found.")
+    return {
+        "visit_id": _coerce_int(getattr(row, "VisitId", None), allow_none=True),
+        "patient_id": _coerce_int(getattr(row, "PatientId", None), allow_none=True),
+        "visit_no": str(getattr(row, "VisitNo", "") or "").strip(),
+        "admission_no": str(getattr(row, "AdmissionNo", "") or "").strip(),
+        "visit_type_id": _coerce_int(getattr(row, "VisitTypeId", None), allow_none=True),
+        "visit_date": getattr(row, "VisitDate", None),
+        "discharge_date": getattr(row, "DischargeDate", None),
+        "doc_id": _coerce_int(getattr(row, "DocId", None), allow_none=True),
+        "patient_type_id": _coerce_int(getattr(row, "PatientTypeId", None), allow_none=True),
+        "patient_subtype_id": _coerce_int(getattr(row, "PatientSubTypeId", None), allow_none=True),
+        "pay_type": _coerce_int(getattr(row, "PayType", None), allow_none=True),
+        "discharge_type_id": _coerce_int(getattr(row, "DischargeTypeId", None), allow_none=True),
+        "has_virtual_duplicate": _coerce_int(getattr(row, "HasVirtualVisitDuplicate", None), allow_none=True),
+        "virtual_duplicate_id": _coerce_int(getattr(row, "VirtualVisitDuplicateId", None), allow_none=True),
+    }
+
+
+def _virtual_visit_fetch_duplicate_by_source(cursor, schema, source_visit_id_val: int):
+    vd_cols = schema["vd"]
+    if not vd_cols.get("source_visit_id") or not vd_cols.get("visit_id"):
+        return None
+    cursor.execute(
+        f"""
+        SELECT TOP 1
+            vd.{vd_cols['visit_id']} AS VisitId,
+            {_virtual_visit_sql_expr('vd', vd_cols.get('patient_id'), 'PatientId')}
+        FROM dbo.Visit_Duplicate vd WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
+        WHERE vd.{vd_cols['source_visit_id']} = ?
+        ORDER BY vd.{vd_cols['visit_id']} DESC
+        """,
+        (source_visit_id_val,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return None
+    return {
+        "visit_id": _coerce_int(getattr(row, "VisitId", None), allow_none=True),
+        "patient_id": _coerce_int(getattr(row, "PatientId", None), allow_none=True),
+    }
+
+
+def _virtual_visit_fetch_duplicate_by_id(cursor, schema, duplicate_visit_id_val: int):
+    vd_cols = schema["vd"]
+    if not vd_cols.get("visit_id"):
+        return None
+    cursor.execute(
+        f"""
+        SELECT TOP 1
+            vd.{vd_cols['visit_id']} AS VisitId,
+            {_virtual_visit_sql_expr('vd', vd_cols.get('source_visit_id'), 'SourceVisitId')}
+        FROM dbo.Visit_Duplicate vd WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
+        WHERE vd.{vd_cols['visit_id']} = ?
+        """,
+        (duplicate_visit_id_val,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return None
+    return {
+        "visit_id": _coerce_int(getattr(row, "VisitId", None), allow_none=True),
+        "source_visit_id": _coerce_int(getattr(row, "SourceVisitId", None), allow_none=True),
+    }
+
+
+def _virtual_visit_fetch_existing_duplicate(cursor, schema, visit_id_val: int):
+    vd_cols = schema["vd"]
+    if not vd_cols.get("visit_id"):
+        return _virtual_visit_error("Visit_Duplicate is missing visitId column.")
+    cursor.execute(
+        f"""
+        SELECT TOP 1
+            vd.{vd_cols['visit_id']} AS VisitId,
+            {_virtual_visit_sql_expr('vd', vd_cols.get('patient_id'), 'PatientId')},
+            {_virtual_visit_sql_expr('vd', vd_cols.get('visit_date'), 'VisitDate')},
+            {_virtual_visit_sql_expr('vd', vd_cols.get('discharge_date'), 'DischargeDate')},
+            {_virtual_visit_sql_expr('vd', vd_cols.get('patient_subtype_id'), 'PatientSubTypeId')},
+            {_virtual_visit_sql_expr('vd', vd_cols.get('patient_type_id'), 'PatientTypeId')},
+            {_virtual_visit_sql_expr('vd', vd_cols.get('pay_type'), 'PayType')},
+            {_virtual_visit_sql_expr('vd', vd_cols.get('doc_id'), 'DocId')},
+            {_virtual_visit_sql_expr('vd', vd_cols.get('discharge_type_id'), 'DischargeTypeId')},
+            {_virtual_visit_sql_expr('vd', vd_cols.get('visit_type_id'), 'VisitTypeId')},
+            {_virtual_visit_sql_expr('vd', vd_cols.get('visit_status'), 'VisitStatus')},
+            {_virtual_visit_sql_expr('vd', vd_cols.get('source_visit_id'), 'SourceVisitId')},
+            {_virtual_visit_sql_expr('vd', vd_cols.get('source_visit_no'), 'SourceVisitNo')},
+            {_virtual_visit_sql_expr('vd', vd_cols.get('source_admission_no'), 'SourceAdmissionNo')}
+        FROM dbo.Visit_Duplicate vd WITH (UPDLOCK, ROWLOCK)
+        WHERE vd.{vd_cols['visit_id']} = ?
+        """,
+        (visit_id_val,),
+    )
+    row = cursor.fetchone()
+    if not row:
+        return _virtual_visit_error(f"Visit ID {visit_id_val} not found in Visit_Duplicate.")
+    return {
+        "visit_id": _coerce_int(getattr(row, "VisitId", None), allow_none=True),
+        "patient_id": _coerce_int(getattr(row, "PatientId", None), allow_none=True),
+        "visit_date": getattr(row, "VisitDate", None),
+        "discharge_date": getattr(row, "DischargeDate", None),
+        "patient_subtype_id": _coerce_int(getattr(row, "PatientSubTypeId", None), allow_none=True),
+        "patient_type_id": _coerce_int(getattr(row, "PatientTypeId", None), allow_none=True),
+        "pay_type": _coerce_int(getattr(row, "PayType", None), allow_none=True),
+        "doc_id": _coerce_int(getattr(row, "DocId", None), allow_none=True),
+        "discharge_type_id": _coerce_int(getattr(row, "DischargeTypeId", None), allow_none=True),
+        "visit_type_id": _coerce_int(getattr(row, "VisitTypeId", None), allow_none=True),
+        "visit_status": _coerce_int(getattr(row, "VisitStatus", None), allow_none=True),
+        "source_visit_id": _coerce_int(getattr(row, "SourceVisitId", None), allow_none=True),
+        "source_visit_no": str(getattr(row, "SourceVisitNo", "") or "").strip(),
+        "source_admission_no": str(getattr(row, "SourceAdmissionNo", "") or "").strip(),
+    }
+
+
+def _virtual_visit_next_id(cursor, schema):
+    vd_cols = schema["vd"]
+    cursor.execute(
+        f"SELECT ISNULL(MAX({vd_cols['visit_id']}), 0) + 1 AS NextVisitId FROM dbo.Visit_Duplicate WITH (UPDLOCK, HOLDLOCK)"
+    )
+    row = cursor.fetchone()
+    return _coerce_int(getattr(row, "NextVisitId", None), allow_none=True) or 1
+
+
+def _virtual_visit_insert_duplicate(cursor, schema, values: dict[str, object], account_id: int):
+    vd_cols = schema["vd"]
+    visit_id_val = None
+    insert_cols = []
+    insert_sql_values = []
+    insert_params = []
+
+    if not vd_cols.get("visit_id_is_identity"):
+        visit_id_val = _virtual_visit_next_id(cursor, schema)
+        insert_cols.append(vd_cols["visit_id"])
+        insert_sql_values.append("?")
+        insert_params.append(visit_id_val)
+
+    ordered_pairs = [
+        ("patient_id", values.get("patient_id")),
+        ("visit_date", values.get("visit_date")),
+        ("discharge_date", values.get("discharge_date")),
+        ("patient_subtype_id", values.get("patient_subtype_id")),
+        ("doc_id", values.get("doc_id")),
+        ("discharge_type_id", values.get("discharge_type_id")),
+        ("visit_type_id", values.get("visit_type_id")),
+        ("patient_type_id", values.get("patient_type_id")),
+        ("pay_type", values.get("pay_type")),
+        ("source_visit_id", values.get("source_visit_id")),
+        ("source_visit_no", values.get("source_visit_no")),
+        ("source_admission_no", values.get("source_admission_no")),
+    ]
+    for key, value in ordered_pairs:
+        column_name = vd_cols.get(key)
+        if not column_name:
+            continue
+        insert_cols.append(column_name)
+        insert_sql_values.append("?")
+        insert_params.append(value)
+
+    if vd_cols.get("visit_status"):
+        insert_cols.append(vd_cols["visit_status"])
+        insert_sql_values.append("?")
+        insert_params.append(values.get("visit_status"))
+    if vd_cols.get("inserted_by"):
+        insert_cols.append(vd_cols["inserted_by"])
+        insert_sql_values.append("?")
+        insert_params.append(account_id)
+    if vd_cols.get("inserted_on"):
+        insert_cols.append(vd_cols["inserted_on"])
+        insert_sql_values.append("GETDATE()")
+    if vd_cols.get("cbill_id"):
+        insert_cols.append(vd_cols["cbill_id"])
+        insert_sql_values.append("NULL")
+
+    cursor.execute(
+        f"""
+        INSERT INTO dbo.Visit_Duplicate ({", ".join(insert_cols)})
+        VALUES ({", ".join(insert_sql_values)})
+        """,
+        tuple(insert_params),
+    )
+
+    if vd_cols.get("visit_id_is_identity"):
+        cursor.execute("SELECT CAST(SCOPE_IDENTITY() AS INT) AS NewVisitId")
+        row = cursor.fetchone()
+        visit_id_val = _coerce_int(getattr(row, "NewVisitId", None), allow_none=True)
+        if not visit_id_val:
+            cursor.execute(f"SELECT MAX({vd_cols['visit_id']}) AS NewVisitId FROM dbo.Visit_Duplicate WITH (NOLOCK)")
+            row = cursor.fetchone()
+            visit_id_val = _coerce_int(getattr(row, "NewVisitId", None), allow_none=True)
+
+    return {"visit_id": visit_id_val}
+
+
+def _virtual_visit_touch_source_visit(cursor, schema, source_visit_id_val: int, duplicate_visit_id: int, account_id: int):
+    visit_cols = schema["visit"]
+    updates = []
+    params = []
+    if visit_cols.get("has_duplicate"):
+        updates.append(f"{visit_cols['has_duplicate']} = 1")
+    if visit_cols.get("duplicate_id"):
+        updates.append(f"{visit_cols['duplicate_id']} = ?")
+        params.append(duplicate_visit_id)
+    if visit_cols.get("updated_by"):
+        updates.append(f"{visit_cols['updated_by']} = ?")
+        params.append(account_id)
+    if visit_cols.get("updated_on"):
+        updates.append(f"{visit_cols['updated_on']} = GETDATE()")
+    if not updates:
+        return
+    cursor.execute(
+        f"""
+        UPDATE dbo.Visit
+        SET {", ".join(updates)}
+        WHERE {visit_cols['visit_id']} = ?
+        """,
+        (*params, source_visit_id_val),
+    )
+
+
+def _virtual_visit_result_payload(
+    patient_row: dict[str, object],
+    visit_id_val: int | None,
+    mode: str,
+    source_visit_id_val,
+    patient_type_id_val,
+    pay_type_val,
+    **extra,
+):
+    payload = {
+        "success": True,
+        "visit_id": visit_id_val,
+        "patient_id": patient_row.get("patient_id"),
+        "reg_no": patient_row.get("reg_no"),
+        "patient_name": patient_row.get("patient_name"),
+        "mode": mode,
+        "source_visit_id": source_visit_id_val,
+        "patient_type_id": patient_type_id_val,
+        "pay_type": pay_type_val,
+    }
+    for key, value in extra.items():
+        if value is not None:
+            payload[key] = value
+    return payload
+
+
+def _save_virtual_visit_duplicate(
+    *,
+    operation: str,
+    unit: str,
+    username: str,
+    visit_id=None,
+    mode=None,
+    source_visit_id=None,
+    patient_id=None,
+    visit_date=None,
+    discharge_date=None,
+    patient_sub_type_id=None,
+    patient_type_id=None,
+    pay_type=None,
+    visit_type_id=None,
+    doc_id=None,
+    discharge_type_id=None,
+    visit_status=None,
+    visit_status_provided: bool = False,
+    dry_run: bool = False,
+):
+    from modules.db_connection import get_sql_connection
+
+    unit_norm = (unit or "").strip().upper()
+    if not unit_norm:
+        return _virtual_visit_error("Select a unit")
+
+    visit_id_provided = _virtual_visit_is_provided(visit_id)
+    source_visit_provided = _virtual_visit_is_provided(source_visit_id)
+    patient_id_provided = _virtual_visit_is_provided(patient_id)
+    visit_date_provided = _virtual_visit_is_provided(visit_date)
+    discharge_date_provided = _virtual_visit_is_provided(discharge_date)
+    patient_subtype_provided = _virtual_visit_is_provided(patient_sub_type_id)
+    patient_type_provided = _virtual_visit_is_provided(patient_type_id)
+    pay_type_provided = _virtual_visit_is_provided(pay_type)
+    visit_type_provided = _virtual_visit_is_provided(visit_type_id)
+    doc_id_provided = _virtual_visit_is_provided(doc_id)
+    discharge_type_provided = _virtual_visit_is_provided(discharge_type_id)
+    visit_status_value_provided = visit_status_provided or _virtual_visit_is_provided(visit_status)
+
+    visit_id_val = _coerce_int(visit_id, allow_none=True)
+    source_visit_id_val = _coerce_int(source_visit_id, allow_none=True)
+    patient_id_val = _coerce_int(patient_id, allow_none=True)
+    visit_type_id_val = _coerce_int(visit_type_id, allow_none=True)
+    doc_id_val = _coerce_int(doc_id, allow_none=True)
+    discharge_type_id_val = _coerce_int(discharge_type_id, allow_none=True)
+    visit_status_val = _coerce_int(visit_status, allow_none=True)
+    visit_dt_val = _parse_datetime_input(visit_date)
+    discharge_dt_val = _parse_datetime_input(discharge_date)
+    pay_type_val, pay_type_error = _normalize_virtual_visit_pay_type(pay_type)
+    mode_raw = str(mode or "").strip().lower()
+
+    if operation == "update" and not visit_id_val:
+        return _virtual_visit_error("Visit ID is required.")
+    if visit_id_provided and visit_id_val is None:
+        return _virtual_visit_error("Visit ID is invalid.")
+    if source_visit_provided and source_visit_id_val is None:
+        return _virtual_visit_error("Source Visit ID is invalid.")
+    if patient_id_provided and patient_id_val is None:
+        return _virtual_visit_error("Patient ID is invalid.")
+    if visit_type_provided and visit_type_id_val not in (1, 2, 3):
+        return _virtual_visit_error("Visit Type must be 1 (IPD), 2 (OPD), or 3 (DPV).")
+    if doc_id_provided and doc_id_val is None:
+        return _virtual_visit_error("Doctor ID is invalid.")
+    if discharge_type_provided and discharge_type_id_val not in (0, 1, 2):
+        return _virtual_visit_error("Discharge Type must be 0, 1, or 2.")
+    if visit_date_provided and not visit_dt_val:
+        return _virtual_visit_error("Visit Date is invalid.")
+    if discharge_date_provided and not discharge_dt_val:
+        return _virtual_visit_error("Discharge Date is invalid.")
+    if visit_status_value_provided and visit_status_val is None and _virtual_visit_is_provided(visit_status):
+        return _virtual_visit_error("Visit Status is invalid.")
+    if pay_type_error:
+        return _virtual_visit_error(pay_type_error)
+
+    if operation == "create":
+        if source_visit_id_val:
+            final_mode = "linked"
+        elif mode_raw == "linked":
+            return _virtual_visit_error("Select a source visit to create a linked virtual visit.")
+        else:
+            final_mode = "manual"
+    else:
+        final_mode = None
+
+    conn = get_sql_connection(unit_norm)
+    if not conn:
+        return _virtual_visit_error(f"Unable to connect to unit {unit_norm}")
+
+    try:
+        conn.autocommit = False
+        cursor = conn.cursor()
+        schema = _virtual_visit_resolve_schema(conn)
+
+        vd_required = [
+            ("visitId", "visit_id"),
+            ("patientId", "patient_id"),
+            ("visitDate", "visit_date"),
+            ("dischargeDate", "discharge_date"),
+            ("patientSubTypeId", "patient_subtype_id"),
+            ("docId", "doc_id"),
+            ("dischargeTypeId", "discharge_type_id"),
+            ("visitTypeId", "visit_type_id"),
+            ("patientTypeId", "patient_type_id"),
+            ("payType", "pay_type"),
+            ("sourceVisitId", "source_visit_id"),
+            ("sourceVisitNo", "source_visit_no"),
+            ("sourceAdmissionNo", "source_admission_no"),
+            ("updatedBy", "updated_by"),
+            ("updatedOn", "updated_on"),
+        ]
+        missing_vd = _virtual_visit_missing_columns(schema["vd"], vd_required)
+        if missing_vd:
+            conn.rollback()
+            return _virtual_visit_migration_error(unit_norm, "Visit_Duplicate", missing_vd)
+
+        existing_row = None
+        source_row = None
+        if operation == "update":
+            existing_row = _virtual_visit_fetch_existing_duplicate(cursor, schema, visit_id_val)
+            if existing_row.get("error"):
+                conn.rollback()
+                return existing_row
+            final_mode = "linked" if existing_row.get("source_visit_id") else "manual"
+            if mode_raw in ("linked", "manual") and mode_raw != final_mode:
+                conn.rollback()
+                if final_mode == "linked":
+                    return _virtual_visit_error("Linked virtual visits cannot be changed to standalone during update.")
+                return _virtual_visit_error("Standalone virtual visits cannot be linked during update. Create a new linked virtual visit instead.")
+            if source_visit_provided:
+                if existing_row.get("source_visit_id"):
+                    if source_visit_id_val != existing_row.get("source_visit_id"):
+                        conn.rollback()
+                        return _virtual_visit_error("Source Visit ID cannot be changed once linked.")
+                elif source_visit_id_val:
+                    conn.rollback()
+                    return _virtual_visit_error("Standalone virtual visits cannot be linked during update. Create a new linked virtual visit instead.")
+
+        if final_mode == "linked":
+            visit_required = [
+                ("Visit_ID", "visit_id"),
+                ("PatientID", "patient_id"),
+                ("VisitTypeID", "visit_type_id"),
+                ("VisitDate", "visit_date"),
+                ("DischargeDate", "discharge_date"),
+                ("DocInCharge", "doc_id"),
+                ("PatientType_ID", "patient_type_id"),
+                ("PatientSubType_ID", "patient_subtype_id"),
+                ("payType", "pay_type"),
+                ("DischargeType", "discharge_type_id"),
+                ("HasVirtualVisitDuplicate", "has_duplicate"),
+                ("VirtualVisitDuplicateId", "duplicate_id"),
+                ("VirtualVisitUpdatedBy", "updated_by"),
+                ("VirtualVisitUpdatedOn", "updated_on"),
+            ]
+            missing_visit = _virtual_visit_missing_columns(schema["visit"], visit_required)
+            if missing_visit:
+                conn.rollback()
+                return _virtual_visit_migration_error(unit_norm, "Visit", missing_visit)
+
+        if operation == "create" and final_mode == "linked":
+            source_row = _virtual_visit_fetch_source_visit(cursor, schema, source_visit_id_val)
+            if source_row.get("error"):
+                conn.rollback()
+                return source_row
+            existing_link = _virtual_visit_fetch_duplicate_by_source(cursor, schema, source_visit_id_val)
+            if existing_link:
+                conn.rollback()
+                return _virtual_visit_error(
+                    f"Virtual visit already exists for source visit {source_visit_id_val}.",
+                    error_code="duplicate_exists",
+                    status_code=409,
+                    existing_visit_id=existing_link.get("visit_id"),
+                    source_visit_id=source_visit_id_val,
+                    mode="linked",
+                )
+            flagged_duplicate_id = source_row.get("virtual_duplicate_id")
+            if flagged_duplicate_id:
+                existing_by_flag = _virtual_visit_fetch_duplicate_by_id(cursor, schema, flagged_duplicate_id)
+                if existing_by_flag:
+                    conn.rollback()
+                    return _virtual_visit_error(
+                        f"Source visit {source_visit_id_val} is already linked to virtual visit {flagged_duplicate_id}.",
+                        error_code="duplicate_exists",
+                        status_code=409,
+                        existing_visit_id=existing_by_flag.get("visit_id"),
+                        source_visit_id=source_visit_id_val,
+                        mode="linked",
+                    )
+            if patient_id_val and patient_id_val != source_row.get("patient_id"):
+                conn.rollback()
+                return _virtual_visit_error("Selected patient does not match the source visit.")
+        elif operation == "update" and final_mode == "linked":
+            source_row = _virtual_visit_fetch_source_visit(cursor, schema, existing_row.get("source_visit_id"))
+            if source_row.get("error"):
+                conn.rollback()
+                return source_row
+
+        base_values = existing_row or {}
+        if operation == "create" and final_mode == "linked":
+            base_values = {
+                "patient_id": source_row.get("patient_id"),
+                "visit_type_id": source_row.get("visit_type_id"),
+                "visit_date": source_row.get("visit_date"),
+                "discharge_date": source_row.get("discharge_date"),
+                "patient_type_id": source_row.get("patient_type_id"),
+                "patient_subtype_id": source_row.get("patient_subtype_id"),
+                "pay_type": source_row.get("pay_type"),
+                "doc_id": source_row.get("doc_id"),
+                "discharge_type_id": source_row.get("discharge_type_id"),
+                "source_visit_id": source_row.get("visit_id"),
+                "source_visit_no": source_row.get("visit_no"),
+                "source_admission_no": source_row.get("admission_no"),
+                "visit_status": None,
+            }
+
+        if operation == "update":
+            final_patient_id = base_values.get("patient_id")
+            if patient_id_val and patient_id_val != final_patient_id:
+                conn.rollback()
+                return _virtual_visit_error("Patient ID cannot be changed during update.")
+        elif final_mode == "linked":
+            final_patient_id = source_row.get("patient_id")
+        else:
+            final_patient_id = patient_id_val
+        if not final_patient_id:
+            conn.rollback()
+            return _virtual_visit_error("Patient ID is required.")
+
+        if operation == "update":
+            final_visit_type_id = base_values.get("visit_type_id")
+            if visit_type_provided and visit_type_id_val != final_visit_type_id:
+                conn.rollback()
+                return _virtual_visit_error("Visit Type cannot be changed during update.")
+        elif final_mode == "linked":
+            final_visit_type_id = source_row.get("visit_type_id")
+            if visit_type_provided and visit_type_id_val != final_visit_type_id:
+                conn.rollback()
+                return _virtual_visit_error("Visit Type must match the source visit for linked mode.")
+        else:
+            final_visit_type_id = visit_type_id_val
+        if final_visit_type_id not in (1, 2, 3):
+            conn.rollback()
+            return _virtual_visit_error("Visit Type must be 1 (IPD), 2 (OPD), or 3 (DPV).")
+
+        subtype_input = patient_sub_type_id if patient_subtype_provided else base_values.get("patient_subtype_id")
+        subtype_row = _virtual_visit_fetch_patient_subtype(cursor, schema, subtype_input)
+        if subtype_row.get("error"):
+            conn.rollback()
+            return subtype_row
+        final_patient_subtype_id = subtype_row.get("patient_subtype_id")
+        if not final_patient_subtype_id:
+            conn.rollback()
+            return _virtual_visit_error("Patient SubType is required.")
+
+        patient_type_input = patient_type_id if patient_type_provided else base_values.get("patient_type_id")
+        patient_type_row = _virtual_visit_fetch_patient_type(cursor, schema, patient_type_input)
+        if patient_type_row.get("error"):
+            if final_mode == "linked" and subtype_row.get("patient_type_id"):
+                patient_type_row = _virtual_visit_fetch_patient_type(cursor, schema, subtype_row.get("patient_type_id"))
+            if patient_type_row.get("error"):
+                conn.rollback()
+                return patient_type_row
+        final_patient_type_id = patient_type_row.get("patient_type_id")
+        if not final_patient_type_id and subtype_row.get("patient_type_id"):
+            patient_type_row = _virtual_visit_fetch_patient_type(cursor, schema, subtype_row.get("patient_type_id"))
+            if patient_type_row.get("error"):
+                conn.rollback()
+                return patient_type_row
+            final_patient_type_id = patient_type_row.get("patient_type_id")
+        subtype_type_id = subtype_row.get("patient_type_id")
+        if subtype_type_id and final_patient_type_id and final_patient_type_id != subtype_type_id:
+            conn.rollback()
+            return _virtual_visit_error("Patient Type does not match the selected Patient SubType.")
+        if not final_patient_type_id:
+            conn.rollback()
+            return _virtual_visit_error("Patient Type is required.")
+
+        final_pay_type = pay_type_val if pay_type_provided else base_values.get("pay_type")
+        if operation == "create" and final_pay_type not in (1, 2):
+            conn.rollback()
+            return _virtual_visit_error("Patient Category is required.")
+        if final_pay_type is not None and final_pay_type not in (1, 2):
+            conn.rollback()
+            return _virtual_visit_error("Patient Category must be Cash (1) or Cashless (2).")
+
+        final_doc_id = doc_id_val if doc_id_provided else base_values.get("doc_id")
+        doc_check = _virtual_visit_validate_doctor(cursor, schema, final_doc_id)
+        if doc_check.get("error"):
+            conn.rollback()
+            return doc_check
+        final_doc_id = doc_check.get("doc_id", 0)
+
+        final_visit_date = visit_dt_val if visit_date_provided else base_values.get("visit_date")
+        final_discharge_date = discharge_dt_val if discharge_date_provided else base_values.get("discharge_date")
+        if not final_visit_date:
+            conn.rollback()
+            return _virtual_visit_error("Visit Date is required.")
+
+        if final_visit_type_id == 1:
+            final_discharge_type_id = discharge_type_id_val if discharge_type_provided else base_values.get("discharge_type_id")
+            if final_discharge_type_id is None:
+                final_discharge_type_id = 2
+            if final_discharge_type_id not in (0, 1, 2):
+                conn.rollback()
+                return _virtual_visit_error("Discharge Type must be 0, 1, or 2.")
+            if not final_discharge_date:
+                conn.rollback()
+                return _virtual_visit_error("Discharge Date is required for IPD.")
+            if final_visit_date > final_discharge_date:
+                conn.rollback()
+                return _virtual_visit_error("Visit Date cannot be after Discharge Date.")
+        else:
+            final_discharge_type_id = 0
+            final_discharge_date = final_visit_date
+
+        if operation == "update":
+            final_visit_status = visit_status_val if visit_status_value_provided else base_values.get("visit_status")
+        else:
+            final_visit_status = visit_status_val if visit_status_value_provided else None
+
+        if final_mode == "linked":
+            final_source_visit_id = source_row.get("visit_id") if source_row else base_values.get("source_visit_id")
+            final_source_visit_no = source_row.get("visit_no") if source_row else base_values.get("source_visit_no")
+            final_source_admission_no = source_row.get("admission_no") if source_row else base_values.get("source_admission_no")
+        else:
+            final_source_visit_id = None
+            final_source_visit_no = None
+            final_source_admission_no = None
+
+        patient_row = _virtual_visit_fetch_patient(cursor, schema, final_patient_id)
+        if patient_row.get("error"):
+            conn.rollback()
+            return patient_row
+
+        account_id = _resolve_account_id(username) or 0
+        settlement_preview = None
+        source_due_rows = None
+        if operation == "create" and final_mode == "linked" and final_source_visit_id:
+            due_result = _virtual_visit_fetch_source_due_bills(cursor, schema, int(final_source_visit_id))
+            if due_result.get("error"):
+                conn.rollback()
+                return due_result
+            source_due_rows = due_result.get("rows") or []
+            if not source_due_rows:
+                conn.rollback()
+                return _virtual_visit_error(
+                    "No pending due amount was found for this visit. Please consult IT/Accounts department before continuing.",
+                    error_code="source_due_zero",
+                    status_code=409,
+                    source_visit_id=final_source_visit_id,
+                    mode="linked",
+                )
+            total_due = sum((Decimal(str(row.get("due_amount") or 0)) for row in source_due_rows), Decimal("0"))
+            settlement_preview = {
+                "settled_bill_count": len(source_due_rows),
+                "settled_total_amount": float(total_due),
+                "receipt_count": len(source_due_rows),
+                "receipt_numbers": [],
+                "settled_invoice_ids": [
+                    int(row.get("bill_id"))
+                    for row in source_due_rows
+                    if _coerce_int(row.get("bill_id"), allow_none=True)
+                ],
+            }
+
+        if dry_run:
+            conn.rollback()
+            return _virtual_visit_result_payload(
+                patient_row,
+                visit_id_val if operation == "update" else None,
+                final_mode,
+                final_source_visit_id,
+                final_patient_type_id,
+                final_pay_type,
+                **(settlement_preview or {}),
+            )
+
+        if operation == "create":
+            insert_result = _virtual_visit_insert_duplicate(
+                cursor,
+                schema,
+                {
+                    "patient_id": final_patient_id,
+                    "visit_date": final_visit_date,
+                    "discharge_date": final_discharge_date,
+                    "patient_subtype_id": final_patient_subtype_id,
+                    "patient_type_id": final_patient_type_id,
+                    "pay_type": final_pay_type,
+                    "doc_id": final_doc_id,
+                    "discharge_type_id": final_discharge_type_id,
+                    "visit_type_id": final_visit_type_id,
+                    "visit_status": final_visit_status,
+                    "source_visit_id": final_source_visit_id,
+                    "source_visit_no": final_source_visit_no,
+                    "source_admission_no": final_source_admission_no,
+                },
+                account_id,
+            )
+            created_visit_id = insert_result.get("visit_id")
+            settlement_result = None
+            if final_mode == "linked" and final_source_visit_id:
+                settlement_result = _virtual_visit_settle_source_bills(
+                    conn,
+                    cursor,
+                    schema,
+                    source_row,
+                    account_id,
+                    due_rows=source_due_rows,
+                )
+                if settlement_result.get("error"):
+                    conn.rollback()
+                    return settlement_result
+                _virtual_visit_touch_source_visit(cursor, schema, final_source_visit_id, created_visit_id, account_id)
+            conn.commit()
+            return _virtual_visit_result_payload(
+                patient_row,
+                created_visit_id,
+                final_mode,
+                final_source_visit_id,
+                final_patient_type_id,
+                final_pay_type,
+                **(settlement_result or {}),
+            )
+
+        updates = [
+            (schema["vd"].get("visit_date"), final_visit_date),
+            (schema["vd"].get("discharge_date"), final_discharge_date),
+            (schema["vd"].get("patient_subtype_id"), final_patient_subtype_id),
+            (schema["vd"].get("patient_type_id"), final_patient_type_id),
+            (schema["vd"].get("pay_type"), final_pay_type),
+            (schema["vd"].get("doc_id"), final_doc_id),
+            (schema["vd"].get("discharge_type_id"), final_discharge_type_id),
+        ]
+        if final_mode == "linked":
+            updates.extend([
+                (schema["vd"].get("source_visit_id"), final_source_visit_id),
+                (schema["vd"].get("source_visit_no"), final_source_visit_no),
+                (schema["vd"].get("source_admission_no"), final_source_admission_no),
+            ])
+
+        update_clauses = []
+        update_params = []
+        for column_name, value in updates:
+            if not column_name:
+                continue
+            update_clauses.append(f"{column_name} = ?")
+            update_params.append(value)
+        if schema["vd"].get("visit_status") and visit_status_value_provided:
+            update_clauses.append(f"{schema['vd']['visit_status']} = ?")
+            update_params.append(final_visit_status)
+        if schema["vd"].get("updated_by"):
+            update_clauses.append(f"{schema['vd']['updated_by']} = ?")
+            update_params.append(account_id)
+        if schema["vd"].get("updated_on"):
+            update_clauses.append(f"{schema['vd']['updated_on']} = GETDATE()")
+
+        cursor.execute(
+            f"""
+            UPDATE dbo.Visit_Duplicate
+            SET {", ".join(update_clauses)}
+            WHERE {schema['vd']['visit_id']} = ?
+            """,
+            (*update_params, visit_id_val),
+        )
+        if final_mode == "linked" and final_source_visit_id:
+            _virtual_visit_touch_source_visit(cursor, schema, final_source_visit_id, visit_id_val, account_id)
+        conn.commit()
+        return _virtual_visit_result_payload(
+            patient_row,
+            visit_id_val,
+            final_mode,
+            final_source_visit_id,
+            final_patient_type_id,
+            final_pay_type,
+        )
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return _virtual_visit_error(str(e))
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _create_virtual_visit_duplicate(
+    unit: str,
+    patient_id,
+    visit_date,
+    discharge_date,
+    patient_sub_type_id,
+    visit_type_id,
+    doc_id,
+    discharge_type_id,
+    username: str,
+    visit_status=None,
+    dry_run: bool = False,
+    mode=None,
+    source_visit_id=None,
+    patient_type_id=None,
+    pay_type=None,
+):
+    return _save_virtual_visit_duplicate(
+        operation="create",
+        unit=unit,
+        username=username,
+        mode=mode,
+        source_visit_id=source_visit_id,
+        patient_id=patient_id,
+        visit_date=visit_date,
+        discharge_date=discharge_date,
+        patient_sub_type_id=patient_sub_type_id,
+        patient_type_id=patient_type_id,
+        pay_type=pay_type,
+        visit_type_id=visit_type_id,
+        doc_id=doc_id,
+        discharge_type_id=discharge_type_id,
+        visit_status=visit_status,
+        dry_run=dry_run,
+    )
+
+
+def _update_virtual_visit_duplicate(
+    unit: str,
+    visit_id,
+    patient_id,
+    visit_date,
+    discharge_date,
+    patient_sub_type_id,
+    visit_type_id,
+    doc_id,
+    discharge_type_id,
+    username: str,
+    visit_status=None,
+    visit_status_provided: bool = False,
+    dry_run: bool = False,
+    mode=None,
+    source_visit_id=None,
+    patient_type_id=None,
+    pay_type=None,
+):
+    return _save_virtual_visit_duplicate(
+        operation="update",
+        unit=unit,
+        username=username,
+        visit_id=visit_id,
+        mode=mode,
+        source_visit_id=source_visit_id,
+        patient_id=patient_id,
+        visit_date=visit_date,
+        discharge_date=discharge_date,
+        patient_sub_type_id=patient_sub_type_id,
+        patient_type_id=patient_type_id,
+        pay_type=pay_type,
+        visit_type_id=visit_type_id,
+        doc_id=doc_id,
+        discharge_type_id=discharge_type_id,
+        visit_status=visit_status,
+        visit_status_provided=visit_status_provided,
+        dry_run=dry_run,
+    )
 
 
 def _apply_receipt_edit_updates(
@@ -46600,6 +51601,7 @@ def api_mis_radiology_summary_export_pdf():
 
 def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str, username: str):
     import io
+    from xml.sax.saxutils import escape
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
     from reportlab.lib.units import inch, mm
@@ -46656,6 +51658,13 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
     def fmt_date(val):
         try: return pd.to_datetime(val).strftime("%d-%m-%Y")
         except: return ""
+    def make_paragraph(value, style, *, bold: bool = False, indent: int = 0):
+        safe = escape(txt(value)).replace("\n", "<br/>")
+        if indent > 0:
+            safe = ("&nbsp;" * indent) + safe
+        if bold and safe:
+            safe = f"<b>{safe}</b>"
+        return Paragraph(safe or "", style)
 
     # Split Data
     sections = {
@@ -46692,9 +51701,32 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
     style_subtitle = ParagraphStyle('RptSub', parent=styles['Normal'], fontSize=10, textColor=colors.HexColor('#475569'), alignment=TA_CENTER, spaceAfter=12)
     style_section = ParagraphStyle('SecHead', parent=styles['Heading2'], fontSize=14, textColor=colors.black, backColor=colors.HexColor('#f1f5f9'), borderPadding=6, spaceBefore=12, spaceAfter=8)
 
-    style_th = ParagraphStyle('TH', parent=styles['Normal'], fontSize=8, fontName='Helvetica-Bold', textColor=colors.white, alignment=TA_CENTER)
-    style_td = ParagraphStyle('TD', parent=styles['Normal'], fontSize=8, fontName='Helvetica', textColor=colors.black)
-    style_td_right = ParagraphStyle('TDRight', parent=styles['Normal'], fontSize=8, fontName='Helvetica', textColor=colors.black, alignment=TA_RIGHT)
+    style_th = ParagraphStyle(
+        'TH',
+        parent=styles['Normal'],
+        fontSize=8,
+        fontName='Helvetica-Bold',
+        textColor=colors.white,
+        alignment=TA_CENTER,
+        leading=10,
+        wordWrap='CJK',
+        splitLongWords=1,
+    )
+    style_td = ParagraphStyle(
+        'TD',
+        parent=styles['Normal'],
+        fontSize=8,
+        fontName='Helvetica',
+        textColor=colors.black,
+        leading=10,
+        wordWrap='CJK',
+        splitLongWords=1,
+    )
+    style_td_right = ParagraphStyle(
+        'TDRight',
+        parent=style_td,
+        alignment=TA_RIGHT,
+    )
 
     # Summary Styles
     style_sum_mode = ParagraphStyle('SumMode', parent=styles['Normal'], fontSize=10, fontName='Helvetica-Bold', textColor=colors.red, alignment=TA_RIGHT)
@@ -46804,8 +51836,8 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
                 if current_user is not None:
                     table_data.append([
                         "", "", "", "", "", "",
-                        Paragraph(f"<b>Total for {current_user}:</b>", style_td_right),
-                        Paragraph(f"<b>{format_inr(user_total)}</b>", style_td_right)
+                        make_paragraph(f"Total for {current_user}:", style_td_right, bold=True),
+                        make_paragraph(format_inr(user_total), style_td_right, bold=True)
                     ])
                     # Style for Subtotal Row
                     tbl_style_cmds.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#f1f5f9')))
@@ -46815,7 +51847,7 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
 
                 # Print New User Header
                 table_data.append([
-                    Paragraph(f"<b>User: {this_user}</b>", style_td),
+                    make_paragraph(f"User: {this_user}", style_td, bold=True),
                     "", "", "", "", "", "", ""
                 ])
                 # Style for User Header Row
@@ -46831,14 +51863,14 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
             ref_no = txt(r.get("BillNo")) if txt(r.get("ReceiptType")).upper() in ('PH', 'PI') else txt(r.get("VisitNo"))
 
             row_content = [
-                str(sl_no),
-                txt(r.get("Receipt_No")),
-                fmt_date(r.get("Receipt_Date")),
-                Paragraph(txt(r.get("Patientname") or r.get("Patient")), style_td),
-                txt(r.get("RegNo")),
-                ref_no,
-                txt(r.get("PModeName")),
-                Paragraph(format_inr(amt), style_td_right)
+                make_paragraph(str(sl_no), style_td),
+                make_paragraph(r.get("Receipt_No"), style_td),
+                make_paragraph(fmt_date(r.get("Receipt_Date")), style_td),
+                make_paragraph(r.get("Patientname") or r.get("Patient"), style_td),
+                make_paragraph(r.get("RegNo"), style_td),
+                make_paragraph(ref_no, style_td),
+                make_paragraph(r.get("PModeName"), style_td),
+                make_paragraph(format_inr(amt), style_td_right)
             ]
             table_data.append(row_content)
 
@@ -46851,8 +51883,8 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
         if current_user is not None:
             table_data.append([
                 "", "", "", "", "", "",
-                Paragraph(f"<b>Total for {current_user}:</b>", style_td_right),
-                Paragraph(f"<b>{format_inr(user_total)}</b>", style_td_right)
+                make_paragraph(f"Total for {current_user}:", style_td_right, bold=True),
+                make_paragraph(format_inr(user_total), style_td_right, bold=True)
             ])
             tbl_style_cmds.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#f1f5f9')))
             tbl_style_cmds.append(('LINEABOVE', (-2, row_idx), (-1, row_idx), 1, colors.black))
@@ -46863,7 +51895,7 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
         table_data.append([
             "", "", "", "", "", "",
             Paragraph("<b><font color='white'>GRAND TOTAL:</font></b>", style_td_right),
-            Paragraph(f"<b><font color='white'>{format_inr(grand_total)}</font></b>", style_td_right)
+            Paragraph(f"<b><font color='white'>{escape(format_inr(grand_total))}</font></b>", style_td_right)
         ])
         tbl_style_cmds.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#1e3a8a')))
         tbl_style_cmds.append(('TEXTCOLOR', (0, row_idx), (-1, row_idx), colors.white))
@@ -46880,12 +51912,66 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
         if not rows:
             return
 
-        style_th_left = ParagraphStyle('THLeft', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, alignment=TA_LEFT)
-        style_th_right = ParagraphStyle('THRight', parent=styles['Normal'], fontSize=9, fontName='Helvetica-Bold', textColor=colors.white, alignment=TA_RIGHT)
-        style_td = ParagraphStyle('TD', parent=styles['Normal'], fontSize=8, fontName='Helvetica', textColor=colors.black)
-        style_td_right = ParagraphStyle('TDRight', parent=styles['Normal'], fontSize=8, fontName='Helvetica', textColor=colors.black, alignment=TA_RIGHT)
-        style_sum_total_label = ParagraphStyle('SumTotLbl', parent=styles['Normal'], fontSize=8, fontName='Helvetica-Bold', textColor=colors.black, alignment=TA_RIGHT)
-        style_sum_val = ParagraphStyle('SumVal', parent=styles['Normal'], fontSize=8, fontName='Helvetica-Bold', textColor=colors.black, alignment=TA_RIGHT)
+        style_th_left = ParagraphStyle(
+            'THLeft',
+            parent=styles['Normal'],
+            fontSize=9,
+            fontName='Helvetica-Bold',
+            textColor=colors.white,
+            alignment=TA_LEFT,
+            leading=11,
+            wordWrap='CJK',
+            splitLongWords=1,
+        )
+        style_th_right = ParagraphStyle(
+            'THRight',
+            parent=styles['Normal'],
+            fontSize=9,
+            fontName='Helvetica-Bold',
+            textColor=colors.white,
+            alignment=TA_RIGHT,
+            leading=11,
+            wordWrap='CJK',
+            splitLongWords=1,
+        )
+        style_td_summary = ParagraphStyle(
+            'TDSummary',
+            parent=styles['Normal'],
+            fontSize=8,
+            fontName='Helvetica',
+            textColor=colors.black,
+            alignment=TA_LEFT,
+            leading=10,
+            wordWrap='CJK',
+            splitLongWords=1,
+        )
+        style_td_summary_right = ParagraphStyle(
+            'TDSummaryRight',
+            parent=style_td_summary,
+            alignment=TA_RIGHT,
+        )
+        style_sum_total_label = ParagraphStyle(
+            'SumTotLbl',
+            parent=styles['Normal'],
+            fontSize=8,
+            fontName='Helvetica-Bold',
+            textColor=colors.black,
+            alignment=TA_RIGHT,
+            leading=10,
+            wordWrap='CJK',
+            splitLongWords=1,
+        )
+        style_sum_val = ParagraphStyle(
+            'SumVal',
+            parent=styles['Normal'],
+            fontSize=8,
+            fontName='Helvetica-Bold',
+            textColor=colors.black,
+            alignment=TA_RIGHT,
+            leading=10,
+            wordWrap='CJK',
+            splitLongWords=1,
+        )
 
         mode_groups = {}
         for r in rows:
@@ -46910,60 +51996,63 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
             pt_groups[pt_raw][m] = pt_groups[pt_raw].get(m, 0) + amt
 
         grand_total = sum(num(r.get("Amount")) for r in rows)
-        col_widths = [80*mm, 35*mm]
 
         t1_data = []
-        t1_data.append([Paragraph("Summary 1: Payment Mode Breakdown", style_th_left), ""])
+        t1_data.append([make_paragraph("Summary 1: Payment Mode Breakdown", style_th_left), ""])
 
         sorted_modes = sorted(mode_groups.keys())
         for mode in sorted_modes:
             cats = mode_groups[mode]
             mode_total = sum(cats.values())
 
-            t1_data.append([Paragraph(f"<b>{mode}</b>", style_td), ""])
+            t1_data.append([make_paragraph(mode, style_td_summary, bold=True), ""])
 
             for cat in sorted(cats.keys()):
                 t1_data.append([
-                    Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;{cat}", style_td),
-                    Paragraph(format_inr(cats[cat]), style_td_right)
+                    make_paragraph(cat, style_td_summary, indent=4),
+                    make_paragraph(format_inr(cats[cat]), style_td_summary_right)
                 ])
 
             t1_data.append([
-                Paragraph(f"Total {mode}:", style_sum_total_label),
-                Paragraph(format_inr(mode_total), style_sum_val)
+                make_paragraph(f"Total {mode}:", style_sum_total_label),
+                make_paragraph(format_inr(mode_total), style_sum_val)
             ])
 
         t1_data.append([
-            Paragraph("Grand Total:", style_th_left),
-            Paragraph(f"<b>{format_inr(grand_total)}</b>", style_th_right)
+            make_paragraph("Grand Total:", style_th_left),
+            make_paragraph(format_inr(grand_total), style_th_right, bold=True)
         ])
 
         t2_data = []
-        t2_data.append([Paragraph("Summary 2: Category Details", style_th_left), ""])
+        t2_data.append([make_paragraph("Summary 2: Category Details", style_th_left), ""])
 
         sorted_pts = sorted(pt_groups.keys())
         for pt in sorted_pts:
             modes = pt_groups[pt]
 
-            t2_data.append([Paragraph(f"<b>{pt}</b>", style_td), ""])
+            t2_data.append([make_paragraph(pt, style_td_summary, bold=True), ""])
 
             for m in sorted(modes.keys()):
                 t2_data.append([
-                    Paragraph(f"&nbsp;&nbsp;&nbsp;&nbsp;{m}", style_td),
-                    Paragraph(format_inr(modes[m]), style_td_right)
+                    make_paragraph(m, style_td_summary, indent=4),
+                    make_paragraph(format_inr(modes[m]), style_td_summary_right)
                 ])
 
         t2_data.append([
-            Paragraph("Grand Total:", style_th_left),
-            Paragraph(f"<b>{format_inr(grand_total)}</b>", style_th_right)
+            make_paragraph("Grand Total:", style_th_left),
+            make_paragraph(format_inr(grand_total), style_th_right, bold=True)
         ])
+
+        max_rows = max(len(t1_data), len(t2_data))
+        use_stacked_summaries = max_rows > 20
+        col_widths = [80*mm, 35*mm]
 
         def create_summary_table(data):
             t = Table(data, colWidths=col_widths, hAlign='LEFT')
 
             tbl_style = [
                 ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#cbd5e1')),
-                ('VALIGN', (0, 0), (-1, -1), 'MIDDLE'),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
                 ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
                 ('TOPPADDING', (0, 0), (-1, -1), 4),
                 ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')),
@@ -46993,8 +52082,7 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
 
         elements.append(Spacer(1, 5*mm))
 
-        max_rows = max(len(t1_data), len(t2_data))
-        if max_rows > 20:
+        if use_stacked_summaries:
             elements.append(t1)
             elements.append(Spacer(1, 5*mm))
             elements.append(t2)
@@ -49304,6 +54392,9 @@ OLD_NEW_ALLOWED_VISIT_TYPES = {
 OLD_NEW_PDF_DETAILS_CAP = 400
 OLD_NEW_PDF_SOURCE_DEPT_CAP = 300
 OLD_NEW_PDF_SOURCE_DOCTOR_CAP = 300
+OLD_NEW_MAX_RANGE_DAYS = 31
+OLD_NEW_DETAIL_PAGE_SIZE_DEFAULT = 20
+OLD_NEW_DETAIL_PAGE_SIZE_MAX = 100
 
 
 def _old_new_visit_type_label(visit_type_id: int) -> str:
@@ -49349,6 +54440,9 @@ def _old_new_validate_request_params(unit_raw, from_raw, to_raw, visit_type_raw)
         return None, "Invalid date format. Use YYYY-MM-DD for from/to", 400
     if from_dt > to_dt:
         return None, f"Invalid date range: from ({from_date}) must be <= to ({to_date})", 400
+    range_days = (to_dt - from_dt).days + 1
+    if range_days > OLD_NEW_MAX_RANGE_DAYS:
+        return None, f"Date range too large. Please select up to {OLD_NEW_MAX_RANGE_DAYS} days at a time.", 400
 
     visit_type_id = _coerce_int(visit_type_raw, allow_none=True)
     if visit_type_id not in OLD_NEW_ALLOWED_VISIT_TYPES:
@@ -49359,9 +54453,77 @@ def _old_new_validate_request_params(unit_raw, from_raw, to_raw, visit_type_raw)
         "unit": unit,
         "from_date": from_dt.strftime("%Y-%m-%d"),
         "to_date": to_dt.strftime("%Y-%m-%d"),
+        "range_days": int(range_days),
         "visit_type_id": int(visit_type_id),
         "visit_type_label": _old_new_visit_type_label(visit_type_id),
         "allowed_units": allowed_units,
+    }, None, None
+
+
+def _old_new_normalize_detail_sort_key(raw_value) -> str:
+    allowed = {
+        "VisitDate",
+        "Visit_ID",
+        "RegNo",
+        "PatientName",
+        "Dept",
+        "SubDept",
+        "Doctor",
+        "PatientType",
+        "SourceName",
+    }
+    key = str(raw_value or "").strip()
+    return key if key in allowed else "VisitDate"
+
+
+def _old_new_normalize_detail_sort_dir(raw_value) -> str:
+    return "asc" if str(raw_value or "").strip().lower() == "asc" else "desc"
+
+
+def _old_new_build_detail_page_payload(
+    unit: str,
+    visit_type_id: int,
+    from_date: str,
+    to_date: str,
+    page_raw=None,
+    page_size_raw=None,
+    search_raw=None,
+    sort_key_raw=None,
+    sort_dir_raw=None,
+):
+    page = _coerce_int(page_raw, allow_none=True) or 1
+    page = max(1, page)
+    page_size = _coerce_int(page_size_raw, allow_none=True) or OLD_NEW_DETAIL_PAGE_SIZE_DEFAULT
+    page_size = min(max(page_size, 1), OLD_NEW_DETAIL_PAGE_SIZE_MAX)
+    search = str(search_raw or "").strip()
+    sort_key = _old_new_normalize_detail_sort_key(sort_key_raw)
+    sort_dir = _old_new_normalize_detail_sort_dir(sort_dir_raw)
+
+    detail_result = data_fetch.fetch_old_new_patient_visit_details_page(
+        unit=unit,
+        visit_type_id=visit_type_id,
+        from_date=from_date,
+        to_date=to_date,
+        page=page,
+        page_size=page_size,
+        search=search,
+        sort_key=sort_key,
+        sort_dir=sort_dir,
+    )
+    if not isinstance(detail_result, dict) or detail_result.get("status") != "success":
+        return None, (detail_result or {}).get("message") or "Failed to fetch old/new detail page", 500
+
+    rows_df = detail_result.get("rows_df")
+    return {
+        "page": int(detail_result.get("page") or page),
+        "page_size": int(detail_result.get("page_size") or page_size),
+        "total_rows": int(detail_result.get("total_rows") or 0),
+        "total_pages": int(detail_result.get("total_pages") or 1),
+        "sort_key": str(detail_result.get("sort_key") or sort_key),
+        "sort_dir": str(detail_result.get("sort_dir") or sort_dir),
+        "search": str(detail_result.get("search") or search),
+        "rows": _old_new_json_records(rows_df if isinstance(rows_df, pd.DataFrame) else pd.DataFrame()),
+        "server_side": bool(detail_result.get("server_side", True)),
     }, None, None
 
 
@@ -49691,7 +54853,14 @@ def _old_new_followup_configs(visit_type_id: int) -> list[dict]:
     return []
 
 
-def _build_old_new_patient_visits_payload(unit: str, visit_type_id: int, from_date: str, to_date: str):
+def _build_old_new_patient_visits_payload(
+    unit: str,
+    visit_type_id: int,
+    from_date: str,
+    to_date: str,
+    include_detail_rows: bool = True,
+    include_conversion_detail_sections: bool = True,
+):
     trace = []
 
     def _trace(step: str, status: str = "ok", **meta):
@@ -49932,7 +55101,7 @@ def _build_old_new_patient_visits_payload(unit: str, visit_type_id: int, from_da
         top_source_old_pct = round(float(top_row.get("OldPct") or 0.0), 2)
 
     decision_notes = [
-        "New patient logic: registration date equals visit date (as defined by dbo.usp_ComprehensiveOldNewPatientVisits).",
+        "New patient logic: Patient.insertedon (registration date) equals visit date, as defined by dbo.usp_ComprehensiveOldNewPatientVisits.",
         "Old patient logic: old patient visits equal total visits minus new patient visits.",
         "Source mapping logic: Visit.PatientSourceId is mapped to Occupation_Mst.Occupation_Name; missing or invalid mappings are marked as Unknown.",
         "Source comparison is visit-level and aligned with the revenue source mapping method.",
@@ -49975,8 +55144,8 @@ def _build_old_new_patient_visits_payload(unit: str, visit_type_id: int, from_da
         },
         "summary_extra_columns": summary_extra_columns,
         "summary_rows": _old_new_json_records(summary_df),
-        "detail_rows": _old_new_json_records(details_df),
-        "conversion_detail_sections": conversion_detail_sections,
+        "detail_rows": _old_new_json_records(details_df) if include_detail_rows else [],
+        "conversion_detail_sections": conversion_detail_sections if include_conversion_detail_sections else [],
         "source_summary_rows": _old_new_json_records(src_summary_df),
         "source_dept_rows": _old_new_json_records(src_dept_df),
         "source_doctor_rows": _old_new_json_records(src_doc_df),
@@ -50004,10 +55173,56 @@ def api_mis_old_new_patient_visits():
         params["visit_type_id"],
         params["from_date"],
         params["to_date"],
+        include_detail_rows=False,
+        include_conversion_detail_sections=False,
     )
     if payload_err:
         return jsonify({"status": "error", "message": payload_err}), payload_status or 500
+
+    detail_page, detail_err, detail_status = _old_new_build_detail_page_payload(
+        unit=params["unit"],
+        visit_type_id=params["visit_type_id"],
+        from_date=params["from_date"],
+        to_date=params["to_date"],
+        page_raw=1,
+        page_size_raw=request.args.get("detail_page_size"),
+        search_raw=request.args.get("detail_search"),
+        sort_key_raw=request.args.get("detail_sort_key"),
+        sort_dir_raw=request.args.get("detail_sort_dir"),
+    )
+    if detail_err:
+        return jsonify({"status": "error", "message": detail_err}), detail_status or 500
+
+    payload["detail_page"] = detail_page
     return jsonify(payload)
+
+
+@app.route('/api/mis/old_new_patient_visits/detail_page')
+@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+def api_mis_old_new_patient_visits_detail_page():
+    params, err, status_code = _old_new_validate_request_params(
+        request.args.get("unit"),
+        request.args.get("from"),
+        request.args.get("to"),
+        request.args.get("visit_type_id"),
+    )
+    if err:
+        return jsonify({"status": "error", "message": err}), status_code
+
+    detail_page, detail_err, detail_status = _old_new_build_detail_page_payload(
+        unit=params["unit"],
+        visit_type_id=params["visit_type_id"],
+        from_date=params["from_date"],
+        to_date=params["to_date"],
+        page_raw=request.args.get("page"),
+        page_size_raw=request.args.get("page_size"),
+        search_raw=request.args.get("search"),
+        sort_key_raw=request.args.get("sort_key"),
+        sort_dir_raw=request.args.get("sort_dir"),
+    )
+    if detail_err:
+        return jsonify({"status": "error", "message": detail_err}), detail_status or 500
+    return jsonify({"status": "success", "detail_page": detail_page})
 
 
 def _old_new_payload_to_frames(payload: dict):

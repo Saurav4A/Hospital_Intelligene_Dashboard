@@ -342,6 +342,69 @@
     border-color:#fca5a5;
     color:#b91c1c;
   }
+  .oldnew-range-indicator{
+    display:inline-flex;
+    align-items:center;
+    min-height:42px;
+    padding:0 14px;
+    border-radius:999px;
+    border:1px solid #bfdbfe;
+    background:#eff6ff;
+    color:#1d4ed8;
+    font-size:13px;
+    font-weight:700;
+    line-height:1.35;
+    white-space:nowrap;
+  }
+  .oldnew-range-indicator.pending{
+    background:#f8fafc;
+    border-color:#e2e8f0;
+    color:#64748b;
+  }
+  .oldnew-range-indicator.warn{
+    background:#fffbeb;
+    border-color:#fcd34d;
+    color:#92400e;
+  }
+  .oldnew-update-banner{
+    flex:1 1 100%;
+    display:flex;
+    align-items:center;
+    gap:10px;
+    margin-top:4px;
+    padding:12px 14px;
+    border-radius:14px;
+    border:1px solid #bfdbfe;
+    background:linear-gradient(135deg, #eff6ff, #dbeafe);
+    color:#1e3a8a;
+    box-shadow:0 10px 24px rgba(59,130,246,.12);
+    font-size:14px;
+    line-height:1.45;
+  }
+  .oldnew-update-badge{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding:6px 10px;
+    border-radius:999px;
+    background:#1d4ed8;
+    color:#fff;
+    font-size:12px;
+    font-weight:800;
+    letter-spacing:.03em;
+    text-transform:uppercase;
+    white-space:nowrap;
+  }
+  .oldnew-update-text{
+    font-weight:600;
+  }
+  .oldnew-update-text strong{
+    color:#1e40af;
+  }
+  .controls input.oldnew-date-input-invalid{
+    border-color:#f59e0b;
+    box-shadow:0 0 0 3px rgba(245,158,11,.12);
+  }
 
   .decision-notes{
     border:1px solid #e2e8f0;
@@ -582,6 +645,15 @@
     .controls button{
       flex:1 1 130px;
     }
+    .oldnew-range-indicator{
+      flex:1 1 100%;
+      white-space:normal;
+    }
+    .oldnew-update-banner{
+      align-items:flex-start;
+      flex-direction:column;
+      gap:8px;
+    }
     .oldnew-info-rail{
       top:72px;
       right:8px;
@@ -732,6 +804,7 @@
       <div class="controls">
         <input type="date" id="oldNewFrom" />
         <input type="date" id="oldNewTo" />
+        <span id="oldNewRangeIndicator" class="oldnew-range-indicator pending" aria-live="polite">Choose up to 31 days</span>
         <select id="oldNewUnit">
           {% if allowed_units %}
             {% for u in allowed_units %}
@@ -751,6 +824,10 @@
         <button id="exportOldNewExcel" class="inline-btn" {% if not allowed_units %}disabled{% endif %}>Export Excel</button>
         <button id="exportOldNewPdf" class="inline-btn" {% if not allowed_units %}disabled{% endif %}>Export PDF</button>
         <button id="oldNewInfoToggle" class="inline-btn" {% if not allowed_units %}disabled{% endif %}>Process Info</button>
+      </div>
+      <div class="oldnew-update-banner" role="status" aria-live="polite">
+        <span class="oldnew-update-badge">Update</span>
+        <div class="oldnew-update-text"><strong>Loads and exports are now limited to 31 days.</strong> Visit details are fetched page by page from SQL for faster results.</div>
       </div>
     </div>
 
@@ -883,6 +960,7 @@
   const oldNewUnit = document.getElementById('oldNewUnit');
   const oldNewFrom = document.getElementById('oldNewFrom');
   const oldNewTo = document.getElementById('oldNewTo');
+  const oldNewRangeIndicator = document.getElementById('oldNewRangeIndicator');
   const oldNewVisitType = document.getElementById('oldNewVisitType');
   const oldNewLoadBtn = document.getElementById('loadOldNewVisits');
   const oldNewExportExcelBtn = document.getElementById('exportOldNewExcel');
@@ -930,8 +1008,20 @@
   let admLastKey = '';
   let oldNewLoaded = false;
   let oldNewLastKey = '';
+  const OLD_NEW_MAX_RANGE_DAYS = 31;
   const oldNewState = {
     payload: null,
+    loadedFilters: null,
+    detail: {
+      rows: [],
+      page: 1,
+      pageSize: 20,
+      totalRows: 0,
+      totalPages: 1,
+      search: '',
+      loading: false,
+      serverSide: true,
+    },
     sort: {
       summary: { key: 'Dept', dir: 'asc' },
       detail: { key: 'VisitDate', dir: 'desc' },
@@ -940,11 +1030,9 @@
       sourceDoctor: { key: 'TotalVisits', dir: 'desc' },
     },
     page: {
-      detail: 1,
       sourceDoctor: 1,
     },
     pageSize: {
-      detail: 20,
       sourceDoctor: 20,
     },
   };
@@ -1234,12 +1322,46 @@
     }
   });
 
+  function formatDateInputValue(date){
+    if(!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    const year = date.getFullYear();
+    const month = String(date.getMonth() + 1).padStart(2, '0');
+    const day = String(date.getDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
+  function parseDateInputUtc(dateStr){
+    const match = /^(\d{4})-(\d{2})-(\d{2})$/.exec(String(dateStr || '').trim());
+    if(!match) return null;
+    const year = Number(match[1]);
+    const month = Number(match[2]);
+    const day = Number(match[3]);
+    const date = new Date(Date.UTC(year, month - 1, day));
+    if(
+      Number.isNaN(date.getTime()) ||
+      date.getUTCFullYear() !== year ||
+      date.getUTCMonth() !== month - 1 ||
+      date.getUTCDate() !== day
+    ){
+      return null;
+    }
+    return date;
+  }
+
+  function formatUtcDateInputValue(date){
+    if(!(date instanceof Date) || Number.isNaN(date.getTime())) return '';
+    const year = date.getUTCFullYear();
+    const month = String(date.getUTCMonth() + 1).padStart(2, '0');
+    const day = String(date.getUTCDate()).padStart(2, '0');
+    return `${year}-${month}-${day}`;
+  }
+
   function initAdmDates(){
     if(!admFrom || !admTo) return;
     const today = new Date();
     const start = new Date(today.getFullYear(), today.getMonth(), 1);
-    admFrom.value = start.toISOString().slice(0,10);
-    admTo.value = today.toISOString().slice(0,10);
+    admFrom.value = formatDateInputValue(start);
+    admTo.value = formatDateInputValue(today);
   }
 
   function currentAdmKey(){
@@ -1392,8 +1514,8 @@
     if(!oldNewFrom || !oldNewTo) return;
     const today = new Date();
     const start = new Date(today.getFullYear(), today.getMonth(), 1);
-    oldNewFrom.value = start.toISOString().slice(0,10);
-    oldNewTo.value = today.toISOString().slice(0,10);
+    oldNewFrom.value = formatDateInputValue(start);
+    oldNewTo.value = formatDateInputValue(today);
   }
 
   function oldNewCurrentKey(){
@@ -1402,6 +1524,131 @@
     const toDate = oldNewTo?.value || '';
     const visitTypeId = oldNewVisitType?.value || '2';
     return `${unit}|${fromDate}|${toDate}|${visitTypeId}`;
+  }
+
+  function oldNewRangeDays(fromDate, toDate){
+    if(!fromDate || !toDate) return null;
+    const from = parseDateInputUtc(fromDate);
+    const to = parseDateInputUtc(toDate);
+    if(!from || !to) return null;
+    return Math.floor((to.getTime() - from.getTime()) / 86400000) + 1;
+  }
+
+  function oldNewShiftDate(dateStr, deltaDays){
+    if(!dateStr) return '';
+    const base = parseDateInputUtc(dateStr);
+    if(!base) return '';
+    base.setUTCDate(base.getUTCDate() + deltaDays);
+    return formatUtcDateInputValue(base);
+  }
+
+  function updateOldNewRangeIndicator(rangeHint=''){
+    const fromDate = oldNewFrom?.value || '';
+    const toDate = oldNewTo?.value || '';
+    const rangeDays = oldNewRangeDays(fromDate, toDate);
+    let text = `Choose up to ${OLD_NEW_MAX_RANGE_DAYS} days`;
+    let tone = 'pending';
+    let invalid = false;
+
+    if(oldNewTo){
+      if(fromDate){
+        oldNewTo.min = fromDate;
+      }else{
+        oldNewTo.removeAttribute('min');
+      }
+      oldNewTo.removeAttribute('max');
+    }
+    if(oldNewFrom){
+      if(toDate){
+        oldNewFrom.max = toDate;
+      }else{
+        oldNewFrom.removeAttribute('max');
+      }
+      oldNewFrom.removeAttribute('min');
+    }
+
+    if(fromDate || toDate){
+      text = `Choose the other date. Max ${OLD_NEW_MAX_RANGE_DAYS} days.`;
+    }
+    if(fromDate && toDate){
+      if(fromDate > toDate){
+        text = 'From date must be on or before To date.';
+        tone = 'warn';
+        invalid = true;
+      }else if(Number.isFinite(rangeDays) && rangeDays > OLD_NEW_MAX_RANGE_DAYS){
+        text = `Selected range: ${rangeDays} days. Load/export supports up to ${OLD_NEW_MAX_RANGE_DAYS} days.`;
+        tone = 'warn';
+        invalid = true;
+      }else if(Number.isFinite(rangeDays)){
+        text = rangeHint || `Selected range: ${rangeDays} ${rangeDays === 1 ? 'day' : 'days'} of ${OLD_NEW_MAX_RANGE_DAYS}.`;
+        tone = '';
+      }
+    }
+
+    if(oldNewRangeIndicator){
+      oldNewRangeIndicator.classList.remove('pending', 'warn');
+      if(tone) oldNewRangeIndicator.classList.add(tone);
+      oldNewRangeIndicator.textContent = text;
+    }
+    [oldNewFrom, oldNewTo].forEach((input)=>{
+      if(!input) return;
+      input.classList.toggle('oldnew-date-input-invalid', invalid);
+      input.setAttribute('aria-invalid', invalid ? 'true' : 'false');
+    });
+  }
+
+  function handleOldNewDateSelection(changedField){
+    if(!oldNewFrom || !oldNewTo) return;
+    let fromDate = oldNewFrom.value || '';
+    let toDate = oldNewTo.value || '';
+    let hint = '';
+
+    if(changedField === 'from' && fromDate){
+      if(!toDate || toDate < fromDate){
+        oldNewTo.value = fromDate;
+        toDate = oldNewTo.value;
+        hint = `Range aligned: 1 day of ${OLD_NEW_MAX_RANGE_DAYS}.`;
+      }else{
+        const rangeDays = oldNewRangeDays(fromDate, toDate);
+        if(Number.isFinite(rangeDays) && rangeDays > OLD_NEW_MAX_RANGE_DAYS){
+          const alignedTo = oldNewShiftDate(fromDate, OLD_NEW_MAX_RANGE_DAYS - 1);
+          if(alignedTo){
+            oldNewTo.value = alignedTo;
+            toDate = alignedTo;
+            hint = `Range aligned: ${oldNewRangeDays(fromDate, toDate)} days of ${OLD_NEW_MAX_RANGE_DAYS}.`;
+          }
+        }
+      }
+    }
+
+    if(changedField === 'to' && toDate){
+      if(!fromDate || fromDate > toDate){
+        oldNewFrom.value = toDate;
+        fromDate = oldNewFrom.value;
+        hint = `Range aligned: 1 day of ${OLD_NEW_MAX_RANGE_DAYS}.`;
+      }else{
+        const rangeDays = oldNewRangeDays(fromDate, toDate);
+        if(Number.isFinite(rangeDays) && rangeDays > OLD_NEW_MAX_RANGE_DAYS){
+          const alignedFrom = oldNewShiftDate(toDate, -(OLD_NEW_MAX_RANGE_DAYS - 1));
+          if(alignedFrom){
+            oldNewFrom.value = alignedFrom;
+            fromDate = alignedFrom;
+            hint = `Range aligned: ${oldNewRangeDays(fromDate, toDate)} days of ${OLD_NEW_MAX_RANGE_DAYS}.`;
+          }
+        }
+      }
+    }
+
+    updateOldNewRangeIndicator(hint);
+  }
+
+  function oldNewLoadedFilters(){
+    return oldNewState.loadedFilters || {
+      unit: (oldNewUnit?.value || '').trim(),
+      fromDate: oldNewFrom?.value || '',
+      toDate: oldNewTo?.value || '',
+      visitTypeId: oldNewVisitType?.value || '2',
+    };
   }
 
   function debounce(fn, wait=250){
@@ -1448,9 +1695,32 @@
     target.innerHTML = `<div class="oldnew-empty">${escapeHtml(message)}</div>`;
   }
 
+  function setOldNewDetailLoading(on=true, message='Loading visit details...'){
+    oldNewState.detail.loading = !!on;
+    if(on){
+      oldNewEmptyGrid(oldNewDetailGrid, message);
+    }
+    if(oldNewDetailPrev) oldNewDetailPrev.disabled = true;
+    if(oldNewDetailNext) oldNewDetailNext.disabled = true;
+    if(oldNewDetailPageInfo && on){
+      oldNewDetailPageInfo.textContent = message;
+    }
+  }
+
   function resetOldNewWidgets(){
     oldNewState.payload = null;
-    oldNewState.page.detail = 1;
+    oldNewState.loadedFilters = null;
+    oldNewState.detail = {
+      rows: [],
+      page: 1,
+      pageSize: 20,
+      totalRows: 0,
+      totalPages: 1,
+      search: '',
+      loading: false,
+      serverSide: true,
+    };
+    oldNewState.sort.detail = { key: 'VisitDate', dir: 'desc' };
     oldNewState.page.sourceDoctor = 1;
     setOldNewInfoOpen(false);
     oldNewSummaryKpis && (oldNewSummaryKpis.innerHTML = '');
@@ -1738,26 +2008,82 @@
     if(oldNewSummaryGrid) oldNewSummaryGrid.innerHTML = oldNewBuildTable('summary', sorted);
   }
 
+  function applyOldNewDetailPage(detailPage){
+    const pageData = detailPage || {};
+    oldNewState.detail.rows = Array.isArray(pageData.rows) ? pageData.rows : [];
+    oldNewState.detail.page = Math.max(1, Number(pageData.page || 1));
+    oldNewState.detail.pageSize = Math.max(1, Number(pageData.page_size || oldNewState.detail.pageSize || 20));
+    oldNewState.detail.totalRows = Math.max(0, Number(pageData.total_rows || 0));
+    oldNewState.detail.totalPages = Math.max(1, Number(pageData.total_pages || 1));
+    oldNewState.detail.search = String(pageData.search || '');
+    if(oldNewDetailSearch && oldNewDetailSearch.value !== oldNewState.detail.search){
+      oldNewDetailSearch.value = oldNewState.detail.search;
+    }
+    oldNewState.detail.serverSide = pageData.server_side !== false;
+    oldNewState.detail.loading = false;
+    oldNewState.sort.detail.key = pageData.sort_key || oldNewState.sort.detail.key || 'VisitDate';
+    oldNewState.sort.detail.dir = pageData.sort_dir || oldNewState.sort.detail.dir || 'desc';
+  }
+
+  async function fetchOldNewDetailPage(targetPage=1, overrides={}){
+    if(!oldNewState.payload?.has_data) return;
+    const filters = oldNewLoadedFilters();
+    if(!filters.unit || !filters.fromDate || !filters.toDate){
+      return;
+    }
+    const page = Math.max(1, Number(overrides.page || targetPage || 1));
+    const pageSize = Math.max(1, Number(overrides.pageSize || oldNewState.detail.pageSize || 20));
+    const search = Object.prototype.hasOwnProperty.call(overrides, 'search')
+      ? String(overrides.search || '').trim()
+      : String(oldNewDetailSearch?.value || oldNewState.detail.search || '').trim();
+    const sortKey = overrides.sortKey || oldNewState.sort.detail.key || 'VisitDate';
+    const sortDir = overrides.sortDir || oldNewState.sort.detail.dir || 'desc';
+
+    setOldNewDetailLoading(true);
+    try{
+      const qs = new URLSearchParams({
+        unit: filters.unit,
+        from: filters.fromDate,
+        to: filters.toDate,
+        visit_type_id: filters.visitTypeId,
+        page: String(page),
+        page_size: String(pageSize),
+        search,
+        sort_key: sortKey,
+        sort_dir: sortDir,
+      }).toString();
+      const res = await fetch(`/api/mis/old_new_patient_visits/detail_page?${qs}`);
+      const data = await res.json();
+      if(!res.ok || data.status !== 'success' || !data.detail_page){
+        throw new Error(data.message || 'Failed to load visit details page');
+      }
+      applyOldNewDetailPage(data.detail_page);
+      renderOldNewDetailGrid();
+    }catch(err){
+      oldNewState.detail.loading = false;
+      oldNewEmptyGrid(oldNewDetailGrid, 'Failed to load visit details for the selected page.');
+      if(oldNewDetailPageInfo) oldNewDetailPageInfo.textContent = 'Page load failed';
+      if(oldNewDetailCount) oldNewDetailCount.textContent = '0 rows';
+      if(oldNewDetailPrev) oldNewDetailPrev.disabled = true;
+      if(oldNewDetailNext) oldNewDetailNext.disabled = true;
+      setOldNewStatus('error', `Visit detail paging failed: ${err.message}`);
+    }
+  }
+
   function renderOldNewDetailGrid(){
-    const rows = oldNewState.payload?.detail_rows || [];
-    const filtered = oldNewFilterRows(rows, oldNewDetailSearch?.value || '', oldNewGridDefs.detail.columns);
-    const sorted = oldNewSortRows(filtered, oldNewState.sort.detail);
-    if(oldNewDetailCount) oldNewDetailCount.textContent = `${sorted.length} rows`;
-
-    const pageSize = oldNewState.pageSize.detail;
-    const totalPages = Math.max(1, Math.ceil(sorted.length / pageSize));
-    if(oldNewState.page.detail > totalPages) oldNewState.page.detail = totalPages;
-    const start = (oldNewState.page.detail - 1) * pageSize;
-    const pageRows = sorted.slice(start, start + pageSize);
-
-    if(oldNewDetailGrid) oldNewDetailGrid.innerHTML = oldNewBuildTable('detail', pageRows);
+    const rows = oldNewState.detail.rows || [];
+    const totalRows = Math.max(0, Number(oldNewState.detail.totalRows || 0));
+    const totalPages = Math.max(1, Number(oldNewState.detail.totalPages || 1));
+    const currentPage = Math.max(1, Number(oldNewState.detail.page || 1));
+    if(oldNewDetailCount) oldNewDetailCount.textContent = `${totalRows} rows`;
+    if(oldNewDetailGrid) oldNewDetailGrid.innerHTML = oldNewBuildTable('detail', rows);
     if(oldNewDetailPageInfo){
-      oldNewDetailPageInfo.textContent = sorted.length
-        ? `Page ${oldNewState.page.detail} of ${totalPages} (${sorted.length} rows)`
+      oldNewDetailPageInfo.textContent = totalRows
+        ? `Page ${currentPage} of ${totalPages} (${totalRows} rows)`
         : 'No rows';
     }
-    if(oldNewDetailPrev) oldNewDetailPrev.disabled = oldNewState.page.detail <= 1;
-    if(oldNewDetailNext) oldNewDetailNext.disabled = oldNewState.page.detail >= totalPages;
+    if(oldNewDetailPrev) oldNewDetailPrev.disabled = oldNewState.detail.loading || currentPage <= 1;
+    if(oldNewDetailNext) oldNewDetailNext.disabled = oldNewState.detail.loading || currentPage >= totalPages;
   }
 
   function renderOldNewSourceSummaryGrid(){
@@ -1816,7 +2142,23 @@
 
   function renderOldNewPayload(payload){
     oldNewState.payload = payload || null;
-    oldNewState.page.detail = 1;
+    oldNewState.loadedFilters = payload ? {
+      unit: String(payload.unit || (oldNewUnit?.value || '')).trim(),
+      fromDate: String(payload.from_date || ''),
+      toDate: String(payload.to_date || ''),
+      visitTypeId: String(payload.visit_type_id || (oldNewVisitType?.value || '2')),
+    } : null;
+    applyOldNewDetailPage(payload?.detail_page || {
+      rows: [],
+      page: 1,
+      page_size: oldNewState.detail.pageSize || 20,
+      total_rows: 0,
+      total_pages: 1,
+      sort_key: oldNewState.sort.detail.key || 'VisitDate',
+      sort_dir: oldNewState.sort.detail.dir || 'desc',
+      search: String(oldNewDetailSearch?.value || ''),
+      server_side: true,
+    });
     oldNewState.page.sourceDoctor = 1;
 
     renderOldNewDecisionNotes(payload?.decision_notes || []);
@@ -1885,6 +2227,11 @@
       setOldNewStatus('error', `Invalid date range: from (${fromDate}) must be <= to (${toDate}).`);
       return;
     }
+    const rangeDays = oldNewRangeDays(fromDate, toDate);
+    if(Number.isFinite(rangeDays) && rangeDays > OLD_NEW_MAX_RANGE_DAYS){
+      setOldNewStatus('error', `Date range too large. Please select up to ${OLD_NEW_MAX_RANGE_DAYS} days at a time.`);
+      return;
+    }
 
     setBtnLoading(oldNewLoadBtn, true, 'Loading...');
     setOldNewExportEnabled(false);
@@ -1896,6 +2243,10 @@
         from: fromDate,
         to: toDate,
         visit_type_id: visitTypeId,
+        detail_page_size: String(oldNewState.detail.pageSize || 20),
+        detail_search: String(oldNewDetailSearch?.value || '').trim(),
+        detail_sort_key: oldNewState.sort.detail.key || 'VisitDate',
+        detail_sort_dir: oldNewState.sort.detail.dir || 'desc',
       }).toString();
       setOldNewStatus('info', 'Step 2/3: fetching summary/details and source mappings...');
       const res = await fetch(`/api/mis/old_new_patient_visits?${qs}`);
@@ -1909,7 +2260,7 @@
       renderOldNewPayload(data);
 
       const summaryCount = (data.summary_rows || []).length;
-      const detailCount = (data.detail_rows || []).length;
+      const detailCount = Number(data.detail_page?.total_rows || data.kpis?.details?.detail_rows || 0);
       const sourceCount = (data.source_summary_rows || []).length;
       const now = new Date();
       if(oldNewLastLoaded){
@@ -1951,6 +2302,11 @@
     }
     if(fromDate > toDate){
       setOldNewStatus('error', `Invalid date range: from (${fromDate}) must be <= to (${toDate}).`);
+      return;
+    }
+    const rangeDays = oldNewRangeDays(fromDate, toDate);
+    if(Number.isFinite(rangeDays) && rangeDays > OLD_NEW_MAX_RANGE_DAYS){
+      setOldNewStatus('error', `Date range too large. Please select up to ${OLD_NEW_MAX_RANGE_DAYS} days at a time.`);
       return;
     }
     if(!oldNewState.payload?.has_data){
@@ -2026,6 +2382,11 @@
       setOldNewStatus('error', `Invalid date range: from (${fromDate}) must be <= to (${toDate}).`);
       return;
     }
+    const rangeDays = oldNewRangeDays(fromDate, toDate);
+    if(Number.isFinite(rangeDays) && rangeDays > OLD_NEW_MAX_RANGE_DAYS){
+      setOldNewStatus('error', `Date range too large. Please select up to ${OLD_NEW_MAX_RANGE_DAYS} days at a time.`);
+      return;
+    }
     if(!oldNewState.payload?.has_data){
       setOldNewStatus('warn', 'No data loaded for export. Load records first.');
       return;
@@ -2064,13 +2425,16 @@
     }
   });
 
-  oldNewDetailPrev?.addEventListener('click', ()=>{ if(oldNewState.page.detail > 1){ oldNewState.page.detail -= 1; renderOldNewDetailGrid(); }});
-  oldNewDetailNext?.addEventListener('click', ()=>{ oldNewState.page.detail += 1; renderOldNewDetailGrid(); });
+  oldNewDetailPrev?.addEventListener('click', ()=>{ if(oldNewState.detail.page > 1 && !oldNewState.detail.loading){ fetchOldNewDetailPage(oldNewState.detail.page - 1); }});
+  oldNewDetailNext?.addEventListener('click', ()=>{ if(oldNewState.detail.page < oldNewState.detail.totalPages && !oldNewState.detail.loading){ fetchOldNewDetailPage(oldNewState.detail.page + 1); }});
   oldNewSourceDoctorPrev?.addEventListener('click', ()=>{ if(oldNewState.page.sourceDoctor > 1){ oldNewState.page.sourceDoctor -= 1; renderOldNewSourceDoctorGrid(); }});
   oldNewSourceDoctorNext?.addEventListener('click', ()=>{ oldNewState.page.sourceDoctor += 1; renderOldNewSourceDoctorGrid(); });
 
   const oldNewSearchDebounce = debounce((gridKey)=>{
-    if(gridKey === 'detail') oldNewState.page.detail = 1;
+    if(gridKey === 'detail'){
+      fetchOldNewDetailPage(1, { search: oldNewDetailSearch?.value || '' });
+      return;
+    }
     if(gridKey === 'sourceDoctor') oldNewState.page.sourceDoctor = 1;
     renderOldNewGridByKey(gridKey);
   }, 220);
@@ -2079,6 +2443,10 @@
   oldNewSourceSummarySearch?.addEventListener('input', ()=> oldNewSearchDebounce('sourceSummary'));
   oldNewSourceDeptSearch?.addEventListener('input', ()=> oldNewSearchDebounce('sourceDept'));
   oldNewSourceDoctorSearch?.addEventListener('input', ()=> oldNewSearchDebounce('sourceDoctor'));
+  oldNewFrom?.addEventListener('input', updateOldNewRangeIndicator);
+  oldNewTo?.addEventListener('input', updateOldNewRangeIndicator);
+  oldNewFrom?.addEventListener('change', ()=> handleOldNewDateSelection('from'));
+  oldNewTo?.addEventListener('change', ()=> handleOldNewDateSelection('to'));
 
   document.addEventListener('click', (e)=>{
     const btn = e.target.closest('.oldnew-th-btn');
@@ -2093,13 +2461,17 @@
       sort.key = key;
       sort.dir = 'asc';
     }
-    if(gridKey === 'detail') oldNewState.page.detail = 1;
+    if(gridKey === 'detail'){
+      fetchOldNewDetailPage(1, { sortKey: sort.key, sortDir: sort.dir });
+      return;
+    }
     if(gridKey === 'sourceDoctor') oldNewState.page.sourceDoctor = 1;
     renderOldNewGridByKey(gridKey);
   });
 
   if(allowedUnits.length === 1 && oldNewUnit){ oldNewUnit.value = allowedUnits[0]; }
   initOldNewDates();
+  updateOldNewRangeIndicator();
   resetOldNewWidgets();
 
   histSearch?.addEventListener('input', ()=>{ histPage = 1; renderHistoryPage(); });

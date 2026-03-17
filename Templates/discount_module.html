@@ -1354,6 +1354,40 @@ thead th {
       </table>
     </div>
 
+    <div class="edit-panel" id="vvSourcePanel">
+      <div class="edit-head">
+        <div>
+          <h4>Existing Visits for Selected Patient</h4>
+          <div class="edit-meta">Copy a source <code>Visit</code> into <code>Visit_Duplicate</code>, or switch to standalone mode when no original visit exists.</div>
+        </div>
+        <div class="action-row" id="vvModeToggle">
+          <label class="btn-ghost" style="gap:8px; padding:8px 12px;">
+            <input type="radio" name="vvWorkflowMode" id="vvModeLinked" value="linked" checked>
+            <span>Copy From Visit</span>
+          </label>
+          <label class="btn-ghost" style="gap:8px; padding:8px 12px;">
+            <input type="radio" name="vvWorkflowMode" id="vvModeManual" value="manual">
+            <span>Standalone</span>
+          </label>
+        </div>
+      </div>
+      <div class="status-line">
+        <span id="vvSourceCount">0 visits</span>
+        <span id="vvSourceStatus">Select a patient row to load source visits.</span>
+      </div>
+      <div class="edit-meta" id="vvBanner">Copy From Visit is the default mode.</div>
+      <div class="table-wrap" style="max-height:240px; min-height:160px;">
+        <table style="min-width:1400px;">
+          <thead>
+            <tr id="vvSourceHeaderRow"></tr>
+          </thead>
+          <tbody id="vvSourceRows">
+            <tr><td colspan="15" style="text-align:center; padding:14px; color:#94a3b8;">Select a patient to load existing visits.</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+
     <div class="edit-panel" id="vvEditPanel">
       <div class="edit-head">
         <div>
@@ -1380,6 +1414,18 @@ thead th {
           <input type="text" id="vvPatientName" readonly>
         </div>
         <div class="edit-field">
+          <label>Source Visit ID</label>
+          <input type="text" id="vvSourceVisitId" readonly>
+        </div>
+        <div class="edit-field">
+          <label>Source Visit No</label>
+          <input type="text" id="vvSourceVisitNo" readonly>
+        </div>
+        <div class="edit-field full">
+          <label>Source Visit Summary</label>
+          <input type="text" id="vvSourceSummary" readonly placeholder="No source visit selected.">
+        </div>
+        <div class="edit-field">
           <label>Visit Type</label>
           <select id="vvVisitTypeId">
             <option value="1">1 - IPD</option>
@@ -1388,9 +1434,19 @@ thead th {
           </select>
         </div>
         <div class="edit-field">
+          <label>Patient Type</label>
+          <input type="text" id="vvPatientTypeId" list="vvPatientTypeList" placeholder="Type patient type">
+          <datalist id="vvPatientTypeList"></datalist>
+        </div>
+        <div class="edit-field">
           <label>Patient SubType</label>
           <input type="text" id="vvPatientSubTypeId" list="vvPatientSubTypeList" placeholder="Type patient subtype">
           <datalist id="vvPatientSubTypeList"></datalist>
+        </div>
+        <div class="edit-field">
+          <label>Patient Category</label>
+          <input type="text" id="vvPayType" list="vvPayTypeList" placeholder="Cash / Cashless">
+          <datalist id="vvPayTypeList"></datalist>
         </div>
         <div class="edit-field">
           <label>Doctor ID</label>
@@ -1457,9 +1513,14 @@ thead th {
       <div class="spinner"></div>
       <div class="loading-title" id="vvLoadingTitle">Loading virtual visit data...</div>
       <div class="loading-steps">
-        <div class="loading-step" data-vv-loading-step="0">Connecting</div>
-        <div class="loading-step" data-vv-loading-step="1">Fetching patients</div>
-        <div class="loading-step" data-vv-loading-step="2">Rendering</div>
+        <div class="loading-step" data-vv-loading-step="0">Loading masters</div>
+        <div class="loading-step" data-vv-loading-step="1">Fetching patient visits</div>
+        <div class="loading-step" data-vv-loading-step="2">Preparing clone</div>
+        <div class="loading-step" data-vv-loading-step="3">Validating source dues</div>
+        <div class="loading-step" data-vv-loading-step="4">Creating duplicate</div>
+        <div class="loading-step" data-vv-loading-step="5">Posting settlement receipts</div>
+        <div class="loading-step" data-vv-loading-step="6">Updating source visit</div>
+        <div class="loading-step" data-vv-loading-step="7">Refreshing history</div>
       </div>
     </div>
   </div>
@@ -1597,7 +1658,7 @@ thead th {
 
 <script>
   const allowedUnits = JSON.parse('{{ (allowed_units or []) | tojson | safe }}');
-  const userRole = {{ (session.get('role') or '') | tojson | safe }};
+  const userRole = JSON.parse('{{ (session.get("role") or "") | tojson | safe }}');
   const userRoleBase = String(userRole || '').split(':')[0].trim().toUpperCase();
   const isItUser = userRoleBase === 'IT';
   const billsModal = document.getElementById('billsModal');
@@ -1684,15 +1745,29 @@ thead th {
   const vvHeaderRow = document.getElementById('vvHeaderRow');
   const vvCount = document.getElementById('vvCount');
   const vvStatus = document.getElementById('vvStatus');
+  const vvModeLinked = document.getElementById('vvModeLinked');
+  const vvModeManual = document.getElementById('vvModeManual');
+  const vvSourceCount = document.getElementById('vvSourceCount');
+  const vvSourceStatus = document.getElementById('vvSourceStatus');
+  const vvBanner = document.getElementById('vvBanner');
+  const vvSourceHeaderRow = document.getElementById('vvSourceHeaderRow');
+  const vvSourceRows = document.getElementById('vvSourceRows');
   const vvFormTitle = document.getElementById('vvFormTitle');
   const vvMeta = document.getElementById('vvMeta');
   const vvVisitId = document.getElementById('vvVisitId');
   const vvPatientId = document.getElementById('vvPatientId');
   const vvRegNo = document.getElementById('vvRegNo');
   const vvPatientName = document.getElementById('vvPatientName');
+  const vvSourceVisitId = document.getElementById('vvSourceVisitId');
+  const vvSourceVisitNo = document.getElementById('vvSourceVisitNo');
+  const vvSourceSummary = document.getElementById('vvSourceSummary');
   const vvVisitTypeId = document.getElementById('vvVisitTypeId');
+  const vvPatientTypeId = document.getElementById('vvPatientTypeId');
+  const vvPatientTypeList = document.getElementById('vvPatientTypeList');
   const vvPatientSubTypeId = document.getElementById('vvPatientSubTypeId');
   const vvPatientSubTypeList = document.getElementById('vvPatientSubTypeList');
+  const vvPayType = document.getElementById('vvPayType');
+  const vvPayTypeList = document.getElementById('vvPayTypeList');
   const vvDoctorId = document.getElementById('vvDoctorId');
   const vvDoctorList = document.getElementById('vvDoctorList');
   const vvDischargeTypeId = document.getElementById('vvDischargeTypeId');
@@ -1870,6 +1945,11 @@ thead th {
     rows: [],
     filtered: [],
     selected: null,
+    sourceRows: [],
+    sourceSelected: null,
+    sourceDueBlocked: false,
+    selectedPatient: null,
+    workflowMode: 'linked',
     mode: 'create',
     editingVisitId: null
   };
@@ -1987,6 +2067,24 @@ thead th {
     { label: 'Mobile', keys: ['Mobile'] },
   ];
 
+  const virtualVisitSourceColumns = [
+    { label: 'Visit ID', keys: ['Visit_ID', 'VisitID'] },
+    { label: 'Visit No', keys: ['VisitNo', 'Visit_No'] },
+    { label: 'Admission No', keys: ['AdmissionNo'] },
+    { label: 'Visit Type', keys: ['VisitType', 'VisitTypeID', 'VisitTypeId'], formatter: (val, row) => formatVirtualVisitType(getField(row, ['VisitTypeID', 'VisitTypeId']) || val) || getField(row, ['VisitType']) || '' },
+    { label: 'Visit Date', keys: ['VisitDate', 'Visit_Date'] },
+    { label: 'Discharge Date', keys: ['DischargeDate', 'Discharge_Date'] },
+    { label: 'Doctor', keys: ['DocInCharge', 'DocInChargeName'], formatter: (val, row) => mapNameFromRow(row, ['DocInCharge'], ['DocInChargeName'], comboMaps.doctors) },
+    { label: 'Patient Type', keys: ['PatientType_ID', 'PatientTypeName'], formatter: (val, row) => mapNameFromRow(row, ['PatientType_ID'], ['PatientTypeName'], comboMaps.patientTypes) },
+    { label: 'Patient SubType', keys: ['PatientSubType_ID', 'PatientSubTypeName'], formatter: (val, row) => mapNameFromRow(row, ['PatientSubType_ID'], ['PatientSubTypeName'], comboMaps.patientSubtypes) },
+    { label: 'Patient Category', keys: ['PatientCategory', 'payType'], formatter: (val, row) => mapNameFromRow(row, ['payType'], ['PatientCategory'], comboMaps.payTypes) },
+    { label: 'Due Bills', keys: ['EligibleDueBillCount'], formatter: (val) => String(parseInt(String(val ?? '0'), 10) || 0) },
+    { label: 'Due Total', keys: ['EligibleDueTotal'], formatter: (val) => fmtMoney(val || 0) },
+    { label: 'Due Status', keys: ['EligibleDueStatus'] },
+    { label: 'Link Status', keys: ['LinkStatus'] },
+    { label: 'Linked Duplicate', keys: ['LinkedDuplicateVisitId'] },
+  ];
+
   const virtualVisitHistoryColumns = [
     { label: 'Visit ID', keys: ['visitId', 'VisitId'] },
     { label: 'Patient ID', keys: ['patientId', 'PatientId'] },
@@ -1995,7 +2093,11 @@ thead th {
     { label: 'Visit Type', keys: ['visitTypeId', 'VisitTypeId'], formatter: (val) => formatVirtualVisitType(val) },
     { label: 'Visit Date', keys: ['visitDate', 'VisitDate'] },
     { label: 'Discharge Date', keys: ['dischargeDate', 'DischargeDate'] },
-    { label: 'Patient SubType ID', keys: ['patientSubTypeId', 'PatientSubTypeId'] },
+    { label: 'Patient Type', keys: ['PatientTypeName', 'patientTypeId'], formatter: (val, row) => mapNameFromRow(row, ['patientTypeId', 'PatientTypeId'], ['PatientTypeName'], comboMaps.patientTypes) },
+    { label: 'Patient SubType', keys: ['PatientSubTypeName', 'patientSubTypeId'], formatter: (val, row) => mapNameFromRow(row, ['patientSubTypeId', 'PatientSubTypeId'], ['PatientSubTypeName'], comboMaps.patientSubtypes) },
+    { label: 'Patient Category', keys: ['PatientCategory', 'payType'], formatter: (val, row) => mapNameFromRow(row, ['payType'], ['PatientCategory'], comboMaps.payTypes) },
+    { label: 'Link Status', keys: ['LinkStatus'] },
+    { label: 'Source Visit', keys: ['sourceVisitNo', 'sourceVisitId'], formatter: (val, row) => getField(row, ['sourceVisitNo']) || getField(row, ['sourceVisitId']) || '' },
     { label: 'Doctor', keys: ['docId', 'DocId'], formatter: (val) => formatVirtualDoctorName(val) },
     { label: 'Inserted On', keys: ['insertedOn', 'InsertedOn'] },
     { label: 'Action', action: true },
@@ -2077,6 +2179,32 @@ thead th {
   function fmtMoney(value) {
     const num = parseNumber(value);
     return num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  function getVirtualVisitEligibleDueCount(row) {
+    const raw = getField(row, ['EligibleDueBillCount']);
+    const parsed = parseInt(String(raw ?? '0'), 10);
+    return Number.isFinite(parsed) ? parsed : 0;
+  }
+
+  function getVirtualVisitEligibleDueTotal(row) {
+    return parseNumber(getField(row, ['EligibleDueTotal']));
+  }
+
+  function isVirtualVisitSourceDueBlocked(row) {
+    return getVirtualVisitEligibleDueCount(row) <= 0;
+  }
+
+  function showVirtualVisitSourceDueWarning(row) {
+    const visitId = getField(row, ['Visit_ID', 'VisitId']) || '';
+    const msg = visitId
+      ? `No pending due amount was found for source visit ${visitId}. Please consult IT/Accounts department before continuing.`
+      : 'No pending due amount was found for this visit. Please consult IT/Accounts department before continuing.';
+    openBedStatusModal({
+      message: msg,
+      confirmText: 'Close',
+      showCancel: false
+    });
   }
 
   function toInputDateTime(val) {
@@ -4248,6 +4376,11 @@ thead th {
     return v;
   }
 
+  function isTruthyFlag(value) {
+    const raw = String(value ?? '').trim().toLowerCase();
+    return raw === '1' || raw === 'true' || raw === 'yes' || raw === 'y';
+  }
+
   function formatVirtualDoctorName(value) {
     const idRaw = String(value ?? '').trim();
     if (!idRaw || idRaw === '0') return '0';
@@ -4325,7 +4458,10 @@ thead th {
   }
 
   function filterVirtualVisitSubtypes(typeId, keepSelection) {
-    const list = Array.isArray(visitSubtypeOptions) ? visitSubtypeOptions : [];
+    const matchType = String(typeId || '').trim();
+    const list = matchType
+      ? (Array.isArray(visitSubtypeOptions) ? visitSubtypeOptions : []).filter((row) => String(row?.PatientTypeID ?? row?.PatientTypeId ?? row?.PatientType_ID ?? '') === matchType)
+      : (Array.isArray(visitSubtypeOptions) ? visitSubtypeOptions : []);
     if (!vvPatientSubTypeList || !comboMaps.patientSubtypes) return;
     populateSubtypeComboOptions(vvPatientSubTypeList, list, comboMaps.patientSubtypes);
     if (keepSelection && vvPatientSubTypeId?.value) {
@@ -4357,6 +4493,48 @@ thead th {
       const selectedClass = virtualVisitState.selected === r ? ' class="selected"' : '';
       return `<tr data-vv-idx="${idx}"${selectedClass}>${cells.join('')}</tr>`;
     }).join('');
+  }
+
+  function renderVirtualVisitSourceHeader(columns) {
+    if (!vvSourceHeaderRow) return;
+    vvSourceHeaderRow.innerHTML = columns.map(col => `<th>${col.label}</th>`).join('');
+  }
+
+  function renderVirtualVisitSourceRows(rows, columns) {
+    if (!vvSourceRows) return;
+    if (!rows || !rows.length) {
+      const colCount = columns.length || 1;
+      vvSourceRows.innerHTML = `<tr><td colspan="${colCount}" style="text-align:center; padding:14px; color:#94a3b8;">No source visits found.</td></tr>`;
+      return;
+    }
+    vvSourceRows.innerHTML = rows.map((r, idx) => {
+      const cells = columns.map(col => {
+        const rawVal = getField(r, col.keys);
+        const val = col.formatter ? col.formatter(rawVal, r) : rawVal;
+        return `<td>${escapeHtml(val ?? '')}</td>`;
+      });
+      const selectedClass = virtualVisitState.sourceSelected === r ? ' class="selected"' : '';
+      return `<tr data-vv-source-idx="${idx}"${selectedClass}>${cells.join('')}</tr>`;
+    }).join('');
+  }
+
+  function setVirtualVisitBanner(text, type) {
+    if (!vvBanner) return;
+    vvBanner.textContent = text || '';
+    vvBanner.classList.remove('status-warn');
+    vvBanner.classList.remove('status-success');
+    if (type) vvBanner.classList.add(`status-${type}`);
+  }
+
+  function syncVirtualVisitFieldLocks() {
+    const hasLinkedSource = String(vvSourceVisitId?.value || '').trim() !== '';
+    const linkedMode = virtualVisitState.workflowMode === 'linked';
+    const isEdit = virtualVisitState.mode === 'edit';
+    if (vvVisitTypeId) vvVisitTypeId.disabled = linkedMode && hasLinkedSource;
+    if (vvModeLinked) vvModeLinked.checked = linkedMode;
+    if (vvModeManual) vvModeManual.checked = !linkedMode;
+    if (vvModeLinked) vvModeLinked.disabled = isEdit;
+    if (vvModeManual) vvModeManual.disabled = isEdit;
   }
 
   function renderVirtualVisitHistoryHeader(columns) {
@@ -4441,6 +4619,11 @@ thead th {
           getField(r, ['Registration_No', 'RegistrationNo']),
           getField(r, ['Patient', 'PatientName']),
           formatVirtualVisitType(getField(r, ['visitTypeId', 'VisitTypeId'])),
+          getField(r, ['PatientTypeName']),
+          getField(r, ['PatientSubTypeName']),
+          getField(r, ['PatientCategory']),
+          getField(r, ['LinkStatus']),
+          getField(r, ['sourceVisitNo', 'sourceVisitId']),
           formatVirtualDoctorName(getField(r, ['docId', 'DocId'])),
           getField(r, ['visitDate', 'VisitDate']),
           getField(r, ['dischargeDate', 'DischargeDate']),
@@ -4460,6 +4643,233 @@ thead th {
       const shown = virtualVisitHistoryState.filtered.length;
       vvHistoryCount.textContent = query ? `${shown} of ${total} records` : `${total} records`;
     }
+  }
+
+  function clearVirtualVisitSourceSelection(clearRows = false) {
+    virtualVisitState.sourceSelected = null;
+    virtualVisitState.sourceDueBlocked = false;
+    if (clearRows) {
+      virtualVisitState.sourceRows = [];
+    }
+    if (vvSourceVisitId) vvSourceVisitId.value = '';
+    if (vvSourceVisitNo) vvSourceVisitNo.value = '';
+    if (vvSourceSummary) vvSourceSummary.value = '';
+    renderVirtualVisitSourceRows(virtualVisitState.sourceRows, virtualVisitSourceColumns);
+    syncVirtualVisitFieldLocks();
+  }
+
+  function setVirtualVisitWorkflowMode(mode, options = {}) {
+    const normalized = mode === 'manual' ? 'manual' : 'linked';
+    virtualVisitState.workflowMode = normalized;
+    if (normalized === 'manual') {
+      virtualVisitState.sourceDueBlocked = false;
+    }
+    if (virtualVisitState.mode !== 'edit' && vvFormTitle) {
+      vvFormTitle.textContent = normalized === 'manual'
+        ? 'Create Standalone Visit_Duplicate Entry'
+        : 'Create Linked Visit_Duplicate Entry';
+    }
+    if (normalized === 'manual' && !options.preserveSourceInfo) {
+      clearVirtualVisitSourceSelection(true);
+      if (vvSourceCount) vvSourceCount.textContent = '0 visits';
+      if (vvSourceStatus) vvSourceStatus.textContent = 'Standalone mode selected.';
+    }
+    if (!options.skipBanner) {
+      if (normalized === 'manual') {
+        setVirtualVisitBanner('Standalone mode is active. You can create a virtual visit without linking to an original Visit.');
+      } else if (!String(vvSourceVisitId?.value || '').trim()) {
+        setVirtualVisitBanner('Copy From Visit is active. Select an existing visit below to prefill the form.');
+      }
+    }
+    syncVirtualVisitFieldLocks();
+  }
+
+  function setVirtualVisitPatientContext(row) {
+    const patientId = getField(row, ['PatientId', 'patientId', 'PatientID']) || '';
+    const regNo = getField(row, ['Registration_No', 'RegistrationNo']) || '';
+    const patientName = getField(row, ['Patient', 'PatientName']) || '';
+    if (vvPatientId) vvPatientId.value = String(patientId || '');
+    if (vvRegNo) vvRegNo.value = String(regNo || '');
+    if (vvPatientName) vvPatientName.value = String(patientName || '');
+    if (vvMeta) {
+      vvMeta.textContent = `Patient ID: ${patientId || '-'} | Reg No: ${regNo || '-'} | Patient: ${patientName || '-'}`;
+    }
+  }
+
+  function ensureVirtualVisitDateDefaults() {
+    const now = new Date();
+    const nowIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
+    if (vvVisitDate && !vvVisitDate.value) vvVisitDate.value = nowIso;
+    if (vvDischargeDate && !vvDischargeDate.value) vvDischargeDate.value = nowIso;
+  }
+
+  function formatVirtualVisitSourceSummary(row) {
+    if (!row) return '';
+    const visitId = getField(row, ['Visit_ID', 'VisitId']);
+    const visitNo = getField(row, ['VisitNo', 'Visit_No']);
+    const admissionNo = getField(row, ['AdmissionNo']);
+    const visitType = getField(row, ['VisitType']) || formatVirtualVisitType(getField(row, ['VisitTypeID', 'VisitTypeId']));
+    const visitDate = getField(row, ['VisitDate', 'Visit_Date']);
+    const linkStatus = getField(row, ['LinkStatus']);
+    const dueCount = getVirtualVisitEligibleDueCount(row);
+    const dueTotal = getVirtualVisitEligibleDueTotal(row);
+    const dueStatus = getField(row, ['EligibleDueStatus']);
+    return [
+      visitId ? `Visit ID ${visitId}` : '',
+      visitNo ? `Visit No ${visitNo}` : '',
+      admissionNo ? `Admission ${admissionNo}` : '',
+      visitType ? String(visitType) : '',
+      visitDate ? String(visitDate) : '',
+      linkStatus ? String(linkStatus) : '',
+      `Due Bills ${dueCount}`,
+      `Due Total ${fmtMoney(dueTotal)}`,
+      dueStatus ? String(dueStatus) : ''
+    ]
+      .filter(Boolean)
+      .join(' | ');
+  }
+
+  function applyVirtualVisitSourceRow(row, options = {}) {
+    if (!row) return;
+    virtualVisitState.sourceSelected = row;
+    virtualVisitState.sourceDueBlocked = isVirtualVisitSourceDueBlocked(row);
+    if (!options.keepWorkflow) {
+      setVirtualVisitWorkflowMode('linked', { preserveSourceInfo: true, skipBanner: true });
+    }
+    const sourceVisitId = getField(row, ['Visit_ID', 'VisitId']) || '';
+    const sourceVisitNo = getField(row, ['VisitNo', 'Visit_No']) || '';
+    if (vvSourceVisitId) vvSourceVisitId.value = String(sourceVisitId || '');
+    if (vvSourceVisitNo) vvSourceVisitNo.value = String(sourceVisitNo || '');
+    if (vvSourceSummary) vvSourceSummary.value = formatVirtualVisitSourceSummary(row);
+    const visitTypeId = getField(row, ['VisitTypeID', 'VisitTypeId']);
+    const patientSubTypeId = getField(row, ['PatientSubType_ID', 'PatientSubTypeId']);
+    if (vvVisitTypeId) vvVisitTypeId.value = String(visitTypeId || '1');
+    const patientTypeId = getField(row, ['PatientType_ID', 'PatientTypeId']);
+    const derivedPatientTypeId = (patientSubTypeId !== undefined && patientSubTypeId !== null)
+      ? visitSubtypeToType.get(String(patientSubTypeId))
+      : null;
+    const effectivePatientTypeId = (patientTypeId !== undefined && patientTypeId !== null && comboMaps.patientTypes?.idToName?.has(String(patientTypeId)))
+      ? patientTypeId
+      : derivedPatientTypeId;
+    if (effectivePatientTypeId !== undefined && effectivePatientTypeId !== null && String(effectivePatientTypeId).trim()) {
+      setComboInputById(vvPatientTypeId, comboMaps.patientTypes, effectivePatientTypeId);
+      filterVirtualVisitSubtypes(effectivePatientTypeId, false);
+    }
+    if (patientSubTypeId !== undefined && patientSubTypeId !== null && String(patientSubTypeId).trim()) {
+      setComboInputById(vvPatientSubTypeId, comboMaps.patientSubtypes, patientSubTypeId);
+    }
+    const payTypeVal = getField(row, ['payType', 'PayType', 'LinkedDuplicatePayType']);
+    if (payTypeVal !== undefined && payTypeVal !== null && String(payTypeVal).trim()) {
+      setComboInputById(vvPayType, comboMaps.payTypes, payTypeVal);
+    } else if (vvPayType) {
+      vvPayType.value = '';
+    }
+    const docId = getField(row, ['DocInCharge', 'DocId']);
+    if (docId !== undefined && docId !== null && String(docId).trim()) {
+      setComboInputById(vvDoctorId, comboMaps.doctors, docId);
+    } else if (vvDoctorId) {
+      vvDoctorId.value = '';
+    }
+    if (vvVisitDate) vvVisitDate.value = toInputDateTime(getField(row, ['VisitDate', 'Visit_Date']));
+    if (vvDischargeDate) vvDischargeDate.value = toInputDateTime(getField(row, ['DischargeDate', 'Discharge_Date']));
+    ensureVirtualVisitDateDefaults();
+    syncVirtualVisitDischargeFields();
+    syncVirtualVisitFieldLocks();
+    renderVirtualVisitSourceRows(virtualVisitState.sourceRows, virtualVisitSourceColumns);
+
+    const existingDuplicateId = getField(row, ['LinkedDuplicateVisitId']);
+    if (virtualVisitState.mode === 'create' && (isTruthyFlag(getField(row, ['LinkedDuplicateExists'])) || existingDuplicateId)) {
+      setVirtualVisitBanner(`Linked duplicate already exists for this source visit. Existing Visit_Duplicate ID: ${existingDuplicateId || 'available in history'}.`, 'warn');
+      setVirtualVisitCreateStatus('This source visit is already linked. Open the history grid to edit the existing virtual visit.', 'warn');
+    } else if (virtualVisitState.mode === 'create' && virtualVisitState.workflowMode === 'linked' && virtualVisitState.sourceDueBlocked) {
+      setVirtualVisitBanner('No pending due amount was found for this source visit. Consult IT/Accounts before continuing.', 'warn');
+      setVirtualVisitCreateStatus('Linked conversion is blocked because the selected source visit has no pending due amount.', 'warn');
+      showVirtualVisitSourceDueWarning(row);
+    } else {
+      const dueCount = getVirtualVisitEligibleDueCount(row);
+      const dueTotal = fmtMoney(getVirtualVisitEligibleDueTotal(row));
+      setVirtualVisitBanner(`Source visit loaded with ${dueCount} pending due bill(s) totaling ${dueTotal}. Review billing fields, then create the virtual visit.`, 'success');
+      setVirtualVisitCreateStatus(`Source visit copied. ${dueCount} bill(s) with due ${dueTotal} will be auto-settled on linked create.`, options.auto ? undefined : 'success');
+    }
+  }
+
+  async function loadVirtualVisitSourceVisits(patientRow) {
+    const unit = vvUnitSelect?.value || '';
+    const patientId = getField(patientRow, ['PatientId', 'patientId', 'PatientID']);
+    virtualVisitState.sourceRows = [];
+    virtualVisitState.sourceSelected = null;
+    virtualVisitState.sourceDueBlocked = false;
+    renderVirtualVisitSourceRows([], virtualVisitSourceColumns);
+    if (vvSourceCount) vvSourceCount.textContent = '0 visits';
+    if (vvSourceStatus) vvSourceStatus.textContent = 'Select a patient row to load source visits.';
+    if (!unit || !patientId) return;
+
+    setVirtualVisitLoading(true, 'Fetching patient visits...', 1);
+    if (vvSourceStatus) vvSourceStatus.textContent = `Fetching visits for patient ${patientId}...`;
+    try {
+      const res = await fetch(`/api/modifications/virtual_visit/source_visits?unit=${encodeURIComponent(unit)}&patient_id=${encodeURIComponent(patientId)}&limit=200`);
+      const data = await res.json();
+      if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to load source visits');
+      virtualVisitState.sourceRows = data.data || [];
+      renderVirtualVisitSourceRows(virtualVisitState.sourceRows, virtualVisitSourceColumns);
+      if (vvSourceCount) vvSourceCount.textContent = `${virtualVisitState.sourceRows.length} visits`;
+      if (vvSourceStatus) vvSourceStatus.textContent = virtualVisitState.sourceRows.length
+        ? `Loaded ${virtualVisitState.sourceRows.length} existing visits.`
+        : 'No source visits found for this patient.';
+
+      if (!virtualVisitState.sourceRows.length) {
+        clearVirtualVisitSourceSelection();
+        setVirtualVisitWorkflowMode('manual', { preserveSourceInfo: false, skipBanner: true });
+        setVirtualVisitBanner('No existing visits found for this patient. Standalone creation is still available.', 'warn');
+        return;
+      }
+
+      const preferredRow = virtualVisitState.sourceRows.find((row) => {
+        const alreadyLinked = isTruthyFlag(getField(row, ['LinkedDuplicateExists'])) || !!getField(row, ['LinkedDuplicateVisitId']);
+        return !alreadyLinked && getVirtualVisitEligibleDueCount(row) > 0;
+      })
+        || virtualVisitState.sourceRows.find((row) => !isTruthyFlag(getField(row, ['LinkedDuplicateExists'])) && !getField(row, ['LinkedDuplicateVisitId']))
+        || virtualVisitState.sourceRows[0];
+      if (virtualVisitState.workflowMode === 'linked' && virtualVisitState.mode !== 'edit') {
+        setVirtualVisitLoading(true, 'Preparing clone...', 2);
+        applyVirtualVisitSourceRow(preferredRow, { auto: true });
+      } else {
+        setVirtualVisitBanner('Source visits loaded. Select one to prefill the form or stay in standalone mode.');
+      }
+    } catch (err) {
+      virtualVisitState.sourceRows = [];
+      renderVirtualVisitSourceRows([], virtualVisitSourceColumns);
+      if (vvSourceCount) vvSourceCount.textContent = '0 visits';
+      if (vvSourceStatus) vvSourceStatus.textContent = `Error: ${err.message}`;
+      setVirtualVisitBanner(`Source-visit lookup failed: ${err.message}`, 'warn');
+    } finally {
+      setTimeout(() => setVirtualVisitLoading(false), 250);
+    }
+  }
+
+  function startVirtualVisitCreateFromPatient(row) {
+    if (!row) return;
+    virtualVisitState.selected = row;
+    virtualVisitState.selectedPatient = row;
+    virtualVisitState.sourceDueBlocked = false;
+    setVirtualVisitFormMode('create', null);
+    setVirtualVisitPatientContext(row);
+    clearVirtualVisitSourceSelection(true);
+    if (vvPatientTypeId) vvPatientTypeId.value = '';
+    if (vvPatientSubTypeId) vvPatientSubTypeId.value = '';
+    if (vvPayType) vvPayType.value = '';
+    if (vvDoctorId) vvDoctorId.value = '';
+    if (vvVisitTypeId) vvVisitTypeId.value = '1';
+    if (vvDischargeTypeId) vvDischargeTypeId.value = '2';
+    if (vvVisitDate) vvVisitDate.value = '';
+    if (vvDischargeDate) vvDischargeDate.value = '';
+    ensureVirtualVisitDateDefaults();
+    setVirtualVisitWorkflowMode('linked', { skipBanner: true });
+    setVirtualVisitBanner('Loading existing visits for this patient...', undefined);
+    setVirtualVisitCreateStatus('Fetching patient visits...');
+    syncVirtualVisitDischargeFields();
+    renderVirtualVisitRows(virtualVisitState.filtered, virtualVisitColumns);
+    loadVirtualVisitSourceVisits(row);
   }
 
   async function loadVirtualVisitHistory() {
@@ -4528,49 +4938,97 @@ thead th {
 
   function clearVirtualVisitForm() {
     virtualVisitState.selected = null;
+    virtualVisitState.selectedPatient = null;
+    virtualVisitState.sourceRows = [];
+    virtualVisitState.sourceSelected = null;
+    virtualVisitState.sourceDueBlocked = false;
     setVirtualVisitFormMode('create', null);
+    setVirtualVisitWorkflowMode('linked', { preserveSourceInfo: false, skipBanner: true });
     if (vvMeta) vvMeta.textContent = 'Select a patient row first.';
     if (vvVisitId) vvVisitId.value = '';
     if (vvPatientId) vvPatientId.value = '';
     if (vvRegNo) vvRegNo.value = '';
     if (vvPatientName) vvPatientName.value = '';
+    if (vvSourceVisitId) vvSourceVisitId.value = '';
+    if (vvSourceVisitNo) vvSourceVisitNo.value = '';
+    if (vvSourceSummary) vvSourceSummary.value = '';
+    if (vvPatientTypeId) vvPatientTypeId.value = '';
     if (vvPatientSubTypeId) vvPatientSubTypeId.value = '';
+    if (vvPayType) vvPayType.value = '';
     if (vvDoctorId) vvDoctorId.value = '';
     if (vvVisitTypeId) vvVisitTypeId.value = '1';
     if (vvDischargeTypeId) vvDischargeTypeId.value = '2';
     if (vvVisitDate) vvVisitDate.value = '';
     if (vvDischargeDate) vvDischargeDate.value = '';
+    if (vvSourceCount) vvSourceCount.textContent = '0 visits';
+    if (vvSourceStatus) vvSourceStatus.textContent = 'Select a patient row to load source visits.';
+    setVirtualVisitBanner('Copy From Visit is the default mode.');
     syncVirtualVisitDischargeFields();
+    syncVirtualVisitFieldLocks();
     setVirtualVisitCreateStatus('Waiting for selection.');
     renderVirtualVisitRows(virtualVisitState.filtered, virtualVisitColumns);
+    renderVirtualVisitSourceRows([], virtualVisitSourceColumns);
     renderVirtualVisitHistoryRows(virtualVisitHistoryState.filtered, virtualVisitHistoryColumns);
   }
 
   function populateVirtualVisitForm(row, mode = 'create') {
     if (!row) return;
-    const isEdit = mode === 'edit';
-    virtualVisitState.selected = isEdit ? null : row;
-    const patientId = getField(row, ['PatientId', 'patientId']) || '';
-    const regNo = getField(row, ['Registration_No', 'RegistrationNo']) || '';
-    const patientName = getField(row, ['Patient', 'PatientName']) || '';
+    if (mode !== 'edit') {
+      startVirtualVisitCreateFromPatient(row);
+      return;
+    }
+    virtualVisitState.selected = null;
+    virtualVisitState.selectedPatient = row;
+    virtualVisitState.sourceDueBlocked = false;
+    const patientId = getField(row, ['PatientId', 'patientId', 'patientId']);
+    const regNo = getField(row, ['Registration_No', 'RegistrationNo']);
+    const patientName = getField(row, ['Patient', 'PatientName']);
     const subtypeId = getField(row, ['patientSubTypeId', 'PatientSubTypeId', 'PatientSubType_ID']);
+    const patientTypeId = getField(row, ['patientTypeId', 'PatientTypeId']);
+    const payTypeVal = getField(row, ['payType', 'PayType']);
     const docId = getField(row, ['docId', 'DocId']);
     const visitTypeId = getField(row, ['visitTypeId', 'VisitTypeId']);
     const dischargeTypeId = getField(row, ['dischargeTypeId', 'DischargeTypeId']);
     const visitId = getField(row, ['visitId', 'VisitId']);
-    setVirtualVisitFormMode(isEdit ? 'edit' : 'create', isEdit ? visitId : null);
+    const sourceVisitId = getField(row, ['sourceVisitId', 'SourceVisitId']);
+    const sourceVisitNo = getField(row, ['sourceVisitNo', 'SourceVisitNo']);
+    setVirtualVisitFormMode('edit', visitId);
     if (vvPatientId) vvPatientId.value = String(patientId || '');
     if (vvRegNo) vvRegNo.value = String(regNo || '');
     if (vvPatientName) vvPatientName.value = String(patientName || '');
     if (vvMeta) {
-      const prefix = isEdit ? `Visit ID: ${visitId || '-'} | ` : '';
-      vvMeta.textContent = `${prefix}Patient ID: ${patientId || '-'} | Reg No: ${regNo || '-'} | Patient: ${patientName || '-'}`;
+      vvMeta.textContent = `Visit ID: ${visitId || '-'} | Patient ID: ${patientId || '-'} | Reg No: ${regNo || '-'} | Patient: ${patientName || '-'}`;
     }
-    filterVirtualVisitSubtypes('', false);
+    if (vvSourceVisitId) vvSourceVisitId.value = String(sourceVisitId || '');
+    if (vvSourceVisitNo) vvSourceVisitNo.value = String(sourceVisitNo || '');
+    if (vvSourceSummary) {
+      vvSourceSummary.value = sourceVisitId
+        ? [sourceVisitId ? `Source ID ${sourceVisitId}` : '', sourceVisitNo ? `Visit No ${sourceVisitNo}` : '', getField(row, ['sourceAdmissionNo']) ? `Admission ${getField(row, ['sourceAdmissionNo'])}` : ''].filter(Boolean).join(' | ')
+        : 'Standalone virtual visit';
+    }
+    setVirtualVisitWorkflowMode(sourceVisitId ? 'linked' : 'manual', { preserveSourceInfo: true, skipBanner: true });
+    const derivedPatientTypeId = (subtypeId !== undefined && subtypeId !== null)
+      ? visitSubtypeToType.get(String(subtypeId))
+      : null;
+    const effectivePatientTypeId = (patientTypeId !== null && patientTypeId !== undefined && comboMaps.patientTypes?.idToName?.has(String(patientTypeId)))
+      ? patientTypeId
+      : derivedPatientTypeId;
+    if (effectivePatientTypeId !== null && effectivePatientTypeId !== undefined && String(effectivePatientTypeId).trim()) {
+      setComboInputById(vvPatientTypeId, comboMaps.patientTypes, effectivePatientTypeId);
+      filterVirtualVisitSubtypes(effectivePatientTypeId, false);
+    } else if (vvPatientTypeId) {
+      vvPatientTypeId.value = '';
+      filterVirtualVisitSubtypes('', false);
+    }
     if (subtypeId !== null && subtypeId !== undefined && String(subtypeId).trim()) {
       setComboInputById(vvPatientSubTypeId, comboMaps.patientSubtypes, subtypeId);
     } else if (vvPatientSubTypeId) {
       vvPatientSubTypeId.value = '';
+    }
+    if (payTypeVal !== null && payTypeVal !== undefined && String(payTypeVal).trim()) {
+      setComboInputById(vvPayType, comboMaps.payTypes, payTypeVal);
+    } else if (vvPayType) {
+      vvPayType.value = '';
     }
     if (docId !== null && docId !== undefined && String(docId).trim()) {
       setComboInputById(vvDoctorId, comboMaps.doctors, docId);
@@ -4585,16 +5043,17 @@ thead th {
       const dischargeRaw = String(dischargeTypeId || '').trim();
       vvDischargeTypeId.value = (dischargeRaw === '0' || dischargeRaw === '1' || dischargeRaw === '2') ? dischargeRaw : '2';
     }
-    const rowVisitDate = toInputDateTime(getField(row, ['visitDate', 'VisitDate']));
-    const rowDischargeDate = toInputDateTime(getField(row, ['dischargeDate', 'DischargeDate']));
-    if (vvVisitDate) vvVisitDate.value = rowVisitDate;
-    if (vvDischargeDate) vvDischargeDate.value = rowDischargeDate;
-    const now = new Date();
-    const nowIso = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, '0')}-${String(now.getDate()).padStart(2, '0')}T${String(now.getHours()).padStart(2, '0')}:${String(now.getMinutes()).padStart(2, '0')}`;
-    if (vvVisitDate && !vvVisitDate.value) vvVisitDate.value = nowIso;
-    if (vvDischargeDate && !vvDischargeDate.value) vvDischargeDate.value = nowIso;
+    if (vvVisitDate) vvVisitDate.value = toInputDateTime(getField(row, ['visitDate', 'VisitDate']));
+    if (vvDischargeDate) vvDischargeDate.value = toInputDateTime(getField(row, ['dischargeDate', 'DischargeDate']));
+    ensureVirtualVisitDateDefaults();
     syncVirtualVisitDischargeFields();
-    setVirtualVisitCreateStatus(isEdit ? 'Edit fields and update this virtual visit.' : 'Set visit details and create the virtual visit.');
+    syncVirtualVisitFieldLocks();
+    if (sourceVisitId) {
+      setVirtualVisitBanner('Linked virtual visit loaded. You can edit billing-related fields, but the source visit link is locked.', 'success');
+    } else {
+      setVirtualVisitBanner('Standalone virtual visit loaded. Update the fields you need and save.', undefined);
+    }
+    setVirtualVisitCreateStatus('Edit fields and update this virtual visit.');
     renderVirtualVisitHistoryRows(virtualVisitHistoryState.filtered, virtualVisitHistoryColumns);
   }
 
@@ -4602,8 +5061,11 @@ thead th {
     await loadVisitReference(unit);
     const key = String(unit || '').toUpperCase();
     const ref = visitReferenceCache[key] || {};
+    populateCombo(vvPatientTypeList, ref.patient_types || [], 'PatientTypeID', 'PatientTypeName', comboMaps.patientTypes);
     renderComboOptions(vvDoctorList, ref.doctors || [], 'DoctorName', formatVirtualDoctorOption);
-    filterVirtualVisitSubtypes('', true);
+    const ptResolved = resolveComboInput(vvPatientTypeId, comboMaps.patientTypes, 'Patient Type');
+    const ptVal = (ptResolved.id === null || ptResolved.id === undefined) ? '' : ptResolved.id;
+    filterVirtualVisitSubtypes(ptVal, true);
   }
 
   async function loadVirtualVisitPatients() {
@@ -4614,8 +5076,10 @@ thead th {
       return;
     }
     try {
+      setVirtualVisitLoading(true, 'Loading masters...', 0);
       await loadVirtualVisitReference(unit);
     } catch (err) {
+      setVirtualVisitLoading(false);
       setVirtualVisitModalStatus(`Reference load error: ${err.message}`);
       return;
     }
@@ -4627,26 +5091,27 @@ thead th {
       if (vvCount) vvCount.textContent = '0 patients';
       setVirtualVisitModalStatus('Enter patient search text.');
       clearVirtualVisitForm();
+      setVirtualVisitLoading(false);
       return;
     }
     if (query.length < 2 && !/^\d+$/.test(query)) {
       setVirtualVisitModalStatus('Enter at least 2 characters.');
+      setVirtualVisitLoading(false);
       return;
     }
 
-    setVirtualVisitLoading(true, `Connecting to ${unit}...`, 0);
+    setVirtualVisitLoading(true, 'Fetching patient visits...', 1);
     setVirtualVisitModalStatus('Searching patients...');
     renderVirtualVisitHeader(virtualVisitColumns);
+    renderVirtualVisitSourceHeader(virtualVisitSourceColumns);
     vvRows.innerHTML = `<tr><td colspan="${virtualVisitColumns.length}" style="text-align:center; padding:14px;">Searching...</td></tr>`;
     try {
       const res = await fetch(`/api/modifications/virtual_visit/patients_search?unit=${encodeURIComponent(unit)}&q=${encodeURIComponent(query)}&limit=300`);
-      setVirtualVisitLoading(true, 'Fetching patient registrations...', 1);
       const data = await res.json();
       if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to search patients');
       virtualVisitState.rows = data.data || [];
       virtualVisitState.filtered = virtualVisitState.rows.slice();
       virtualVisitState.selected = null;
-      setVirtualVisitLoading(true, 'Rendering results...', 2);
       renderVirtualVisitRows(virtualVisitState.filtered, virtualVisitColumns);
       if (vvCount) vvCount.textContent = `${virtualVisitState.filtered.length} patients`;
       setVirtualVisitModalStatus(`Loaded ${virtualVisitState.filtered.length} patients for ${unit}.`);
@@ -4667,6 +5132,15 @@ thead th {
     const isEdit = virtualVisitState.mode === 'edit';
     const visitId = _coerceFormInt(vvVisitId?.value || '');
     if (isEdit && !visitId) return { error: 'Visit ID is required for update mode.' };
+    const workflowMode = virtualVisitState.workflowMode === 'manual' ? 'manual' : 'linked';
+    const sourceVisitId = _coerceFormInt(vvSourceVisitId?.value || '');
+
+    const patientTypeResolved = resolveComboInput(vvPatientTypeId, comboMaps.patientTypes, 'Patient Type');
+    if (patientTypeResolved.error) return { error: patientTypeResolved.error };
+    if (patientTypeResolved.id === null || patientTypeResolved.id === undefined) {
+      return { error: 'Patient Type is required.' };
+    }
+    setComboInputById(vvPatientTypeId, comboMaps.patientTypes, patientTypeResolved.id);
 
     const subtypeResolved = resolveComboInput(vvPatientSubTypeId, comboMaps.patientSubtypes, 'Patient SubType');
     if (subtypeResolved.error) return { error: subtypeResolved.error };
@@ -4674,6 +5148,13 @@ thead th {
       return { error: 'Patient SubType is required.' };
     }
     setComboInputById(vvPatientSubTypeId, comboMaps.patientSubtypes, subtypeResolved.id);
+
+    const payTypeResolved = resolveComboInput(vvPayType, comboMaps.payTypes, 'Patient Category');
+    if (payTypeResolved.error) return { error: payTypeResolved.error };
+    if (payTypeResolved.id === null || payTypeResolved.id === undefined) {
+      return { error: 'Patient Category is required.' };
+    }
+    setComboInputById(vvPayType, comboMaps.payTypes, payTypeResolved.id);
 
     const doctorResolved = resolveComboInput(vvDoctorId, comboMaps.doctors, 'Doctor');
     if (doctorResolved.error) return { error: doctorResolved.error };
@@ -4699,15 +5180,26 @@ thead th {
       dischargeDateValue = visitDateValue;
     }
 
+    if (!isEdit && workflowMode === 'linked' && !sourceVisitId) {
+      return { error: 'Select an existing source visit or switch to Standalone mode.' };
+    }
+    if (!isEdit && workflowMode === 'linked' && sourceVisitId && virtualVisitState.sourceDueBlocked) {
+      return { error: 'Linked conversion is blocked because the selected source visit has no pending due amount. Please consult IT/Accounts department.' };
+    }
+
     const dischargeTypeVal = visitTypeVal === 1
       ? parseInt(String(vvDischargeTypeId?.value || '2'), 10)
       : 0;
     const payload = {
       unit: vvUnitSelect?.value || '',
+      mode: workflowMode,
+      source_visit_id: sourceVisitId || null,
       patient_id: patientId,
       visit_date: visitDateValue,
       discharge_date: dischargeDateValue,
+      patient_type_id: patientTypeResolved.id,
       patient_sub_type_id: subtypeResolved.id,
+      pay_type: payTypeResolved.id,
       visit_type_id: visitTypeVal,
       doc_id: doctorResolved.id ?? 0,
       discharge_type_id: Number.isFinite(dischargeTypeVal) ? dischargeTypeVal : 2
@@ -4734,7 +5226,9 @@ thead th {
       return;
     }
     const isEdit = virtualVisitState.mode === 'edit';
-    setVirtualVisitCreateStatus(isEdit ? 'Updating virtual visit...' : 'Creating virtual visit...');
+    const isLinked = payload.mode === 'linked' && payload.source_visit_id;
+    setVirtualVisitCreateStatus(isEdit ? 'Saving virtual visit changes...' : 'Creating virtual visit...');
+    setVirtualVisitLoading(true, isLinked ? 'Validating source dues...' : 'Preparing virtual visit...', isLinked ? 3 : 2);
     if (vvCreateBtn) vvCreateBtn.disabled = true;
     try {
       const apiUrl = isEdit ? '/api/modifications/virtual_visit/update' : '/api/modifications/virtual_visit/create';
@@ -4745,19 +5239,59 @@ thead th {
       });
       const data = await res.json();
       if (!res.ok || !data.success) {
+        if (data?.error_code === 'duplicate_exists') {
+          throw new Error(`Linked duplicate already exists${data.existing_visit_id ? ` (Visit_Duplicate ID ${data.existing_visit_id})` : ''}.`);
+        }
+        if (data?.error_code === 'migration_required') {
+          throw new Error(data.message || 'DB migration missing for this unit.');
+        }
+        if (data?.error_code === 'source_due_zero') {
+          virtualVisitState.sourceDueBlocked = true;
+          if (virtualVisitState.sourceSelected) {
+            setVirtualVisitBanner('No pending due amount was found for this source visit. Consult IT/Accounts before continuing.', 'warn');
+            showVirtualVisitSourceDueWarning(virtualVisitState.sourceSelected);
+          }
+          throw new Error(data.message || 'No pending due amount was found for this source visit.');
+        }
         throw new Error(data.message || (isEdit ? 'Failed to update virtual visit' : 'Failed to create virtual visit'));
       }
+      if (isLinked) {
+        setVirtualVisitLoading(true, 'Creating duplicate...', 4);
+      }
+      if (isLinked && Number(data?.receipt_count || 0) > 0) {
+        setVirtualVisitLoading(true, 'Posting settlement receipts...', 5);
+      }
+      if (data.source_visit_id) {
+        setVirtualVisitLoading(true, 'Updating source visit...', 6);
+      }
+      setVirtualVisitLoading(true, 'Refreshing history...', 7);
+      const receiptNumbers = Array.isArray(data?.receipt_numbers) ? data.receipt_numbers.filter(Boolean) : [];
+      const settlementBits = [];
+      if (Number(data?.settled_bill_count || 0) > 0) {
+        settlementBits.push(`Settled ${Number(data.settled_bill_count || 0)} bill(s)`);
+      }
+      if (data?.settled_total_amount !== undefined && data?.settled_total_amount !== null) {
+        settlementBits.push(`Total ${fmtMoney(data.settled_total_amount)}`);
+      }
+      if (receiptNumbers.length) {
+        settlementBits.push(`Receipts ${receiptNumbers.join(', ')}`);
+      }
+      const settlementText = settlementBits.length ? ` | ${settlementBits.join(' | ')}` : '';
       setVirtualVisitCreateStatus(
         isEdit
-          ? `Virtual visit updated successfully. Visit ID: ${data.visit_id}`
-          : `Virtual visit created successfully. Visit ID: ${data.visit_id}`,
+          ? `Virtual visit updated successfully. Visit ID: ${data.visit_id}${data.source_visit_id ? ` | Source Visit ID: ${data.source_visit_id}` : ''}`
+          : `Virtual visit created successfully. Visit ID: ${data.visit_id}${data.source_visit_id ? ` | Source Visit ID: ${data.source_visit_id}` : ''}${settlementText}`,
         'success'
       );
       if (isEdit && vvVisitId) vvVisitId.value = String(data.visit_id || vvVisitId.value || '');
       await loadVirtualVisitHistory();
+      if (!isEdit && virtualVisitState.selectedPatient) {
+        await loadVirtualVisitSourceVisits(virtualVisitState.selectedPatient);
+      }
     } catch (err) {
       setVirtualVisitCreateStatus(`Error: ${err.message}`, 'warn');
     } finally {
+      setTimeout(() => setVirtualVisitLoading(false), 250);
       if (vvCreateBtn) vvCreateBtn.disabled = false;
     }
   }
@@ -4991,16 +5525,24 @@ thead th {
       ["1", "Cash"],
       ["2", "Cashless"],
     ]);
+    comboMaps.payTypes.idToValue = new Map([
+      ["1", "Cash"],
+      ["2", "Cashless"],
+    ]);
     comboMaps.payTypes.nameToId = new Map([
       [normalizeNameKey("Cash"), 1],
       [normalizeNameKey("Cashless"), 2],
     ]);
-    if (visitPayTypeList) {
-      visitPayTypeList.innerHTML = [
-        '<option value="Cash"></option>',
-        '<option value="Cashless"></option>',
-      ].join('');
-    }
+    comboMaps.payTypes.valueToId = new Map([
+      [normalizeNameKey("Cash"), 1],
+      [normalizeNameKey("Cashless"), 2],
+    ]);
+    const payTypeOptions = [
+      '<option value="Cash"></option>',
+      '<option value="Cashless"></option>',
+    ].join('');
+    if (visitPayTypeList) visitPayTypeList.innerHTML = payTypeOptions;
+    if (vvPayTypeList) vvPayTypeList.innerHTML = payTypeOptions;
   }
 
   function buildWardRoomBedMaps(wards, rooms, beds) {
@@ -5772,6 +6314,7 @@ thead th {
     if (!virtualVisitsModal) return;
     virtualVisitsModal.style.display = 'flex';
     renderVirtualVisitHeader(virtualVisitColumns);
+    renderVirtualVisitSourceHeader(virtualVisitSourceColumns);
     renderVirtualVisitHistoryHeader(virtualVisitHistoryColumns);
     clearVirtualVisitForm();
     loadVirtualVisitHistory();
@@ -6140,8 +6683,58 @@ thead th {
     }
   });
   vvRefreshBtn?.addEventListener('click', loadVirtualVisitPatients);
+  vvModeLinked?.addEventListener('change', () => {
+    if (!vvModeLinked.checked) return;
+    setVirtualVisitWorkflowMode('linked', { preserveSourceInfo: true });
+    if (!virtualVisitState.sourceRows.length && virtualVisitState.selectedPatient) {
+      loadVirtualVisitSourceVisits(virtualVisitState.selectedPatient);
+      return;
+    }
+    if (virtualVisitState.sourceRows.length && !virtualVisitState.sourceSelected) {
+      const preferredRow = virtualVisitState.sourceRows.find((row) => {
+        const alreadyLinked = isTruthyFlag(getField(row, ['LinkedDuplicateExists'])) || !!getField(row, ['LinkedDuplicateVisitId']);
+        return !alreadyLinked && getVirtualVisitEligibleDueCount(row) > 0;
+      })
+        || virtualVisitState.sourceRows.find((row) => !isTruthyFlag(getField(row, ['LinkedDuplicateExists'])) && !getField(row, ['LinkedDuplicateVisitId']))
+        || virtualVisitState.sourceRows[0];
+      if (preferredRow) applyVirtualVisitSourceRow(preferredRow, { auto: true });
+    }
+  });
+  vvModeManual?.addEventListener('change', () => {
+    if (!vvModeManual.checked) return;
+    clearVirtualVisitSourceSelection(false);
+    setVirtualVisitWorkflowMode('manual', { preserveSourceInfo: true });
+  });
   vvVisitTypeId?.addEventListener('change', () => {
     syncVirtualVisitDischargeFields();
+  });
+  vvPatientTypeId?.addEventListener('change', () => {
+    const resolved = normalizeComboInput(vvPatientTypeId, comboMaps.patientTypes, 'Patient Type');
+    if (resolved.error) {
+      setVirtualVisitCreateStatus(resolved.error, 'warn');
+      return;
+    }
+    filterVirtualVisitSubtypes(resolved.id, false);
+  });
+  vvPatientSubTypeId?.addEventListener('change', () => {
+    const resolved = normalizeComboInput(vvPatientSubTypeId, comboMaps.patientSubtypes, 'Patient SubType');
+    if (resolved.error) {
+      setVirtualVisitCreateStatus(resolved.error, 'warn');
+      return;
+    }
+    const subId = resolved.id;
+    if (!subId && subId !== 0) return;
+    const typeId = visitSubtypeToType.get(String(subId));
+    if (typeId !== undefined && typeId !== null) {
+      setComboInputById(vvPatientTypeId, comboMaps.patientTypes, typeId);
+      filterVirtualVisitSubtypes(typeId, true);
+    }
+  });
+  vvPayType?.addEventListener('change', () => {
+    const resolved = normalizeComboInput(vvPayType, comboMaps.payTypes, 'Patient Category');
+    if (resolved.error) {
+      setVirtualVisitCreateStatus(resolved.error, 'warn');
+    }
   });
   vvVisitDate?.addEventListener('change', () => {
     if (String(vvVisitTypeId?.value || '') !== '1' && vvDischargeDate) {
@@ -6183,8 +6776,16 @@ thead th {
     const idx = parseInt(tr.dataset.vvIdx || '0', 10);
     const row = virtualVisitState.filtered[idx];
     if (!row) return;
-    populateVirtualVisitForm(row, 'create');
+    startVirtualVisitCreateFromPatient(row);
     renderVirtualVisitRows(virtualVisitState.filtered, virtualVisitColumns);
+  });
+  vvSourceRows?.addEventListener('click', (e) => {
+    const tr = e.target.closest('tr[data-vv-source-idx]');
+    if (!tr) return;
+    const idx = parseInt(tr.dataset.vvSourceIdx || '0', 10);
+    const row = virtualVisitState.sourceRows[idx];
+    if (!row) return;
+    applyVirtualVisitSourceRow(row);
   });
   vvHistoryRows?.addEventListener('click', (e) => {
     const tr = e.target.closest('tr[data-vv-history-idx]');

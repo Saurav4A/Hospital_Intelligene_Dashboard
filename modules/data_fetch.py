@@ -4139,6 +4139,266 @@ def fetch_old_new_patient_visits(
             pass
 
 
+def fetch_old_new_patient_visit_details_page(
+    unit: str,
+    visit_type_id: int,
+    from_date: str,
+    to_date: str,
+    page: int = 1,
+    page_size: int = 20,
+    search: str = "",
+    sort_key: str = "VisitDate",
+    sort_dir: str = "desc",
+) -> dict:
+    """
+    Server-side SQL paging for the Old/New visit detail grid.
+    Mirrors dbo.usp_ComprehensiveOldNewPatientVisits detail logic and
+    extends it with patient source mapping.
+    """
+    out_cols = [
+        "Dept",
+        "SubDept",
+        "Doctor",
+        "VisitDate",
+        "Visit_ID",
+        "PatientName",
+        "RegNo",
+        "PatientType",
+        "SourceID",
+        "SourceName",
+    ]
+    page = _corp_bill_summary_parse_int(page, 1, 1, 100000)
+    page_size = _corp_bill_summary_parse_int(page_size, 20, 1, 200)
+    search_term = str(search or "").strip()
+    sort_dir_norm = "asc" if str(sort_dir or "").strip().lower() == "asc" else "desc"
+
+    conn = get_sql_connection(unit)
+    if not conn:
+        return {"status": "error", "message": f"Could not connect to {unit} for old/new detail paging"}
+
+    def _q_ident(name: str) -> str:
+        return f"[{str(name).replace(']', ']]')}]"
+
+    def _table_ref(name: str | None) -> str:
+        return f"[dbo].[{str(name).replace(']', ']]')}]" if name else ""
+
+    try:
+        visit_table = _resolve_table_name(conn, ["Visit", "visit", "Visit_Mst", "VisitMst"])
+        employee_table = _resolve_table_name(conn, ["Employee_Mst", "employee_mst", "EmployeeMst"])
+        patient_table = _resolve_table_name(conn, ["Patient", "patient", "Patient_Mst", "PatientMst"])
+        occ_table = _resolve_table_name(conn, ["Occupation_Mst", "occupation_mst", "OccupationMst"])
+
+        visit_id_col = _resolve_column(conn, visit_table, ["Visit_ID", "VisitId", "VisitID", "visitId", "ID", "Id"]) if visit_table else None
+        visit_type_col = _resolve_column(conn, visit_table, ["VisitTypeID", "VisitTypeId", "VisitType_ID", "visitTypeId"]) if visit_table else None
+        visit_date_col = _resolve_column(conn, visit_table, ["VisitDate", "Visit_Date", "visitDate"]) if visit_table else None
+        patient_id_col = _resolve_column(conn, visit_table, ["PatientID", "PatientId", "Patient_ID", "patientId"]) if visit_table else None
+        doctor_col = _resolve_column(conn, visit_table, ["DocInCharge", "DocIncharge", "DoctorInCharge", "DoctorIncharge"]) if visit_table else None
+        src_col = _resolve_column(conn, visit_table, ["PatientSourceId", "PatientSourceID", "PatientSource_ID", "patientSourceId"]) if visit_table else None
+
+        emp_id_col = _resolve_column(conn, employee_table, ["EmpID", "EmpId", "EmployeeID", "EmployeeId", "ID", "Id"]) if employee_table else None
+        emp_dept_col = _resolve_column(conn, employee_table, ["department_id", "Department_ID", "DepartmentId", "departmentid"]) if employee_table else None
+        emp_subdept_col = _resolve_column(conn, employee_table, ["SubDepartment_Id", "SubDepartment_ID", "SubDepartmentId", "SubDeptId"]) if employee_table else None
+
+        patient_pk_col = _resolve_column(conn, patient_table, ["PatientId", "patientId", "PatientID", "Patient_ID"]) if patient_table else None
+        patient_inserted_col = _resolve_column(
+            conn,
+            patient_table,
+            ["insertedon", "InsertedOn", "InsertedON", "Inserted_On", "Registration_Date", "RegistrationDate"],
+        ) if patient_table else None
+
+        occ_id_col = _resolve_column(conn, occ_table, ["Occupation_ID", "OccupationId", "occupation_id"]) if occ_table else None
+        occ_name_col = _resolve_column(conn, occ_table, ["Occupation_Name", "OccupationName", "occupation_name"]) if occ_table else None
+
+        if not visit_table or not visit_id_col or not visit_type_col or not visit_date_col:
+            return {"status": "error", "message": "Required visit schema for old/new detail paging was not found"}
+
+        joins = []
+        dept_expr = "N'Unknown'"
+        subdept_expr = "N'Unknown'"
+        if employee_table and emp_id_col and doctor_col:
+            joins.append(
+                f"LEFT JOIN {_table_ref(employee_table)} e WITH (NOLOCK) "
+                f"ON e.{_q_ident(emp_id_col)} = v.{_q_ident(doctor_col)}"
+            )
+            if emp_dept_col:
+                dept_expr = f"ISNULL(dbo.fn_dept(e.{_q_ident(emp_dept_col)}), N'')"
+            if emp_subdept_col:
+                subdept_expr = f"ISNULL(dbo.Fn_subDept(e.{_q_ident(emp_subdept_col)}), N'')"
+
+        patient_joined = bool(patient_table and patient_pk_col and patient_id_col)
+        if patient_joined:
+            joins.append(
+                f"LEFT JOIN {_table_ref(patient_table)} p WITH (NOLOCK) "
+                f"ON p.{_q_ident(patient_pk_col)} = v.{_q_ident(patient_id_col)}"
+            )
+
+        patient_name_expr = "N''"
+        reg_no_expr = "N''"
+        if patient_id_col:
+            patient_name_expr = f"ISNULL(dbo.fn_PatientFullName(v.{_q_ident(patient_id_col)}), N'')"
+            reg_no_expr = f"ISNULL(dbo.fn_regno(v.{_q_ident(patient_id_col)}), N'')"
+
+        patient_type_expr = "N'Old'"
+        if patient_joined and patient_inserted_col:
+            patient_type_expr = (
+                f"CASE "
+                f"WHEN CONVERT(date, p.{_q_ident(patient_inserted_col)}) = CONVERT(date, v.{_q_ident(visit_date_col)}) "
+                f"THEN N'New' ELSE N'Old' END"
+            )
+
+        doctor_name_expr = "N'Unknown'"
+        if doctor_col:
+            doctor_name_expr = f"ISNULL(dbo.fn_DoctorFirstName(v.{_q_ident(doctor_col)}), N'')"
+
+        source_id_expr = "CAST(0 AS INT)"
+        source_name_expr = "N'Unknown'"
+        if src_col:
+            src_text_expr = f"LTRIM(RTRIM(CONVERT(NVARCHAR(100), v.{_q_ident(src_col)})))"
+            src_int_expr = (
+                f"(CASE WHEN {src_text_expr} <> N'' "
+                f"AND {src_text_expr} NOT LIKE N'%[^0-9]%' "
+                f"THEN CONVERT(INT, {src_text_expr}) ELSE NULL END)"
+            )
+            source_id_expr = f"ISNULL({src_int_expr}, 0)"
+            if occ_table and occ_id_col and occ_name_col:
+                joins.append(
+                    f"LEFT JOIN {_table_ref(occ_table)} om WITH (NOLOCK) "
+                    f"ON om.{_q_ident(occ_id_col)} = {src_int_expr}"
+                )
+                source_name_expr = f"COALESCE(NULLIF(CONVERT(NVARCHAR(200), om.{_q_ident(occ_name_col)}), N''), N'Unknown')"
+
+        base_params = [int(visit_type_id), from_date, to_date]
+        join_sql = "\n            ".join(joins)
+
+        search_sql = ""
+        search_params = []
+        if search_term:
+            like = f"%{search_term}%"
+            search_sql = """
+            WHERE
+                ISNULL(RegNo, N'') LIKE ?
+                OR ISNULL(PatientName, N'') LIKE ?
+                OR ISNULL(Doctor, N'') LIKE ?
+                OR ISNULL(Dept, N'') LIKE ?
+                OR ISNULL(SubDept, N'') LIKE ?
+                OR ISNULL(SourceName, N'') LIKE ?
+                OR CONVERT(NVARCHAR(50), Visit_ID) LIKE ?
+                OR ISNULL(PatientType, N'') LIKE ?
+            """
+            search_params = [like, like, like, like, like, like, like, like]
+
+        cte_sql = f"""
+            WITH detail_base AS (
+                SELECT
+                    COALESCE(NULLIF(LTRIM(RTRIM({dept_expr})), N''), N'Unknown') AS Dept,
+                    COALESCE(NULLIF(LTRIM(RTRIM({subdept_expr})), N''), N'Unknown') AS SubDept,
+                    COALESCE(NULLIF(LTRIM(RTRIM({doctor_name_expr})), N''), N'Unknown') AS Doctor,
+                    CONVERT(date, v.{_q_ident(visit_date_col)}) AS VisitDate,
+                    CAST(v.{_q_ident(visit_id_col)} AS INT) AS Visit_ID,
+                    LTRIM(RTRIM({patient_name_expr})) AS PatientName,
+                    LTRIM(RTRIM({reg_no_expr})) AS RegNo,
+                    {patient_type_expr} AS PatientType,
+                    {source_id_expr} AS SourceID,
+                    COALESCE(NULLIF(LTRIM(RTRIM({source_name_expr})), N''), N'Unknown') AS SourceName
+                FROM {_table_ref(visit_table)} v WITH (NOLOCK)
+                {join_sql}
+                WHERE v.{_q_ident(visit_type_col)} = ?
+                  AND CONVERT(date, v.{_q_ident(visit_date_col)}) BETWEEN CONVERT(date, ?) AND CONVERT(date, ?)
+            ),
+            filtered AS (
+                SELECT *
+                FROM detail_base
+                {search_sql}
+            )
+        """
+
+        count_sql = cte_sql + " SELECT COUNT(1) AS TotalRows FROM filtered;"
+        count_df = pd.read_sql(count_sql, conn, params=base_params + search_params)
+        total_rows = 0
+        if count_df is not None and not count_df.empty:
+            total_rows_val = pd.to_numeric(count_df.iloc[0]["TotalRows"], errors="coerce")
+            total_rows = 0 if pd.isna(total_rows_val) else int(total_rows_val)
+        total_pages = max(1, (total_rows + page_size - 1) // page_size) if total_rows else 1
+        page = min(max(1, page), total_pages)
+        start_row = ((page - 1) * page_size) + 1
+        end_row = page * page_size
+
+        sort_map = {
+            "VisitDate": "VisitDate",
+            "Visit_ID": "Visit_ID",
+            "RegNo": "RegNo",
+            "PatientName": "PatientName",
+            "Dept": "Dept",
+            "SubDept": "SubDept",
+            "Doctor": "Doctor",
+            "PatientType": "PatientType",
+            "SourceName": "SourceName",
+        }
+        sort_expr = sort_map.get(str(sort_key or "").strip(), "VisitDate")
+        secondary_order = f", Visit_ID {'ASC' if sort_dir_norm == 'asc' else 'DESC'}" if sort_expr != "Visit_ID" else ""
+        order_sql = f"{sort_expr} {sort_dir_norm.upper()}{secondary_order}"
+
+        page_sql = cte_sql + f"""
+            , numbered AS (
+                SELECT
+                    *,
+                    ROW_NUMBER() OVER (ORDER BY {order_sql}) AS rn
+                FROM filtered
+            )
+            SELECT
+                Dept,
+                SubDept,
+                Doctor,
+                CONVERT(NVARCHAR(10), VisitDate, 23) AS VisitDate,
+                Visit_ID,
+                PatientName,
+                RegNo,
+                PatientType,
+                SourceID,
+                SourceName
+            FROM numbered
+            WHERE rn BETWEEN ? AND ?
+            ORDER BY rn;
+        """
+        rows_df = pd.read_sql(page_sql, conn, params=base_params + search_params + [start_row, end_row])
+        if rows_df is None or rows_df.empty:
+            rows_df = pd.DataFrame(columns=out_cols)
+        else:
+            rows_df.columns = [str(c).strip() for c in rows_df.columns]
+            for col in out_cols:
+                if col not in rows_df.columns:
+                    rows_df[col] = 0 if col == "SourceID" or col == "Visit_ID" else ""
+            rows_df["Visit_ID"] = pd.to_numeric(rows_df["Visit_ID"], errors="coerce").fillna(0).astype(int)
+            rows_df["SourceID"] = pd.to_numeric(rows_df["SourceID"], errors="coerce").fillna(0).astype(int)
+            for col in ["Dept", "SubDept", "Doctor", "VisitDate", "PatientName", "RegNo", "PatientType", "SourceName"]:
+                rows_df[col] = rows_df[col].astype(str).replace({"nan": "", "None": ""}).str.strip()
+                if col in {"Dept", "SubDept", "Doctor", "SourceName"}:
+                    rows_df[col] = rows_df[col].replace("", "Unknown")
+            rows_df["PatientType"] = rows_df["PatientType"].str.title()
+            rows_df["PatientType"] = rows_df["PatientType"].where(rows_df["PatientType"] == "New", "Old")
+            rows_df = rows_df[out_cols]
+
+        return {
+            "status": "success",
+            "rows_df": rows_df,
+            "page": int(page),
+            "page_size": int(page_size),
+            "total_rows": int(total_rows),
+            "total_pages": int(total_pages),
+            "sort_key": sort_expr,
+            "sort_dir": sort_dir_norm,
+            "search": search_term,
+            "server_side": True,
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to fetch old/new detail page: {e}"}
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def fetch_old_new_followup_flags(
     unit: str,
     base_visit_ids: list[int],
@@ -4214,6 +4474,11 @@ def fetch_old_new_followup_flags(
             if patient_id_col else
             "N''"
         )
+        patient_id_expr = (
+            f"CAST(NULLIF(v.[{patient_id_col}], 0) AS INT)"
+            if patient_id_col else
+            "CAST(NULL AS INT)"
+        )
         norm_visit_expr = (
             "CASE "
             f"WHEN {type_id_expr} = 1 OR {visit_text_expr} LIKE N'%IPD%' OR {visit_text_expr} LIKE N'%IN PATIENT%' OR {visit_text_expr} LIKE N'%INPATIENT%' THEN 1 "
@@ -4222,166 +4487,126 @@ def fetch_old_new_followup_flags(
             f"WHEN {type_id_expr} = 2 OR {visit_text_expr} LIKE N'%OPD%' OR {visit_text_expr} LIKE N'%OUT PATIENT%' OR {visit_text_expr} LIKE N'%OUTPATIENT%' THEN 2 "
             "ELSE 0 END"
         )
-
-        base_frames = []
-        for i in range(0, len(clean_base_ids), 900):
-            chunk = clean_base_ids[i:i + 900]
-            placeholders = ",".join("?" for _ in chunk)
-            base_sql = f"""
-                SELECT
-                    CAST(v.[{visit_id_col}] AS INT) AS BaseVisit_ID,
-                    {"CAST(NULLIF(v.[" + patient_id_col + "], 0) AS INT) AS PatientID," if patient_id_col else "CAST(NULL AS INT) AS PatientID,"}
-                    {regno_expr} AS RegNo,
-                    CAST(v.[{visit_date_col}] AS DATETIME) AS VisitDate
-                FROM dbo.[{visit_table}] v WITH (NOLOCK)
-                WHERE v.[{visit_id_col}] IN ({placeholders})
-            """
-            df_chunk = pd.read_sql(base_sql, conn, params=chunk)
-            if df_chunk is not None and not df_chunk.empty:
-                base_frames.append(df_chunk)
-
-        if not base_frames:
+        match_filters = []
+        if patient_id_col:
+            match_filters.append(
+                "NULLIF(v.[{pid_col}], 0) IN (SELECT DISTINCT PatientID FROM #BaseRows WHERE PatientID IS NOT NULL)".format(
+                    pid_col=patient_id_col
+                )
+            )
+            match_filters.append(
+                "{reg_expr} IN (SELECT DISTINCT RegNo FROM #BaseRows WHERE RegNo <> N'')".format(
+                    reg_expr=regno_expr
+                )
+            )
+        if not match_filters:
             return _empty()
 
-        base_df = pd.concat(base_frames, ignore_index=True)
-        base_df.columns = [str(c).strip() for c in base_df.columns]
-        if "BaseVisit_ID" not in base_df.columns:
-            return _empty()
+        has_ipd_sql = (
+            "MAX(CASE WHEN t.NormVisitTypeID = 1 "
+            "AND t.Visit_ID <> b.BaseVisit_ID "
+            "AND (t.VisitDate > b.VisitDate OR (t.VisitDate = b.VisitDate AND t.Visit_ID > b.BaseVisit_ID)) "
+            "THEN 1 ELSE 0 END)"
+            if 1 in clean_targets else
+            "CAST(0 AS INT)"
+        )
+        has_dpv_sql = (
+            "MAX(CASE WHEN t.NormVisitTypeID = 3 "
+            "AND t.Visit_ID <> b.BaseVisit_ID "
+            "AND (t.VisitDate > b.VisitDate OR (t.VisitDate = b.VisitDate AND t.Visit_ID > b.BaseVisit_ID)) "
+            "THEN 1 ELSE 0 END)"
+            if 3 in clean_targets else
+            "CAST(0 AS INT)"
+        )
+        target_ids_sql = ", ".join(str(int(v)) for v in clean_targets)
 
-        base_df["BaseVisit_ID"] = pd.to_numeric(base_df["BaseVisit_ID"], errors="coerce").fillna(0).astype(int)
-        if "PatientID" not in base_df.columns:
-            base_df["PatientID"] = pd.Series(dtype="Int64")
-        base_df["PatientID"] = pd.to_numeric(base_df["PatientID"], errors="coerce").astype("Int64")
-        if "RegNo" not in base_df.columns:
-            base_df["RegNo"] = ""
-        base_df["RegNo"] = base_df["RegNo"].map(_norm_reg)
-        base_df["VisitDate"] = pd.to_datetime(base_df["VisitDate"], errors="coerce")
-        base_df = base_df.drop_duplicates(subset=["BaseVisit_ID"], keep="last").reset_index(drop=True)
-        if base_df.empty:
-            return _empty()
+        cur = conn.cursor()
+        cur.execute("CREATE TABLE #BaseIds (BaseVisit_ID INT NOT NULL PRIMARY KEY)")
+        cur.fast_executemany = True
+        cur.executemany(
+            "INSERT INTO #BaseIds (BaseVisit_ID) VALUES (?)",
+            [(int(visit_id),) for visit_id in clean_base_ids],
+        )
 
-        min_visit_dt = base_df["VisitDate"].dropna().min()
-        min_visit_dt = pd.Timestamp("1900-01-01") if pd.isna(min_visit_dt) else pd.Timestamp(min_visit_dt)
-        min_visit_param = min_visit_dt.to_pydatetime()
+        sql = f"""
+            SET NOCOUNT ON;
 
-        patient_ids = []
-        if "PatientID" in base_df.columns:
-            patient_ids = sorted({
-                int(v) for v in base_df["PatientID"].dropna().tolist()
-                if pd.notna(v) and int(v) > 0
-            })
-        reg_nos = sorted({
-            _norm_reg(v) for v in base_df.get("RegNo", pd.Series(dtype=str)).tolist()
-            if _norm_reg(v)
-        })
+            CREATE TABLE #BaseRows (
+                BaseVisit_ID INT NOT NULL PRIMARY KEY,
+                PatientID INT NULL,
+                RegNo NVARCHAR(120) NOT NULL,
+                VisitDate DATETIME NULL
+            );
 
-        target_frames = []
-        target_placeholders = ",".join("?" for _ in clean_targets)
-        target_prefix_sql = f"""
+            INSERT INTO #BaseRows (BaseVisit_ID, PatientID, RegNo, VisitDate)
             SELECT
+                CAST(v.[{visit_id_col}] AS INT) AS BaseVisit_ID,
+                {patient_id_expr} AS PatientID,
+                {regno_expr} AS RegNo,
+                CAST(v.[{visit_date_col}] AS DATETIME) AS VisitDate
+            FROM dbo.[{visit_table}] v WITH (NOLOCK)
+            INNER JOIN #BaseIds b
+                ON b.BaseVisit_ID = v.[{visit_id_col}];
+
+            DECLARE @MinVisitDate DATETIME;
+            SELECT @MinVisitDate = MIN(VisitDate) FROM #BaseRows;
+
+            CREATE TABLE #TargetRows (
+                Visit_ID INT NOT NULL PRIMARY KEY,
+                PatientID INT NULL,
+                RegNo NVARCHAR(120) NOT NULL,
+                VisitDate DATETIME NULL,
+                NormVisitTypeID INT NOT NULL
+            );
+
+            INSERT INTO #TargetRows (Visit_ID, PatientID, RegNo, VisitDate, NormVisitTypeID)
+            SELECT DISTINCT
                 CAST(v.[{visit_id_col}] AS INT) AS Visit_ID,
-                {"CAST(NULLIF(v.[" + patient_id_col + "], 0) AS INT) AS PatientID," if patient_id_col else "CAST(NULL AS INT) AS PatientID,"}
+                {patient_id_expr} AS PatientID,
                 {regno_expr} AS RegNo,
                 CAST(v.[{visit_date_col}] AS DATETIME) AS VisitDate,
                 {norm_visit_expr} AS NormVisitTypeID
             FROM dbo.[{visit_table}] v WITH (NOLOCK)
-            WHERE v.[{visit_date_col}] >= ?
-              AND {norm_visit_expr} IN ({target_placeholders})
+            WHERE (@MinVisitDate IS NULL OR v.[{visit_date_col}] >= @MinVisitDate)
+              AND {norm_visit_expr} IN ({target_ids_sql})
+              AND (
+                  {" OR ".join(match_filters)}
+              );
+
+            SELECT
+                b.BaseVisit_ID,
+                {has_ipd_sql} AS HasIPD,
+                {has_dpv_sql} AS HasDPV
+            FROM #BaseRows b
+            LEFT JOIN #TargetRows t
+              ON (
+                  (b.PatientID IS NOT NULL AND t.PatientID = b.PatientID)
+                  OR (b.RegNo <> N'' AND t.RegNo = b.RegNo)
+              )
+            GROUP BY b.BaseVisit_ID
+            ORDER BY b.BaseVisit_ID;
         """
-        target_prefix_params = [min_visit_param] + clean_targets
 
-        if patient_id_col and patient_ids:
-            for i in range(0, len(patient_ids), 900):
-                chunk = patient_ids[i:i + 900]
-                pid_placeholders = ",".join("?" for _ in chunk)
-                sql = f"{target_prefix_sql} AND v.[{patient_id_col}] IN ({pid_placeholders})"
-                df_chunk = pd.read_sql(sql, conn, params=target_prefix_params + chunk)
-                if df_chunk is not None and not df_chunk.empty:
-                    target_frames.append(df_chunk)
+        cur.execute(sql)
+        rows = cur.fetchall()
+        cols = [str(col[0]).strip() for col in cur.description] if cur.description else out_cols
+        try:
+            cur.close()
+        except Exception:
+            pass
 
-        if reg_nos:
-            for i in range(0, len(reg_nos), 500):
-                chunk = reg_nos[i:i + 500]
-                reg_placeholders = ",".join("?" for _ in chunk)
-                sql = f"{target_prefix_sql} AND {regno_expr} IN ({reg_placeholders})"
-                df_chunk = pd.read_sql(sql, conn, params=target_prefix_params + chunk)
-                if df_chunk is not None and not df_chunk.empty:
-                    target_frames.append(df_chunk)
+        if not rows:
+            return _empty()
 
-        if target_frames:
-            target_df = pd.concat(target_frames, ignore_index=True)
-            target_df.columns = [str(c).strip() for c in target_df.columns]
-            target_df["Visit_ID"] = pd.to_numeric(target_df["Visit_ID"], errors="coerce").fillna(0).astype(int)
-            if "PatientID" not in target_df.columns:
-                target_df["PatientID"] = pd.Series(dtype="Int64")
-            target_df["PatientID"] = pd.to_numeric(target_df["PatientID"], errors="coerce").astype("Int64")
-            target_df["RegNo"] = target_df.get("RegNo", "").map(_norm_reg)
-            target_df["VisitDate"] = pd.to_datetime(target_df["VisitDate"], errors="coerce")
-            target_df["NormVisitTypeID"] = pd.to_numeric(target_df["NormVisitTypeID"], errors="coerce").fillna(0).astype(int)
-            target_df = target_df.drop_duplicates(subset=["Visit_ID"], keep="last").reset_index(drop=True)
-        else:
-            target_df = pd.DataFrame(columns=["Visit_ID", "PatientID", "RegNo", "VisitDate", "NormVisitTypeID"])
-
-        target_by_pid = {}
-        if not target_df.empty and "PatientID" in target_df.columns:
-            pid_df = target_df[target_df["PatientID"].notna()].copy()
-            if not pid_df.empty:
-                for pid, grp in pid_df.groupby("PatientID", dropna=False):
-                    try:
-                        target_by_pid[int(pid)] = grp.sort_values(["VisitDate", "Visit_ID"], kind="mergesort")
-                    except Exception:
-                        continue
-
-        target_by_reg = {}
-        if not target_df.empty:
-            reg_df = target_df[target_df["RegNo"].astype(str).str.strip() != ""].copy()
-            if not reg_df.empty:
-                for reg_no, grp in reg_df.groupby("RegNo", dropna=False):
-                    reg_key = _norm_reg(reg_no)
-                    if reg_key:
-                        target_by_reg[reg_key] = grp.sort_values(["VisitDate", "Visit_ID"], kind="mergesort")
-
-        out_rows = []
-        for _, base_row in base_df.iterrows():
-            base_visit_id = int(base_row.get("BaseVisit_ID") or 0)
-            base_dt = pd.to_datetime(base_row.get("VisitDate"), errors="coerce")
-            base_pid = 0
-            if pd.notna(base_row.get("PatientID")):
-                try:
-                    base_pid = int(base_row.get("PatientID") or 0)
-                except Exception:
-                    base_pid = 0
-            base_reg = _norm_reg(base_row.get("RegNo"))
-
-            matches = []
-            if base_pid > 0 and base_pid in target_by_pid:
-                matches.append(target_by_pid[base_pid])
-            if base_reg and base_reg in target_by_reg:
-                matches.append(target_by_reg[base_reg])
-
-            if matches:
-                match_df = pd.concat(matches, ignore_index=True).drop_duplicates(subset=["Visit_ID"], keep="last")
-                match_df = match_df[match_df["Visit_ID"] != base_visit_id].copy()
-                if pd.notna(base_dt):
-                    later_mask = (match_df["VisitDate"] > base_dt) | (
-                        (match_df["VisitDate"] == base_dt) & (match_df["Visit_ID"] > base_visit_id)
-                    )
-                    match_df = match_df[later_mask].copy()
-            else:
-                match_df = pd.DataFrame(columns=["NormVisitTypeID"])
-
-            out_rows.append({
-                "BaseVisit_ID": base_visit_id,
-                "HasIPD": int((match_df["NormVisitTypeID"] == 1).any()) if 1 in clean_targets else 0,
-                "HasDPV": int((match_df["NormVisitTypeID"] == 3).any()) if 3 in clean_targets else 0,
-            })
-
-        out_df = pd.DataFrame(out_rows, columns=out_cols)
+        out_df = pd.DataFrame.from_records(rows, columns=cols)
         if out_df.empty:
             return _empty()
+        for col in out_cols:
+            if col not in out_df.columns:
+                out_df[col] = 0
         for col in ["BaseVisit_ID", "HasIPD", "HasDPV"]:
             out_df[col] = pd.to_numeric(out_df[col], errors="coerce").fillna(0).astype(int)
-        return out_df
+        return out_df[out_cols]
     except Exception as e:
         print(f"Old/New follow-up flags fetch failed for {unit}: {e}")
         return _empty()
@@ -4970,6 +5195,129 @@ def _update_iv_po_mst_special_notes_conn(conn, po_id: int, special_notes: str | 
         return False
 
 
+def _ensure_iv_po_mst_print_format_column_conn(conn) -> bool:
+    """
+    Ensure IVPoMst has POPrintFormat column so saved PO layout preference can be reused later.
+    """
+    if not conn:
+        return False
+    table_name = _resolve_table_name(conn, ["IVPoMst", "IvPoMst", "IVPO_MST", "IV_Po_Mst"])
+    if not table_name:
+        return False
+    if _resolve_column(conn, table_name, ["POPrintFormat", "PrintFormat", "PurchaseOrderPrintFormat"]):
+        return True
+    try:
+        cur = conn.cursor()
+        cur.execute(f"ALTER TABLE dbo.{table_name} ADD POPrintFormat NVARCHAR(20) NULL")
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return bool(_resolve_column(conn, table_name, ["POPrintFormat", "PrintFormat", "PurchaseOrderPrintFormat"]))
+
+
+def _update_iv_po_mst_print_format_conn(conn, po_id: int, print_format: str | None) -> bool:
+    """
+    Persist PO print format preference in IVPoMst. Safe no-op if column unavailable.
+    """
+    if not conn:
+        return False
+    try:
+        po_id = int(po_id or 0)
+    except Exception:
+        return False
+    if po_id <= 0:
+        return False
+    table_name = _resolve_table_name(conn, ["IVPoMst", "IvPoMst", "IVPO_MST", "IV_Po_Mst"])
+    if not table_name:
+        return False
+    format_col = _resolve_column(conn, table_name, ["POPrintFormat", "PrintFormat", "PurchaseOrderPrintFormat"])
+    if not format_col and not _ensure_iv_po_mst_print_format_column_conn(conn):
+        return False
+    format_col = _resolve_column(conn, table_name, ["POPrintFormat", "PrintFormat", "PurchaseOrderPrintFormat"]) or "POPrintFormat"
+    id_col = _resolve_column(conn, table_name, ["ID", "Id"]) or "ID"
+    format_val = str(print_format or "").strip().lower()
+    if format_val not in {"def", "standard"}:
+        format_val = "standard"
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"UPDATE dbo.{table_name} SET [{format_col}] = ? WHERE [{id_col}] = ?",
+            (format_val, po_id),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def _ensure_iv_po_mst_work_order_body_html_column_conn(conn) -> bool:
+    """
+    Ensure IVPoMst has WorkOrderBodyHtml column for Quill editor content.
+    """
+    if not conn:
+        return False
+    table_name = _resolve_table_name(conn, ["IVPoMst", "IvPoMst", "IVPO_MST", "IV_Po_Mst"])
+    if not table_name:
+        return False
+    if _resolve_column(conn, table_name, ["WorkOrderBodyHtml", "WorkOrderBodyHTML", "WOBodyHtml"]):
+        return True
+    try:
+        cur = conn.cursor()
+        cur.execute(f"ALTER TABLE dbo.{table_name} ADD WorkOrderBodyHtml NVARCHAR(MAX) NULL")
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return bool(_resolve_column(conn, table_name, ["WorkOrderBodyHtml", "WorkOrderBodyHTML", "WOBodyHtml"]))
+
+
+def _update_iv_po_mst_work_order_body_html_conn(conn, po_id: int, body_html: str | None) -> bool:
+    """
+    Persist Quill Work Order HTML on IVPoMst. Safe no-op if column unavailable.
+    """
+    if not conn:
+        return False
+    try:
+        po_id = int(po_id or 0)
+    except Exception:
+        return False
+    if po_id <= 0:
+        return False
+    table_name = _resolve_table_name(conn, ["IVPoMst", "IvPoMst", "IVPO_MST", "IV_Po_Mst"])
+    if not table_name:
+        return False
+    body_col = _resolve_column(conn, table_name, ["WorkOrderBodyHtml", "WorkOrderBodyHTML", "WOBodyHtml"])
+    if not body_col and not _ensure_iv_po_mst_work_order_body_html_column_conn(conn):
+        return False
+    body_col = _resolve_column(conn, table_name, ["WorkOrderBodyHtml", "WorkOrderBodyHTML", "WOBodyHtml"]) or "WorkOrderBodyHtml"
+    body_val = str(body_html or "").strip() or None
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"UPDATE dbo.{table_name} SET [{body_col}] = ? WHERE [ID] = ?",
+            (body_val, po_id),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
 def _ensure_iv_po_mst_senior_approval_authority_column_conn(conn) -> bool:
     """
     Ensure IVPoMst has SeniorApprovalAuthorityName column for selective senior signoff on PDF.
@@ -5096,6 +5444,170 @@ def _update_iv_po_mst_senior_approval_designation_conn(conn, po_id: int, designa
         return False
 
 
+def _resolve_iv_po_mst_meta(conn):
+    if not conn:
+        return None, None, None, None
+    table_name = _resolve_table_name(conn, ["IVPoMst", "IvPoMst", "IVPO_MST", "IV_Po_Mst"])
+    if not table_name:
+        return None, None, None, None
+    id_col = _resolve_column(conn, table_name, ["ID", "Id"]) or "ID"
+    po_no_col = _resolve_column(conn, table_name, ["PONo", "PoNo", "PO_No"]) or "PONo"
+    doc_type_col = _resolve_column(conn, table_name, ["DocumentType", "DocType", "Document_Type"])
+    return table_name, id_col, po_no_col, doc_type_col
+
+
+def _ensure_iv_po_mst_document_type_column_conn(conn) -> bool:
+    """
+    Ensure IVPoMst has a DocumentType column so PO and Work Order records can coexist safely.
+    """
+    if not conn:
+        return False
+    table_name, _, _, doc_type_col = _resolve_iv_po_mst_meta(conn)
+    if not table_name:
+        return False
+    if doc_type_col:
+        return True
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"ALTER TABLE dbo.{table_name} ADD DocumentType NVARCHAR(20) NOT NULL CONSTRAINT DF_{table_name}_DocumentType DEFAULT('PO')"
+        )
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return bool(_resolve_column(conn, table_name, ["DocumentType", "DocType", "Document_Type"]))
+
+
+def _update_iv_po_mst_document_type_conn(conn, po_id: int, document_type: str | None) -> bool:
+    """
+    Persist PO/WO discriminator in IVPoMst. Safe no-op if unavailable.
+    """
+    if not conn:
+        return False
+    try:
+        po_id = int(po_id or 0)
+    except Exception:
+        return False
+    if po_id <= 0:
+        return False
+    table_name, id_col, _, doc_type_col = _resolve_iv_po_mst_meta(conn)
+    if not table_name:
+        return False
+    if not doc_type_col and not _ensure_iv_po_mst_document_type_column_conn(conn):
+        return False
+    _, _, _, doc_type_col = _resolve_iv_po_mst_meta(conn)
+    doc_type_col = doc_type_col or "DocumentType"
+    doc_type_val = str(document_type or "").strip().upper() or "PO"
+    if len(doc_type_val) > 20:
+        doc_type_val = doc_type_val[:20]
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"UPDATE dbo.{table_name} SET [{doc_type_col}] = ? WHERE [{id_col}] = ?",
+            (doc_type_val, po_id),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def _set_iv_po_mst_po_no_conn(conn, po_id: int, po_no_value: str | None) -> bool:
+    if not conn:
+        return False
+    try:
+        po_id = int(po_id or 0)
+    except Exception:
+        return False
+    if po_id <= 0:
+        return False
+    po_no_text = str(po_no_value or "").strip()
+    if not po_no_text:
+        return False
+    table_name, id_col, po_no_col, _ = _resolve_iv_po_mst_meta(conn)
+    if not table_name:
+        return False
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"UPDATE dbo.[{table_name}] SET [{po_no_col}] = ? WHERE [{id_col}] = ?",
+            (po_no_text, po_id),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def _ensure_work_order_detail_table_conn(conn) -> bool:
+    """
+    Ensure non-medical units have a dedicated detail table for Work Orders.
+    """
+    if not conn:
+        return False
+    statements = [
+        """
+        IF OBJECT_ID('dbo.HID_WorkOrder_Detail', 'U') IS NULL
+        BEGIN
+            CREATE TABLE dbo.HID_WorkOrder_Detail (
+                ID INT IDENTITY(1,1) PRIMARY KEY,
+                WOID INT NOT NULL,
+                [LineNo] INT NOT NULL DEFAULT(0),
+                ItemName NVARCHAR(250) NOT NULL,
+                UnitName NVARCHAR(50) NULL,
+                Qty DECIMAL(18,3) NOT NULL DEFAULT(0),
+                Rate DECIMAL(18,4) NOT NULL DEFAULT(0),
+                DiscountPct DECIMAL(18,2) NOT NULL DEFAULT(0),
+                TaxableAmount DECIMAL(18,2) NOT NULL DEFAULT(0),
+                CGSTPct DECIMAL(18,2) NOT NULL DEFAULT(0),
+                SGSTPct DECIMAL(18,2) NOT NULL DEFAULT(0),
+                IGSTPct DECIMAL(18,2) NOT NULL DEFAULT(0),
+                CGSTAmt DECIMAL(18,2) NOT NULL DEFAULT(0),
+                SGSTAmt DECIMAL(18,2) NOT NULL DEFAULT(0),
+                IGSTAmt DECIMAL(18,2) NOT NULL DEFAULT(0),
+                ForAmount DECIMAL(18,2) NOT NULL DEFAULT(0),
+                NetAmount DECIMAL(18,2) NOT NULL DEFAULT(0),
+                LineNotes NVARCHAR(1000) NULL,
+                CreatedBy NVARCHAR(100) NULL,
+                CreatedAt DATETIME2 NOT NULL DEFAULT(SYSDATETIME()),
+                UpdatedBy NVARCHAR(100) NULL,
+                UpdatedAt DATETIME2 NOT NULL DEFAULT(SYSDATETIME())
+            );
+        END
+        """,
+        "CREATE INDEX IX_HID_WorkOrder_Detail_WOID ON dbo.HID_WorkOrder_Detail(WOID)",
+        "CREATE UNIQUE INDEX UX_HID_WorkOrder_Detail_WOID_LineNo ON dbo.HID_WorkOrder_Detail(WOID, [LineNo])",
+    ]
+    cursor = conn.cursor()
+    for stmt in statements:
+        try:
+            cursor.execute(stmt)
+            conn.commit()
+        except Exception:
+            try:
+                conn.rollback()
+            except Exception:
+                pass
+    try:
+        cursor.execute("SELECT OBJECT_ID('dbo.HID_WorkOrder_Detail', 'U') AS obj_id")
+        row = cursor.fetchone()
+        return bool(row and row[0])
+    except Exception:
+        return False
+
+
 def ensure_iv_item_technical_specs_column(unit: str) -> bool:
     """
     Public helper to create IVItem.TechnicalSpecs if missing.
@@ -5144,6 +5656,38 @@ def ensure_po_special_notes_column(unit: str) -> bool:
             pass
 
 
+def ensure_po_print_format_column(unit: str) -> bool:
+    """
+    Public helper to create IVPoMst.POPrintFormat if missing.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        return False
+    try:
+        return _ensure_iv_po_mst_print_format_column_conn(conn)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def ensure_po_work_order_body_html_column(unit: str) -> bool:
+    """
+    Public helper to create IVPoMst.WorkOrderBodyHtml if missing.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        return False
+    try:
+        return _ensure_iv_po_mst_work_order_body_html_column_conn(conn)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def ensure_po_senior_approval_authority_column(unit: str) -> bool:
     """
     Public helper to create IVPoMst.SeniorApprovalAuthorityName if missing.
@@ -5169,6 +5713,38 @@ def ensure_po_senior_approval_designation_column(unit: str) -> bool:
         return False
     try:
         return _ensure_iv_po_mst_senior_approval_designation_column_conn(conn)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def ensure_iv_po_mst_document_type_column(unit: str) -> bool:
+    """
+    Public helper to create IVPoMst.DocumentType if missing.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        return False
+    try:
+        return _ensure_iv_po_mst_document_type_column_conn(conn)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def ensure_work_order_detail_table(unit: str) -> bool:
+    """
+    Public helper to create HID_WorkOrder_Detail if missing.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        return False
+    try:
+        return _ensure_work_order_detail_table_conn(conn)
     finally:
         try:
             conn.close()
@@ -5911,7 +6487,12 @@ def fetch_last_30_day_item_consumption(unit: str):
             pass
 
 
-def fetch_purchase_po_header(unit: str, po_id: int | None = None, po_no: str | None = None):
+def fetch_purchase_po_header(
+    unit: str,
+    po_id: int | None = None,
+    po_no: str | None = None,
+    document_type: str | None = "PO",
+):
     """
     Fetch PO header from IVPoMst with supplier details.
     """
@@ -5975,6 +6556,7 @@ def fetch_purchase_po_header(unit: str, po_id: int | None = None, po_no: str | N
                         return col
             return None
 
+        doc_type_col = pick_col(["DocumentType", "DocType", "Document_Type"])
         created_by_col = pick_col(["InsertedByUserID", "InsertedBy", "CreatedBy"])
         created_on_col = pick_col(["InsertedON", "InsertedOn", "CreatedOn", "CreatedAt"])
         updated_on_col = pick_col(["UpdatedOn", "UpdatedAt"])
@@ -5982,6 +6564,8 @@ def fetch_purchase_po_header(unit: str, po_id: int | None = None, po_no: str | N
         custom2_col = pick_col(["Custom2"])
         purchasing_dept_col = pick_col(["PurchasingDeptId", "PurchasingDeptID", "PurchaseDeptId", "PurchaseDeptID"])
         special_notes_col = pick_col(["SpecialNotes", "SpecialNote"])
+        po_print_format_col = pick_col(["POPrintFormat", "PrintFormat", "PurchaseOrderPrintFormat"])
+        work_order_body_html_col = pick_col(["WorkOrderBodyHtml", "WorkOrderBodyHTML", "WOBodyHtml"])
         senior_approval_authority_col = pick_col(["SeniorApprovalAuthorityName", "SeniorApprovalAuthority"])
         senior_approval_designation_col = pick_col(["SeniorApprovalAuthorityDesignation", "SeniorApprovalDesignation"])
         approver_name_col = pick_col(["ApproverName", "ApprovedByName", "ApprovingName"])
@@ -5990,6 +6574,11 @@ def fetch_purchase_po_header(unit: str, po_id: int | None = None, po_no: str | N
         approver_phone_col = pick_col(["ApproverPhone"])
         approver_signature_col = pick_col(["ApproverSignatureFile", "ApproverSignature"])
 
+        document_type_select = (
+            f"mst.[{doc_type_col}] AS DocumentType"
+            if doc_type_col
+            else "CAST('PO' AS NVARCHAR(20)) AS DocumentType"
+        )
         created_by_select = f"mst.[{created_by_col}] AS CreatedBy" if created_by_col else "CAST(NULL AS NVARCHAR(100)) AS CreatedBy"
         created_on_select = f"mst.[{created_on_col}] AS CreatedOn" if created_on_col else "CAST(NULL AS DATETIME) AS CreatedOn"
         updated_on_select = f"mst.[{updated_on_col}] AS UpdatedOn" if updated_on_col else "CAST(NULL AS DATETIME) AS UpdatedOn"
@@ -6004,6 +6593,16 @@ def fetch_purchase_po_header(unit: str, po_id: int | None = None, po_no: str | N
             f"mst.[{special_notes_col}] AS SpecialNotes"
             if special_notes_col
             else "CAST(NULL AS NVARCHAR(1000)) AS SpecialNotes"
+        )
+        po_print_format_select = (
+            f"mst.[{po_print_format_col}] AS POPrintFormat"
+            if po_print_format_col
+            else "CAST(NULL AS NVARCHAR(20)) AS POPrintFormat"
+        )
+        work_order_body_html_select = (
+            f"mst.[{work_order_body_html_col}] AS WorkOrderBodyHtml"
+            if work_order_body_html_col
+            else "CAST(NULL AS NVARCHAR(MAX)) AS WorkOrderBodyHtml"
         )
         senior_approval_authority_select = (
             f"mst.[{senior_approval_authority_col}] AS SeniorApprovalAuthorityName"
@@ -6040,18 +6639,32 @@ def fetch_purchase_po_header(unit: str, po_id: int | None = None, po_no: str | N
             if approver_signature_col
             else "CAST(NULL AS NVARCHAR(260)) AS ApproverSignatureFile"
         )
+        requested_doc_type = str(document_type or "PO").strip().upper() or "PO"
+        if requested_doc_type != "PO" and not doc_type_col:
+            return pd.DataFrame()
+        doc_type_filter = ""
+        params = [po_id, po_no]
+        if doc_type_col:
+            doc_type_filter = (
+                f" AND ISNULL(NULLIF(UPPER(LTRIM(RTRIM(CAST(mst.[{doc_type_col}] AS NVARCHAR(20))))), ''), 'PO') = ?"
+            )
+            params.append(requested_doc_type)
+
         sql = """
             SET NOCOUNT ON;
             SELECT TOP 1
                 mst.ID,
                 mst.PONo,
                 mst.PODate,
+                {document_type_select},
                 mst.SupplierID,
                 mst.RefNo,
                 mst.Subject,
                 mst.CreditDays,
                 mst.Notes,
                 {special_notes_select},
+                {po_print_format_select},
+                {work_order_body_html_select},
                 {senior_approval_authority_select},
                 {senior_approval_designation_select},
                 mst.Preparedby,
@@ -6091,11 +6704,12 @@ def fetch_purchase_po_header(unit: str, po_id: int | None = None, po_no: str | N
             FROM dbo.IVPoMst AS mst
             LEFT JOIN dbo.[{supplier_table}] AS sup
                 ON mst.SupplierID = sup.[{supplier_id_col}]
-            WHERE mst.ID = ? OR mst.PONo = ?
+            WHERE (mst.ID = ? OR mst.PONo = ?){doc_type_filter}
             ORDER BY mst.ID DESC
         """
         df = pd.read_sql(
             sql.format(
+                document_type_select=document_type_select,
                 gst_select=gst_select,
                 supplier_name_select=supplier_name_select,
                 supplier_code_select=supplier_code_select,
@@ -6111,6 +6725,8 @@ def fetch_purchase_po_header(unit: str, po_id: int | None = None, po_no: str | N
                 approver_phone_select=approver_phone_select,
                 approver_signature_select=approver_signature_select,
                 special_notes_select=special_notes_select,
+                po_print_format_select=po_print_format_select,
+                work_order_body_html_select=work_order_body_html_select,
                 senior_approval_authority_select=senior_approval_authority_select,
                 senior_approval_designation_select=senior_approval_designation_select,
                 email_select=email_select,
@@ -6120,11 +6736,12 @@ def fetch_purchase_po_header(unit: str, po_id: int | None = None, po_no: str | N
                 state_select=state_select,
                 pin_select=pin_select,
                 country_select=country_select,
+                doc_type_filter=doc_type_filter,
                 supplier_table=supplier_table,
                 supplier_id_col=supplier_id_col,
             ),
             conn,
-            params=[po_id, po_no],
+            params=params,
         )
         if df is None or df.empty:
             return df
@@ -6140,7 +6757,14 @@ def fetch_purchase_po_header(unit: str, po_id: int | None = None, po_no: str | N
             pass
 
 
-def fetch_purchase_po_items(unit: str, po_id: int):
+def fetch_work_order_header(unit: str, wo_id: int | None = None, wo_no: str | None = None):
+    """
+    Fetch Work Order header from IVPoMst with supplier details.
+    """
+    return fetch_purchase_po_header(unit, po_id=wo_id, po_no=wo_no, document_type="WO")
+
+
+def fetch_purchase_po_items(unit: str, po_id: int, document_type: str | None = "PO"):
     """
     Fetch PO item details from IVPoDtl with item metadata.
     """
@@ -6208,6 +6832,19 @@ def fetch_purchase_po_items(unit: str, po_id: int):
                     ORDER BY {order_expr}
                 ) AS manu
                 """
+        mst_table_name = _resolve_table_name(conn, ["IVPoMst", "IvPoMst", "IVPO_MST", "IV_Po_Mst"]) or "IVPoMst"
+        mst_doc_type_col = _resolve_column(conn, mst_table_name, ["DocumentType", "DocType", "Document_Type"])
+        requested_doc_type = str(document_type or "PO").strip().upper() or "PO"
+        if requested_doc_type != "PO" and not mst_doc_type_col:
+            return pd.DataFrame()
+        doc_type_filter = ""
+        params = [int(po_id)]
+        if mst_doc_type_col:
+            doc_type_filter = (
+                f" AND ISNULL(NULLIF(UPPER(LTRIM(RTRIM(CAST(mst.[{mst_doc_type_col}] AS NVARCHAR(20))))), ''), 'PO') = ?"
+            )
+            params.append(requested_doc_type)
+
         sql = f"""
             SET NOCOUNT ON;
             SELECT
@@ -6236,6 +6873,8 @@ def fetch_purchase_po_items(unit: str, po_id: int):
                 un.Name AS UnitName,
                 loc.Name AS StoreName
             FROM dbo.IVPoDtl AS dtl
+            INNER JOIN dbo.[{mst_table_name}] AS mst
+                ON dtl.POID = mst.ID
             LEFT JOIN dbo.IVItem AS itm
                 ON dtl.ItemID = itm.ID
             LEFT JOIN dbo.IVUnit AS un
@@ -6246,15 +6885,80 @@ def fetch_purchase_po_items(unit: str, po_id: int):
                 ON dtl.PackSizeId = pks.Id
             {manufacturer_join}
             WHERE dtl.POID = ?
+              {doc_type_filter}
             ORDER BY dtl.ID
         """
-        df = pd.read_sql(sql, conn, params=[int(po_id)])
+        df = pd.read_sql(sql, conn, params=params)
         if df is None or df.empty:
             return df
         df.columns = [c.strip() for c in df.columns]
         return df
     except Exception as e:
         print(f"Error fetching PO items ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_work_order_items(unit: str, wo_id: int):
+    """
+    Fetch Work Order detail rows from HID_WorkOrder_Detail.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for Work Order items")
+        return None
+    try:
+        if not _ensure_work_order_detail_table_conn(conn):
+            return None
+        mst_table_name, _, _, mst_doc_type_col = _resolve_iv_po_mst_meta(conn)
+        if not mst_table_name:
+            return None
+        doc_type_filter = ""
+        params = [int(wo_id)]
+        if mst_doc_type_col:
+            doc_type_filter = (
+                f" AND ISNULL(NULLIF(UPPER(LTRIM(RTRIM(CAST(mst.[{mst_doc_type_col}] AS NVARCHAR(20))))), ''), 'PO') = 'WO'"
+            )
+        sql = f"""
+            SET NOCOUNT ON;
+            SELECT
+                dtl.ID AS DetailID,
+                dtl.WOID AS WOID,
+                dtl.[LineNo] AS [LineNo],
+                CAST(NULL AS INT) AS ItemID,
+                dtl.ItemName,
+                dtl.UnitName,
+                dtl.Qty,
+                dtl.Rate,
+                dtl.DiscountPct AS Discount,
+                dtl.TaxableAmount,
+                dtl.CGSTPct,
+                dtl.SGSTPct,
+                dtl.IGSTPct,
+                dtl.CGSTAmt,
+                dtl.SGSTAmt,
+                dtl.IGSTAmt,
+                dtl.ForAmount,
+                dtl.NetAmount,
+                dtl.LineNotes
+            FROM dbo.HID_WorkOrder_Detail AS dtl
+            INNER JOIN dbo.[{mst_table_name}] AS mst
+                ON dtl.WOID = mst.ID
+            WHERE dtl.WOID = ?
+              {doc_type_filter}
+            ORDER BY dtl.[LineNo], dtl.ID
+        """
+        df = pd.read_sql(sql, conn, params=params)
+        if df is None or df.empty:
+            return df
+        df.columns = [c.strip() for c in df.columns]
+        return df
+    except Exception as e:
+        print(f"Error fetching Work Order items ({unit}): {e}")
         return None
     finally:
         try:
@@ -6526,6 +7230,10 @@ def fetch_purchase_po_valuation_rows(unit: str, from_date: str):
             ["PurchasingDeptId", "PurchasingDeptID", "PurchaseDeptId", "PurchaseDeptID"],
             mst_cols,
         )
+        doc_type_col = pick_col(
+            ["DocumentType", "DocType", "Document_Type"],
+            mst_cols,
+        )
 
         dept_select = f"dtl.[{dept_col}] AS DeptName" if dept_col in dtl_cols else (
             f"mst.[{dept_col}] AS DeptName" if dept_col in mst_cols else "CAST(NULL AS NVARCHAR(120)) AS DeptName"
@@ -6541,6 +7249,12 @@ def fetch_purchase_po_valuation_rows(unit: str, from_date: str):
             if purchasing_dept_col in mst_cols
             else "CAST(NULL AS INT) AS PurchasingDeptId"
         )
+
+        doc_type_filter = ""
+        if doc_type_col in mst_cols:
+            doc_type_filter = (
+                f" AND ISNULL(NULLIF(UPPER(LTRIM(RTRIM(CAST(mst.[{doc_type_col}] AS NVARCHAR(20))))), ''), 'PO') = 'PO'"
+            )
 
         sql = f"""
             SET NOCOUNT ON;
@@ -6574,6 +7288,7 @@ def fetch_purchase_po_valuation_rows(unit: str, from_date: str):
             LEFT JOIN dbo.IVItemLocation AS loc
                 ON itm.LocationID = loc.ID
             WHERE CONVERT(date, mst.PODate) >= ?
+              {doc_type_filter}
         """
         df = pd.read_sql(sql, conn, params=[from_date])
         if df is None or df.empty:
@@ -6684,6 +7399,10 @@ def update_iv_po_mst(unit: str, params: dict):
         conn.commit()
         _update_iv_po_mst_purchasing_dept_conn(conn, params.get("pId"), params.get("PurchasingDeptId"))
         _update_iv_po_mst_special_notes_conn(conn, params.get("pId"), params.get("pSpecialNotes"))
+        if "POPrintFormat" in params:
+            _update_iv_po_mst_print_format_conn(conn, params.get("pId"), params.get("POPrintFormat"))
+        if "WorkOrderBodyHtml" in params:
+            _update_iv_po_mst_work_order_body_html_conn(conn, params.get("pId"), params.get("WorkOrderBodyHtml"))
         _update_iv_po_mst_senior_approval_authority_conn(conn, params.get("pId"), params.get("SeniorApprovalAuthorityName"))
         _update_iv_po_mst_senior_approval_designation_conn(conn, params.get("pId"), params.get("SeniorApprovalAuthorityDesignation"))
         return {"status": "success"}
@@ -6719,6 +7438,30 @@ def clear_iv_po_dtl(unit: str, po_id: int):
             pass
 
 
+def clear_work_order_dtl(unit: str, wo_id: int):
+    """
+    Deletes existing Work Order details for a Work Order.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        return {"error": f"Could not connect to {unit} for Work Order detail delete"}
+    try:
+        if not _ensure_work_order_detail_table_conn(conn):
+            return {"error": "HID_WorkOrder_Detail table not available"}
+        cur = conn.cursor()
+        cur.execute("DELETE FROM dbo.HID_WorkOrder_Detail WHERE WOID = ?", int(wo_id))
+        conn.commit()
+        return {"status": "success"}
+    except Exception as e:
+        print(f"Error clearing Work Order details ({unit}): {e}")
+        return {"error": str(e)}
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def update_po_status(unit: str, po_id: int, status: str):
     """
     Update PO status in IVPoMst.
@@ -6727,12 +7470,63 @@ def update_po_status(unit: str, po_id: int, status: str):
     if not conn:
         return {"error": f"Could not connect to {unit} for PO status update"}
     try:
+        table_name, id_col, _, doc_type_col = _resolve_iv_po_mst_meta(conn)
+        if not table_name:
+            return {"error": "IVPoMst table not found"}
         cur = conn.cursor()
-        cur.execute("UPDATE dbo.IVPoMst SET Status = ? WHERE ID = ?", (status, int(po_id)))
+        if doc_type_col:
+            cur.execute(
+                f"""
+                UPDATE dbo.[{table_name}]
+                SET Status = ?
+                WHERE [{id_col}] = ?
+                  AND ISNULL(NULLIF(UPPER(LTRIM(RTRIM(CAST([{doc_type_col}] AS NVARCHAR(20))))), ''), 'PO') = 'PO'
+                """,
+                (status, int(po_id)),
+            )
+        else:
+            cur.execute(f"UPDATE dbo.[{table_name}] SET Status = ? WHERE [{id_col}] = ?", (status, int(po_id)))
         conn.commit()
         return {"status": "success"}
     except Exception as e:
         print(f"Error updating PO status ({unit}): {e}")
+        return {"error": str(e)}
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def update_work_order_status(unit: str, wo_id: int, status: str):
+    """
+    Update Work Order status in IVPoMst.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        return {"error": f"Could not connect to {unit} for Work Order status update"}
+    try:
+        table_name, id_col, _, doc_type_col = _resolve_iv_po_mst_meta(conn)
+        if not table_name:
+            return {"error": "IVPoMst table not found"}
+        if doc_type_col and not _ensure_iv_po_mst_document_type_column_conn(conn):
+            return {"error": "DocumentType column not available"}
+        _, _, _, doc_type_col = _resolve_iv_po_mst_meta(conn)
+        doc_type_col = doc_type_col or "DocumentType"
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            UPDATE dbo.[{table_name}]
+            SET Status = ?
+            WHERE [{id_col}] = ?
+              AND ISNULL(NULLIF(UPPER(LTRIM(RTRIM(CAST([{doc_type_col}] AS NVARCHAR(20))))), ''), 'PO') = 'WO'
+            """,
+            (status, int(wo_id)),
+        )
+        conn.commit()
+        return {"status": "success"}
+    except Exception as e:
+        print(f"Error updating Work Order status ({unit}): {e}")
         return {"error": str(e)}
     finally:
         try:
@@ -6747,6 +7541,7 @@ def fetch_purchase_po_list(
     limit: int = 200,
     query: str | None = None,
     item_query: str | None = None,
+    document_type: str | None = "PO",
 ):
     """
     Fetch recent POs for lookup dropdown.
@@ -6774,6 +7569,11 @@ def fetch_purchase_po_list(
         where_parts = []
 
         supplier_table = _resolve_table_name(conn, ["IvSupplier", "IVSupplier", "IVSUPPLIER"]) or "IvSupplier"
+        mst_table_name = _resolve_table_name(conn, ["IVPoMst", "IvPoMst", "IVPO_MST", "IV_Po_Mst"]) or "IVPoMst"
+        mst_doc_type_col = _resolve_column(conn, mst_table_name, ["DocumentType", "DocType", "Document_Type"])
+        mst_print_format_col = _resolve_column(conn, mst_table_name, ["POPrintFormat", "PrintFormat", "PurchaseOrderPrintFormat"])
+        mst_ref_no_col = _resolve_column(conn, mst_table_name, ["RefNo", "Ref_No", "ReferenceNo", "Reference_No"])
+        mst_subject_col = _resolve_column(conn, mst_table_name, ["Subject", "POSubject", "Title"])
         supplier_id_col = _resolve_column(conn, supplier_table, ["ID", "Id", "SupplierID", "SupplierId"]) or "ID"
         supplier_name_col = _resolve_column(conn, supplier_table, ["Name", "SupplierName"]) or "Name"
         supplier_email_col = _resolve_column(conn, supplier_table, ["Email", "EMail", "EMailId", "EmailID", "E_Mail"])
@@ -6787,7 +7587,32 @@ def fetch_purchase_po_list(
             if supplier_email_col
             else "CAST(NULL AS NVARCHAR(255)) AS SupplierEmail"
         )
+        print_format_select = (
+            f"mst.[{mst_print_format_col}] AS POPrintFormat"
+            if mst_print_format_col
+            else "CAST(NULL AS NVARCHAR(20)) AS POPrintFormat"
+        )
+        ref_no_select = (
+            f"mst.[{mst_ref_no_col}] AS RefNo"
+            if mst_ref_no_col
+            else "CAST(NULL AS NVARCHAR(120)) AS RefNo"
+        )
+        subject_select = (
+            f"mst.[{mst_subject_col}] AS Subject"
+            if mst_subject_col
+            else "CAST(NULL AS NVARCHAR(255)) AS Subject"
+        )
         query_supplier_name_col = f"sup.[{supplier_name_col}]" if supplier_name_col else "CAST('' AS NVARCHAR(255))"
+        query_ref_no_col = f"ISNULL(mst.[{mst_ref_no_col}], '')" if mst_ref_no_col else "CAST('' AS NVARCHAR(120))"
+        query_subject_col = f"ISNULL(mst.[{mst_subject_col}], '')" if mst_subject_col else "CAST('' AS NVARCHAR(255))"
+        requested_doc_type = str(document_type or "PO").strip().upper() or "PO"
+        if requested_doc_type != "PO" and not mst_doc_type_col:
+            return pd.DataFrame()
+        if mst_doc_type_col:
+            where_parts.append(
+                f"ISNULL(NULLIF(UPPER(LTRIM(RTRIM(CAST(mst.[{mst_doc_type_col}] AS NVARCHAR(20))))), ''), 'PO') = ?"
+            )
+            params.append(requested_doc_type)
 
         if status_code:
             if "," in status_code:
@@ -6800,9 +7625,12 @@ def fetch_purchase_po_list(
 
         q = (query or "").strip()
         if q:
-            where_parts.append(f"(mst.PONo LIKE ? OR CONVERT(VARCHAR(20), mst.ID) LIKE ? OR {query_supplier_name_col} LIKE ?)")
+            where_parts.append(
+                f"(mst.PONo LIKE ? OR CONVERT(VARCHAR(20), mst.ID) LIKE ? OR {query_supplier_name_col} LIKE ? "
+                f"OR {query_ref_no_col} LIKE ? OR {query_subject_col} LIKE ?)"
+            )
             q_like = f"%{q}%"
-            params.extend([q_like, q_like, q_like])
+            params.extend([q_like, q_like, q_like, q_like, q_like])
 
         item_q = (item_query or "").strip()
         if item_q:
@@ -6853,7 +7681,10 @@ def fetch_purchase_po_list(
                 mst.SupplierID AS SupplierID,
                 mst.Amount,
                 {supplier_name_select},
-                {supplier_email_select}
+                {supplier_email_select},
+                {print_format_select},
+                {ref_no_select},
+                {subject_select}
             FROM dbo.IVPoMst AS mst
             LEFT JOIN dbo.[{supplier_table}] AS sup
                 ON mst.SupplierID = sup.[{supplier_id_col}]
@@ -6867,6 +7698,128 @@ def fetch_purchase_po_list(
         return df
     except Exception as e:
         print(f"Error fetching PO list ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_work_order_list(
+    unit: str,
+    status: str | None = None,
+    limit: int = 200,
+    query: str | None = None,
+    item_query: str | None = None,
+):
+    """
+    Fetch recent Work Orders for lookup dropdown.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for Work Order list")
+        return None
+    try:
+        if not _ensure_work_order_detail_table_conn(conn):
+            return None
+        limit = max(1, min(int(limit or 200), 500))
+        status_map = {
+            "draft": "D",
+            "pending": "P",
+            "pending approval": "P",
+            "approved": "A",
+            "d": "D",
+            "p": "P",
+            "a": "A",
+            "open": "D,P",
+            "draft_pending": "D,P",
+        }
+        status_key = str(status or "").strip().lower()
+        status_code = status_map.get(status_key, "")
+        params = []
+        where_parts = []
+
+        supplier_table = _resolve_table_name(conn, ["IvSupplier", "IVSupplier", "IVSUPPLIER"]) or "IvSupplier"
+        mst_table_name = _resolve_table_name(conn, ["IVPoMst", "IvPoMst", "IVPO_MST", "IV_Po_Mst"]) or "IVPoMst"
+        mst_doc_type_col = _resolve_column(conn, mst_table_name, ["DocumentType", "DocType", "Document_Type"])
+        supplier_id_col = _resolve_column(conn, supplier_table, ["ID", "Id", "SupplierID", "SupplierId"]) or "ID"
+        supplier_name_col = _resolve_column(conn, supplier_table, ["Name", "SupplierName"]) or "Name"
+        supplier_email_col = _resolve_column(conn, supplier_table, ["Email", "EMail", "EMailId", "EmailID", "E_Mail"])
+        supplier_name_select = (
+            f"sup.[{supplier_name_col}] AS SupplierName"
+            if supplier_name_col
+            else "CAST(NULL AS NVARCHAR(255)) AS SupplierName"
+        )
+        supplier_email_select = (
+            f"sup.[{supplier_email_col}] AS SupplierEmail"
+            if supplier_email_col
+            else "CAST(NULL AS NVARCHAR(255)) AS SupplierEmail"
+        )
+        query_supplier_name_col = f"sup.[{supplier_name_col}]" if supplier_name_col else "CAST('' AS NVARCHAR(255))"
+
+        if not mst_doc_type_col:
+            return pd.DataFrame()
+        where_parts.append(
+            f"ISNULL(NULLIF(UPPER(LTRIM(RTRIM(CAST(mst.[{mst_doc_type_col}] AS NVARCHAR(20))))), ''), 'PO') = ?"
+        )
+        params.append("WO")
+
+        if status_code:
+            if "," in status_code:
+                where_parts.append("mst.Status IN (?, ?)")
+                parts = [s.strip() for s in status_code.split(",") if s.strip()]
+                params.extend(parts[:2])
+            else:
+                where_parts.append("mst.Status = ?")
+                params.append(status_code)
+
+        q = (query or "").strip()
+        if q:
+            where_parts.append(f"(mst.PONo LIKE ? OR CONVERT(VARCHAR(20), mst.ID) LIKE ? OR {query_supplier_name_col} LIKE ?)")
+            q_like = f"%{q}%"
+            params.extend([q_like, q_like, q_like])
+
+        item_q = (item_query or "").strip()
+        if item_q:
+            where_parts.append(
+                """
+                EXISTS (
+                    SELECT 1
+                    FROM dbo.HID_WorkOrder_Detail AS dtl
+                    WHERE dtl.WOID = mst.ID
+                      AND dtl.ItemName LIKE ?
+                )
+                """
+            )
+            params.append(f"%{item_q}%")
+
+        where_clause = f"WHERE {' AND '.join(where_parts)}" if where_parts else ""
+        sql = f"""
+            SET NOCOUNT ON;
+            SELECT TOP {limit}
+                mst.ID,
+                mst.PONo,
+                mst.PODate,
+                mst.Status,
+                mst.SupplierID AS SupplierID,
+                mst.Amount,
+                {supplier_name_select},
+                {supplier_email_select},
+                CAST('WO' AS NVARCHAR(20)) AS DocumentType
+            FROM dbo.[{mst_table_name}] AS mst
+            LEFT JOIN dbo.[{supplier_table}] AS sup
+                ON mst.SupplierID = sup.[{supplier_id_col}]
+            {where_clause}
+            ORDER BY mst.ID DESC
+        """
+        df = pd.read_sql(sql, conn, params=params)
+        if df is None or df.empty:
+            return df
+        df.columns = [c.strip() for c in df.columns]
+        return df
+    except Exception as e:
+        print(f"Error fetching Work Order list ({unit}): {e}")
         return None
     finally:
         try:
@@ -8626,6 +9579,13 @@ def add_item_manufacturer_link(
     if not conn:
         return {"error": f"Could not connect to {unit}"}
     try:
+        user_token_str = str(user_token or "").strip()
+        try:
+            user_id_val = int(user_token_str)
+        except Exception:
+            user_id_val = 1
+        if not user_token_str:
+            user_token_str = str(user_id_val)
         cursor = conn.cursor()
         cursor.execute(
             "SELECT LinkId FROM dbo.IVItemManuLink WHERE ItemID = ? AND ID = ?",
@@ -8650,13 +9610,13 @@ def add_item_manufacturer_link(
                 int(item_id),
                 int(manufacturer_id),
                 now_str,
-                user_token,
-                user_token,
+                user_id_val,
+                user_id_val,
                 now_str,
                 mac_name,
                 mac_id,
                 remote_addr,
-                user_token,
+                user_token_str,
                 now_str,
                 mac_name,
                 mac_id,
@@ -9144,6 +10104,10 @@ def add_iv_po_mst(unit: str, params: dict):
         if po_id:
             _update_iv_po_mst_purchasing_dept_conn(conn, int(po_id), params.get("PurchasingDeptId"))
             _update_iv_po_mst_special_notes_conn(conn, int(po_id), params.get("pSpecialNotes"))
+            if "POPrintFormat" in params:
+                _update_iv_po_mst_print_format_conn(conn, int(po_id), params.get("POPrintFormat"))
+            if "WorkOrderBodyHtml" in params:
+                _update_iv_po_mst_work_order_body_html_conn(conn, int(po_id), params.get("WorkOrderBodyHtml"))
             _update_iv_po_mst_senior_approval_authority_conn(conn, int(po_id), params.get("SeniorApprovalAuthorityName"))
             _update_iv_po_mst_senior_approval_designation_conn(conn, int(po_id), params.get("SeniorApprovalAuthorityDesignation"))
             return {"po_id": int(po_id)}
@@ -9159,6 +10123,41 @@ def add_iv_po_mst(unit: str, params: dict):
             conn.close()
         except Exception:
             pass
+
+
+def add_iv_work_order_mst(unit: str, params: dict):
+    """
+    Creates a Work Order master in IVPoMst, then marks it as WO and assigns WO-<ID>.
+    """
+    temp_token = f"WO-TEMP-{int(time.time() * 1000)}"
+    write_params = dict(params or {})
+    write_params["pPono"] = str(write_params.get("pPono") or temp_token)[:100]
+    result = add_iv_po_mst(unit, write_params)
+    if result.get("error"):
+        return result
+    wo_id = int(result.get("po_id") or 0)
+    if wo_id <= 0:
+        return {"error": "Failed to create Work Order master"}
+    wo_no_result = ensure_work_order_number(unit, wo_id, preferred_wo_no=params.get("pPono"))
+    if wo_no_result.get("error"):
+        return {"error": wo_no_result.get("error")}
+    return {"wo_id": wo_id, "wo_no": wo_no_result.get("wo_no")}
+
+
+def update_iv_work_order_mst(unit: str, params: dict):
+    """
+    Updates a Work Order master in IVPoMst, then re-enforces WO metadata.
+    """
+    result = update_iv_po_mst(unit, params)
+    if result.get("error"):
+        return result
+    wo_id = int(params.get("pId") or 0)
+    if wo_id <= 0:
+        return {"error": "Invalid Work Order ID"}
+    wo_no_result = ensure_work_order_number(unit, wo_id, preferred_wo_no=params.get("pPono"))
+    if wo_no_result.get("error"):
+        return {"error": wo_no_result.get("error")}
+    return {"status": "success", "wo_id": wo_id, "wo_no": wo_no_result.get("wo_no")}
 
 
 _PO_DTL_INSERT_SQL = """
@@ -9283,6 +10282,101 @@ def add_iv_po_dtl_many(unit: str, params_list: list[dict]):
                     pass
                 row_no = params.get("_row_no") or idx
                 item_name = str(params.get("_item_name") or "").strip()
+                label = f"Row {row_no}"
+                if item_name:
+                    label += f" ({item_name})"
+                errors.append(f"{label}: {e}")
+        return {"success": True, "success_count": success_count, "errors": errors}
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"error": str(e)}
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def add_work_order_dtl_many(unit: str, params_list: list[dict]):
+    """
+    Inserts multiple Work Order detail rows into HID_WorkOrder_Detail.
+    Returns per-row errors while continuing remaining rows.
+    """
+    rows = list(params_list or [])
+    if not rows:
+        return {"success": True, "success_count": 0, "errors": []}
+    conn = get_sql_connection(unit)
+    if not conn:
+        return {"error": f"Could not connect to {unit}"}
+    try:
+        if not _ensure_work_order_detail_table_conn(conn):
+            return {"error": "HID_WorkOrder_Detail table not available"}
+        cursor = conn.cursor()
+        success_count = 0
+        errors = []
+        sql = """
+            INSERT INTO dbo.HID_WorkOrder_Detail (
+                WOID,
+                [LineNo],
+                ItemName,
+                UnitName,
+                Qty,
+                Rate,
+                DiscountPct,
+                TaxableAmount,
+                CGSTPct,
+                SGSTPct,
+                IGSTPct,
+                CGSTAmt,
+                SGSTAmt,
+                IGSTAmt,
+                ForAmount,
+                NetAmount,
+                LineNotes,
+                CreatedBy,
+                UpdatedBy
+            )
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        """
+        for idx, params in enumerate(rows, start=1):
+            try:
+                cursor.execute(
+                    sql,
+                    int(params.get("WOID") or 0),
+                    int(params.get("LineNo") or idx),
+                    str(params.get("ItemName") or "").strip(),
+                    str(params.get("UnitName") or "").strip() or None,
+                    float(params.get("Qty") or 0),
+                    float(params.get("Rate") or 0),
+                    float(params.get("DiscountPct") or 0),
+                    float(params.get("TaxableAmount") or 0),
+                    float(params.get("CGSTPct") or 0),
+                    float(params.get("SGSTPct") or 0),
+                    float(params.get("IGSTPct") or 0),
+                    float(params.get("CGSTAmt") or 0),
+                    float(params.get("SGSTAmt") or 0),
+                    float(params.get("IGSTAmt") or 0),
+                    float(params.get("ForAmount") or 0),
+                    float(params.get("NetAmount") or 0),
+                    str(params.get("LineNotes") or "").strip() or None,
+                    str(params.get("CreatedBy") or "").strip() or None,
+                    str(params.get("UpdatedBy") or "").strip() or None,
+                )
+                try:
+                    conn.commit()
+                except Exception:
+                    pass
+                success_count += 1
+            except Exception as e:
+                try:
+                    conn.rollback()
+                except Exception:
+                    pass
+                row_no = params.get("_row_no") or idx
+                item_name = str(params.get("ItemName") or "").strip()
                 label = f"Row {row_no}"
                 if item_name:
                     label += f" ({item_name})"
@@ -9740,6 +10834,10 @@ def add_iv_po_mst_with_autonumber(unit: str, params: dict, lock_timeout_ms: int 
             final_po_no = str(saved_po_no or po_no or "").strip()
             _update_iv_po_mst_purchasing_dept_conn(conn, int(po_id), params.get("PurchasingDeptId"))
             _update_iv_po_mst_special_notes_conn(conn, int(po_id), params.get("pSpecialNotes"))
+            if "POPrintFormat" in params:
+                _update_iv_po_mst_print_format_conn(conn, int(po_id), params.get("POPrintFormat"))
+            if "WorkOrderBodyHtml" in params:
+                _update_iv_po_mst_work_order_body_html_conn(conn, int(po_id), params.get("WorkOrderBodyHtml"))
             _update_iv_po_mst_senior_approval_authority_conn(conn, int(po_id), params.get("SeniorApprovalAuthorityName"))
             _update_iv_po_mst_senior_approval_designation_conn(conn, int(po_id), params.get("SeniorApprovalAuthorityDesignation"))
             return {"po_id": int(po_id), "po_no": final_po_no}
@@ -9847,6 +10945,54 @@ def ensure_purchase_po_number(unit: str, po_id: int, preferred_po_no: str | None
     finally:
         if lock_acquired:
             _release_app_lock(cursor, lock_resource)
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def ensure_work_order_number(unit: str, wo_id: int, preferred_wo_no: str | None = None):
+    """
+    Ensures IVPoMst stores a Work Order number and DocumentType for the given record.
+    """
+    try:
+        target_wo_id = int(wo_id)
+    except Exception:
+        return {"error": "Invalid Work Order ID"}
+    if target_wo_id <= 0:
+        return {"error": "Invalid Work Order ID"}
+
+    conn = get_sql_connection(unit)
+    if not conn:
+        return {"error": f"Could not connect to {unit}"}
+    try:
+        if not _ensure_iv_po_mst_document_type_column_conn(conn):
+            return {"error": "DocumentType column not available"}
+        table_name, id_col, po_no_col, doc_type_col = _resolve_iv_po_mst_meta(conn)
+        if not table_name:
+            return {"error": "IVPoMst table not found"}
+        wo_no_value = str(preferred_wo_no or "").strip() or f"WO-{target_wo_id}"
+        if len(wo_no_value) > 100:
+            wo_no_value = wo_no_value[:100]
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            UPDATE dbo.[{table_name}]
+            SET [{po_no_col}] = ?,
+                [{doc_type_col or 'DocumentType'}] = 'WO'
+            WHERE [{id_col}] = ?
+            """,
+            (wo_no_value, target_wo_id),
+        )
+        conn.commit()
+        return {"wo_no": wo_no_value, "updated": True}
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"error": str(e)}
+    finally:
         try:
             conn.close()
         except Exception:
@@ -11432,6 +12578,293 @@ def fetch_modification_patients_search(unit: str, query: str, limit: int = 200):
             pass
 
 
+def fetch_virtual_visit_source_visits(unit: str, patient_id, limit: int = 200):
+    """
+    Fetch recent Visit rows for a selected patient so the UI can clone a linked virtual visit.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for virtual visit source lookup")
+        return None
+    try:
+        patient_id_val = int(patient_id)
+    except Exception:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return pd.DataFrame()
+    try:
+        limit_val = max(1, min(int(limit), 1000))
+    except Exception:
+        limit_val = 200
+    try:
+        visit_table = "dbo.Visit"
+        vd_table = "dbo.Visit_Duplicate"
+        pt_table = "dbo.PatientType_mst"
+        pst_table = "dbo.PatientSubType_Mst"
+        billing_table = "dbo.Billing_Mst"
+
+        def _col_expr(prefix: str, table_name: str, candidates: list[str], alias: str) -> str:
+            col = _resolve_column(conn, table_name, candidates)
+            if not col:
+                return f"NULL AS {alias}"
+            return f"{prefix}.{col} AS {alias}"
+
+        visit_id_col = _resolve_column(conn, visit_table, ["Visit_ID", "VisitID", "visitId", "visit_id"])
+        patient_id_col = _resolve_column(conn, visit_table, ["PatientID", "PatientId", "patientId", "patient_id"])
+        visit_no_col = _resolve_column(conn, visit_table, ["VisitNo", "Visit_No"])
+        admission_no_col = _resolve_column(conn, visit_table, ["AdmissionNo", "Admission_No"])
+        visit_type_id_col = _resolve_column(conn, visit_table, ["VisitTypeID", "VisitTypeId", "VisitType_ID"])
+        type_of_visit_col = _resolve_column(conn, visit_table, ["TypeOfVisit", "VisitType", "Visit_Type"])
+        visit_date_col = _resolve_column(conn, visit_table, ["VisitDate", "Visit_Date"])
+        discharge_date_col = _resolve_column(conn, visit_table, ["DischargeDate", "Discharge_Date"])
+        doc_col = _resolve_column(conn, visit_table, ["DocInCharge", "DocIncharge", "DoctorInCharge", "DoctorIncharge"])
+        patient_type_col = _resolve_column(conn, visit_table, ["PatientType_ID", "PatientTypeId", "PatientTypeID"])
+        patient_subtype_col = _resolve_column(conn, visit_table, ["PatientSubType_ID", "PatientSubTypeId", "PatientSubTypeID"])
+        pay_type_col = _resolve_column(conn, visit_table, ["payType", "PayType"])
+        has_duplicate_col = _resolve_column(conn, visit_table, ["HasVirtualVisitDuplicate"])
+        duplicate_visit_id_col = _resolve_column(conn, visit_table, ["VirtualVisitDuplicateId"])
+        duplicate_updated_on_col = _resolve_column(conn, visit_table, ["VirtualVisitUpdatedOn"])
+
+        if not visit_id_col or not patient_id_col:
+            return pd.DataFrame()
+
+        pt_id_col = _resolve_column(conn, pt_table, ["PatientType_ID", "PatientTypeId", "PatientTypeID"])
+        pt_name_col = _resolve_column(conn, pt_table, ["PatientType", "PatientTypeName", "TypeName", "Name"])
+        pst_id_col = _resolve_column(conn, pst_table, ["PatientSubType_ID", "PatientSubTypeId", "PatientSubTypeID"])
+        pst_name_col = _resolve_column(conn, pst_table, ["PatientSubType_Desc", "PatientSubTypeDesc", "PatientSubTypeName", "PatientSubType"])
+        pst_type_col = _resolve_column(conn, pst_table, ["PatientType_ID", "PatientTypeId", "PatientTypeID"])
+
+        pt_join_sql = ""
+        if patient_type_col and pt_id_col:
+            pt_join_sql = f"LEFT JOIN {pt_table} pt WITH (NOLOCK) ON pt.{pt_id_col} = v.{patient_type_col}"
+
+        pst_join_sql = ""
+        if patient_subtype_col and pst_id_col:
+            pst_join_sql = f"LEFT JOIN {pst_table} pst WITH (NOLOCK) ON pst.{pst_id_col} = v.{patient_subtype_col}"
+
+        vd_source_visit_col = _resolve_column(conn, vd_table, ["sourceVisitId", "SourceVisitId", "SourceVisitID"])
+        vd_visit_id_col = _resolve_column(conn, vd_table, ["visitId", "VisitId", "VisitID", "Visit_ID"])
+        vd_pay_type_col = _resolve_column(conn, vd_table, ["payType", "PayType"])
+        vd_patient_type_col = _resolve_column(conn, vd_table, ["patientTypeId", "PatientTypeId", "PatientTypeID"])
+        vd_inserted_on_col = _resolve_column(conn, vd_table, ["insertedOn", "InsertedOn", "InsertedON", "Inserted_On"])
+        vd_join_sql = ""
+        if vd_source_visit_col and vd_visit_id_col:
+            vd_join_sql = f"LEFT JOIN {vd_table} vd WITH (NOLOCK) ON vd.{vd_source_visit_col} = v.{visit_id_col}"
+
+        bill_visit_id_col = _resolve_column(conn, billing_table, ["Visit_ID", "VisitId", "VisitID", "visit_id"])
+        bill_due_col = _resolve_column(conn, billing_table, ["DueAmount", "Due_Amt", "dueAmount", "due_amt"])
+        bill_cancel_col = _resolve_column(conn, billing_table, ["CancelStatus", "Cancel_Status", "Cancelled", "Canceled"])
+        due_join_sql = ""
+        due_count_expr = "CAST(0 AS INT) AS EligibleDueBillCount"
+        due_total_expr = "CAST(0 AS FLOAT) AS EligibleDueTotal"
+        due_status_expr = "'No Due Pending' AS EligibleDueStatus"
+        if bill_visit_id_col and bill_due_col:
+            cancel_filter = f"AND ISNULL(bm.{bill_cancel_col}, 0) = 0" if bill_cancel_col else ""
+            due_join_sql = f"""
+                LEFT JOIN (
+                    SELECT
+                        bm.{bill_visit_id_col} AS DueVisitId,
+                        COUNT(1) AS EligibleDueBillCount,
+                        CAST(SUM(CAST(ISNULL(bm.{bill_due_col}, 0) AS FLOAT)) AS FLOAT) AS EligibleDueTotal
+                    FROM {billing_table} bm WITH (NOLOCK)
+                    WHERE ISNULL(bm.{bill_due_col}, 0) > 0
+                      {cancel_filter}
+                    GROUP BY bm.{bill_visit_id_col}
+                ) bill_due
+                    ON bill_due.DueVisitId = v.{visit_id_col}
+            """
+            due_count_expr = "CAST(ISNULL(bill_due.EligibleDueBillCount, 0) AS INT) AS EligibleDueBillCount"
+            due_total_expr = "CAST(ISNULL(bill_due.EligibleDueTotal, 0) AS FLOAT) AS EligibleDueTotal"
+            due_status_expr = """
+                CASE
+                    WHEN ISNULL(bill_due.EligibleDueBillCount, 0) > 0 THEN 'Due Pending'
+                    ELSE 'No Due Pending'
+                END AS EligibleDueStatus
+            """
+
+        doctor_name_expr = "NULL AS DocInChargeName"
+        if doc_col:
+            doctor_name_expr = f"CASE WHEN ISNULL(v.{doc_col}, 0) > 0 THEN dbo.fn_doctorfirstname(v.{doc_col}) ELSE NULL END AS DocInChargeName"
+
+        patient_type_name_expr = "NULL AS PatientTypeName"
+        if pt_name_col:
+            patient_type_name_expr = f"pt.{pt_name_col} AS PatientTypeName"
+
+        patient_subtype_name_expr = "NULL AS PatientSubTypeName"
+        if pst_name_col:
+            patient_subtype_name_expr = f"pst.{pst_name_col} AS PatientSubTypeName"
+
+        visit_type_text_expr = "NULL AS VisitType"
+        if type_of_visit_col:
+            visit_type_text_expr = f"v.{type_of_visit_col} AS VisitType"
+        elif visit_type_id_col:
+            visit_type_text_expr = f"""
+                CASE v.{visit_type_id_col}
+                    WHEN 1 THEN 'IPD'
+                    WHEN 2 THEN 'OPD'
+                    WHEN 3 THEN 'DPV'
+                    ELSE NULL
+                END AS VisitType
+            """
+
+        linked_duplicate_id_expr = "NULL AS LinkedDuplicateVisitId"
+        linked_duplicate_pay_type_expr = "NULL AS LinkedDuplicatePayType"
+        linked_duplicate_patient_type_expr = "NULL AS LinkedDuplicatePatientTypeId"
+        linked_duplicate_on_expr = "NULL AS LinkedDuplicateInsertedOn"
+        linked_duplicate_exists_expr = "CAST(0 AS BIT) AS LinkedDuplicateExists"
+        link_status_expr = "'Available' AS LinkStatus"
+        if vd_join_sql:
+            linked_duplicate_id_expr = f"vd.{vd_visit_id_col} AS LinkedDuplicateVisitId"
+            if vd_pay_type_col:
+                linked_duplicate_pay_type_expr = f"vd.{vd_pay_type_col} AS LinkedDuplicatePayType"
+            if vd_patient_type_col:
+                linked_duplicate_patient_type_expr = f"vd.{vd_patient_type_col} AS LinkedDuplicatePatientTypeId"
+            if vd_inserted_on_col:
+                linked_duplicate_on_expr = f"vd.{vd_inserted_on_col} AS LinkedDuplicateInsertedOn"
+            linked_duplicate_exists_expr = f"CAST(CASE WHEN vd.{vd_visit_id_col} IS NULL THEN 0 ELSE 1 END AS BIT) AS LinkedDuplicateExists"
+            link_status_expr = f"CASE WHEN vd.{vd_visit_id_col} IS NULL THEN 'Available' ELSE 'Already Linked' END AS LinkStatus"
+        elif has_duplicate_col or duplicate_visit_id_col:
+            has_expr = f"ISNULL(v.{has_duplicate_col}, 0)" if has_duplicate_col else "0"
+            dup_expr = f"v.{duplicate_visit_id_col}" if duplicate_visit_id_col else "NULL"
+            linked_duplicate_id_expr = f"{dup_expr} AS LinkedDuplicateVisitId"
+            if duplicate_updated_on_col:
+                linked_duplicate_on_expr = f"v.{duplicate_updated_on_col} AS LinkedDuplicateInsertedOn"
+            linked_duplicate_exists_expr = f"CAST(CASE WHEN {has_expr} = 1 OR {dup_expr} IS NOT NULL THEN 1 ELSE 0 END AS BIT) AS LinkedDuplicateExists"
+            link_status_expr = f"CASE WHEN {has_expr} = 1 OR {dup_expr} IS NOT NULL THEN 'Already Linked' ELSE 'Available' END AS LinkStatus"
+
+        patient_category_expr = "NULL AS PatientCategory"
+        if pay_type_col:
+            patient_category_expr = f"""
+                CASE ISNULL(v.{pay_type_col}, 0)
+                    WHEN 1 THEN 'CASH'
+                    WHEN 2 THEN 'CASHLESS'
+                    ELSE ''
+                END AS PatientCategory
+            """
+
+        sql = f"""
+            SELECT TOP {limit_val}
+                v.{visit_id_col} AS Visit_ID,
+                v.{patient_id_col} AS PatientID,
+                {_col_expr('v', visit_table, ['VisitNo', 'Visit_No'], 'VisitNo')},
+                {_col_expr('v', visit_table, ['AdmissionNo', 'Admission_No'], 'AdmissionNo')},
+                {_col_expr('v', visit_table, ['VisitTypeID', 'VisitTypeId', 'VisitType_ID'], 'VisitTypeID')},
+                {visit_type_text_expr},
+                {_col_expr('v', visit_table, ['VisitDate', 'Visit_Date'], 'VisitDate')},
+                {_col_expr('v', visit_table, ['DischargeDate', 'Discharge_Date'], 'DischargeDate')},
+                {_col_expr('v', visit_table, ['DocInCharge', 'DocIncharge', 'DoctorInCharge', 'DoctorIncharge'], 'DocInCharge')},
+                {doctor_name_expr},
+                {_col_expr('v', visit_table, ['PatientType_ID', 'PatientTypeId', 'PatientTypeID'], 'PatientType_ID')},
+                {patient_type_name_expr},
+                {_col_expr('v', visit_table, ['PatientSubType_ID', 'PatientSubTypeId', 'PatientSubTypeID'], 'PatientSubType_ID')},
+                {patient_subtype_name_expr},
+                {_col_expr('v', visit_table, ['payType', 'PayType'], 'payType')},
+                {patient_category_expr},
+                {linked_duplicate_id_expr},
+                {linked_duplicate_pay_type_expr},
+                {linked_duplicate_patient_type_expr},
+                {linked_duplicate_on_expr},
+                {linked_duplicate_exists_expr},
+                {link_status_expr},
+                {due_count_expr},
+                {due_total_expr},
+                {due_status_expr}
+            FROM {visit_table} v WITH (NOLOCK)
+            {pt_join_sql}
+            {pst_join_sql}
+            {vd_join_sql}
+            {due_join_sql}
+            WHERE v.{patient_id_col} = ?
+            ORDER BY
+                v.{visit_date_col if visit_date_col else visit_id_col} DESC,
+                v.{visit_id_col} DESC
+        """
+        df = pd.read_sql(sql, conn, params=[patient_id_val])
+        if df is None or df.empty:
+            return df
+        df.columns = [c.strip() for c in df.columns]
+        df["Unit"] = (unit or "").upper()
+        return df
+    except Exception as e:
+        print(f"Error fetching virtual visit source visits ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_virtual_visit_source_bills(unit: str, source_visit_id):
+    """
+    Fetch active source-visit bills with pending due so the UI/backend can preview
+    the rows that will be auto-settled during linked virtual visit conversion.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for virtual visit source bills")
+        return None
+    try:
+        source_visit_id_val = int(source_visit_id)
+    except Exception:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return pd.DataFrame()
+    try:
+        billing_table = "dbo.Billing_Mst"
+        bill_id_col = _resolve_column(conn, billing_table, ["Bill_ID", "BillId", "BillID", "bill_id"])
+        visit_id_col = _resolve_column(conn, billing_table, ["Visit_ID", "VisitId", "VisitID", "visit_id"])
+        bill_no_col = _resolve_column(conn, billing_table, ["BillNo", "Bill_No", "billNo", "bill_no"])
+        bill_type_col = _resolve_column(conn, billing_table, ["BillType", "Bill_Type", "billType"])
+        bill_date_col = _resolve_column(conn, billing_table, ["BillDate", "Bill_Date", "billDate", "bill_date"])
+        net_amount_col = _resolve_column(conn, billing_table, ["NetAmount", "Net_Amt", "netAmount", "net_amt"])
+        due_amount_col = _resolve_column(conn, billing_table, ["DueAmount", "Due_Amt", "dueAmount", "due_amt"])
+        cancel_status_col = _resolve_column(conn, billing_table, ["CancelStatus", "Cancel_Status", "Canceled", "Cancelled"])
+        if not bill_id_col or not visit_id_col or not due_amount_col:
+            return pd.DataFrame()
+
+        bill_no_expr = f"bm.{bill_no_col} AS BillNo" if bill_no_col else "NULL AS BillNo"
+        bill_type_expr = f"bm.{bill_type_col} AS BillType" if bill_type_col else "NULL AS BillType"
+        bill_date_expr = f"bm.{bill_date_col} AS BillDate" if bill_date_col else "NULL AS BillDate"
+        net_amount_expr = f"CAST(ISNULL(bm.{net_amount_col}, 0) AS FLOAT) AS NetAmount" if net_amount_col else "CAST(0 AS FLOAT) AS NetAmount"
+        cancel_filter = f"AND ISNULL(bm.{cancel_status_col}, 0) = 0" if cancel_status_col else ""
+
+        sql = f"""
+            SELECT
+                bm.{bill_id_col} AS Bill_ID,
+                {bill_no_expr},
+                {bill_type_expr},
+                {bill_date_expr},
+                {net_amount_expr},
+                CAST(ISNULL(bm.{due_amount_col}, 0) AS FLOAT) AS DueAmount
+            FROM {billing_table} bm WITH (NOLOCK)
+            WHERE bm.{visit_id_col} = ?
+              AND ISNULL(bm.{due_amount_col}, 0) > 0
+              {cancel_filter}
+            ORDER BY
+                {f'bm.{bill_date_col} DESC,' if bill_date_col else ''}
+                bm.{bill_id_col} DESC
+        """
+        df = pd.read_sql(sql, conn, params=[source_visit_id_val])
+        if df is None or df.empty:
+            return df
+        df.columns = [c.strip() for c in df.columns]
+        df["Unit"] = (unit or "").upper()
+        return df
+    except Exception as e:
+        print(f"Error fetching virtual visit source bills ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def fetch_virtual_visit_history(unit: str, limit: int | None = None):
     """
     Fetch recent Visit_Duplicate entries for audit/confirmation in the UI.
@@ -11449,6 +12882,8 @@ def fetch_virtual_visit_history(unit: str, limit: int | None = None):
     try:
         vd_table = "dbo.Visit_Duplicate"
         p_table = "dbo.Patient"
+        pt_table = "dbo.PatientType_mst"
+        pst_table = "dbo.PatientSubType_Mst"
 
         def _col_expr(prefix: str, table_name: str, candidates: list[str], alias: str) -> str:
             if prefix == "p" and (not patient_id_col_vd or not patient_id_col_p):
@@ -11462,6 +12897,19 @@ def fetch_virtual_visit_history(unit: str, limit: int | None = None):
         inserted_on_col = _resolve_column(conn, vd_table, ["insertedOn", "InsertedOn", "InsertedON", "Inserted_On"])
         patient_id_col_vd = _resolve_column(conn, vd_table, ["patientId", "PatientId", "PatientID", "Patient_ID"])
         patient_id_col_p = _resolve_column(conn, p_table, ["PatientId", "patientId", "PatientID", "Patient_ID"])
+        patient_subtype_col = _resolve_column(conn, vd_table, ["patientSubTypeId", "PatientSubTypeId", "PatientSubTypeID", "PatientSubType_ID"])
+        patient_type_col = _resolve_column(conn, vd_table, ["patientTypeId", "PatientTypeId", "PatientTypeID"])
+        pay_type_col = _resolve_column(conn, vd_table, ["payType", "PayType"])
+        source_visit_id_col = _resolve_column(conn, vd_table, ["sourceVisitId", "SourceVisitId", "SourceVisitID"])
+        source_visit_no_col = _resolve_column(conn, vd_table, ["sourceVisitNo", "SourceVisitNo", "SourceVisitNO"])
+        source_admission_no_col = _resolve_column(conn, vd_table, ["sourceAdmissionNo", "SourceAdmissionNo", "SourceAdmissionNO"])
+        updated_by_col = _resolve_column(conn, vd_table, ["updatedBy", "UpdatedBy", "UpdatedByUserID"])
+        updated_on_col = _resolve_column(conn, vd_table, ["updatedOn", "UpdatedOn", "UpdatedON", "Updated_On"])
+        pt_id_col = _resolve_column(conn, pt_table, ["PatientType_ID", "PatientTypeId", "PatientTypeID"])
+        pt_name_col = _resolve_column(conn, pt_table, ["PatientType", "PatientTypeName", "TypeName", "Name"])
+        pst_id_col = _resolve_column(conn, pst_table, ["PatientSubType_ID", "PatientSubTypeId", "PatientSubTypeID"])
+        pst_name_col = _resolve_column(conn, pst_table, ["PatientSubType_Desc", "PatientSubTypeDesc", "PatientSubTypeName", "PatientSubType"])
+        pst_type_col = _resolve_column(conn, pst_table, ["PatientType_ID", "PatientTypeId", "PatientTypeID"])
 
         join_patient = bool(patient_id_col_vd and patient_id_col_p)
         if join_patient:
@@ -11471,9 +12919,20 @@ def fetch_virtual_visit_history(unit: str, limit: int | None = None):
 
         join_sql = ""
         if join_patient:
-            join_sql = f"LEFT JOIN Patient p WITH (NOLOCK) ON p.{patient_id_col_p} = vd.{patient_id_col_vd}"
+            join_sql += f" LEFT JOIN Patient p WITH (NOLOCK) ON p.{patient_id_col_p} = vd.{patient_id_col_vd}"
+        if patient_subtype_col and pst_id_col:
+            join_sql += f" LEFT JOIN {pst_table} pst WITH (NOLOCK) ON pst.{pst_id_col} = vd.{patient_subtype_col}"
+        if pt_id_col:
+            if patient_type_col and pst_type_col:
+                join_sql += f" LEFT JOIN {pt_table} pt WITH (NOLOCK) ON pt.{pt_id_col} = ISNULL(vd.{patient_type_col}, pst.{pst_type_col})"
+            elif patient_type_col:
+                join_sql += f" LEFT JOIN {pt_table} pt WITH (NOLOCK) ON pt.{pt_id_col} = vd.{patient_type_col}"
+            elif patient_subtype_col and pst_id_col and pst_type_col:
+                join_sql += f" LEFT JOIN {pt_table} pt WITH (NOLOCK) ON pt.{pt_id_col} = pst.{pst_type_col}"
 
         order_cols = []
+        if updated_on_col:
+            order_cols.append(f"vd.{updated_on_col} DESC")
         if inserted_on_col:
             order_cols.append(f"vd.{inserted_on_col} DESC")
         if visit_id_col:
@@ -11481,6 +12940,21 @@ def fetch_virtual_visit_history(unit: str, limit: int | None = None):
         order_sql = f"ORDER BY {', '.join(order_cols)}" if order_cols else ""
 
         top_sql = f"TOP {limit_val} " if limit_val else ""
+        patient_type_name_expr = "NULL AS PatientTypeName"
+        if pt_name_col:
+            patient_type_name_expr = f"pt.{pt_name_col} AS PatientTypeName"
+        patient_subtype_name_expr = "NULL AS PatientSubTypeName"
+        if pst_name_col:
+            patient_subtype_name_expr = f"pst.{pst_name_col} AS PatientSubTypeName"
+        patient_category_expr = "NULL AS PatientCategory"
+        if pay_type_col:
+            patient_category_expr = f"""
+                CASE ISNULL(vd.{pay_type_col}, 0)
+                    WHEN 1 THEN 'CASH'
+                    WHEN 2 THEN 'CASHLESS'
+                    ELSE ''
+                END AS PatientCategory
+            """
 
         sql = f"""
             SELECT {top_sql}
@@ -11489,12 +12963,26 @@ def fetch_virtual_visit_history(unit: str, limit: int | None = None):
                 {_col_expr('vd', vd_table, ['visitDate', 'VisitDate', 'Visit_Date'], 'visitDate')},
                 {_col_expr('vd', vd_table, ['dischargeDate', 'DischargeDate', 'Discharge_Date'], 'dischargeDate')},
                 {_col_expr('vd', vd_table, ['patientSubTypeId', 'PatientSubTypeId', 'PatientSubTypeID', 'PatientSubType_ID'], 'patientSubTypeId')},
+                {patient_subtype_name_expr},
+                {_col_expr('vd', vd_table, ['patientTypeId', 'PatientTypeId', 'PatientTypeID'], 'patientTypeId')},
+                {patient_type_name_expr},
                 {_col_expr('vd', vd_table, ['docId', 'DocId', 'DocID', 'DoctorId', 'DoctorID'], 'docId')},
                 {_col_expr('vd', vd_table, ['dischargeTypeId', 'DischargeTypeId', 'DischargeTypeID', 'DischargeType_ID'], 'dischargeTypeId')},
                 {_col_expr('vd', vd_table, ['visitTypeId', 'VisitTypeId', 'VisitTypeID', 'VisitType_ID'], 'visitTypeId')},
                 {_col_expr('vd', vd_table, ['visitStatus', 'VisitStatus'], 'visitStatus')},
+                {_col_expr('vd', vd_table, ['payType', 'PayType'], 'payType')},
+                {patient_category_expr},
+                {_col_expr('vd', vd_table, ['sourceVisitId', 'SourceVisitId', 'SourceVisitID'], 'sourceVisitId')},
+                {_col_expr('vd', vd_table, ['sourceVisitNo', 'SourceVisitNo', 'SourceVisitNO'], 'sourceVisitNo')},
+                {_col_expr('vd', vd_table, ['sourceAdmissionNo', 'SourceAdmissionNo', 'SourceAdmissionNO'], 'sourceAdmissionNo')},
+                CASE
+                    WHEN {"vd." + source_visit_id_col if source_visit_id_col else "NULL"} IS NULL THEN 'Standalone'
+                    ELSE 'Linked'
+                END AS LinkStatus,
                 {_col_expr('vd', vd_table, ['insertedBy', 'InsertedBy', 'InsertedByUserID'], 'insertedBy')},
                 {_col_expr('vd', vd_table, ['insertedOn', 'InsertedOn', 'InsertedON', 'Inserted_On'], 'insertedOn')},
+                {_col_expr('vd', vd_table, ['updatedBy', 'UpdatedBy', 'UpdatedByUserID'], 'updatedBy')},
+                {_col_expr('vd', vd_table, ['updatedOn', 'UpdatedOn', 'UpdatedON', 'Updated_On'], 'updatedOn')},
                 {_col_expr('p', p_table, ['Registration_No', 'RegistrationNo', 'Registration_No'], 'Registration_No')},
                 {patient_expr}
             FROM Visit_Duplicate vd WITH (NOLOCK)

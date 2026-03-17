@@ -1,6 +1,7 @@
 {% extends "layout.html" %}
 
 {% block content %}
+<link rel="stylesheet" href="{{ url_for('static', filename='vendor/quill/quill.snow.css') }}">
 <style>
   .po-wrapper {
     font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
@@ -25,6 +26,48 @@
     --card: rgba(255,255,255,0.92);
     --shadow: 0 12px 30px rgba(15,23,42,0.08);
     --radius: 16px;
+  }
+  .work-order-editor-shell {
+    border: 1px solid #dbe5f3;
+    border-radius: 18px;
+    overflow: hidden;
+    background: linear-gradient(180deg, rgba(255,255,255,0.98) 0%, rgba(248,251,255,0.95) 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.85);
+  }
+  .work-order-editor-toolbar {
+    border-bottom: 1px solid #dbe5f3;
+    background: linear-gradient(180deg, rgba(241,245,249,0.95) 0%, rgba(255,255,255,0.96) 100%);
+    padding: 6px 8px;
+  }
+  .work-order-editor {
+    min-height: 340px;
+    background: rgba(255,255,255,0.98);
+  }
+  .work-order-editor .ql-editor {
+    min-height: 340px;
+    font: 16px/1.75 "Georgia", "Times New Roman", serif;
+    color: #0f172a;
+    padding: 20px 22px;
+  }
+  .work-order-editor .ql-editor p,
+  .work-order-editor .ql-editor li {
+    margin-bottom: 0.45em;
+  }
+  .work-order-editor .ql-editor.ql-blank::before {
+    left: 22px;
+    right: 22px;
+    color: #94a3b8;
+    font-style: normal;
+  }
+  .work-order-editor--fallback {
+    border: none;
+    outline: none;
+    white-space: normal;
+  }
+  .work-order-editor-note {
+    margin-top: 10px;
+    font-size: 12px;
+    color: #64748b;
   }
   .po-wrapper.is-executive #addSupplierBtn,
   .po-wrapper.is-executive #openManufacturerMasterBtn,
@@ -335,6 +378,10 @@
   .module-tab-btn--po {
     --accent: #1e3a8a;
     --accent-soft: #dbeafe;
+  }
+  .module-tab-btn--work-order {
+    --accent: #0f766e;
+    --accent-soft: #ccfbf1;
   }
   .module-tab-btn--indent {
     --accent: #0f766e;
@@ -2430,6 +2477,13 @@
       </div>
       <div class="module-tab-sub">Create and approve purchase orders with GST.</div>
     </button>
+    <button class="module-tab-btn module-tab-btn--work-order" type="button" data-module="purchaseWorkOrderSection" id="workOrderTabBtn" style="display:none;">
+      <div class="module-tab-title">
+        <span class="module-tab-icon">WO</span>
+        Work Order
+      </div>
+      <div class="module-tab-sub">Create and approve service work orders for non-medical units.</div>
+    </button>
     <button class="module-tab-btn module-tab-btn--indent" type="button" data-module="purchaseIndentSection">
       <div class="module-tab-title">
         <span class="module-tab-icon">PI</span>
@@ -2453,7 +2507,7 @@
     </button>
   </div>
 
-  <div class="module-section" id="purchaseOrderSection">
+  <div class="module-section" id="purchaseOrderSection" hidden>
     <div class="po-alert" id="poAlert"></div>
     <div class="po-page tax-intra">
     <section class="po-hero">
@@ -2469,7 +2523,7 @@
         <div class="po-actions po-actions-split">
         <div class="po-actions-group po-actions-main">
           <div class="find-po">
-            <input type="text" id="findPoInput" placeholder="Find PO (No/ID)" list="poList">
+            <input type="text" id="findPoInput" placeholder="Find PO (No/ID/Supplier/Ref/Subject)" list="poList">
             <button class="btn ghost small" type="button" id="findPoBtn">Find PO</button>
           </div>
           <button class="btn primary" type="button" id="saveDraftBtn">Save Draft</button>
@@ -2477,7 +2531,7 @@
           <button class="btn secondary" type="button" id="printPoBtn">Print PO</button>
           <button class="btn secondary" type="button" id="printPoListBtn">Print Existing PO</button>
           <button class="btn secondary" type="button" id="emailPoBtn">Email PO</button>
-          {% if (session.get('role') or '').strip() == 'IT' %}
+          {% if can_use_po_def_format %}
           <div class="field po-print-format-hero">
             <label>Print Format</label>
             <select id="poPrintFormat">
@@ -2845,7 +2899,252 @@
     </div>
   </div>
 
-  <div class="module-section" id="purchaseIndentSection">
+  <div class="module-section" id="purchaseWorkOrderSection" hidden>
+    <div class="po-alert" id="workOrderAlert"></div>
+    <div class="po-page">
+      <section class="po-hero">
+        <div>
+          <h2>Work Order</h2>
+          <p>Create service work orders for approved non-medical vendors and agencies.</p>
+          <div class="hero-meta">
+            <span class="hero-chip" id="workOrderModeChip">Mode: Add</span>
+            <span class="hero-chip">Narrative PDF</span>
+            <span class="hero-chip">Non-Medical Units</span>
+          </div>
+        </div>
+        <div class="po-actions po-actions-split">
+          <div class="po-actions-group po-actions-main">
+            <div class="find-po">
+              <input type="text" id="findWorkOrderInput" placeholder="Find WO (No/ID)" list="workOrderList">
+              <button class="btn ghost small" type="button" id="findWorkOrderBtn">Find WO</button>
+            </div>
+            <button class="btn primary" type="button" id="saveWorkOrderDraftBtn">Save Draft</button>
+            <button class="btn secondary" type="button" id="submitWorkOrderBtn">Submit for Approval</button>
+            <button class="btn secondary" type="button" id="printWorkOrderBtn">Print WO</button>
+            <button class="btn secondary" type="button" id="emailWorkOrderBtn">Email WO</button>
+            <button class="btn ghost" type="button" id="useWorkOrderTemplateBtn">Use as Template</button>
+            <button class="btn ghost" type="button" id="newWorkOrderBtn">New WO</button>
+            <button class="btn ghost" type="button" id="clearWorkOrderBtn">Clear Form</button>
+          </div>
+        </div>
+      </section>
+
+      <div class="po-otp" id="workOrderOtpCard">
+        <div class="po-otp-head">
+          <h4>Approval OTP</h4>
+          <span class="pill light" id="workOrderOtpPill">Pending</span>
+        </div>
+        <div class="po-otp-note" id="workOrderOtpStatus">Submit for approval to send OTP to Purchasing Dept approver.</div>
+        <div class="po-otp-meta" id="workOrderOtpDeptInfo">Select Purchasing Dept to route OTP.</div>
+        <div class="po-otp-actions">
+          <input type="text" id="workOrderOtpInput" placeholder="Enter OTP from Purchasing Dept approver">
+          <button class="btn ghost small" type="button" id="workOrderOtpValidateBtn">Approve WO</button>
+          <button class="btn ghost small" type="button" id="workOrderOtpResendBtn">Resend OTP</button>
+        </div>
+        <div class="po-otp-extra">
+          <label class="po-otp-auto-email" for="workOrderOtpAutoEmail">
+            <input type="checkbox" id="workOrderOtpAutoEmail" checked>
+            Auto-email approved WO PDF to supplier
+          </label>
+        </div>
+      </div>
+
+      <section class="po-card">
+        <div class="po-card-head">
+          <div>
+            <h3>Work Order Header</h3>
+            <p>Commercial and approval details for the Work Order master.</p>
+          </div>
+          <div class="pill-group">
+            <span class="pill">Service</span>
+            <span class="pill light">Mirrors PO Approval</span>
+          </div>
+        </div>
+        <div class="form-grid po-header-grid">
+          <div class="po-header-divider"><span>Document & Workflow</span></div>
+          <div class="field span-2">
+            <label>WO No</label>
+            <input type="text" id="workOrderNo" placeholder="Auto on save" readonly>
+          </div>
+          <div class="field span-2">
+            <label>WO Date</label>
+            <input type="date" id="workOrderDate">
+          </div>
+          <div class="field span-2">
+            <label>WO Status</label>
+            <select id="workOrderStatus">
+              <option>Draft</option>
+              <option>Pending Approval</option>
+              <option>Approved</option>
+            </select>
+          </div>
+          <div class="field span-4 required">
+            <label>Purchasing Dept</label>
+            <select id="workOrderPurchasingDept">
+              <option value="">Select purchasing dept</option>
+            </select>
+            <div class="helper" id="workOrderPurchasingDeptHint">Approval OTP routing depends on this selection.</div>
+          </div>
+
+          <div class="po-header-divider"><span>Approval & Vendor</span></div>
+          <div class="field span-4">
+            <label>Senior Approval Authority</label>
+            <input type="text" id="workOrderSeniorApprovalAuthority" maxlength="160" placeholder="Director / CEO / MD name (optional)">
+          </div>
+          <div class="field span-4">
+            <label>Authority Designation</label>
+            <input type="text" id="workOrderSeniorApprovalDesignation" maxlength="120" placeholder="Director (optional)">
+          </div>
+          <div class="field span-4">
+            <label>Supplier Name</label>
+            <input type="text" id="workOrderSupplierName" placeholder="Search supplier" list="supplierList">
+            <input type="hidden" id="workOrderSupplierId">
+          </div>
+          <div class="field span-2">
+            <label>Supplier Code</label>
+            <input type="text" id="workOrderSupplierCode" placeholder="SUP-001">
+          </div>
+          <div class="field span-2">
+            <label>Supplier Email</label>
+            <input type="email" id="workOrderSupplierEmail" placeholder="supplier@example.com">
+          </div>
+          <div class="field span-3">
+            <label>Supplier GSTIN</label>
+            <input type="text" id="workOrderSupplierGstin" placeholder="GSTIN">
+          </div>
+          <div class="field span-3">
+            <label>Ref No</label>
+            <input type="text" id="workOrderRefNo" placeholder="Reference">
+          </div>
+          <div class="field span-5">
+            <label>Subject</label>
+            <input type="text" id="workOrderSubject" placeholder="Work order subject">
+          </div>
+          <div class="field span-2">
+            <label>Credit Days</label>
+            <input type="number" id="workOrderCreditDays" min="0" placeholder="0">
+          </div>
+          <div class="field span-2">
+            <label>Prepared By</label>
+            <input type="text" id="workOrderPreparedBy" placeholder="{{ session.get('username') or 'User' }}">
+          </div>
+        </div>
+      </section>
+
+      <section class="po-card">
+        <div class="po-card-head">
+          <div>
+            <h3>Work Order Body</h3>
+            <p>Draft the Work Order exactly as it should appear in the letter-style PDF.</p>
+          </div>
+        </div>
+        <div class="work-order-editor-shell">
+          <div class="work-order-editor-toolbar" id="workOrderBodyToolbar">
+            <span class="ql-formats">
+              <select class="ql-header">
+                <option selected></option>
+                <option value="1"></option>
+                <option value="2"></option>
+                <option value="3"></option>
+              </select>
+            </span>
+            <span class="ql-formats">
+              <button class="ql-bold" type="button"></button>
+              <button class="ql-italic" type="button"></button>
+              <button class="ql-underline" type="button"></button>
+            </span>
+            <span class="ql-formats">
+              <button class="ql-list" value="ordered" type="button"></button>
+              <button class="ql-list" value="bullet" type="button"></button>
+            </span>
+            <span class="ql-formats">
+              <button class="ql-align" value="" type="button"></button>
+              <button class="ql-align" value="center" type="button"></button>
+              <button class="ql-align" value="right" type="button"></button>
+              <button class="ql-align" value="justify" type="button"></button>
+            </span>
+            <span class="ql-formats">
+              <button class="ql-clean" type="button"></button>
+            </span>
+          </div>
+          <div class="work-order-editor" id="workOrderBodyEditor"></div>
+        </div>
+        <div class="work-order-editor-note">
+          Use this editor for event names, schedules, publication instructions, content notes, and any letter-style wording that should print as-is.
+        </div>
+      </section>
+
+      <section class="po-footer">
+        <div class="po-card">
+          <div class="po-card-head">
+            <div>
+              <h3>Commercial Details</h3>
+              <p>Enter the structured commercial values for this Work Order. Summary totals will auto-fill from these values.</p>
+            </div>
+          </div>
+          <div class="form-grid">
+            <div class="field span-2">
+              <label>Qty</label>
+              <input type="number" id="workOrderCommercialQty" min="0" step="0.001" placeholder="1">
+            </div>
+            <div class="field span-3">
+              <label>Rate</label>
+              <input type="number" id="workOrderCommercialRate" min="0" step="0.0001" placeholder="0.00">
+            </div>
+            <div class="field span-2">
+              <label>GST %</label>
+              <input type="number" id="workOrderCommercialGst" min="0" step="0.01" placeholder="0.00">
+            </div>
+            <div class="field span-2">
+              <label>F.O.R</label>
+              <input type="number" id="workOrderCommercialFor" min="0" step="0.01" placeholder="0.00">
+            </div>
+            <div class="field span-3">
+              <label>Amount</label>
+              <input type="text" id="workOrderCommercialAmount" placeholder="0.00" readonly>
+            </div>
+          </div>
+        </div>
+
+        <div class="po-card">
+          <div class="po-card-head">
+            <div>
+              <h3>Work Order Summary</h3>
+              <p>Auto-calculated totals for approval and PDF export.</p>
+            </div>
+          </div>
+          <div class="summary-list">
+            <div class="summary-row">
+              <span>Gross Amount</span>
+              <input type="text" id="workOrderSummaryGross" placeholder="0.00" readonly>
+            </div>
+            <div class="summary-row">
+              <span>Discount</span>
+              <input type="text" id="workOrderSummaryDiscount" placeholder="0.00" readonly>
+            </div>
+            <div class="summary-row">
+              <span>Taxable</span>
+              <input type="text" id="workOrderSummaryTaxable" placeholder="0.00" readonly>
+            </div>
+            <div class="summary-row">
+              <span>Tax</span>
+              <input type="text" id="workOrderSummaryTax" placeholder="0.00" readonly>
+            </div>
+            <div class="summary-row">
+              <span>F.O.R</span>
+              <input type="text" id="workOrderSummaryFor" placeholder="0.00" readonly>
+            </div>
+            <div class="summary-row total">
+              <span>Grand Total</span>
+              <input type="text" id="workOrderSummaryGrand" placeholder="0.00" readonly>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+
+  <div class="module-section" id="purchaseIndentSection" hidden>
     <div class="po-page tax-intra">
       <section class="po-hero indent-hero" id="indentHero">
       <div>
@@ -3087,7 +3386,7 @@
     </div>
   </div>
 
-  <div class="module-section" id="purchaseValuationSection">
+  <div class="module-section" id="purchaseValuationSection" hidden>
     <div class="po-page">
       <section class="po-hero po-hero--valuation">
         <div>
@@ -3330,7 +3629,7 @@
     </div>
   </div>
 
-  <div class="module-section" id="purchaseMastersSection">
+  <div class="module-section" id="purchaseMastersSection" hidden>
     <div class="po-page">
       <section class="po-hero">
         <div>
@@ -3955,6 +4254,8 @@
         {% endfor %}
       </select>
     </div>
+    {% endif %}
+    {% if can_use_po_def_format %}
     <div class="field">
       <label>Print Format</label>
       <select id="poPrintFormatModal">
@@ -3985,6 +4286,7 @@
 <datalist id="purchasingDeptMasterList"></datalist>
 <datalist id="unitMasterList"></datalist>
 <datalist id="poList"></datalist>
+<datalist id="workOrderList"></datalist>
 <datalist id="itemList"></datalist>
 <datalist id="itemMasterList"></datalist>
 <datalist id="poUnitList"></datalist>
@@ -4050,6 +4352,7 @@
 {% endblock %}
 
 {% block scripts %}
+<script src="{{ url_for('static', filename='vendor/quill/quill.min.js') }}"></script>
 <script>
   const fabToggle = document.getElementById('fabToggle');
   const fabMenu = document.getElementById('fabMenu');
@@ -4206,10 +4509,71 @@
   const tableBody = document.getElementById('poItemsBody');
   const poItemsLoading = document.getElementById('poItemsLoading');
 
+  const workOrderTabBtn = document.getElementById('workOrderTabBtn');
+  const workOrderAlert = document.getElementById('workOrderAlert');
+  const workOrderSection = document.getElementById('purchaseWorkOrderSection');
+  const workOrderNoInput = document.getElementById('workOrderNo');
+  const workOrderDateInput = document.getElementById('workOrderDate');
+  const workOrderStatusSelect = document.getElementById('workOrderStatus');
+  const workOrderModeChip = document.getElementById('workOrderModeChip');
+  const workOrderPurchasingDeptSelect = document.getElementById('workOrderPurchasingDept');
+  const workOrderPurchasingDeptHint = document.getElementById('workOrderPurchasingDeptHint');
+  const workOrderSeniorApprovalAuthorityInput = document.getElementById('workOrderSeniorApprovalAuthority');
+  const workOrderSeniorApprovalDesignationInput = document.getElementById('workOrderSeniorApprovalDesignation');
+  const workOrderSupplierNameInput = document.getElementById('workOrderSupplierName');
+  const workOrderSupplierIdInput = document.getElementById('workOrderSupplierId');
+  const workOrderSupplierCodeInput = document.getElementById('workOrderSupplierCode');
+  const workOrderSupplierEmailInput = document.getElementById('workOrderSupplierEmail');
+  const workOrderSupplierGstinInput = document.getElementById('workOrderSupplierGstin');
+  const workOrderRefNoInput = document.getElementById('workOrderRefNo');
+  const workOrderSubjectInput = document.getElementById('workOrderSubject');
+  const workOrderCreditDaysInput = document.getElementById('workOrderCreditDays');
+  const workOrderPreparedByInput = document.getElementById('workOrderPreparedBy');
+  const workOrderNotesInput = document.getElementById('workOrderNotes');
+  const workOrderSpecialNotesInput = document.getElementById('workOrderSpecialNotes');
+  const workOrderDeliveryTermsInput = document.getElementById('workOrderDeliveryTerms');
+  const workOrderPaymentTermsInput = document.getElementById('workOrderPaymentTerms');
+  const workOrderOtherTermsInput = document.getElementById('workOrderOtherTerms');
+  const workOrderBodyToolbar = document.getElementById('workOrderBodyToolbar');
+  const workOrderBodyEditor = document.getElementById('workOrderBodyEditor');
+  const workOrderCommercialQtyInput = document.getElementById('workOrderCommercialQty');
+  const workOrderCommercialRateInput = document.getElementById('workOrderCommercialRate');
+  const workOrderCommercialGstInput = document.getElementById('workOrderCommercialGst');
+  const workOrderCommercialForInput = document.getElementById('workOrderCommercialFor');
+  const workOrderCommercialAmountInput = document.getElementById('workOrderCommercialAmount');
+  const workOrderSummaryGross = document.getElementById('workOrderSummaryGross');
+  const workOrderSummaryDiscount = document.getElementById('workOrderSummaryDiscount');
+  const workOrderSummaryTaxable = document.getElementById('workOrderSummaryTaxable');
+  const workOrderSummaryTax = document.getElementById('workOrderSummaryTax');
+  const workOrderSummaryFor = document.getElementById('workOrderSummaryFor');
+  const workOrderSummaryGrand = document.getElementById('workOrderSummaryGrand');
+  const findWorkOrderInput = document.getElementById('findWorkOrderInput');
+  const findWorkOrderBtn = document.getElementById('findWorkOrderBtn');
+  const saveWorkOrderDraftBtn = document.getElementById('saveWorkOrderDraftBtn');
+  const submitWorkOrderBtn = document.getElementById('submitWorkOrderBtn');
+  const printWorkOrderBtn = document.getElementById('printWorkOrderBtn');
+  const emailWorkOrderBtn = document.getElementById('emailWorkOrderBtn');
+  const useWorkOrderTemplateBtn = document.getElementById('useWorkOrderTemplateBtn');
+  const newWorkOrderBtn = document.getElementById('newWorkOrderBtn');
+  const clearWorkOrderBtn = document.getElementById('clearWorkOrderBtn');
+  const workOrderOtpCard = document.getElementById('workOrderOtpCard');
+  const workOrderOtpStatus = document.getElementById('workOrderOtpStatus');
+  const workOrderOtpDeptInfo = document.getElementById('workOrderOtpDeptInfo');
+  const workOrderOtpPill = document.getElementById('workOrderOtpPill');
+  const workOrderOtpInput = document.getElementById('workOrderOtpInput');
+  const workOrderOtpAutoEmail = document.getElementById('workOrderOtpAutoEmail');
+  const workOrderOtpValidateBtn = document.getElementById('workOrderOtpValidateBtn');
+  const workOrderOtpResendBtn = document.getElementById('workOrderOtpResendBtn');
+  const workOrderItemsBody = document.getElementById('workOrderItemsBody');
+  const workOrderRowTemplate = document.getElementById('workOrderRowTemplate');
+  const addWorkOrderRowBtn = document.getElementById('addWorkOrderRowBtn');
+  const workOrderItemsSearch = document.getElementById('workOrderItemsSearch');
+
   const supplierList = document.getElementById('supplierList');
   const supplierMasterList = document.getElementById('supplierMasterList');
   const manufacturerMasterList = document.getElementById('manufacturerMasterList');
   const poList = document.getElementById('poList');
+  const workOrderList = document.getElementById('workOrderList');
   const itemList = document.getElementById('itemList');
   const poUnitList = document.getElementById('poUnitList');
 
@@ -4543,11 +4907,23 @@
   };
   let itemMasterManufacturerPending = null;
   let lastInitUnit = '';
+  let lastWorkOrderInitUnit = '';
   let poInitLoaded = false;
+  let workOrderInitLoaded = false;
   let indentInitLoaded = false;
+  const isITRole = {{ 'true' if (session.get('role') or '').strip() == 'IT' else 'false' }};
+  const canUsePoDefFormat = {{ 'true' if can_use_po_def_format else 'false' }};
   let currentPoId = null;
   let currentPoStatusCode = 'D';
   let currentOtpRequestId = null;
+  let currentPoPrintFormat = 'standard';
+  let currentWorkOrderId = null;
+  let currentWorkOrderStatusCode = 'D';
+  let currentWorkOrderOtpRequestId = null;
+  let workOrderQuill = null;
+  let workOrderEditorFallback = false;
+  let workOrderListLoaded = false;
+  let workOrderListUnit = '';
 
   const normalize = (val) => String(val || '').trim().toLowerCase();
   const normalizeEmail = (val) => String(val || '').trim().toLowerCase();
@@ -5927,6 +6303,10 @@
   const showLoading = (message) => setAlert(message, 'loading');
   const clearLoading = () => clearChannelLoading('po');
 
+  const setWorkOrderAlert = (message, type) => setChannelAlert(message, type, 'work-order');
+  const showWorkOrderLoading = (message) => setWorkOrderAlert(message, 'loading');
+  const clearWorkOrderLoading = () => clearChannelLoading('work-order');
+
   const setIndentAlert = (message, type) => setChannelAlert(message, type, 'indent');
 
   const showIndentLoading = (message) => setIndentAlert(message, 'loading');
@@ -6119,6 +6499,7 @@
     currentPoId = null;
     currentPoStatusCode = 'D';
     currentOtpRequestId = null;
+    syncPoPrintFormatControls('standard');
     setPoReadonly(false);
     if (heroModeChip) heroModeChip.textContent = 'Mode: Add';
     setOtpPanel(false, '', '');
@@ -6147,10 +6528,82 @@
     return num ? num[0] : raw;
   };
 
+  const canUseDefPoPrintFormatForUnit = (unitValue = getUnit()) => {
+    if (!canUsePoDefFormat) return false;
+    if (isITRole) return true;
+    return String(unitValue || '').trim().toUpperCase() === 'AHLSTORE';
+  };
+
+  const normalizePoPrintFormatValue = (value, options = {}) => {
+    const fmt = String(value || '').trim().toLowerCase();
+    const allowSavedDef = !!options.allowSavedDef;
+    const unitValue = options.unitValue ?? getUnit();
+    if (fmt === 'def' && (allowSavedDef || canUseDefPoPrintFormatForUnit(unitValue))) {
+      return 'def';
+    }
+    return 'standard';
+  };
+
+  const syncPoPrintFormatControls = (formatValue, options = {}) => {
+    const normalized = normalizePoPrintFormatValue(formatValue, {
+      allowSavedDef: options.allowSavedDef,
+      unitValue: options.unitValue,
+    });
+    currentPoPrintFormat = normalized;
+    if (poPrintFormat) {
+      poPrintFormat.value = normalized;
+    }
+    if (poPrintFormatModal && options.syncModal !== false) {
+      poPrintFormatModal.value = normalized;
+    }
+    return normalized;
+  };
+
   const buildPoPrintFormatParam = (formatValue) => {
-    const fmt = String(formatValue || '').trim().toLowerCase();
+    const fmt = normalizePoPrintFormatValue(formatValue, { allowSavedDef: true });
     if (!fmt || fmt === 'standard') return '';
     return `&format=${encodeURIComponent(fmt)}`;
+  };
+
+  const shortLookupText = (value, maxLen = 48) => {
+    const txt = String(value || '').replace(/\s+/g, ' ').trim();
+    if (!txt) return '';
+    if (txt.length <= maxLen) return txt;
+    return `${txt.slice(0, Math.max(0, maxLen - 3)).trim()}...`;
+  };
+
+  const formatLookupDateLabel = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '';
+    const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (isoMatch) return `${isoMatch[3]}-${isoMatch[2]}-${isoMatch[1]}`;
+    return raw.slice(0, 10);
+  };
+
+  const formatLookupDateShortLabel = (value) => {
+    const full = formatLookupDateLabel(value);
+    const match = full.match(/^(\d{2})-(\d{2})-(\d{4})$/);
+    if (!match) return full;
+    return `${match[1]}-${match[2]}-${match[3].slice(-2)}`;
+  };
+
+  const buildPoLookupLabel = (row) => {
+    const status = String(row.Status || row.status || '').trim().toUpperCase();
+    const statusLabel = status === 'A' ? 'Approved' : status === 'P' ? 'Pending' : 'Draft';
+    const supplierRaw = row.SupplierName || row.suppliername || '';
+    const subjectRaw = row.Subject || row.subject || '';
+    const primary = shortLookupText(supplierRaw || subjectRaw || 'Supplier not set', 28);
+    const dateShort = formatLookupDateShortLabel(row.PODate || row.PoDate || row.po_date || '');
+    const amountVal = parseNumber(row.Amount || row.amount || row.Total || row.total);
+    const amountLabel = amountVal ? `Rs ${formatIndianCurrency(amountVal)}` : '';
+    const refNo = shortLookupText(row.RefNo || row.ref_no || '', 12);
+    const subjectShort = shortLookupText(subjectRaw, 14);
+    const tailNote = refNo ? `Ref ${refNo}` : (
+      subjectShort && normalize(subjectShort) !== normalize(primary) ? `Sub ${subjectShort}` : ''
+    );
+    const parts = [primary, dateShort, amountLabel, statusLabel];
+    if (tailNote) parts.push(tailNote);
+    return shortLookupText(parts.filter(Boolean).join(' • '), 84);
   };
 
   const markEmailFieldError = (field, isError) => {
@@ -6219,11 +6672,19 @@
   };
 
   const syncPoPrintEmailFromSelection = () => {
-    if (!poPrintEmailInput || !poPrintSelect) return;
+    if (!poPrintSelect) return;
     const opt = poPrintSelect.selectedOptions?.[0];
-    const emailNorm = normalizeEmail(opt?.dataset?.supplierEmail || '');
-    poPrintEmailInput.value = emailNorm;
-    markEmailFieldError(poPrintEmailInput, false);
+    if (poPrintEmailInput) {
+      const emailNorm = normalizeEmail(opt?.dataset?.supplierEmail || '');
+      poPrintEmailInput.value = emailNorm;
+      markEmailFieldError(poPrintEmailInput, false);
+    }
+    if (poPrintFormatModal) {
+      poPrintFormatModal.value = normalizePoPrintFormatValue(
+        opt?.dataset?.printFormat || currentPoPrintFormat,
+        { allowSavedDef: true, unitValue: poPrintUnitSelect?.value || getUnit() }
+      );
+    }
   };
 
   const persistPoPrintSupplierEmail = async (quiet = false) => {
@@ -6325,7 +6786,7 @@
     if (!unit) return;
     try {
       const qParam = searchQuery ? `&q=${encodeURIComponent(searchQuery)}` : '';
-      const data = await apiJson(`/api/purchase/po_list?unit=${encodeURIComponent(unit)}&limit=200${qParam}`);
+      const data = await apiJson(`/api/purchase/po_list?unit=${encodeURIComponent(unit)}&status=all&limit=200${qParam}`);
       if (data.status !== 'success') return;
       state.poListLoaded = true;
       state.poListUnit = unit;
@@ -6334,16 +6795,50 @@
         (data.items || []).forEach((row) => {
           const poNo = row.PONo || row.PoNo || row.po_no || '';
           if (!poNo) return;
-          const status = String(row.Status || '').trim().toUpperCase();
-          const statusLabel = status === 'A' ? 'Approved' : status === 'P' ? 'Pending' : 'Draft';
-          const supplier = row.SupplierName || row.suppliername || '';
-          const dateVal = row.PODate || row.PoDate || row.po_date || '';
-          const label = [poNo, supplier, statusLabel].filter(Boolean).join(' • ');
+          const dateLabel = formatLookupDateLabel(row.PODate || row.PoDate || row.po_date || '');
+          const amountVal = parseNumber(row.Amount || row.amount || row.Total || row.total);
+          const amountLabel = amountVal ? `Rs ${formatIndianCurrency(amountVal)}` : '';
+          const label = buildPoLookupLabel(row);
           const opt = document.createElement('option');
           opt.value = poNo;
           opt.label = label || poNo;
-          if (dateVal) opt.dataset.date = String(dateVal).slice(0, 10);
+          opt.textContent = label || poNo;
+          if (dateLabel) opt.dataset.date = dateLabel;
+          if (amountLabel) opt.dataset.amount = amountLabel;
           poList.appendChild(opt);
+        });
+      }
+    } catch (err) {
+      // ignore dropdown errors
+    }
+  };
+
+  const loadWorkOrderList = async (searchQuery = '') => {
+    const unit = getUnit();
+    if (!unit || !isNonMedicalUnit(unit)) return;
+    try {
+      const q = normalizePoQuery(searchQuery || '');
+      const qParam = q ? `&q=${encodeURIComponent(q)}` : '';
+      const data = await apiJson(`/api/purchase/work_order_list?unit=${encodeURIComponent(unit)}&status=all&limit=200${qParam}`);
+      if (data.status !== 'success') return;
+      workOrderListLoaded = true;
+      workOrderListUnit = unit;
+      if (workOrderList) {
+        workOrderList.innerHTML = '';
+        (data.items || []).forEach((row) => {
+          const woNo = row.PONo || row.PoNo || row.po_no || row.wo_no || '';
+          if (!woNo) return;
+          const status = String(row.Status || row.status || '').trim().toUpperCase();
+          const statusLabel = status === 'A' ? 'Approved' : status === 'P' ? 'Pending' : 'Draft';
+          const supplier = row.SupplierName || row.suppliername || '';
+          const dateVal = row.PODate || row.PoDate || row.po_date || row.wo_date || '';
+          const label = [woNo, supplier, statusLabel, dateVal ? String(dateVal).slice(0, 10) : '']
+            .filter(Boolean)
+            .join(' • ');
+          const opt = document.createElement('option');
+          opt.value = woNo;
+          opt.label = label || woNo;
+          workOrderList.appendChild(opt);
         });
       }
     } catch (err) {
@@ -6387,6 +6882,10 @@
       opt.dataset.status = status;
       opt.dataset.supplierId = supplierId ? String(supplierId) : '';
       opt.dataset.supplierEmail = supplierEmail;
+      opt.dataset.printFormat = normalizePoPrintFormatValue(
+        row.POPrintFormat || row.po_print_format || row.print_format || 'standard',
+        { allowSavedDef: true, unitValue: poPrintUnitSelect?.value || getUnit() }
+      );
       opt.textContent = label || poNo || `ID ${poId}`;
       poPrintSelect.appendChild(opt);
     });
@@ -6429,7 +6928,10 @@
       poPrintUnitSelect.value = unit;
     }
     if (poPrintFormatModal) {
-      poPrintFormatModal.value = poPrintFormat?.value || poPrintFormatModal.value || 'standard';
+      poPrintFormatModal.value = normalizePoPrintFormatValue(currentPoPrintFormat, {
+        allowSavedDef: true,
+        unitValue: poPrintUnitSelect?.value || unit,
+      });
     }
     if (poPrintSearch) {
       poPrintSearch.value = '';
@@ -7362,8 +7864,16 @@
     if (unitSyncing) return;
     const unit = unitValue || getUnit();
     if (unit) syncUnitSelectors(unit);
+    syncPoPrintFormatControls('standard', { unitValue: unit });
     poInitLoaded = false;
+    workOrderInitLoaded = false;
+    workOrderListLoaded = false;
+    workOrderListUnit = '';
     indentInitLoaded = false;
+    lastWorkOrderInitUnit = '';
+    currentWorkOrderId = null;
+    currentWorkOrderStatusCode = 'D';
+    currentWorkOrderOtpRequestId = null;
     itemMasterState.loaded = false;
     itemMasterState.unit = '';
     itemManufacturerState.links = [];
@@ -7413,6 +7923,9 @@
     state.defaultPurchasingDeptId = 0;
     if (purchasingDeptSelect) purchasingDeptSelect.innerHTML = '<option value="">Select purchasing dept</option>';
     updatePurchasingDeptHint();
+    if (workOrderPurchasingDeptSelect) workOrderPurchasingDeptSelect.innerHTML = '<option value="">Select purchasing dept</option>';
+    updateWorkOrderPurchasingDeptHint();
+    if (workOrderList) workOrderList.innerHTML = '';
     poValuationLoadRequestToken += 1;
     clearPoValuationReportData();
     poValStoreOptions = [];
@@ -7439,8 +7952,12 @@
     updatePoValuationFreshness();
     clearChannelLoading(PO_VALUATION_CHANNEL);
     setPoValuationStatus('Click "Load Report" to fetch data.', false);
+    updateWorkOrderTabVisibility();
     if (document.getElementById('purchaseOrderSection')?.classList.contains('active')) {
       loadInit();
+    }
+    if (document.getElementById('purchaseWorkOrderSection')?.classList.contains('active')) {
+      loadWorkOrderInit();
     }
     syncIndentUnitDisplay(unit);
     if (document.getElementById('purchaseIndentSection')?.classList.contains('active')) {
@@ -10181,6 +10698,7 @@
       if (heroModeChip) heroModeChip.textContent = 'Mode: Add';
       setOtpPanel(false, '', '');
       currentOtpRequestId = null;
+      syncPoPrintFormatControls('standard', { unitValue: unit });
       applyPoDefaultTerms(false);
       return true;
     } catch (err) {
@@ -10201,6 +10719,833 @@
       return await loadInit();
     }
     return true;
+  };
+
+  const getSelectedWorkOrderPurchasingDeptId = () => parseNumber(workOrderPurchasingDeptSelect?.value || 0);
+  const getSelectedWorkOrderPurchasingDeptName = () => {
+    if (!workOrderPurchasingDeptSelect) return '';
+    const option = workOrderPurchasingDeptSelect.options[workOrderPurchasingDeptSelect.selectedIndex];
+    return option ? String(option.textContent || '').trim() : '';
+  };
+
+  const updateWorkOrderPurchasingDeptHint = () => {
+    const deptId = getSelectedWorkOrderPurchasingDeptId();
+    const deptName = getSelectedWorkOrderPurchasingDeptName();
+    const recipients = deptId ? (state.purchasingDeptRecipients.get(deptId) || []) : [];
+    const recipientText = recipients.length ? recipients.join(', ') : 'No dedicated recipient configured';
+    if (workOrderPurchasingDeptHint) {
+      if (!deptId) {
+        workOrderPurchasingDeptHint.textContent = 'Approval OTP routing depends on this selection.';
+      } else {
+        workOrderPurchasingDeptHint.textContent = `OTP routing: ${deptName || 'Selected Dept'} (${recipientText})`;
+      }
+    }
+    if (workOrderOtpDeptInfo) {
+      if (!deptId) {
+        workOrderOtpDeptInfo.textContent = 'Select Purchasing Dept to route OTP.';
+      } else {
+        workOrderOtpDeptInfo.textContent = `Current routing: ${deptName || 'Selected Dept'} (${recipientText})`;
+      }
+    }
+  };
+
+  const populateWorkOrderPurchasingDepartments = () => {
+    if (!workOrderPurchasingDeptSelect) return;
+    const prev = workOrderPurchasingDeptSelect.value;
+    workOrderPurchasingDeptSelect.innerHTML = '<option value="">Select purchasing dept</option>';
+    (state.purchasingDepartments || []).forEach((dept) => {
+      const id = parseNumber(dept.id);
+      const name = String(dept.name || '').trim();
+      if (!id || !name) return;
+      const option = document.createElement('option');
+      option.value = id;
+      option.textContent = name;
+      workOrderPurchasingDeptSelect.appendChild(option);
+    });
+    const defaultId = parseNumber(state.defaultPurchasingDeptId);
+    if (prev) {
+      workOrderPurchasingDeptSelect.value = prev;
+    } else if (defaultId) {
+      workOrderPurchasingDeptSelect.value = String(defaultId);
+    }
+    updateWorkOrderPurchasingDeptHint();
+  };
+
+  const resolveSupplierRecord = (valueRaw = '') => {
+    const value = String(valueRaw || '').trim();
+    if (!value) return null;
+    const normalizedValue = normalize(value);
+    return (
+      state.supplierByName.get(normalizedValue)
+      || state.supplierByCode.get(normalizedValue)
+      || state.supplierById.get(String(parseNumber(value)))
+      || null
+    );
+  };
+
+  const applyWorkOrderSupplierRecord = (supplier) => {
+    if (!supplier) {
+      if (workOrderSupplierIdInput) workOrderSupplierIdInput.value = '';
+      if (workOrderSupplierCodeInput) workOrderSupplierCodeInput.value = '';
+      if (workOrderSupplierEmailInput) workOrderSupplierEmailInput.value = '';
+      return;
+    }
+    if (workOrderSupplierIdInput) workOrderSupplierIdInput.value = parseNumber(supplier.id || supplier.SupplierID || 0) || '';
+    if (workOrderSupplierNameInput) workOrderSupplierNameInput.value = String(supplier.name || supplier.SupplierName || '').trim();
+    if (workOrderSupplierCodeInput) workOrderSupplierCodeInput.value = String(supplier.code || supplier.SupplierCode || '').trim();
+    if (workOrderSupplierEmailInput) workOrderSupplierEmailInput.value = normalizeEmail(supplier.email || supplier.SupplierEmail || '');
+  };
+
+  const syncWorkOrderSupplierSelection = () => {
+    const supplier = resolveSupplierRecord(workOrderSupplierNameInput?.value || workOrderSupplierCodeInput?.value || '');
+    applyWorkOrderSupplierRecord(supplier);
+  };
+
+  const setWorkOrderOtpPanel = (visible, message, statusLabel) => {
+    if (workOrderOtpCard) workOrderOtpCard.style.display = visible ? 'block' : 'none';
+    if (workOrderOtpStatus && message !== undefined) workOrderOtpStatus.textContent = message || '';
+    if (workOrderOtpPill) {
+      if (statusLabel) {
+        workOrderOtpPill.textContent = statusLabel;
+        workOrderOtpPill.dataset.status = String(statusLabel || '').trim().toLowerCase().replace(/\s+/g, '-');
+      } else {
+        workOrderOtpPill.removeAttribute('data-status');
+      }
+    }
+    if (!visible && workOrderOtpInput) {
+      workOrderOtpInput.value = '';
+    }
+    updateWorkOrderPurchasingDeptHint();
+  };
+
+  const escapeHtml = (value = '') => String(value || '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[char] || char));
+
+  const normalizeWorkOrderBodyHtml = (html = '') => {
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = String(html || '').trim();
+    const text = String(wrapper.textContent || '').replace(/\u00a0/g, ' ').replace(/\s+/g, ' ').trim();
+    return text ? wrapper.innerHTML.trim() : '';
+  };
+
+  const initWorkOrderBodyEditor = () => {
+    if (!workOrderBodyEditor || workOrderQuill || workOrderEditorFallback) return;
+    if (window.Quill) {
+      workOrderQuill = new window.Quill(workOrderBodyEditor, {
+        theme: 'snow',
+        modules: {
+          toolbar: workOrderBodyToolbar || true,
+        },
+        placeholder: 'Draft the full Work Order letter body here...',
+      });
+      return;
+    }
+    workOrderEditorFallback = true;
+    workOrderBodyEditor.contentEditable = 'true';
+    workOrderBodyEditor.classList.add('work-order-editor--fallback');
+    workOrderBodyEditor.innerHTML = '<p><br></p>';
+  };
+
+  const setWorkOrderBodyHtml = (html = '') => {
+    initWorkOrderBodyEditor();
+    const normalizedHtml = normalizeWorkOrderBodyHtml(html);
+    if (workOrderQuill) {
+      workOrderQuill.setText('');
+      if (normalizedHtml) {
+        workOrderQuill.clipboard.dangerouslyPasteHTML(normalizedHtml);
+      }
+      return;
+    }
+    if (workOrderBodyEditor) {
+      workOrderBodyEditor.innerHTML = normalizedHtml || '<p><br></p>';
+    }
+  };
+
+  const getWorkOrderBodyHtml = () => {
+    initWorkOrderBodyEditor();
+    if (workOrderQuill) {
+      return normalizeWorkOrderBodyHtml(workOrderQuill.root?.innerHTML || '');
+    }
+    return normalizeWorkOrderBodyHtml(workOrderBodyEditor?.innerHTML || '');
+  };
+
+  const getWorkOrderBodyText = (html = '') => {
+    const normalizedHtml = normalizeWorkOrderBodyHtml(html || getWorkOrderBodyHtml());
+    if (!normalizedHtml) return '';
+    const blockAwareHtml = String(normalizedHtml)
+      .replace(/<br\s*\/?>/gi, '\n')
+      .replace(/<\/(p|div|li|blockquote|h1|h2|h3|h4|h5|h6)>/gi, '\n')
+      .replace(/<li[^>]*>/gi, '- ');
+    const wrapper = document.createElement('div');
+    wrapper.innerHTML = blockAwareHtml;
+    const lines = String(wrapper.textContent || '')
+      .replace(/\u00a0/g, ' ')
+      .split('\n')
+      .map((line) => line.replace(/\s+/g, ' ').trim())
+      .filter(Boolean);
+    return lines.join('\n');
+  };
+
+  const setWorkOrderBodyReadonly = (readonly) => {
+    if (workOrderQuill) {
+      workOrderQuill.enable(!readonly);
+    }
+    if (workOrderEditorFallback && workOrderBodyEditor) {
+      workOrderBodyEditor.contentEditable = readonly ? 'false' : 'true';
+    }
+    if (workOrderBodyToolbar) {
+      workOrderBodyToolbar.style.opacity = readonly ? '0.55' : '1';
+      workOrderBodyToolbar.style.pointerEvents = readonly ? 'none' : '';
+    }
+  };
+
+  const buildLegacyWorkOrderBodyHtml = (items = []) => {
+    const blocks = [];
+    (Array.isArray(items) ? items : []).forEach((item, index) => {
+      const title = String(item?.item_name || '').trim();
+      const notes = String(item?.line_notes || '').trim();
+      if (!title && !notes) return;
+      if (title) {
+        blocks.push(`<p><strong>${index + 1}. ${escapeHtml(title)}</strong></p>`);
+      }
+      if (notes) {
+        blocks.push(`<p>${escapeHtml(notes)}</p>`);
+      }
+    });
+    return blocks.join('');
+  };
+
+  const applyWorkOrderCommercialValues = (values = null) => {
+    const safeValues = values || {};
+    if (workOrderCommercialQtyInput) {
+      const qty = safeValues.qty;
+      workOrderCommercialQtyInput.value = qty || qty === 0 ? String(qty) : '1';
+    }
+    if (workOrderCommercialRateInput) {
+      const rate = safeValues.rate;
+      workOrderCommercialRateInput.value = rate || rate === 0 ? formatMoney(parseNumber(rate)) : '';
+    }
+    if (workOrderCommercialGstInput) {
+      const gstPct = safeValues.gst_pct;
+      workOrderCommercialGstInput.value = gstPct || gstPct === 0 ? formatMoney(parseNumber(gstPct)) : '';
+    }
+    if (workOrderCommercialForInput) {
+      const forAmt = safeValues.for_amt;
+      workOrderCommercialForInput.value = forAmt || forAmt === 0 ? formatMoney(parseNumber(forAmt)) : '';
+    }
+    if (workOrderCommercialAmountInput) {
+      const amount = safeValues.net_amount;
+      workOrderCommercialAmountInput.value = amount || amount === 0 ? formatMoney(parseNumber(amount)) : '';
+    }
+  };
+
+  const applyWorkOrderSummaryValues = (totals = null) => {
+    const safeTotals = totals || {};
+    if (workOrderSummaryGross) workOrderSummaryGross.value = formatMoney(parseNumber(safeTotals.gross_total));
+    if (workOrderSummaryDiscount) workOrderSummaryDiscount.value = formatMoney(parseNumber(safeTotals.discount_total));
+    if (workOrderSummaryTaxable) workOrderSummaryTaxable.value = formatMoney(parseNumber(safeTotals.taxable_total));
+    if (workOrderSummaryTax) workOrderSummaryTax.value = formatMoney(parseNumber(safeTotals.tax_total));
+    if (workOrderSummaryFor) workOrderSummaryFor.value = formatMoney(parseNumber(safeTotals.for_total));
+    if (workOrderSummaryGrand) workOrderSummaryGrand.value = formatMoney(parseNumber(safeTotals.grand_total));
+  };
+
+  const deriveWorkOrderCommercialsFromTotals = (totals = null) => {
+    const safeTotals = totals || {};
+    const gross = parseNumber(safeTotals.gross_total);
+    const taxable = parseNumber(safeTotals.taxable_total);
+    const tax = parseNumber(safeTotals.tax_total);
+    const forAmt = parseNumber(safeTotals.for_total);
+    const grand = parseNumber(safeTotals.grand_total);
+    const baseRate = gross || taxable || grand || 0;
+    const gstPct = taxable > 0 ? (tax * 100) / taxable : 0;
+    return {
+      qty: baseRate > 0 ? 1 : 1,
+      rate: baseRate,
+      gst_pct: gstPct,
+      for_amt: forAmt,
+      net_amount: grand,
+    };
+  };
+
+  const recalcWorkOrderCommercials = () => {
+    const qty = parseNumber(workOrderCommercialQtyInput?.value);
+    const rate = parseNumber(workOrderCommercialRateInput?.value);
+    const gstPct = parseNumber(workOrderCommercialGstInput?.value);
+    const forAmt = parseNumber(workOrderCommercialForInput?.value);
+    const gross = qty * rate;
+    const discount = 0;
+    const taxable = gross;
+    const tax = taxable * (gstPct / 100);
+    const grand = taxable + tax + forAmt;
+    if (workOrderCommercialAmountInput) workOrderCommercialAmountInput.value = formatMoney(grand);
+    applyWorkOrderSummaryValues({
+      gross_total: gross,
+      discount_total: discount,
+      taxable_total: taxable,
+      tax_total: tax,
+      for_total: forAmt,
+      grand_total: grand,
+    });
+  };
+
+  const renumberWorkOrderRows = () => {};
+  const recalcWorkOrderRow = () => {};
+  const bindWorkOrderRow = () => {};
+  const createWorkOrderRow = () => null;
+  const applyWorkOrderSearch = () => {};
+
+  const setWorkOrderReadonly = (readonly) => {
+    if (!workOrderSection) return;
+    const allowIds = new Set([
+      'findWorkOrderInput', 'findWorkOrderBtn', 'printWorkOrderBtn', 'emailWorkOrderBtn',
+      'useWorkOrderTemplateBtn', 'newWorkOrderBtn', 'clearWorkOrderBtn', 'workOrderOtpInput', 'workOrderOtpAutoEmail',
+      'workOrderOtpValidateBtn', 'workOrderOtpResendBtn',
+    ]);
+    workOrderSection.querySelectorAll('input, select, textarea, button').forEach((el) => {
+      if (allowIds.has(el.id)) return;
+      if (readonly) {
+        el.setAttribute('disabled', 'disabled');
+      } else {
+        el.removeAttribute('disabled');
+      }
+    });
+    setWorkOrderBodyReadonly(readonly);
+  };
+
+  const resetWorkOrderForm = (preserveAlert = false) => {
+    initWorkOrderBodyEditor();
+    currentWorkOrderId = null;
+    currentWorkOrderStatusCode = 'D';
+    currentWorkOrderOtpRequestId = null;
+    if (workOrderNoInput) workOrderNoInput.value = '';
+    if (workOrderDateInput) workOrderDateInput.value = todayIso();
+    if (workOrderStatusSelect) workOrderStatusSelect.value = 'Draft';
+    if (workOrderModeChip) workOrderModeChip.textContent = 'Mode: Add';
+    if (workOrderSeniorApprovalAuthorityInput) workOrderSeniorApprovalAuthorityInput.value = '';
+    if (workOrderSeniorApprovalDesignationInput) workOrderSeniorApprovalDesignationInput.value = '';
+    if (workOrderSupplierNameInput) workOrderSupplierNameInput.value = '';
+    if (workOrderSupplierIdInput) workOrderSupplierIdInput.value = '';
+    if (workOrderSupplierCodeInput) workOrderSupplierCodeInput.value = '';
+    if (workOrderSupplierEmailInput) workOrderSupplierEmailInput.value = '';
+    if (workOrderSupplierGstinInput) workOrderSupplierGstinInput.value = '';
+    if (workOrderRefNoInput) workOrderRefNoInput.value = '';
+    if (workOrderSubjectInput) workOrderSubjectInput.value = '';
+    if (workOrderCreditDaysInput) workOrderCreditDaysInput.value = '';
+    if (workOrderPreparedByInput) workOrderPreparedByInput.value = workOrderPreparedByInput.placeholder || '';
+    if (workOrderNotesInput) workOrderNotesInput.value = '';
+    if (workOrderSpecialNotesInput) workOrderSpecialNotesInput.value = '';
+    if (workOrderDeliveryTermsInput) workOrderDeliveryTermsInput.value = '';
+    if (workOrderPaymentTermsInput) workOrderPaymentTermsInput.value = '';
+    if (workOrderOtherTermsInput) workOrderOtherTermsInput.value = '';
+    populateWorkOrderPurchasingDepartments();
+    if (workOrderItemsBody) workOrderItemsBody.innerHTML = '';
+    if (workOrderItemsSearch) workOrderItemsSearch.value = '';
+    setWorkOrderBodyHtml('');
+    applyWorkOrderCommercialValues({ qty: 1, rate: '', gst_pct: '', for_amt: '', net_amount: '' });
+    applyWorkOrderSummaryValues({});
+    setWorkOrderReadonly(false);
+    setWorkOrderOtpPanel(false, 'Submit for approval to send OTP to Purchasing Dept approver.', 'Pending');
+    if (!preserveAlert) setWorkOrderAlert('', '');
+  };
+
+  const hydrateWorkOrderFromResponse = (data = {}) => {
+    const header = data.header || {};
+    const items = Array.isArray(data.items) ? data.items : [];
+    currentWorkOrderId = parseNumber(header.wo_id);
+    currentWorkOrderStatusCode = String(header.status_code || 'D').trim().toUpperCase() || 'D';
+    currentWorkOrderOtpRequestId = parseNumber(header.otp_request_id);
+    if (findWorkOrderInput) findWorkOrderInput.value = header.wo_no || findWorkOrderInput.value || '';
+    if (workOrderNoInput) workOrderNoInput.value = header.wo_no || '';
+    if (workOrderDateInput) workOrderDateInput.value = String(header.wo_date || '').slice(0, 10);
+    if (workOrderStatusSelect) workOrderStatusSelect.value = header.status_label || 'Draft';
+    if (workOrderPurchasingDeptSelect) workOrderPurchasingDeptSelect.value = header.purchasing_dept_id || '';
+    updateWorkOrderPurchasingDeptHint();
+    if (workOrderSeniorApprovalAuthorityInput) workOrderSeniorApprovalAuthorityInput.value = header.senior_approval_authority_name || '';
+    if (workOrderSeniorApprovalDesignationInput) workOrderSeniorApprovalDesignationInput.value = header.senior_approval_authority_designation || '';
+    if (workOrderSupplierNameInput) workOrderSupplierNameInput.value = header.supplier_name || '';
+    if (workOrderSupplierIdInput) workOrderSupplierIdInput.value = header.supplier_id || '';
+    if (workOrderSupplierCodeInput) workOrderSupplierCodeInput.value = header.supplier_code || '';
+    if (workOrderSupplierEmailInput) workOrderSupplierEmailInput.value = header.supplier_email || '';
+    if (workOrderSupplierGstinInput) workOrderSupplierGstinInput.value = header.supplier_gstin || '';
+    if (workOrderRefNoInput) workOrderRefNoInput.value = header.ref_no || '';
+    if (workOrderSubjectInput) workOrderSubjectInput.value = header.subject || '';
+    if (workOrderCreditDaysInput) workOrderCreditDaysInput.value = header.credit_days || '';
+    if (workOrderPreparedByInput) workOrderPreparedByInput.value = header.prepared_by || workOrderPreparedByInput.placeholder || '';
+    if (workOrderNotesInput) workOrderNotesInput.value = header.notes || '';
+    if (workOrderSpecialNotesInput) workOrderSpecialNotesInput.value = header.special_notes || '';
+    if (workOrderDeliveryTermsInput) workOrderDeliveryTermsInput.value = header.delivery_terms || '';
+    if (workOrderPaymentTermsInput) workOrderPaymentTermsInput.value = header.payment_terms || '';
+    if (workOrderOtherTermsInput) workOrderOtherTermsInput.value = header.other_terms || '';
+    if (workOrderItemsBody) workOrderItemsBody.innerHTML = '';
+    setWorkOrderBodyHtml(header.body_html || buildLegacyWorkOrderBodyHtml(items));
+    if (items.length) {
+      const firstItem = items[0] || {};
+      applyWorkOrderCommercialValues({
+        qty: firstItem.qty,
+        rate: firstItem.rate,
+        gst_pct: firstItem.gst_pct,
+        for_amt: firstItem.for_amt,
+        net_amount: firstItem.net_amt,
+      });
+    } else {
+      applyWorkOrderCommercialValues(deriveWorkOrderCommercialsFromTotals(header.totals || {}));
+    }
+    recalcWorkOrderCommercials();
+    if (workOrderModeChip) workOrderModeChip.textContent = `Mode: ${currentWorkOrderId ? 'Edit' : 'Add'}`;
+    const isApproved = currentWorkOrderStatusCode === 'A';
+    const isPending = currentWorkOrderStatusCode === 'P';
+    setWorkOrderReadonly(isApproved);
+    if (isPending) {
+      setWorkOrderOtpPanel(true, 'OTP sent to Purchasing Dept approver.', 'Pending Approval');
+    } else if (isApproved) {
+      setWorkOrderOtpPanel(false, 'Work Order already approved.', 'Approved');
+    } else {
+      setWorkOrderOtpPanel(false, 'Draft Work Order. Submit for approval to send OTP.', 'Draft');
+    }
+  };
+
+  const reuseCurrentWorkOrderAsTemplate = () => {
+    const bodyHtml = getWorkOrderBodyHtml();
+    const bodyText = getWorkOrderBodyText(bodyHtml);
+    if (!bodyText) {
+      setWorkOrderAlert('Load or draft a Work Order before using it as a template.', 'warn');
+      return;
+    }
+
+    const templateState = {
+      purchasing_dept_id: workOrderPurchasingDeptSelect?.value || '',
+      senior_name: workOrderSeniorApprovalAuthorityInput?.value || '',
+      senior_designation: workOrderSeniorApprovalDesignationInput?.value || '',
+      supplier_name: workOrderSupplierNameInput?.value || '',
+      supplier_id: workOrderSupplierIdInput?.value || '',
+      supplier_code: workOrderSupplierCodeInput?.value || '',
+      supplier_email: workOrderSupplierEmailInput?.value || '',
+      supplier_gstin: workOrderSupplierGstinInput?.value || '',
+      subject: workOrderSubjectInput?.value || '',
+      credit_days: workOrderCreditDaysInput?.value || '',
+      prepared_by: workOrderPreparedByInput?.value || '',
+      body_html: bodyHtml,
+      qty: workOrderCommercialQtyInput?.value || '1',
+      rate: workOrderCommercialRateInput?.value || '',
+      gst_pct: workOrderCommercialGstInput?.value || '',
+      for_amt: workOrderCommercialForInput?.value || '',
+    };
+
+    resetWorkOrderForm(true);
+    currentWorkOrderId = null;
+    currentWorkOrderStatusCode = 'D';
+    currentWorkOrderOtpRequestId = null;
+    if (workOrderModeChip) workOrderModeChip.textContent = 'Mode: Add (Template)';
+    if (workOrderPurchasingDeptSelect) workOrderPurchasingDeptSelect.value = templateState.purchasing_dept_id;
+    updateWorkOrderPurchasingDeptHint();
+    if (workOrderSeniorApprovalAuthorityInput) workOrderSeniorApprovalAuthorityInput.value = templateState.senior_name;
+    if (workOrderSeniorApprovalDesignationInput) workOrderSeniorApprovalDesignationInput.value = templateState.senior_designation;
+    if (workOrderSupplierNameInput) workOrderSupplierNameInput.value = templateState.supplier_name;
+    if (workOrderSupplierIdInput) workOrderSupplierIdInput.value = templateState.supplier_id;
+    if (workOrderSupplierCodeInput) workOrderSupplierCodeInput.value = templateState.supplier_code;
+    if (workOrderSupplierEmailInput) workOrderSupplierEmailInput.value = templateState.supplier_email;
+    if (workOrderSupplierGstinInput) workOrderSupplierGstinInput.value = templateState.supplier_gstin;
+    if (workOrderSubjectInput) workOrderSubjectInput.value = templateState.subject;
+    if (workOrderCreditDaysInput) workOrderCreditDaysInput.value = templateState.credit_days;
+    if (workOrderPreparedByInput) workOrderPreparedByInput.value = templateState.prepared_by || workOrderPreparedByInput.placeholder || '';
+    setWorkOrderBodyHtml(templateState.body_html);
+    applyWorkOrderCommercialValues({
+      qty: templateState.qty,
+      rate: templateState.rate,
+      gst_pct: templateState.gst_pct,
+      for_amt: templateState.for_amt,
+    });
+    recalcWorkOrderCommercials();
+    setWorkOrderReadonly(false);
+    setWorkOrderOtpPanel(false, 'Template loaded. Save to create a new Work Order.', 'Draft');
+    setWorkOrderAlert('Current Work Order loaded as a reusable template.', 'success');
+  };
+
+  const loadWorkOrderInit = async () => {
+    const unit = getUnit();
+    if (!unit) {
+      setWorkOrderAlert('Please select a unit to load Work Order data.', 'warn');
+      return false;
+    }
+    if (!isNonMedicalUnit(unit)) {
+      setWorkOrderAlert('Work Order module is available only for non-medical units.', 'warn');
+      return false;
+    }
+    try {
+      showWorkOrderLoading('Loading Work Order data... Please wait.');
+      const data = await apiJson(`/api/purchase/work_order/init?unit=${encodeURIComponent(unit)}`);
+      if (data.status !== 'success') {
+        setWorkOrderAlert(data.message || 'Failed to load Work Order data.', 'error');
+        return false;
+      }
+      initWorkOrderBodyEditor();
+      state.unitMasters = Array.isArray(data.units) ? data.units : [];
+      state.unitMasterSourceUnit = String(data?.unit || unit).trim().toUpperCase();
+      state.suppliers = data.suppliers || [];
+      state.purchasingDepartments = data.purchasing_departments || [];
+      state.defaultPurchasingDeptId = parseNumber(data.default_purchasing_dept_id);
+      populateSuppliers();
+      await ensurePoUnitSuggestions(unit);
+      populatePurchasingDepartments();
+      populateWorkOrderPurchasingDepartments();
+      lastWorkOrderInitUnit = unit;
+      workOrderInitLoaded = true;
+      resetWorkOrderForm(true);
+      setWorkOrderAlert('', '');
+      return true;
+    } catch (err) {
+      setWorkOrderAlert(err.message || 'Failed to load Work Order data.', 'error');
+      return false;
+    } finally {
+      clearWorkOrderLoading();
+    }
+  };
+
+  const ensureWorkOrderInitForUnit = async () => {
+    const unit = getUnit();
+    if (!unit) {
+      setWorkOrderAlert('Please select a unit before working with Work Orders.', 'warn');
+      return false;
+    }
+    if (lastWorkOrderInitUnit !== unit || !workOrderInitLoaded) {
+      return await loadWorkOrderInit();
+    }
+    return true;
+  };
+
+  const updateWorkOrderTabVisibility = () => {
+    const allowed = isNonMedicalUnit(getUnit());
+    if (workOrderTabBtn) {
+      workOrderTabBtn.style.display = allowed ? '' : 'none';
+    }
+    if (!allowed) {
+      workOrderInitLoaded = false;
+      lastWorkOrderInitUnit = '';
+      if (workOrderSection?.classList.contains('active')) {
+        const poTabBtn = document.querySelector('.module-tab-btn[data-module="purchaseOrderSection"]');
+        poTabBtn?.click();
+      }
+    }
+  };
+
+  const loadWorkOrderByRef = async () => {
+    const unit = getUnit();
+    if (!unit) {
+      setWorkOrderAlert('Please select a unit before searching.', 'warn');
+      return;
+    }
+    const query = String(findWorkOrderInput?.value || '').trim();
+    if (!query) {
+      setWorkOrderAlert('Enter a Work Order number or ID to search.', 'warn');
+      return;
+    }
+    if (!(await ensureWorkOrderInitForUnit())) return;
+    try {
+      showWorkOrderLoading('Loading Work Order...');
+      const data = await apiJson(`/api/purchase/work_order_lookup?unit=${encodeURIComponent(unit)}&q=${encodeURIComponent(query)}`);
+      hydrateWorkOrderFromResponse(data);
+      const label = currentWorkOrderStatusCode === 'A' ? 'Approved' : currentWorkOrderStatusCode === 'P' ? 'Pending Approval' : 'Draft';
+      setWorkOrderAlert(`Work Order ${data?.header?.wo_no || query} loaded (${label}).`, currentWorkOrderStatusCode === 'D' ? 'success' : 'warn');
+    } catch (err) {
+      setWorkOrderAlert(err.message || 'Failed to load Work Order.', 'error');
+    } finally {
+      clearWorkOrderLoading();
+    }
+  };
+
+  const collectWorkOrderPayload = (statusLabel = 'Draft') => {
+    const supplierId = parseNumber(workOrderSupplierIdInput?.value);
+    if (!supplierId) {
+      setWorkOrderAlert('Supplier is required before saving.', 'warn');
+      return null;
+    }
+    const purchasingDeptId = parseNumber(workOrderPurchasingDeptSelect?.value);
+    if (String(statusLabel).trim().toLowerCase() === 'pending approval' && !purchasingDeptId) {
+      setWorkOrderAlert('Select Purchasing Dept before submitting for approval.', 'warn');
+      return null;
+    }
+    const bodyHtml = getWorkOrderBodyHtml();
+    const bodyText = getWorkOrderBodyText(bodyHtml);
+    if (!bodyText) {
+      setWorkOrderAlert('Enter the Work Order body before saving.', 'warn');
+      return null;
+    }
+
+    const qty = parseNumber(workOrderCommercialQtyInput?.value);
+    const rate = parseNumber(workOrderCommercialRateInput?.value);
+    const gstPct = parseNumber(workOrderCommercialGstInput?.value);
+    const forAmt = parseNumber(workOrderCommercialForInput?.value);
+    if (qty <= 0) {
+      setWorkOrderAlert('Qty must be greater than zero.', 'warn');
+      return null;
+    }
+    if (rate <= 0) {
+      setWorkOrderAlert('Rate must be greater than zero.', 'warn');
+      return null;
+    }
+    const gross = qty * rate;
+    const tax = gross * (gstPct / 100);
+    const grand = gross + tax + forAmt;
+    const totals = {
+      gross_total: gross,
+      discount_total: 0,
+      taxable_total: gross,
+      tax_total: tax,
+      for_total: forAmt,
+      grand_total: grand,
+    };
+    if (totals.grand_total <= 0) {
+      setWorkOrderAlert('Enter valid commercial values before saving.', 'warn');
+      return null;
+    }
+
+    const derivedTitle = (
+      String(workOrderSubjectInput?.value || '').trim()
+      || String(bodyText.split('\n').find((line) => String(line || '').trim()) || '').trim()
+      || 'Work Order Narrative'
+    ).replace(/\s+/g, ' ').slice(0, 200);
+    const gstAmt = gross * (gstPct / 100);
+    const halfGst = gstPct / 2;
+    const halfGstAmt = gstAmt / 2;
+
+    return {
+      header: {
+        wo_id: currentWorkOrderId || 0,
+        wo_no: workOrderNoInput?.value || '',
+        wo_date: workOrderDateInput?.value || todayIso(),
+        status: statusLabel,
+        purchasing_dept_id: purchasingDeptId || null,
+        senior_approval_authority_name: workOrderSeniorApprovalAuthorityInput?.value || '',
+        senior_approval_authority_designation: workOrderSeniorApprovalDesignationInput?.value || '',
+        supplier_id: supplierId,
+        supplier_name: workOrderSupplierNameInput?.value || '',
+        supplier_code: workOrderSupplierCodeInput?.value || '',
+        supplier_email: workOrderSupplierEmailInput?.value || '',
+        supplier_gstin: workOrderSupplierGstinInput?.value || '',
+        ref_no: workOrderRefNoInput?.value || '',
+        subject: workOrderSubjectInput?.value || '',
+        credit_days: workOrderCreditDaysInput?.value || 0,
+        prepared_by: workOrderPreparedByInput?.value || '',
+        notes: workOrderNotesInput?.value || '',
+        special_notes: workOrderSpecialNotesInput?.value || '',
+        delivery_terms: workOrderDeliveryTermsInput?.value || '',
+        payment_terms: workOrderPaymentTermsInput?.value || '',
+        other_terms: workOrderOtherTermsInput?.value || '',
+        body_html: bodyHtml,
+        totals,
+      },
+      items: [
+        {
+          detail_id: 0,
+          line_no: 1,
+          item_name: derivedTitle,
+          unit: 'PC',
+          qty,
+          rate,
+          discount_pct: 0,
+          taxable_amt: gross,
+          gst_pct: gstPct,
+          cgst_pct: halfGst,
+          sgst_pct: halfGst,
+          igst_pct: 0,
+          gst_amt: gstAmt,
+          cgst_amt: halfGstAmt,
+          sgst_amt: halfGstAmt,
+          igst_amt: 0,
+          for_amt: forAmt,
+          net_amt: grand,
+          line_notes: '',
+        },
+      ],
+    };
+  };
+
+  const saveWorkOrder = async (statusLabel = 'Draft') => {
+    const unit = getUnit();
+    if (!unit) {
+      setWorkOrderAlert('Please select a unit before saving.', 'warn');
+      return;
+    }
+    if (!(await ensureWorkOrderInitForUnit())) return;
+    syncWorkOrderSupplierSelection();
+    const payload = collectWorkOrderPayload(statusLabel);
+    if (!payload) return;
+    const endpoint = currentWorkOrderId ? '/api/purchase/work_order_update' : '/api/purchase/work_order';
+    try {
+      showWorkOrderLoading(statusLabel === 'Pending Approval' ? 'Submitting Work Order for approval...' : 'Saving Work Order...');
+      const res = await apiJson(endpoint, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unit, ...payload }),
+      });
+      if (res.wo_no || res.wo_id) {
+        const lookup = await apiJson(`/api/purchase/work_order_lookup?unit=${encodeURIComponent(unit)}&q=${encodeURIComponent(res.wo_no || res.wo_id)}`);
+        hydrateWorkOrderFromResponse(lookup);
+      }
+      if (res.request_id) currentWorkOrderOtpRequestId = parseNumber(res.request_id);
+      const ref = res.wo_no || `ID ${res.wo_id || currentWorkOrderId || ''}`;
+      if (res.status === 'partial') {
+        setWorkOrderAlert(`Work Order ${ref} saved with warnings. Some rows failed to save.`, 'warn');
+      } else {
+        setWorkOrderAlert(
+          statusLabel === 'Pending Approval'
+            ? `Work Order ${ref} submitted for approval successfully.`
+            : `Work Order ${ref} saved successfully.`,
+          'success'
+        );
+      }
+    } catch (err) {
+      setWorkOrderAlert(err.message || 'Failed to save Work Order.', 'error');
+    } finally {
+      clearWorkOrderLoading();
+    }
+  };
+
+  const approveWorkOrder = async () => {
+    const unit = getUnit();
+    if (!unit) {
+      setWorkOrderAlert('Please select a unit before approving.', 'warn');
+      return;
+    }
+    if (!currentWorkOrderId) {
+      setWorkOrderAlert('Please load a Work Order before approving.', 'warn');
+      return;
+    }
+    if (currentWorkOrderStatusCode !== 'P') {
+      setWorkOrderAlert('Only Pending Approval Work Orders can be approved.', 'warn');
+      return;
+    }
+    if (!currentWorkOrderOtpRequestId) {
+      setWorkOrderAlert('OTP request not found. Submit for approval again.', 'warn');
+      return;
+    }
+    const otp = String(workOrderOtpInput?.value || '').trim();
+    if (!otp) {
+      setWorkOrderAlert('Please enter the OTP shared by Purchasing Dept approver.', 'warn');
+      return;
+    }
+    const autoEmail = !!workOrderOtpAutoEmail?.checked;
+    const supplierEmail = normalizeEmail(workOrderSupplierEmailInput?.value || '');
+    if (autoEmail && !isValidEmail(supplierEmail)) {
+      setWorkOrderAlert('Enter a valid Supplier Email for auto-email, or untick Auto Email.', 'warn');
+      return;
+    }
+    try {
+      showWorkOrderLoading('Approving Work Order...');
+      const res = await apiJson('/api/purchase/work_order_approve', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unit,
+          wo_id: currentWorkOrderId,
+          request_id: currentWorkOrderOtpRequestId,
+          otp,
+          auto_email_supplier_pdf: autoEmail,
+          supplier_email: supplierEmail,
+        }),
+      });
+      const lookup = await apiJson(`/api/purchase/work_order_lookup?unit=${encodeURIComponent(unit)}&q=${encodeURIComponent(res.wo_no || currentWorkOrderId)}`);
+      hydrateWorkOrderFromResponse(lookup);
+      const autoEmailResult = res.auto_email || {};
+      const autoEmailText = autoEmail && autoEmailResult.status === 'success'
+        ? ` Supplier email sent to ${autoEmailResult.recipient || supplierEmail}.`
+        : autoEmail && autoEmailResult.status === 'error'
+          ? ` Supplier email failed: ${autoEmailResult.message || 'Unknown error'}.`
+          : '';
+      setWorkOrderAlert(`Work Order ${res.wo_no || currentWorkOrderId} approved successfully.${autoEmailText}`.trim(), 'success');
+    } catch (err) {
+      setWorkOrderAlert(err.message || 'Failed to approve Work Order.', 'error');
+    } finally {
+      clearWorkOrderLoading();
+    }
+  };
+
+  const resendWorkOrderOtp = async () => {
+    const unit = getUnit();
+    if (!unit) {
+      setWorkOrderAlert('Please select a unit before resending.', 'warn');
+      return;
+    }
+    if (!currentWorkOrderId) {
+      setWorkOrderAlert('Please load a Work Order before resending.', 'warn');
+      return;
+    }
+    if (currentWorkOrderStatusCode !== 'P') {
+      setWorkOrderAlert('OTP can be resent only for Pending Approval Work Orders.', 'warn');
+      return;
+    }
+    try {
+      showWorkOrderLoading('Resending Work Order OTP...');
+      const res = await apiJson('/api/purchase/work_order_resend_otp', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ unit, wo_id: currentWorkOrderId }),
+      });
+      currentWorkOrderOtpRequestId = parseNumber(res.request_id);
+      setWorkOrderAlert('OTP re-sent successfully.', 'success');
+    } catch (err) {
+      setWorkOrderAlert(err.message || 'Failed to resend OTP.', 'error');
+    } finally {
+      clearWorkOrderLoading();
+    }
+  };
+
+  const printWorkOrder = () => {
+    const unit = getUnit();
+    if (!unit) {
+      setWorkOrderAlert('Please select a unit before printing.', 'warn');
+      return;
+    }
+    if (!currentWorkOrderId && !workOrderNoInput?.value) {
+      setWorkOrderAlert('Please save or load a Work Order before printing.', 'warn');
+      return;
+    }
+    const url = `/api/purchase/work_order_print?unit=${encodeURIComponent(unit)}&${currentWorkOrderId ? `wo_id=${encodeURIComponent(currentWorkOrderId)}` : `wo_no=${encodeURIComponent(workOrderNoInput.value)}`}`;
+    window.open(url, '_blank');
+  };
+
+  const emailWorkOrderPdf = async () => {
+    const unit = getUnit();
+    if (!unit) {
+      setWorkOrderAlert('Please select a unit before emailing.', 'warn');
+      return;
+    }
+    if (!currentWorkOrderId && !workOrderNoInput?.value) {
+      setWorkOrderAlert('Please save or load a Work Order before emailing.', 'warn');
+      return;
+    }
+    if (currentWorkOrderStatusCode !== 'A') {
+      setWorkOrderAlert('Only approved Work Orders can be emailed.', 'warn');
+      return;
+    }
+    const email = normalizeEmail(workOrderSupplierEmailInput?.value || '');
+    if (!isValidEmail(email)) {
+      setWorkOrderAlert('Enter a valid supplier email before emailing.', 'warn');
+      return;
+    }
+    try {
+      showWorkOrderLoading('Emailing Work Order PDF...');
+      const res = await apiJson('/api/purchase/work_order_email_pdf', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unit,
+          wo_id: currentWorkOrderId,
+          wo_no: workOrderNoInput?.value || '',
+          to_email: email,
+        }),
+      });
+      setWorkOrderAlert(res.message || `Work Order PDF emailed to ${email}.`, 'success');
+    } catch (err) {
+      setWorkOrderAlert(err.message || 'Failed to email Work Order PDF.', 'error');
+    } finally {
+      clearWorkOrderLoading();
+    }
   };
 
   const loadPoByRef = async () => {
@@ -10225,6 +11570,7 @@
       currentPoId = header.po_id || null;
       currentPoStatusCode = header.status_code || 'D';
       currentOtpRequestId = header.otp_request_id || null;
+      syncPoPrintFormatControls(header.print_format || 'standard', { allowSavedDef: true, unitValue: unit });
       if (poNoInput) poNoInput.value = header.po_no || '';
       if (poDateInput && header.po_date) {
         const dateVal = String(header.po_date);
@@ -10568,6 +11914,7 @@
       subject: subjectInput?.value || '',
       credit_days: parseNumber(creditDaysInput?.value),
       prepared_by: preparedByInput?.value || '',
+      print_format: currentPoPrintFormat || 'standard',
       status: statusOverride || poStatusSelect?.value || 'Draft',
       notes: internalNotesInput?.value || '',
       special_notes: specialNotesInput?.value || '',
@@ -10696,7 +12043,7 @@
     const unit = getUnit();
     const otp = (poOtpInput?.value || '').trim();
     const autoEmailSupplierPdf = !!poOtpAutoEmail?.checked;
-    const autoEmailFormat = poPrintFormat?.value || '';
+    const autoEmailFormat = currentPoPrintFormat || 'standard';
     const supplierEmailNorm = normalizeEmail(supplierEmailInput?.value || '');
     if (!unit) {
       setAlert('Please select a unit before approving.', 'warn');
@@ -11210,6 +12557,13 @@
   const tabPanels = document.querySelectorAll('.tab-panel');
   const moduleTabButtons = document.querySelectorAll('.module-tab-btn');
   const moduleSections = document.querySelectorAll('.module-section');
+  const resetModuleLandingState = () => {
+    moduleTabButtons.forEach((button) => button.classList.remove('active'));
+    moduleSections.forEach((section) => {
+      section.classList.remove('active');
+      section.hidden = true;
+    });
+  };
   tabButtons.forEach((btn) => {
     btn.addEventListener('click', () => {
       tabButtons.forEach((b) => b.classList.remove('active'));
@@ -11225,9 +12579,15 @@
         const target = btn.dataset.module ? document.getElementById(btn.dataset.module) : null;
         if (btn.classList.contains('active')) return;
         moduleTabButtons.forEach((b) => b.classList.remove('active'));
-        moduleSections.forEach((section) => section.classList.remove('active'));
+        moduleSections.forEach((section) => {
+          section.classList.remove('active');
+          section.hidden = true;
+        });
         btn.classList.add('active');
-        if (target) target.classList.add('active');
+        if (target) {
+          target.hidden = false;
+          target.classList.add('active');
+        }
         requestAnimationFrame(() => {
           initResizableTables();
         });
@@ -11236,6 +12596,15 @@
             await loadInit();
           } else {
             refreshPoIndentOptions();
+          }
+          return;
+        }
+        if (btn.dataset.module === 'purchaseWorkOrderSection') {
+          if (!workOrderInitLoaded) {
+            await loadWorkOrderInit();
+          } else {
+            populateWorkOrderPurchasingDepartments();
+            updateWorkOrderPurchasingDeptHint();
           }
           return;
         }
@@ -11906,7 +13275,7 @@
         setAlert('Please save or load a PO before printing.', 'warn');
         return;
       }
-      const formatParam = buildPoPrintFormatParam(poPrintFormat?.value);
+      const formatParam = buildPoPrintFormatParam(currentPoPrintFormat);
       const url = `/api/purchase/po_print?unit=${encodeURIComponent(unit)}&po_id=${encodeURIComponent(currentPoId)}${formatParam}`;
       window.open(url, '_blank');
     });
@@ -11970,6 +13339,18 @@
       loadPoPrintList(poPrintSearch?.value || '', poPrintItemSearch?.value || '');
     });
   }
+  if (poPrintFormat) {
+    poPrintFormat.addEventListener('change', (event) => {
+      syncPoPrintFormatControls(event.target.value, { unitValue: getUnit() });
+    });
+  }
+  if (poPrintFormatModal) {
+    poPrintFormatModal.addEventListener('change', (event) => {
+      event.target.value = normalizePoPrintFormatValue(event.target.value, {
+        unitValue: poPrintUnitSelect?.value || getUnit(),
+      });
+    });
+  }
   if (poPrintGo) {
     poPrintGo.addEventListener('click', () => {
       const unit = (poPrintUnitSelect?.value || getUnit());
@@ -11989,7 +13370,9 @@
         return;
       }
       const param = poId ? `po_id=${encodeURIComponent(poId)}` : `po_no=${encodeURIComponent(poNo)}`;
-      const formatParam = buildPoPrintFormatParam(poPrintFormatModal?.value || poPrintFormat?.value);
+      const formatParam = buildPoPrintFormatParam(
+        poPrintFormatModal?.value || opt?.dataset?.printFormat || currentPoPrintFormat || 'standard'
+      );
       const url = `/api/purchase/po_print?unit=${encodeURIComponent(unit)}&${param}${formatParam}`;
       window.open(url, '_blank');
     });
@@ -12029,7 +13412,10 @@
         const saved = await persistPoPrintSupplierEmail(false);
         if (!saved) return;
       }
-      const formatVal = poPrintFormatModal?.value || poPrintFormat?.value || '';
+      const formatVal = normalizePoPrintFormatValue(
+        poPrintFormatModal?.value || opt?.dataset?.printFormat || currentPoPrintFormat || 'standard',
+        { allowSavedDef: true, unitValue: unit }
+      );
       await sendPoEmailPdf({
         poId,
         poNo,
@@ -12047,6 +13433,88 @@
     poOtpResendBtn.addEventListener('click', resendPoOtp);
   }
 
+  if (workOrderPurchasingDeptSelect) {
+    workOrderPurchasingDeptSelect.addEventListener('change', updateWorkOrderPurchasingDeptHint);
+    updateWorkOrderPurchasingDeptHint();
+  }
+  if (workOrderSupplierNameInput) {
+    workOrderSupplierNameInput.addEventListener('change', syncWorkOrderSupplierSelection);
+    workOrderSupplierNameInput.addEventListener('blur', syncWorkOrderSupplierSelection);
+  }
+  if (workOrderSupplierCodeInput) {
+    workOrderSupplierCodeInput.addEventListener('change', syncWorkOrderSupplierSelection);
+    workOrderSupplierCodeInput.addEventListener('blur', syncWorkOrderSupplierSelection);
+  }
+  if (findWorkOrderBtn) {
+    findWorkOrderBtn.addEventListener('click', loadWorkOrderByRef);
+  }
+  if (findWorkOrderInput) {
+    findWorkOrderInput.addEventListener('focus', () => {
+      const unit = getUnit();
+      if (!isNonMedicalUnit(unit)) return;
+      if (!workOrderListLoaded || workOrderListUnit !== unit) {
+        loadWorkOrderList();
+      }
+    });
+    findWorkOrderInput.addEventListener('input', (e) => {
+      const unit = getUnit();
+      if (!isNonMedicalUnit(unit)) return;
+      const q = normalizePoQuery(e.target.value || '');
+      if (q.length < 2) {
+        if (!workOrderListLoaded || workOrderListUnit !== unit) {
+          loadWorkOrderList();
+        }
+        return;
+      }
+      loadWorkOrderList(q);
+    });
+    findWorkOrderInput.addEventListener('keydown', (e) => {
+      if (e.key === 'Enter') {
+        e.preventDefault();
+        loadWorkOrderByRef();
+      }
+    });
+  }
+  if (saveWorkOrderDraftBtn) {
+    saveWorkOrderDraftBtn.addEventListener('click', () => saveWorkOrder('Draft'));
+  }
+  if (submitWorkOrderBtn) {
+    submitWorkOrderBtn.addEventListener('click', () => saveWorkOrder('Pending Approval'));
+  }
+  if (workOrderOtpValidateBtn) {
+    workOrderOtpValidateBtn.addEventListener('click', approveWorkOrder);
+  }
+  if (workOrderOtpResendBtn) {
+    workOrderOtpResendBtn.addEventListener('click', resendWorkOrderOtp);
+  }
+  if (printWorkOrderBtn) {
+    printWorkOrderBtn.addEventListener('click', printWorkOrder);
+  }
+  if (emailWorkOrderBtn) {
+    emailWorkOrderBtn.addEventListener('click', emailWorkOrderPdf);
+  }
+  if (useWorkOrderTemplateBtn) {
+    useWorkOrderTemplateBtn.addEventListener('click', reuseCurrentWorkOrderAsTemplate);
+  }
+  if (newWorkOrderBtn) {
+    newWorkOrderBtn.addEventListener('click', async () => {
+      if (!(await ensureWorkOrderInitForUnit())) return;
+      resetWorkOrderForm();
+    });
+  }
+  if (clearWorkOrderBtn) {
+    clearWorkOrderBtn.addEventListener('click', () => resetWorkOrderForm(true));
+  }
+  [
+    workOrderCommercialQtyInput,
+    workOrderCommercialRateInput,
+    workOrderCommercialGstInput,
+    workOrderCommercialForInput,
+  ].forEach((input) => {
+    if (!input) return;
+    input.addEventListener('input', recalcWorkOrderCommercials);
+  });
+
   if (tableBody && rowTemplate) {
     tableBody.querySelectorAll('tr').forEach((row) => {
       hydrateRow(row);
@@ -12055,6 +13523,9 @@
     recalcAllRows();
   }
 
+  initWorkOrderBodyEditor();
+  resetModuleLandingState();
+  updateWorkOrderTabVisibility();
   initResizableTables();
   syncIndentUnitDisplay();
   initPoValuationDates();
