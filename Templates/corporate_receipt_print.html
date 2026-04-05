@@ -1,0 +1,462 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ unit_label }} Corporate Receipt</title>
+  <style>
+    :root{
+      --ink:#18283b;
+      --muted:#5f7388;
+      --accent:#123f6b;
+      --accent-soft:#eaf2fb;
+      --line:#cfd9e4;
+      --line-dark:#9eb0c3;
+      --paper:#ffffff;
+      --bg:#eef3f8;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      background:var(--bg);
+      color:var(--ink);
+      font-family:"Segoe UI",Tahoma,Arial,sans-serif;
+    }
+    .toolbar{
+      position:sticky;
+      top:0;
+      z-index:5;
+      display:flex;
+      justify-content:flex-end;
+      gap:10px;
+      padding:12px 18px;
+      background:rgba(238,243,248,.96);
+      border-bottom:1px solid var(--line);
+    }
+    .btn{
+      border:1px solid #b7c8da;
+      background:#fff;
+      color:var(--accent);
+      border-radius:8px;
+      padding:8px 14px;
+      font-size:13px;
+      font-weight:700;
+      cursor:pointer;
+    }
+    .sheet{
+      width:min(210mm,calc(100vw - 28px));
+      margin:18px auto 28px;
+      background:var(--paper);
+      border:1px solid var(--line);
+      box-shadow:0 18px 40px rgba(15,23,42,.10);
+    }
+    .sheet-inner{
+      padding:18mm 16mm 16mm;
+    }
+    .masthead{
+      display:grid;
+      grid-template-columns:minmax(0,1.2fr) minmax(260px,.8fr);
+      gap:16px;
+      align-items:start;
+      padding-bottom:14px;
+      border-bottom:2px solid var(--accent);
+    }
+    .eyebrow{
+      display:inline-block;
+      padding:4px 10px;
+      border:1px solid #c8d8ea;
+      background:var(--accent-soft);
+      color:var(--accent);
+      font-size:11px;
+      font-weight:800;
+      letter-spacing:.6px;
+      text-transform:uppercase;
+    }
+    h1{
+      margin:10px 0 4px;
+      font-size:28px;
+      line-height:1.1;
+      color:#102f51;
+      letter-spacing:.2px;
+    }
+    .subtitle{
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.5;
+      max-width:500px;
+    }
+    .meta-table,.info-table,.detail-table,.money-table{
+      width:100%;
+      border-collapse:collapse;
+    }
+    .meta-table td{
+      border:1px solid var(--line);
+      padding:8px 10px;
+      font-size:12px;
+      vertical-align:top;
+    }
+    .meta-table .label,
+    .info-table .label{
+      width:28%;
+      color:var(--muted);
+      font-size:11px;
+      font-weight:700;
+      letter-spacing:.3px;
+      text-transform:uppercase;
+      background:#f8fbfe;
+      white-space:nowrap;
+    }
+    .meta-table .value{
+      font-weight:700;
+      color:var(--ink);
+    }
+    .section{
+      margin-top:16px;
+    }
+    .section-title{
+      margin:0 0 8px;
+      padding:6px 10px;
+      background:#f5f8fc;
+      border:1px solid var(--line);
+      color:#143a62;
+      font-size:12px;
+      font-weight:800;
+      letter-spacing:.5px;
+      text-transform:uppercase;
+    }
+    .info-table td{
+      border:1px solid var(--line);
+      padding:9px 10px;
+      font-size:12px;
+      vertical-align:top;
+    }
+    .info-table .value{
+      font-weight:700;
+      line-height:1.45;
+    }
+    .money-table th,.money-table td,
+    .detail-table th,.detail-table td{
+      border:1px solid var(--line);
+      padding:8px 10px;
+      font-size:12px;
+    }
+    .money-table th,
+    .detail-table th{
+      background:#f5f8fc;
+      color:#163d65;
+      font-size:11px;
+      font-weight:800;
+      letter-spacing:.4px;
+      text-transform:uppercase;
+      text-align:left;
+    }
+    .num{
+      text-align:right;
+      font-variant-numeric:tabular-nums;
+      white-space:nowrap;
+      font-weight:700;
+    }
+    .notes{
+      margin-top:14px;
+      border:1px solid var(--line);
+      padding:10px 12px;
+      font-size:11px;
+      line-height:1.55;
+      color:var(--muted);
+      background:#fbfdff;
+    }
+    .foot{
+      margin-top:18px;
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:14px;
+    }
+    .sign{
+      border-top:1px solid var(--line-dark);
+      padding-top:8px;
+      min-height:56px;
+    }
+    .sign .title{
+      font-size:11px;
+      font-weight:800;
+      color:#173b62;
+      text-transform:uppercase;
+      letter-spacing:.4px;
+    }
+    .sign .sub{
+      margin-top:4px;
+      font-size:11px;
+      color:var(--muted);
+    }
+    .print-meta{
+      margin-top:14px;
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      font-size:11px;
+      color:var(--muted);
+    }
+    @media (max-width:900px){
+      .sheet{width:calc(100vw - 14px);margin:8px auto 16px}
+      .sheet-inner{padding:14px}
+      .masthead{grid-template-columns:1fr}
+      .foot{grid-template-columns:1fr}
+    }
+    @media print{
+      body{background:#fff}
+      .toolbar{display:none}
+      .sheet{
+        width:100%;
+        margin:0;
+        border:none;
+        box-shadow:none;
+      }
+      .sheet-inner{padding:0}
+      .masthead{
+        display:grid;
+        grid-template-columns:minmax(0,1.15fr) 300px;
+        gap:14px;
+        align-items:start;
+        padding-bottom:10px;
+      }
+      h1{
+        font-size:24px;
+        margin:8px 0 4px;
+      }
+      .subtitle{
+        max-width:none;
+        font-size:11px;
+        line-height:1.4;
+      }
+      .meta-table{
+        width:300px;
+      }
+      .meta-table td,
+      .info-table td,
+      .money-table th,.money-table td,
+      .detail-table th,.detail-table td{
+        padding:6px 8px;
+      }
+      .meta-table td,
+      .info-table td{
+        font-size:11px;
+      }
+      .meta-table .label,
+      .info-table .label,
+      .money-table th,
+      .detail-table th{
+        font-size:9.5px;
+      }
+      .money-table td,
+      .detail-table td{
+        font-size:10px;
+      }
+      .section{
+        margin-top:12px;
+      }
+      .section-title{
+        margin:0 0 6px;
+        padding:5px 8px;
+        font-size:11px;
+      }
+      .notes{
+        margin-top:10px;
+        padding:8px 10px;
+        font-size:10px;
+        line-height:1.45;
+      }
+      .foot{
+        margin-top:14px;
+        grid-template-columns:repeat(3,minmax(0,1fr));
+        gap:12px;
+      }
+      .sign{
+        min-height:48px;
+      }
+      .print-meta{
+        margin-top:10px;
+      }
+      .masthead,.section,.notes,.foot,.print-meta,.meta-table,.info-table,.money-table,.detail-table,tr,td,th{
+        break-inside:avoid;
+        page-break-inside:avoid;
+      }
+      thead{
+        display:table-header-group;
+      }
+      @page{
+        size:A4 portrait;
+        margin:9mm;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button class="btn" type="button" onclick="window.print()">Print</button>
+    <button class="btn" type="button" onclick="window.close()">Close</button>
+  </div>
+
+  <main class="sheet">
+    <div class="sheet-inner">
+      <header class="masthead">
+        <div>
+          <div class="eyebrow">{{ unit_label }}</div>
+          <h1>Corporate Receipt Voucher</h1>
+          <div class="subtitle">
+            Official against-bill corporate receipt generated from the SharpSight reconciliation desk for submission and filing.
+          </div>
+        </div>
+        <table class="meta-table">
+          <tr>
+            <td class="label">Receipt No</td>
+            <td class="value">{{ receipt.receipt_no or "-" }}</td>
+          </tr>
+          <tr>
+            <td class="label">Receipt Date</td>
+            <td class="value">{{ receipt.receipt_date or "-" }}</td>
+          </tr>
+          <tr>
+            <td class="label">Payment Mode</td>
+            <td class="value">{{ receipt.payment_mode or "-" }}</td>
+          </tr>
+          <tr>
+            <td class="label">Prepared By</td>
+            <td class="value">{{ receipt.updated_by or receipt.inserted_by or "-" }}</td>
+          </tr>
+          <tr>
+            <td class="label">Entry Time</td>
+            <td class="value">{{ receipt.updated_on or "-" }}</td>
+          </tr>
+        </table>
+      </header>
+
+      <section class="section">
+        <div class="section-title">Patient and Visit</div>
+        <table class="info-table">
+          <tr>
+            <td class="label">Patient Name</td>
+            <td class="value">{{ receipt.patient_name or "-" }}</td>
+            <td class="label">Registration No</td>
+            <td class="value">{{ receipt.registration_no or "-" }}</td>
+          </tr>
+          <tr>
+            <td class="label">Patient ID</td>
+            <td class="value">{{ receipt.patient_id or "-" }}</td>
+            <td class="label">Visit</td>
+            <td class="value">{{ receipt.type_of_visit or "-" }}</td>
+          </tr>
+          <tr>
+            <td class="label">Visit ID</td>
+            <td class="value">{{ receipt.visit_id or "-" }}</td>
+            <td class="label">Patient Type / SubType</td>
+            <td class="value">{{ receipt.patient_type or "-" }}{% if receipt.patient_subtype %} / {{ receipt.patient_subtype }}{% endif %}</td>
+          </tr>
+        </table>
+      </section>
+
+      <section class="section">
+        <div class="section-title">Bill and Instrument Details</div>
+        <table class="info-table">
+          <tr>
+            <td class="label">Bill No</td>
+            <td class="value">{{ receipt.bill_no or "-" }}</td>
+            <td class="label">Bill ID</td>
+            <td class="value">{{ receipt.bill_id or "-" }}</td>
+          </tr>
+          <tr>
+            <td class="label">Visit Date</td>
+            <td class="value">{{ receipt.visit_date or "-" }}</td>
+            <td class="label">Discharge Date</td>
+            <td class="value">{{ receipt.discharge_date or "-" }}</td>
+          </tr>
+          <tr>
+            <td class="label">Payment Mode</td>
+            <td class="value">{{ receipt.payment_mode or "-" }}</td>
+            <td class="label">UTR / Reference</td>
+            <td class="value">{{ receipt.utr_no or "-" }}</td>
+          </tr>
+        </table>
+      </section>
+
+      <section class="section">
+        <div class="section-title">Financial Summary</div>
+        <table class="money-table">
+          <thead>
+            <tr>
+              <th>Gross Amount</th>
+              <th>TDS Amount</th>
+              <th>Net Received</th>
+              <th>Rebate</th>
+              <th>Bill Amount</th>
+              <th>Balance After Receipt</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td class="num">INR {{ "%.2f"|format(receipt.gross_amount or 0) }}</td>
+              <td class="num">INR {{ "%.2f"|format(receipt.tds_amount or 0) }}</td>
+              <td class="num">INR {{ "%.2f"|format(receipt.net_amount or 0) }}</td>
+              <td class="num">INR {{ "%.2f"|format(receipt.rebate_amount or 0) }}</td>
+              <td class="num">INR {{ "%.2f"|format(receipt.bill_amount or 0) }}</td>
+              <td class="num">INR {{ "%.2f"|format(receipt.due_amount or 0) }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <section class="section">
+        <div class="section-title">Against Bill Detail</div>
+        <table class="detail-table">
+          <thead>
+            <tr>
+              <th>Receipt ID</th>
+              <th>Receipt Detail ID</th>
+              <th>Bill ID</th>
+              <th>Bill Amount</th>
+              <th>Receipt Amount</th>
+              <th>Due Amount</th>
+              <th>Payment Mode</th>
+              <th>UTR No</th>
+            </tr>
+          </thead>
+          <tbody>
+            <tr>
+              <td>{{ receipt.receipt_id or "-" }}</td>
+              <td>{{ receipt.receipt_detail_id or "-" }}</td>
+              <td>{{ receipt.bill_id or "-" }}</td>
+              <td class="num">{{ "%.2f"|format(receipt.bill_amount or 0) }}</td>
+              <td class="num">{{ "%.2f"|format(receipt.receipt_amount_dtl or receipt.net_amount or 0) }}</td>
+              <td class="num">{{ "%.2f"|format(receipt.due_amount or 0) }}</td>
+              <td>{{ receipt.payment_mode or "-" }}</td>
+              <td>{{ receipt.utr_no or "-" }}</td>
+            </tr>
+          </tbody>
+        </table>
+      </section>
+
+      <div class="notes">
+        This is a system-generated corporate receipt voucher for internal reconciliation and accounts submission. Figures shown above reflect the saved receipt master and receipt detail values for the selected bill.
+      </div>
+
+      <div class="foot">
+        <div class="sign">
+          <div class="title">Prepared By</div>
+          <div class="sub">{{ receipt.updated_by or receipt.inserted_by or printed_by or "-" }}</div>
+        </div>
+        <div class="sign">
+          <div class="title">Verified By</div>
+          <div class="sub">&nbsp;</div>
+        </div>
+        <div class="sign">
+          <div class="title">Accounts Acknowledgement</div>
+          <div class="sub">&nbsp;</div>
+        </div>
+      </div>
+
+      <div class="print-meta">
+        <span>Unit: {{ unit_label }} ({{ unit_key }})</span>
+        <span>Printed By: {{ printed_by or "-" }} | Printed On: {{ printed_at or "-" }}</span>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

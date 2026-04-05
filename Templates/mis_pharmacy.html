@@ -2609,6 +2609,15 @@
     return new Intl.NumberFormat('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 }).format(num);
   }
 
+  function normalizeGstTaxPct(value) {
+    const pct = safeNum(value);
+    return Math.abs(pct - 12) < 0.000001 ? 5 : pct;
+  }
+
+  function getGstTaxPct(row) {
+    return normalizeGstTaxPct(row?.Taxid ?? row?.TaxId ?? row?.TaxID ?? 0);
+  }
+
   function renderRateRows(targetId, rateMap) {
     const body = document.getElementById(targetId);
     if (!body) return;
@@ -2660,7 +2669,7 @@
       if (!summary[seg]) return;
       const amount = Number(r.TotalAmt || 0);
       summary[seg].sales += amount;
-      const taxPct = Number(r.Taxid || 0);
+      const taxPct = getGstTaxPct(r);
       const taxComponent = taxPct ? (amount * taxPct / (100 + taxPct)) : 0;
       const taxable = amount - taxComponent;
       const key = String(taxPct || 0);
@@ -2677,7 +2686,7 @@
       if (!summary[seg]) return;
       const amount = Math.abs(Number(r.ReturnAmt || 0));
       summary[seg].returns += amount;
-      const taxPct = Number(r.Taxid || 0);
+      const taxPct = getGstTaxPct(r);
       const taxComponent = taxPct ? (amount * taxPct / (100 + taxPct)) : 0;
       const taxable = amount - taxComponent;
       const key = String(taxPct || 0);
@@ -2763,7 +2772,7 @@
     const filters = getSaleFilters();
     const filtered = allSalesRows.filter(r => {
       const amt = safeNum(r.TotalAmt);
-      const taxPct = safeNum(r.Taxid);
+      const taxPct = getGstTaxPct(r);
       const taxComponent = taxPct ? (amt * taxPct / (100 + taxPct)) : 0;
       const cgst = taxComponent / 2;
       const sgst = taxComponent / 2;
@@ -2792,7 +2801,7 @@
     const filters = getReturnFilters();
     const filtered = allReturnRows.filter(r => {
       const amt = safeNum(r.ReturnAmt);
-      const taxPct = safeNum(r.Taxid);
+      const taxPct = getGstTaxPct(r);
       const taxComponent = taxPct ? (amt * taxPct / (100 + taxPct)) : 0;
       const cgst = taxComponent / 2;
       const sgst = taxComponent / 2;
@@ -2823,7 +2832,7 @@
     if(!rows.length){ body.innerHTML = '<tr><td colspan="12" style="text-align:center; color:#94a3b8; padding:10px;">No data.</td></tr>'; return; }
     body.innerHTML = rows.map(r => {
       const amt = safeNum(r.TotalAmt);
-      const taxPct = safeNum(r.Taxid);
+      const taxPct = getGstTaxPct(r);
       const taxComponent = taxPct ? (amt * taxPct / (100 + taxPct)) : 0;
       const cgst = taxComponent / 2;
       const sgst = taxComponent / 2;
@@ -2836,7 +2845,7 @@
         <td>${r.TypeOfVisit || ''}</td>
         <td>${derivePaySeg(r.PatTypeNew)}</td>
         <td>${r.name || ''}</td>
-        <td>${taxPct || ''}</td>
+        <td>${taxPct ? `${taxPct}%` : '0%'}</td>
         <td>${cgst.toFixed(2)}</td>
         <td>${sgst.toFixed(2)}</td>
         <td>${taxable.toFixed(2)}</td>
@@ -2851,7 +2860,7 @@
     if(!rows.length){ body.innerHTML = '<tr><td colspan="12" style="text-align:center; color:#94a3b8; padding:10px;">No data.</td></tr>'; return; }
     body.innerHTML = rows.map(r => {
       const amt = safeNum(r.ReturnAmt);
-      const taxPct = safeNum(r.Taxid);
+      const taxPct = getGstTaxPct(r);
       const taxComponent = taxPct ? (amt * taxPct / (100 + taxPct)) : 0;
       const cgst = taxComponent / 2;
       const sgst = taxComponent / 2;
@@ -2864,7 +2873,7 @@
         <td>${r.TypeOfVisit || ''}</td>
         <td>${derivePaySeg(r.PatTypeNew || r.payType)}</td>
         <td>${r.Name || r.name || ''}</td>
-        <td>${taxPct || ''}</td>
+        <td>${taxPct ? `${taxPct}%` : '0%'}</td>
         <td>${cgst.toFixed(2)}</td>
         <td>${sgst.toFixed(2)}</td>
         <td>${taxable.toFixed(2)}</td>
@@ -4727,20 +4736,22 @@
   let remainingSec = 0;
   function updateTimerDisplay(){ if(fabTimer) fabTimer.textContent = fmtSecs(remainingSec); }
 
-  async function refreshSessionTimer(){
+  function refreshSessionTimer(){
     try{
-      const res = await fetch('/session_remaining');
-      const data = await res.json();
-      if(res.ok && typeof data.remaining_seconds !== 'undefined'){
-        remainingSec = Math.max(0, Math.floor(data.remaining_seconds));
+      const next = typeof window.__getSessionRemainingSeconds === 'function'
+        ? window.__getSessionRemainingSeconds()
+        : null;
+      if (Number.isFinite(next)) {
+        remainingSec = Math.max(0, Math.floor(next));
         updateTimerDisplay();
       }
     }catch(e){ /* silent */ }
   }
 
   setInterval(()=>{ if(remainingSec>0){ remainingSec -= 1; updateTimerDisplay(); } }, 1000);
-  setInterval(refreshSessionTimer, 20000);
   refreshSessionTimer();
+  window.addEventListener('sessionRemainingUpdated', refreshSessionTimer);
+  window.addEventListener('sessionRefreshed', refreshSessionTimer);
 </script>
 {% endblock %}
 

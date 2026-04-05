@@ -1517,18 +1517,20 @@ document.addEventListener('DOMContentLoaded', () => {
   }
   let remainingOcc = 0;
   function updateOccTimer(){ if(fabTimer) fabTimer.textContent = fmtSecsOcc(remainingOcc); }
-  async function refreshOccTimer(){
+  function refreshOccTimer(){
     try{
-      const res = await fetch('/session_remaining');
-      const data = await res.json();
-      if(res.ok && typeof data.remaining_seconds !== 'undefined'){
-        remainingOcc = Math.max(0, Math.floor(data.remaining_seconds));
+      const next = typeof window.__getSessionRemainingSeconds === 'function'
+        ? window.__getSessionRemainingSeconds()
+        : null;
+      if (Number.isFinite(next)) {
+        remainingOcc = Math.max(0, Math.floor(next));
         updateOccTimer();
       }
     }catch(_){}
   }
   setInterval(()=>{ if(remainingOcc>0){ remainingOcc -= 1; updateOccTimer(); } }, 1000);
-  setInterval(refreshOccTimer, 20000);
   refreshOccTimer();
+  window.addEventListener('sessionRemainingUpdated', refreshOccTimer);
+  window.addEventListener('sessionRefreshed', refreshOccTimer);
 </script>
 {% endblock %}

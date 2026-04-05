@@ -351,19 +351,21 @@
   let remainingSec = 0;
   function updateTimerDisplay(){ if(fabTimer) fabTimer.textContent = fmtSecs(remainingSec); }
 
-  async function refreshSessionTimer(){
+  function refreshSessionTimer(){
     try{
-      const res = await fetch('/session_remaining');
-      const data = await res.json();
-      if(res.ok && typeof data.remaining_seconds !== 'undefined'){
-        remainingSec = Math.max(0, Math.floor(data.remaining_seconds));
+      const next = typeof window.__getSessionRemainingSeconds === 'function'
+        ? window.__getSessionRemainingSeconds()
+        : null;
+      if (Number.isFinite(next)) {
+        remainingSec = Math.max(0, Math.floor(next));
         updateTimerDisplay();
       }
     }catch(e){ /* silent */ }
   }
   
   setInterval(()=>{ if(remainingSec>0){ remainingSec -= 1; updateTimerDisplay(); } }, 1000);
-  setInterval(refreshSessionTimer, 20000);
   refreshSessionTimer();
+  window.addEventListener('sessionRemainingUpdated', refreshSessionTimer);
+  window.addEventListener('sessionRefreshed', refreshSessionTimer);
 </script>
 {% endblock %}

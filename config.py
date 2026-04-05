@@ -36,6 +36,16 @@ DB_CONFIGS = {
         "TRUST_CERT": "yes",
         "TIMEOUT": 5,
     },
+    "SHARPSIGHT": {
+        "DRIVER": "{ODBC Driver 18 for SQL Server}",
+        "SERVER": "192.168.20.100,1433",
+        "DB": "Nayanshree",
+        "USER": "sa",
+        "PWD": "Prodoc_23",
+        "ENCRYPT": "yes",
+        "TRUST_CERT": "yes",
+        "TIMEOUT": 5,
+    },
     "AHLSTORE": {
         "DRIVER": "{ODBC Driver 18 for SQL Server}",
         "SERVER": "192.168.1.102,1433",
@@ -111,6 +121,15 @@ OTP_WORKER_POLL_SECONDS = 5
 # Logging
 # ---------------------------
 LOG_FILE = "logs/app.log"
+
+# Historical lock is currently disabled. Keep the implementation in code
+# so it can be re-enabled later without rebuilding the workflow.
+HISTORICAL_LOCK_ENABLED = False
+
+# Historical access: during the first fiscal month, allow the prior
+# 3 full calendar months for non-corporate sections. The cutoff
+# automatically reverts to the fiscal boundary after that month ends.
+HISTORICAL_BOUNDARY_GRACE_MONTHS = 3
 
 # ============================================================
 # Reports & Email

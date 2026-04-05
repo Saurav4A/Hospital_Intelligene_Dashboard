@@ -21,6 +21,11 @@ BEGIN
         sourceVisitId INT NULL,
         sourceVisitNo VARCHAR(50) NULL,
         sourceAdmissionNo VARCHAR(50) NULL,
+        referralNo VARCHAR(100) NULL,
+        referralDate DATE NULL,
+        payerTpaName NVARCHAR(200) NULL,
+        verifiedByUserName NVARCHAR(100) NULL,
+        settlementMode NVARCHAR(30) NULL,
         updatedBy INT NULL,
         updatedOn DATETIME NULL,
         CONSTRAINT PK_Visit_Duplicate PRIMARY KEY CLUSTERED (visitId)
@@ -43,6 +48,21 @@ BEGIN
 
     IF COL_LENGTH(N'dbo.Visit_Duplicate', N'sourceAdmissionNo') IS NULL
         ALTER TABLE dbo.Visit_Duplicate ADD sourceAdmissionNo VARCHAR(50) NULL;
+
+    IF COL_LENGTH(N'dbo.Visit_Duplicate', N'referralNo') IS NULL
+        ALTER TABLE dbo.Visit_Duplicate ADD referralNo VARCHAR(100) NULL;
+
+    IF COL_LENGTH(N'dbo.Visit_Duplicate', N'referralDate') IS NULL
+        ALTER TABLE dbo.Visit_Duplicate ADD referralDate DATE NULL;
+
+    IF COL_LENGTH(N'dbo.Visit_Duplicate', N'payerTpaName') IS NULL
+        ALTER TABLE dbo.Visit_Duplicate ADD payerTpaName NVARCHAR(200) NULL;
+
+    IF COL_LENGTH(N'dbo.Visit_Duplicate', N'verifiedByUserName') IS NULL
+        ALTER TABLE dbo.Visit_Duplicate ADD verifiedByUserName NVARCHAR(100) NULL;
+
+    IF COL_LENGTH(N'dbo.Visit_Duplicate', N'settlementMode') IS NULL
+        ALTER TABLE dbo.Visit_Duplicate ADD settlementMode NVARCHAR(30) NULL;
 
     IF COL_LENGTH(N'dbo.Visit_Duplicate', N'updatedBy') IS NULL
         ALTER TABLE dbo.Visit_Duplicate ADD updatedBy INT NULL;

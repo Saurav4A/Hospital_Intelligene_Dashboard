@@ -1,5 +1,5 @@
 ﻿from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, session
-from modules import data_fetch, analytics
+from modules import data_fetch, analytics, ip_advance_provision
 import config
 import pandas as pd
 from datetime import datetime, timedelta, date
@@ -31,6 +31,13 @@ from openpyxl.styles import Font, Alignment, PatternFill, Border, Side
 from openpyxl.utils import get_column_letter
 from modules.data_fetch import get_volume_details, make_volume_payload, build_volume_excel
 from modules.notification_routes import register_notification_routes
+from modules.service_addition_routes import register_service_addition_routes
+from modules.patient_journey_routes import register_patient_journey_routes
+from modules.occupancy_routes import register_occupancy_routes
+from modules.purchase_master_routes import register_purchase_master_routes
+from modules.purchase_pm_indent_routes import register_purchase_pm_indent_routes
+from modules.purchase_po_routes import register_purchase_po_routes
+from modules.purchase_work_order_routes import register_purchase_work_order_routes
 try:
     from modules.notification_routes import NOTIFICATIONS_FILE, USER_NOTIFICATIONS_FILE
 except Exception:
@@ -187,6 +194,18 @@ def _log_active_users(reason: str, actor: str | None = None, force: bool = False
 # Fiscal year lock: block historical data without session-scoped approval
 FISCAL_START_MONTH = getattr(config, "FISCAL_START_MONTH", 4)  # default Apr 1
 HIST_GRANT_TTL_SECONDS = 8 * 60 * 60  # 8 hours
+_historical_lock_enabled_raw = getattr(config, "HISTORICAL_LOCK_ENABLED", False)
+if isinstance(_historical_lock_enabled_raw, str):
+    HISTORICAL_LOCK_ENABLED = _historical_lock_enabled_raw.strip().lower() in {"1", "true", "yes", "on"}
+else:
+    HISTORICAL_LOCK_ENABLED = bool(_historical_lock_enabled_raw)
+try:
+    HISTORICAL_BOUNDARY_GRACE_MONTHS = max(
+        0,
+        int(getattr(config, "HISTORICAL_BOUNDARY_GRACE_MONTHS", 3)),
+    )
+except Exception:
+    HISTORICAL_BOUNDARY_GRACE_MONTHS = 3
 
 
 def _session_store_key(username: str) -> str:
@@ -248,6 +267,46 @@ def fiscal_year_start(now):
     month = getattr(now, "month", 1)
     year = now.year if month >= FISCAL_START_MONTH else now.year - 1
     return datetime(year, FISCAL_START_MONTH, 1, tzinfo=now.tzinfo)
+
+
+def _historical_boundary_grace_cutoff(now):
+    """
+    During the first fiscal month, temporarily extend the cutoff backward by
+    whole calendar months. After that month ends, the cutoff reverts to the
+    fiscal-year start automatically.
+    """
+    cutoff = fiscal_year_start(now).date()
+    if HISTORICAL_BOUNDARY_GRACE_MONTHS <= 0:
+        return cutoff
+    if getattr(now, "month", 0) != FISCAL_START_MONTH:
+        return cutoff
+
+    grace_cutoff = cutoff
+    months_remaining = HISTORICAL_BOUNDARY_GRACE_MONTHS
+    while months_remaining > 0:
+        previous_month_end = grace_cutoff - timedelta(days=1)
+        grace_cutoff = previous_month_end.replace(day=1)
+        months_remaining -= 1
+    return grace_cutoff
+
+
+def historical_lock_cutoff(now, path: str | None = None):
+    """
+    Return the effective historical cutoff for the current request.
+
+    Returns None when the historical lock is disabled or the section is exempt.
+
+    Non-corporate sections get a temporary first-month fiscal grace window.
+    Corporate management is fully exempt because it operates on
+    backdated data as part of normal workflow.
+    """
+    if not HISTORICAL_LOCK_ENABLED:
+        return None
+    section_key = str(_resolve_section_for_request(path or "") or "").strip().lower()
+    if section_key == "corporate_management":
+        return None
+
+    return _historical_boundary_grace_cutoff(now)
 
 
 def _hist_grant_key(user: str, sid: str | None) -> str:
@@ -530,7 +589,12 @@ CORP_BILL_PAGE_CACHE_TTL = 2 * 60
 # Corporate receipt reconciliation defaults
 CORP_RECON_CUTOFF_DATE = "2025-03-31"
 CORP_RECON_SETTLE_TOLERANCE = 1.00
-CORP_RECON_UNITS = {"AHL", "ACI", "BALLIA"}
+CORP_RECON_UNITS = {"AHL", "ACI", "BALLIA", "SHARPSIGHT"}
+CORPORATE_ONLY_UNITS = {"SHARPSIGHT"}
+UNIT_DISPLAY_NAMES = {
+    "SHARPSIGHT": "SharpSight",
+}
+CORP_RECON_RECEIPT_SECTION = "corporate_receipt"
 CORP_RECON_WRITEOFF_SECTION = "corporate_writeoff"
 CORP_RECON_CACHE_TTL = 60 * 60
 CORP_RECON_CACHE_MAX = 24
@@ -797,44 +861,6 @@ def _clean_df_columns(df):
         df.columns = [str(c).strip() for c in df.columns]
     return df
 
-def _first_numeric_value(row, cols):
-    for col in cols:
-        if not col:
-            continue
-        try:
-            num = float(row.get(col))
-        except Exception:
-            continue
-        if math.isfinite(num):
-            return num
-    return None
-
-def _get_item_master_rate_mrp_map(unit: str, item_ids: list[int]) -> dict[int, dict[str, float | None]]:
-    if not item_ids:
-        return {}
-    df = data_fetch.fetch_item_master_rate_mrp(unit, item_ids)
-    if df is None or df.empty:
-        return {}
-    df = _clean_df_columns(df)
-    cols = {str(c).strip().lower(): c for c in df.columns}
-    id_col = cols.get("itemid") or cols.get("id")
-    rate_col = cols.get("standardrate") or cols.get("standard_rate") or cols.get("rate")
-    mrp_col = cols.get("salesprice") or cols.get("sales_price") or cols.get("mrp")
-    tax_col = cols.get("salestax") or cols.get("sales_tax") or cols.get("tax") or cols.get("vat")
-    if not id_col:
-        return {}
-    out = {}
-    for _, row in df.iterrows():
-        item_id = row.get(id_col)
-        try:
-            item_id = int(item_id)
-        except Exception:
-            continue
-        rate_val = _safe_float(row.get(rate_col), None) if rate_col else None
-        mrp_val = _safe_float(row.get(mrp_col), None) if mrp_col else None
-        tax_val = _safe_float(row.get(tax_col), None) if tax_col else None
-        out[item_id] = {"rate": rate_val, "mrp": mrp_val, "tax": tax_val}
-    return out
 
 def _bkey(from_date, to_date, unit, mode):
     return (from_date, to_date, (unit or "").upper(), (mode or "").lower())
@@ -1165,6 +1191,8 @@ ROUTE_SECTION_MAP = {
     "/api/mis/phc_ledger/export_excel": "mis_billing",
     "/api/mis/admin/balances": "mis_billing",
     "/api/mis/admin/balances/export_excel": "mis_billing",
+    "/api/mis/ip_advance_provision": "mis_billing",
+    "/api/mis/ip_advance_provision/export_excel": "mis_billing",
     "/api/mis/ip_ledger_summary": "mis_billing",
     "/api/mis/ip_ledger_summary/export_excel": "mis_billing",
     "/api/mis/ip_package_ledger": "mis_billing",
@@ -1306,6 +1334,7 @@ ROUTE_SECTION_MAP = {
     "/api/ip_package/next_code": "service_addition_ip_package",
     "/purchase": "purchase",
     "/api/purchase/init": "purchase",
+    "/api/purchase/po_valuation_filters": "purchase",
     "/api/purchase/suppliers": "purchase",
     "/api/purchase/suppliers/new_code": "purchase",
     "/api/purchase/suppliers/default_location": "purchase",
@@ -1365,6 +1394,8 @@ ROUTE_SECTION_MAP = {
     "/api/purchase/po_email_pdf": "purchase",
     "/api/purchase/po": "purchase",
     "/api/purchase/logs": "purchase",
+    "/patient-care-journey": "patient_care_journey",
+    "/api/patient-care-journey": "patient_care_journey",
     "/discount-module": "discount_module",
     "/api/discount/bills": "discount_module",
     "/api/discount/receipts": "discount_module",
@@ -1376,6 +1407,8 @@ def _all_section_keys():
     keys = set(ROUTE_SECTION_MAP.values())
     # Always include user_management for admin workflows
     keys.add("user_management")
+    # Fine-grained corporate reconciliation actions.
+    keys.add(CORP_RECON_RECEIPT_SECTION)
     # Additional fine-grained right for corporate reconciliation write-off action.
     keys.add(CORP_RECON_WRITEOFF_SECTION)
     return sorted(keys)
@@ -1598,8 +1631,16 @@ def _allowed_fund_firms_for_session():
     return {"all": False, "firms": allowed + extras}
 
 
-def _all_units_upper():
-    return [u.upper() for u in getattr(config, "DB_CONFIGS", {}).keys()]
+def _unit_display_name(unit: str) -> str:
+    unit_key = str(unit or "").strip().upper()
+    return UNIT_DISPLAY_NAMES.get(unit_key, unit_key)
+
+
+def _all_units_upper(include_corporate_only: bool = False):
+    units = [u.upper() for u in getattr(config, "DB_CONFIGS", {}).keys()]
+    if include_corporate_only:
+        return units
+    return [u for u in units if u not in CORPORATE_ONLY_UNITS]
 
 def _analytics_units_upper():
     units_all = _all_units_upper()
@@ -1622,7 +1663,7 @@ def _analytics_allowed_units_for_session():
         return []
     return [u for u in allowed if u.upper() in analytics]
 
-def _allowed_units_for_session():
+def _allowed_units_for_session(include_corporate_only: bool = False):
     """
     IT/Management -> all units.
     Departmental Head -> unit list from session['unit_scope'] or 'Departmental Head: <UNIT>'.
@@ -1630,7 +1671,7 @@ def _allowed_units_for_session():
     """
     role = (session.get("role") or "").strip()
     role_base = _role_base(role)
-    units_all = _all_units_upper()
+    units_all = _all_units_upper(include_corporate_only=include_corporate_only)
 
     if role_base in {"IT", "Management"}:
         return units_all
@@ -1645,6 +1686,47 @@ def _allowed_units_for_session():
         return [u for u in units if u in allowed_set]
 
     return []
+
+
+def _user_management_scope_units_for_session():
+    """Units that may be assigned to a user's access scope from User Management."""
+    return _allowed_units_for_session(include_corporate_only=True)
+
+
+def _validated_user_scope_units(raw_units, *, include_corporate_only: bool, field_label: str):
+    """
+    Normalize user-management unit input and ensure it stays within the requester's scope.
+    Corporate-only units are allowed only for main Unit Scope, not Purchase Unit Scope.
+    """
+    requested = _normalize_unit_scope(raw_units)
+    if not requested:
+        return "", None
+
+    allowed_units = _allowed_units_for_session(include_corporate_only=include_corporate_only)
+    allowed_set = {str(u or "").strip().upper() for u in (allowed_units or []) if str(u or "").strip()}
+
+    if "*" in requested:
+        if not allowed_units:
+            return None, f"You cannot assign {field_label} outside your own scope"
+        return _normalize_unit_scope_text(allowed_units), None
+
+    invalid = [u for u in requested if u.upper() not in allowed_set]
+    if invalid:
+        return None, f"You cannot assign {field_label} outside your own scope"
+
+    return _normalize_unit_scope_text(requested), None
+
+
+def _corporate_units(units: list[str] | None):
+    allowed = []
+    seen = set()
+    for unit in (units or []):
+        unit_key = str(unit or "").strip().upper()
+        if not unit_key or unit_key in seen or unit_key not in CORP_RECON_UNITS:
+            continue
+        seen.add(unit_key)
+        allowed.append(unit_key)
+    return allowed
 
 def _allowed_purchase_units_for_session():
     """
@@ -6706,7 +6788,9 @@ def _ensure_snapshot_doctor_table():
 NIGHT_REPORT_EQUIPMENT_ROWS = ["Ventilator", "BIPAP", "NIV", "C-PAP", "Others", "Total"]
 NIGHT_REPORT_EQUIPMENT_COLS = ["Neuro ICU", "NICU", "PICU", "MICU", "CCU"]
 NIGHT_REPORT_DOCTOR_ENTRY_ROWS = 6
-NIGHT_REPORT_CARDIAC_DOC_IDS = list(getattr(config, "NIGHT_REPORT_CARDIAC_DOC_IDS", [4, 1118]))
+NIGHT_REPORT_CARDIAC_DOC_IDS = list(
+    dict.fromkeys([*(getattr(config, "NIGHT_REPORT_CARDIAC_DOC_IDS", [4, 1118]) or []), 5])
+)
 
 def _resolve_column(col_map: dict[str, str], candidates: list[str]):
     for cand in candidates:
@@ -9945,7 +10029,7 @@ MORNING_REPORT_KEY_PROCEDURES = [
     "OTHER",
 ]
 MORNING_REPORT_CARDIAC_DOC_IDS = list(
-    getattr(config, "MORNING_REPORT_CARDIAC_DOC_IDS", NIGHT_REPORT_CARDIAC_DOC_IDS)
+    dict.fromkeys([*(getattr(config, "MORNING_REPORT_CARDIAC_DOC_IDS", NIGHT_REPORT_CARDIAC_DOC_IDS) or []), 5])
 )
 MORNING_REPORT_CARDIAC_SUBDEPT_KEYWORDS = [
     str(x).upper()
@@ -13974,6 +14058,8 @@ def _sanitize_json_payload(payload):
         return {k: _sanitize_json_payload(v) for k, v in payload.items()}
     if isinstance(payload, list):
         return [_sanitize_json_payload(v) for v in payload]
+    if isinstance(payload, Decimal):
+        return float(payload)
     if isinstance(payload, (np.integer,)):
         return int(payload)
     if isinstance(payload, (np.floating,)):
@@ -13989,6 +14075,65 @@ def _sanitize_json_payload(payload):
     except Exception:
         pass
     return payload
+
+
+LIVE_RESPONSE_CACHE_TTL_SECONDS = max(5, _safe_int_setting("LIVE_RESPONSE_CACHE_TTL_SECONDS", 30))
+LIVE_RESPONSE_CACHE = {}
+LIVE_RESPONSE_CACHE_LOCK = Lock()
+
+
+def _live_response_cache_key(name: str, *parts) -> str:
+    norm_parts = []
+    for part in parts:
+        if isinstance(part, dict):
+            norm_parts.append(json.dumps(_sanitize_json_payload(part), sort_keys=True, separators=(",", ":")))
+        elif isinstance(part, (list, tuple, set)):
+            norm_parts.append("[" + ",".join(sorted(str(x) for x in part)) + "]")
+        else:
+            norm_parts.append(str(part))
+    return f"{name}::" + "::".join(norm_parts)
+
+
+def _live_response_cache_get(name: str, *parts):
+    if LIVE_RESPONSE_CACHE_TTL_SECONDS <= 0:
+        return None
+    key = _live_response_cache_key(name, *parts)
+    entry = _generic_cache_get(
+        "live_response",
+        key,
+        LIVE_RESPONSE_CACHE_TTL_SECONDS,
+        LIVE_RESPONSE_CACHE,
+        LIVE_RESPONSE_CACHE_LOCK,
+    )
+    if not entry:
+        return None
+    payload = entry.get("payload")
+    try:
+        return copy.deepcopy(payload)
+    except Exception:
+        return payload
+
+
+def _live_response_cache_put(name: str, payload, *parts):
+    if LIVE_RESPONSE_CACHE_TTL_SECONDS <= 0 or payload is None:
+        return
+    key = _live_response_cache_key(name, *parts)
+    safe_payload = _sanitize_json_payload(payload)
+    _generic_cache_put(
+        "live_response",
+        key,
+        {"payload": safe_payload},
+        LIVE_RESPONSE_CACHE_TTL_SECONDS,
+        LIVE_RESPONSE_CACHE,
+        LIVE_RESPONSE_CACHE_LOCK,
+    )
+
+
+def _jsonify_cached_payload(payload, *, cache_name: str | None = None, cache_parts: tuple = ()):
+    safe_payload = _sanitize_json_payload(payload)
+    if cache_name:
+        _live_response_cache_put(cache_name, safe_payload, *cache_parts)
+    return jsonify(safe_payload)
 
 # ============================================================
 # Midnight snapshotter: capture at 00:00 local time daily
@@ -14679,6 +14824,7 @@ EXECUTIVE_PURCHASE_MASTER_WRITE = {
     "/api/purchase/supplier_master",
     "/api/purchase/manufacturer_master",
     "/api/purchase/item_master",
+    "/api/purchase/item_master/manufacturers",
     "/api/purchase/purchasing_dept_master",
     "/api/purchase/purchasing_dept_master/action",
 }
@@ -14721,8 +14867,11 @@ def _extract_from_date_param():
 @app.before_request
 def enforce_historical_lock():
     """
-    Block requests with from_date older than fiscal-year start unless IT or session has a grant.
+    Block requests older than the effective historical cutoff unless IT
+    or the session has an approved historical-access grant.
     """
+    if not HISTORICAL_LOCK_ENABLED:
+        return
     skip_endpoints = {
         'login', 'logout', 'static', 'session_remaining', '_bg_status', 'index',
         'dashboard', 'settings', 'settings_change_password',
@@ -14743,7 +14892,9 @@ def enforce_historical_lock():
     except Exception:
         return  # if parsing fails, do not block
 
-    cutoff = fiscal_year_start(datetime.now(tz=LOCAL_TZ)).date()
+    cutoff = historical_lock_cutoff(datetime.now(tz=LOCAL_TZ), request.path)
+    if cutoff is None:
+        return
     user = (session.get("username") or "").strip()
     sid = session.get("sid")
     if from_dt >= cutoff or has_historical_grant(user, sid):
@@ -15506,15 +15657,29 @@ def api_revenue_patient_source():
     except PermissionError as e:
         return jsonify({"status": "error", "message": str(e)}), 403
 
+    live_cache_name = None
+    live_cache_parts = ()
+    if refresh_flag and _is_today_range(from_date, to_date):
+        live_cache_name = "revenue_patient_source"
+        live_cache_parts = (from_date, to_date, target_units)
+        cached_payload = _live_response_cache_get(live_cache_name, *live_cache_parts)
+        if cached_payload is not None:
+            return jsonify(cached_payload)
+
     payload = _build_patient_source_kpi(target_units, from_date, to_date, refresh_flag=refresh_flag)
-    return jsonify({
+    response_payload = {
         "status": "success",
         "from_date": from_date,
         "to_date": to_date,
         "units": target_units,
         "unit_scope": scope_label,
         **payload,
-    })
+    }
+    return _jsonify_cached_payload(
+        response_payload,
+        cache_name=live_cache_name,
+        cache_parts=live_cache_parts,
+    )
 
 
 @app.route('/export_revenue_patient_source_excel')
@@ -15875,14 +16040,24 @@ def fetch_data():
 
     # >>> TODAY REFRESH ADD-ONLY: force live update for today's range if asked
     if refresh_flag and _is_today_range(from_date, to_date):
+        live_cache_name = "revenue_summary_live"
+        live_cache_parts = (from_date, to_date, allowed_units)
+        cached_payload = _live_response_cache_get(live_cache_name, *live_cache_parts)
+        if cached_payload is not None:
+            return jsonify(cached_payload)
         forced = _fetch_live_and_refresh_cache(allowed_units, from_date, to_date)
         if forced:
-            return jsonify({
+            response_payload = {
                 "status": "success",
                 "units": allowed_units,
                 "records": forced.get("records", 0),
                 "summary": forced.get("summary", [])
-            })
+            }
+            return _jsonify_cached_payload(
+                response_payload,
+                cache_name=live_cache_name,
+                cache_parts=live_cache_parts,
+            )
         # fall through to normal flow if nothing returned
 
     cached = _cache_get(from_date, to_date)
@@ -15992,6 +16167,83 @@ def export_revenue_excel():
         s = re.sub(r'[\[\]:*?/\\]', '_', u_name.upper())
         return s[:31]
 
+    def normalize_export_match_key(val):
+        if pd.isna(val):
+            return ""
+        return re.sub(r"\s+", "", str(val).strip().upper())
+
+    def apply_virtual_visit_conversion_markers(df_in, marker_df):
+        out_df = df_in.copy()
+        out_df["VirtualVisitConverted"] = "No"
+        out_df["ConversionStatus"] = ""
+        out_df["LinkedVirtualVisitId"] = ""
+        out_df["SourceVisitId"] = ""
+        if marker_df is None or marker_df.empty or out_df.empty:
+            return out_df
+
+        def clean_id_val(val):
+            if pd.isna(val):
+                return ""
+            try:
+                num = pd.to_numeric(val, errors="coerce")
+                if pd.notna(num):
+                    return str(int(num))
+            except Exception:
+                pass
+            return clean_text_val(val)
+
+        work = marker_df.copy()
+        for col in ["SourceVisitNo", "Registration_No", "SourceVisitId", "LinkedVirtualVisitId"]:
+            if col not in work.columns:
+                work[col] = ""
+
+        work["SourceVisitNoKey"] = work["SourceVisitNo"].apply(normalize_export_match_key)
+        work["RegistrationKey"] = work["Registration_No"].apply(normalize_export_match_key)
+        work["SourceVisitId"] = work["SourceVisitId"].apply(clean_id_val)
+        work["LinkedVirtualVisitId"] = work["LinkedVirtualVisitId"].apply(clean_id_val)
+
+        exact_map = {}
+        visit_map = {}
+        for _, marker_row in work.iterrows():
+            visit_key = marker_row["SourceVisitNoKey"]
+            reg_key = marker_row["RegistrationKey"]
+            if not visit_key:
+                continue
+            payload = {
+                "SourceVisitId": marker_row["SourceVisitId"],
+                "LinkedVirtualVisitId": marker_row["LinkedVirtualVisitId"],
+            }
+            if reg_key:
+                exact_map.setdefault(f"{visit_key}|{reg_key}", payload)
+            visit_map.setdefault(visit_key, payload)
+
+        converted_flags = []
+        conversion_statuses = []
+        linked_visit_ids = []
+        source_visit_ids = []
+        for visit_no, reg_no in zip(out_df["VisitNo"], out_df["Registration_No"]):
+            visit_key = normalize_export_match_key(visit_no)
+            reg_key = normalize_export_match_key(reg_no)
+            payload = exact_map.get(f"{visit_key}|{reg_key}") if visit_key and reg_key else None
+            if payload is None and visit_key:
+                payload = visit_map.get(visit_key)
+            if payload:
+                converted_flags.append("Yes")
+                conversion_statuses.append("Converted To Cashless")
+                linked_visit_ids.append(payload.get("LinkedVirtualVisitId") or "")
+                source_visit_ids.append(payload.get("SourceVisitId") or "")
+            else:
+                converted_flags.append("No")
+                conversion_statuses.append("")
+                linked_visit_ids.append("")
+                source_visit_ids.append("")
+
+        out_df["VirtualVisitConverted"] = converted_flags
+        out_df["ConversionStatus"] = conversion_statuses
+        out_df["LinkedVirtualVisitId"] = linked_visit_ids
+        out_df["SourceVisitId"] = source_visit_ids
+        return out_df
+
     def process_df_for_export(df_in, u_name):
         if df_in is not None and not df_in.empty:
             df_in = _clean_df_columns(df_in)
@@ -16026,7 +16278,10 @@ def export_revenue_excel():
         "LabAmount", "RadioAmount", "HospAmount", "HospitalConsumables",
         "PHAmount", "PHRetAmount", "DiscountAmount", "NetAmount"
     ]
-    final_columns = [
+    marker_columns = [
+        "VirtualVisitConverted", "ConversionStatus", "LinkedVirtualVisitId", "SourceVisitId"
+    ]
+    detail_columns = [
         "PatientCategory", "PatientType", "TypeOfVisit", "CorpType", "Doctor", "Dept",
         "Registration_No", "PatientName", "VisitNo", "VisitDate", "DischargeDate",
         "billdate", "billno",
@@ -16034,6 +16289,7 @@ def export_revenue_excel():
         "PHAmount", "PHRetAmount", "DiscountAmount", "NetAmount",
         "BillTypeDescription", "CancelStatus", "Bill_ID"
     ]
+    final_columns = detail_columns + marker_columns
 
     standardized_data = {}
     
@@ -16222,7 +16478,10 @@ def export_revenue_excel():
              ser = map_col(m, [m, m.replace("Amount", ""), m.replace("Amount", "_Amount")])
              new_df[m] = pd.to_numeric(ser, errors='coerce').fillna(0.0) if ser is not None else 0.0
 
-        standardized_data[unit] = new_df[final_columns].copy()
+        marker_df = data_fetch.fetch_virtual_visit_conversion_markers(unit)
+        export_df = new_df[detail_columns].copy()
+        export_df = apply_virtual_visit_conversion_markers(export_df, marker_df)
+        standardized_data[unit] = export_df[final_columns].copy()
 
     # --- 3. Excel Generation ---
     export_dir = os.path.join("data", "exports")
@@ -16402,6 +16661,8 @@ def export_revenue_excel():
                         ws.set_column(idx, idx, 16, inr_fmt_noborder)
                     elif "date" in col_lower:
                         ws.set_column(idx, idx, 26, date_fmt_noborder) 
+                    elif col in marker_columns:
+                        ws.set_column(idx, idx, 24, text_fmt_noborder)
                     elif "department" in col_lower or "dept" in col_lower or "doctor" in col_lower or "name" in col_lower or "description" in col_lower or "registration" in col_lower:
                         ws.set_column(idx, idx, 28, text_fmt_noborder)
                     else:
@@ -16444,6 +16705,15 @@ def breakdown():
     allowed_units = _analytics_allowed_units_for_session()
     if unit not in allowed_units:
         return jsonify({"status": "error", "message": f"Unit {unit} not permitted for your role"}), 403
+
+    live_cache_name = None
+    live_cache_parts = ()
+    if refresh_flag and _is_today_range(from_date, to_date):
+        live_cache_name = "revenue_breakdown_live"
+        live_cache_parts = (unit, from_date, to_date, mode, department or "", int(bool(pay_split)))
+        cached_payload = _live_response_cache_get(live_cache_name, *live_cache_parts)
+        if cached_payload is not None:
+            return jsonify(cached_payload)
 
     # --- 1. Fetch Data (Cache First, then Live) ---
     df = None
@@ -16524,14 +16794,19 @@ def breakdown():
                     'cashless': int(d_df[d_df['PayCategoryBI'] == 'Cashless'][pat_col].nunique())
                 }
 
-        return jsonify({
+        response_payload = {
             "status": "success",
             "unit": unit,
             "labels": labels,
             "cash": pv['Cash'].astype(float).tolist(),
             "cashless": pv['Cashless'].astype(float).tolist(),
             "bill_counts": bill_counts
-        })
+        }
+        return _jsonify_cached_payload(
+            response_payload,
+            cache_name=live_cache_name,
+            cache_parts=live_cache_parts,
+        )
 
     # --- 3. Standard Breakdown Logic (Uses Helper for Robustness) ---
     
@@ -16562,14 +16837,19 @@ def breakdown():
         except Exception:
             pass
 
-    return jsonify({
+    response_payload = {
         "status": "success",
         "labels": payload["labels"],
         "values": payload["values"],
         "group_col": payload["group_col"],
         "total_revenue": payload["true_total"], # Returns correct total of all rows
         "unit": unit
-    })
+    }
+    return _jsonify_cached_payload(
+        response_payload,
+        cache_name=live_cache_name,
+        cache_parts=live_cache_parts,
+    )
 # ============================================================
 # NEW: Revenue Segregation API (Lab, Radio, Hosp, PH, PHRet, Discount)
 # ============================================================
@@ -16590,6 +16870,15 @@ def api_revenue_segregation():
     allowed_units = _analytics_allowed_units_for_session()
     if not allowed_units:
         return jsonify({"status": "error", "message": "No unit access assigned"}), 403
+
+    live_cache_name = None
+    live_cache_parts = ()
+    if refresh_flag and _is_today_range(from_date, to_date):
+        live_cache_name = "revenue_segregation_live"
+        live_cache_parts = (from_date, to_date, allowed_units)
+        cached_payload = _live_response_cache_get(live_cache_name, *live_cache_parts)
+        if cached_payload is not None:
+            return jsonify(cached_payload)
 
     print(f"Fetching revenue segregation: {from_date} to {to_date} (units={allowed_units})")
 
@@ -16656,12 +16945,17 @@ def api_revenue_segregation():
 
     print(f"Revenue segregation completed for {len(result)} units")
     
-    return jsonify({
+    response_payload = {
         "status": "success",
         "data": result,
         "from_date": from_date,
         "to_date": to_date
-    })
+    }
+    return _jsonify_cached_payload(
+        response_payload,
+        cache_name=live_cache_name,
+        cache_parts=live_cache_parts,
+    )
 
 
 # ============================================================
@@ -16681,12 +16975,6 @@ def revenue_dashboard():
 def volume_dashboard():
     allowed_units = _analytics_allowed_units_for_session()
     return render_template('volume.html', allowed_units=allowed_units)
-
-@app.route('/occupancy')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def occupancy_dashboard():
-    allowed_units = _allowed_units_for_session()
-    return render_template('occupancy.html', allowed_units=allowed_units)
 
 @app.route('/comparison')
 @login_required(allowed_roles={"IT", "Management"})
@@ -21356,7 +21644,7 @@ def reconciliations_dashboard():
 @app.route('/corporate')
 @login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
 def corporate_management():
-    allowed_units = _modification_units(_allowed_units_for_session())
+    allowed_units = _corp_recon_allowed_units_for_session()
     if not allowed_units:
         allowed_units = sorted(CORP_RECON_UNITS)
     selected_unit = allowed_units[0] if len(allowed_units) == 1 else ""
@@ -21364,1439 +21652,16 @@ def corporate_management():
         'corporate_management.html',
         allowed_units=allowed_units,
         selected_unit=selected_unit,
+        unit_labels={u: _unit_display_name(u) for u in allowed_units},
+        can_receipt=_corp_recon_can_take_receipt_session(),
         can_writeoff=_corp_recon_can_writeoff_session(),
     )
 
-@app.route('/service-addition')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def service_addition():
-    allowed_units = _allowed_units_for_session()
-    role = (session.get("role") or "").strip()
-    account_id = session.get("accountid") or 0
-    if not account_id and role.lower() == "it":
-        account_id = 1
-    return render_template(
-        'service_addition.html',
-        allowed_units=allowed_units,
-        role=role,
-        account_id=account_id,
-    )
-
-
-def _get_service_addition_unit():
-    unit = (request.args.get("unit") or request.form.get("unit") or "").strip().upper()
-    if request.is_json:
-        data = request.get_json(silent=True) or {}
-        unit = unit or str(data.get("unit") or "").strip().upper()
-    allowed_units = _allowed_units_for_session()
-    if not allowed_units:
-        return None, (jsonify({"status": "error", "message": "No unit access assigned"}), 403)
-    if not unit:
-        if len(allowed_units) == 1:
-            unit = allowed_units[0]
-        else:
-            return None, (jsonify({"status": "error", "message": "Please select a unit"}), 400)
-    if unit not in allowed_units:
-        return None, (jsonify({"status": "error", "message": f"Unit {unit} not permitted"}), 403)
-    return unit, None
-
-
-def _service_addition_bool(raw) -> bool:
-    if isinstance(raw, bool):
-        return raw
-    if raw is None:
-        return False
-    return str(raw).strip().lower() in ("1", "true", "yes", "y", "on")
-
-
-def _service_addition_int(raw, default=None):
-    try:
-        if raw is None or str(raw).strip() == "":
-            return default
-        return int(float(raw))
-    except Exception:
-        return default
-
-
-def _service_addition_decimal(raw, default=Decimal("0")):
-    try:
-        if raw is None or str(raw).strip() == "":
-            return Decimal(str(default))
-        return Decimal(str(raw))
-    except Exception:
-        return Decimal(str(default))
-
-
-def _service_addition_billing_classes(raw):
-    if raw is None:
-        return []
-    items = []
-    if isinstance(raw, (list, tuple, set)):
-        items = list(raw)
-    elif isinstance(raw, str):
-        txt = raw.strip()
-        if not txt:
-            return []
-        try:
-            parsed = json.loads(txt)
-            if isinstance(parsed, (list, tuple, set)):
-                items = list(parsed)
-            else:
-                items = [parsed]
-        except Exception:
-            items = [part.strip() for part in txt.split(",") if part.strip()]
-    else:
-        items = [raw]
-
-    result = []
-    for item in items:
-        val = _service_addition_int(item)
-        if val in (1, 2) and val not in result:
-            result.append(val)
-    return result
-
-
-def _service_addition_id_list(raw):
-    if raw is None:
-        return []
-    items = []
-    if isinstance(raw, (list, tuple, set)):
-        items = list(raw)
-    elif isinstance(raw, str):
-        txt = raw.strip()
-        if not txt:
-            return []
-        try:
-            parsed = json.loads(txt)
-            if isinstance(parsed, (list, tuple, set)):
-                items = list(parsed)
-            else:
-                items = [parsed]
-        except Exception:
-            items = [part.strip() for part in txt.split(",") if part.strip()]
-    else:
-        items = [raw]
-
-    result = []
-    for item in items:
-        val = _service_addition_int(item)
-        if val and val > 0 and val not in result:
-            result.append(val)
-    return result
-
-
-def _service_addition_tariff_rows(raw):
-    if raw is None:
-        return []
-    items = []
-    if isinstance(raw, (list, tuple, set)):
-        items = list(raw)
-    elif isinstance(raw, str):
-        txt = raw.strip()
-        if not txt:
-            return []
-        try:
-            parsed = json.loads(txt)
-            if isinstance(parsed, (list, tuple, set)):
-                items = list(parsed)
-            else:
-                items = [parsed]
-        except Exception:
-            return []
-    elif isinstance(raw, dict):
-        items = [raw]
-    else:
-        return []
-
-    rows = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        scheme_id = _service_addition_int(
-            item.get("tariff_scheme_id")
-            or item.get("TariffScheme_ID")
-            or item.get("tariffscheme_id")
-        )
-        billing_id = _service_addition_int(
-            item.get("billing_class_id")
-            or item.get("BillingClassID")
-            or item.get("billingclass_id")
-        )
-        if not scheme_id or not billing_id:
-            continue
-        rate = _service_addition_decimal(
-            item.get("rate") or item.get("tariff_rate"), Decimal("0")
-        )
-        discount = _service_addition_decimal(
-            item.get("discount_amt")
-            or item.get("discount")
-            or item.get("tariff_discount"),
-            Decimal("0"),
-        )
-        rows.append({
-            "tariff_scheme_id": scheme_id,
-            "billing_class_id": billing_id,
-            "rate": rate,
-            "discount_amt": discount,
-        })
-    return rows
-
-
-def _service_addition_rows(cursor):
-    cols = [c[0] for c in cursor.description]
-    rows = cursor.fetchall()
-    out = []
-    for row in rows:
-        rec = {}
-        for idx, col in enumerate(cols):
-            val = row[idx]
-            if isinstance(val, (datetime, date)):
-                val = val.isoformat(sep=" ")
-            if isinstance(val, Decimal):
-                val = float(val)
-            if isinstance(val, memoryview):
-                val = val.tobytes().decode(errors="ignore")
-            if isinstance(val, bytes):
-                val = val.decode(errors="ignore")
-            rec[col] = val
-        out.append(rec)
-    return out
-
-
-def _service_addition_next_code(last_code: str | None, fallback_prefix: str | None = None) -> str:
-    code = (last_code or "").strip()
-    prefix = ""
-    digits = ""
-    if code:
-        match = re.search(r"(.*?)(\d+)$", code)
-        if match:
-            prefix = match.group(1)
-            digits = match.group(2)
-        else:
-            prefix = code
-    if not digits:
-        fallback = (fallback_prefix or "").strip()
-        if fallback and not fallback.endswith("-"):
-            fallback = fallback + "-"
-        return (fallback or prefix) + "0001"
-    next_num = str(int(digits) + 1).zfill(len(digits))
-    return f"{prefix}{next_num}"
-
-
-@app.route('/api/service_addition/init')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_service_addition_init():
-    from modules.db_connection import get_sql_connection
-
-    unit, err = _get_service_addition_unit()
-    if err:
-        return err
-    conn = get_sql_connection(unit)
-    if not conn:
-        return jsonify({"status": "error", "message": "Unable to connect to database"}), 500
-    try:
-        cursor = conn.cursor()
-
-        cursor.execute("""
-            SELECT Department_ID, Department_Code, Department_Name, Deactive
-            FROM dbo.Department_Mst
-            ORDER BY Department_Name
-        """)
-        departments = _service_addition_rows(cursor)
-
-        cursor.execute("""
-            SELECT SubDepartment_ID, SubDepartment_Code, SubDepartment_Name, Department_Id, Deactive
-            FROM dbo.SubDepartment_Mst
-            ORDER BY SubDepartment_Name
-        """)
-        subdepartments = _service_addition_rows(cursor)
-
-        cursor.execute("""
-            SELECT ServiceCategory_ID, ServiceCategory_Code, ServiceCategory_Name, Deactive, Surcharge
-            FROM dbo.Service_Category_Mst
-            ORDER BY ServiceCategory_Name
-        """)
-        categories = _service_addition_rows(cursor)
-
-        cursor.execute("""
-            SELECT TariffScheme_ID, TariffScheme_Code, TariffScheme_Desc, Deactive, IsBaseTariffScheme
-            FROM dbo.CPATariffScheme_Mst
-            ORDER BY TariffScheme_Desc
-        """)
-        tariff_schemes = _service_addition_rows(cursor)
-
-        return jsonify({
-            "status": "success",
-            "unit": unit,
-            "departments": departments,
-            "subdepartments": subdepartments,
-            "categories": categories,
-            "tariff_schemes": tariff_schemes,
-            "billing_classes": [
-                {"id": 1, "label": "OPD"},
-                {"id": 2, "label": "IPD"},
-            ],
-            "room_id": 0,
-        })
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-
-@app.route('/api/service_addition/search')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_service_addition_search():
-    from modules.db_connection import get_sql_connection
-
-    unit, err = _get_service_addition_unit()
-    if err:
-        return err
-    query = (request.args.get("q") or "").strip()
-    if len(query) < 2:
-        return jsonify({"status": "success", "services": []})
-
-    conn = get_sql_connection(unit)
-    if not conn:
-        return jsonify({"status": "error", "message": "Unable to connect to database"}), 500
-    try:
-        cursor = conn.cursor()
-        like = f"%{query}%"
-        cursor.execute("""
-            SELECT TOP 25 Service_ID, Service_Code, Service_Name, Category_Id,
-                   DepartmentId, SubDepartmentId, Deactive, CGHSCode, BasicRate
-            FROM dbo.Service_Mst
-            WHERE Service_Code LIKE ? OR Service_Name LIKE ?
-            ORDER BY Service_Name
-        """, (like, like))
-        services = _service_addition_rows(cursor)
-        return jsonify({
-            "status": "success",
-            "services": services,
-        })
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-
-@app.route('/api/service_addition/detail')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_service_addition_detail():
-    from modules.db_connection import get_sql_connection
-
-    unit, err = _get_service_addition_unit()
-    if err:
-        return err
-    service_id = _service_addition_int(request.args.get("service_id"))
-    if not service_id:
-        return jsonify({"status": "error", "message": "Service ID is required."}), 400
-
-    conn = get_sql_connection(unit)
-    if not conn:
-        return jsonify({"status": "error", "message": "Unable to connect to database"}), 500
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT Service_ID, Service_Code, Service_Name, DepartmentId, SubDepartmentId, Category_Id,
-                   Deactive, Autorender, PatInvestigationVisible, DefaultItem, CGHSCode,
-                   BasicRate, ProfitPer, SaleRate, Discount, FinalRate,
-                   EmergencyCharges, Surcharge, DoctorCut, DocRequired,
-                   ClinicalReportingFlag, SurchargeAmt, IsBedSideProcedure, Remarks,
-                   IsOutSourceService, IsExclusiveService, IsRenewal, ServiceAliasName,
-                   BlockedByTPA, IsRoutineService
-            FROM dbo.Service_Mst
-            WHERE Service_ID = ?
-        """, (service_id,))
-        services = _service_addition_rows(cursor)
-        if not services:
-            return jsonify({"status": "error", "message": "Service not found."}), 404
-        service = services[0]
-
-        cursor.execute("""
-            SELECT Tariff_ID, TariffScheme_ID, BillingClassID, Rate, DiscountAmt
-            FROM dbo.ServiceTariffSheet
-            WHERE ServiceId = ?
-            ORDER BY Tariff_ID DESC
-        """, (service_id,))
-        tariffs = _service_addition_rows(cursor)
-        return jsonify({
-            "status": "success",
-            "service": service,
-            "tariffs": tariffs,
-        })
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-
-@app.route('/api/service_addition/next_code')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_service_addition_next_code():
-    from modules.db_connection import get_sql_connection
-
-    unit, err = _get_service_addition_unit()
-    if err:
-        return err
-    category_id = _service_addition_int(request.args.get("category_id"))
-    if not category_id:
-        return jsonify({"status": "error", "message": "Category is required."}), 400
-
-    conn = get_sql_connection(unit)
-    if not conn:
-        return jsonify({"status": "error", "message": "Unable to connect to database"}), 500
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT TOP 1 Service_Code
-            FROM dbo.Service_Mst
-            WHERE Category_Id = ? AND Service_Code IS NOT NULL
-            ORDER BY Service_ID DESC
-        """, (category_id,))
-        row = cursor.fetchone()
-        last_code = str(row[0]).strip() if row and row[0] else ""
-
-        cursor.execute("""
-            SELECT ServiceCategory_Code
-            FROM dbo.Service_Category_Mst
-            WHERE ServiceCategory_ID = ?
-        """, (category_id,))
-        cat_row = cursor.fetchone()
-        category_code = str(cat_row[0]).strip() if cat_row and cat_row[0] else ""
-
-        next_code = _service_addition_next_code(last_code, category_code)
-        return jsonify({
-            "status": "success",
-            "unit": unit,
-            "category_id": category_id,
-            "last_code": last_code,
-            "next_code": next_code,
-        })
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-
-@app.route('/api/service_addition/submit', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_service_addition_submit():
-    from modules.db_connection import get_sql_connection
-
-    unit, err = _get_service_addition_unit()
-    if err:
-        return err
-    payload = request.get_json(silent=True) if request.is_json else None
-    data = payload or request.form or {}
-
-    role = (session.get("role") or "").strip()
-    is_it = role == "IT"
-    service_id = _service_addition_int(data.get("service_id"))
-    mode = str(data.get("mode") or "").strip().lower()
-    is_update = bool(service_id) or mode == "update"
-    service_code = (data.get("service_code") or "").strip()
-    service_name = (data.get("service_name") or "").strip()
-    department_id = _service_addition_int(data.get("department_id"))
-    subdepartment_id = _service_addition_int(data.get("subdepartment_id"))
-    category_id = _service_addition_int(data.get("category_id"))
-    raw_tariff = data.get("tariff_scheme_ids")
-    if raw_tariff is None:
-        raw_tariff = data.get("tariff_scheme_id")
-    tariff_scheme_ids = _service_addition_id_list(raw_tariff)
-    tariff_rows = _service_addition_tariff_rows(data.get("tariff_rows"))
-    raw_billing = data.get("billing_class_ids")
-    if raw_billing is None:
-        raw_billing = data.get("billing_class_id")
-    billing_classes = _service_addition_billing_classes(raw_billing)
-    if billing_classes == [] and raw_billing is None:
-        billing_classes = [1, 2]
-
-    if is_update and not service_id:
-        return jsonify({"status": "error", "message": "Service ID is required to update."}), 400
-    if not service_code or not service_name:
-        return jsonify({"status": "error", "message": "Service code and name are required."}), 400
-    if not department_id or not category_id:
-        return jsonify({"status": "error", "message": "Department and category are required."}), 400
-    if not tariff_scheme_ids or not billing_classes:
-        return jsonify({"status": "error", "message": "Tariff scheme and billing class are required."}), 400
-
-    service_type_id = None
-    service_alias = (data.get("service_alias_name") or "").strip()
-    cghs_code = (data.get("cghs_code") or "").strip()
-    remarks = (data.get("remarks") or "").strip()
-
-    raw_basic = data.get("basic_rate")
-    basic_rate_calc = _service_addition_decimal(raw_basic, Decimal("0"))
-    basic_rate = None if raw_basic is None or str(raw_basic).strip() == "" else basic_rate_calc
-    profit_per = _service_addition_decimal(data.get("profit_per"), Decimal("0"))
-    sale_rate = _service_addition_decimal(data.get("sale_rate"), Decimal("0"))
-    discount = _service_addition_decimal(data.get("discount"), Decimal("0"))
-    final_rate = _service_addition_decimal(data.get("final_rate"), Decimal("0"))
-
-    if sale_rate == 0 and basic_rate_calc != 0:
-        sale_rate = (basic_rate_calc * (Decimal("1") + (profit_per / Decimal("100")))).quantize(Decimal("0.01"))
-    if final_rate == 0 and sale_rate != 0:
-        final_rate = (sale_rate - discount).quantize(Decimal("0.01"))
-
-    tariff_rate = _service_addition_decimal(
-        data.get("tariff_rate"),
-        final_rate if final_rate != 0 else sale_rate
-    )
-    if sale_rate == 0 and tariff_rate != 0:
-        sale_rate = tariff_rate
-    if final_rate == 0 and tariff_rate != 0:
-        final_rate = tariff_rate
-    tariff_discount = _service_addition_decimal(data.get("tariff_discount"), Decimal("0"))
-    rows_to_apply = []
-    if tariff_rows:
-        row_map = {}
-        for row in tariff_rows:
-            key = (row["tariff_scheme_id"], row["billing_class_id"])
-            row_map[key] = row
-        rows_to_apply = list(row_map.values())
-    else:
-        for scheme_id in tariff_scheme_ids:
-            for billing_class_id in billing_classes:
-                rows_to_apply.append({
-                    "tariff_scheme_id": scheme_id,
-                    "billing_class_id": billing_class_id,
-                    "rate": tariff_rate,
-                    "discount_amt": tariff_discount,
-                })
-
-    deactive = _service_addition_bool(data.get("deactive"))
-    autorender = _service_addition_bool(data.get("autorender"))
-    pat_visible = _service_addition_bool(data.get("pat_investigation_visible"))
-    doc_required = _service_addition_bool(data.get("doc_required"))
-    is_outsource = _service_addition_bool(data.get("is_outsource_service"))
-    is_exclusive = _service_addition_bool(data.get("is_exclusive_service"))
-    is_renewal = _service_addition_bool(data.get("is_renewal"))
-    is_routine = _service_addition_bool(data.get("is_routine_service"))
-    blocked_by_tpa = _service_addition_bool(data.get("blocked_by_tpa"))
-    clinical_reporting_flag = _service_addition_bool(data.get("clinical_reporting_flag"))
-    is_bedside_procedure = _service_addition_bool(data.get("is_bedside_procedure"))
-
-    emergency_charges = _service_addition_decimal(data.get("emergency_charges"), Decimal("0"))
-    surcharge = _service_addition_decimal(data.get("surcharge"), Decimal("0"))
-    surcharge_amt = _service_addition_decimal(data.get("surcharge_amt"), Decimal("0"))
-    doctor_cut = _service_addition_decimal(data.get("doctor_cut"), Decimal("0"))
-
-    updated_by = _service_addition_int(data.get("updated_by"), 0)
-    updated_by_alt = _service_addition_int(data.get("updated_by_alt"), updated_by)
-    default_item = _service_addition_int(data.get("default_item"), 0)
-    approval_required = False
-
-    conn = get_sql_connection(unit)
-    if not conn:
-        return jsonify({"status": "error", "message": "Unable to connect to database"}), 500
-    try:
-        try:
-            conn.autocommit = False
-        except Exception:
-            pass
-        cursor = conn.cursor()
-        if is_update:
-            cursor.execute("""
-                SELECT Service_ID, Deactive
-                FROM dbo.Service_Mst WITH (UPDLOCK, HOLDLOCK)
-                WHERE Service_ID = ?
-            """, (service_id,))
-            row = cursor.fetchone()
-            if not row:
-                raise RuntimeError("Service not found for update")
-            if not is_it:
-                try:
-                    deactive = bool(int(row[1]))
-                except Exception:
-                    deactive = bool(row[1])
-            cursor.execute("""
-                UPDATE dbo.Service_Mst
-                SET Service_Code = ?, Service_Name = ?, Deactive = ?, DepartmentId = ?,
-                    SubDepartmentId = ?, Category_Id = ?, Updated_By = ?, Updated_On = GETDATE(),
-                    Autorender = ?, ServiceType = ?, PatInvestigationVisible = ?,
-                    UpdatedBy = ?, UpdatedON = GETDATE(), BasicRate = ?, ProfitPer = ?, SaleRate = ?,
-                    Discount = ?, FinalRate = ?, DefaultItem = ?, EmergencyCharges = ?, Surcharge = ?,
-                    DoctorCut = ?, DocRequired = ?, ClinicalReportingFlag = ?, SurchargeAmt = ?,
-                    IsBedSideProcedure = ?, Remarks = ?, CGHSCode = ?, IsOutSourceService = ?, IsExclusiveService = ?,
-                    IsRenewal = ?, ServiceAliasName = ?, BlockedByTPA = ?, IsRoutineService = ?
-                WHERE Service_ID = ?
-            """, (
-                service_code, service_name, int(deactive), department_id,
-                subdepartment_id, category_id, updated_by,
-                int(autorender), service_type_id, int(pat_visible),
-                updated_by_alt, basic_rate, profit_per, sale_rate,
-                discount, final_rate, default_item, emergency_charges, surcharge,
-                doctor_cut, int(doc_required), int(clinical_reporting_flag), surcharge_amt,
-                int(is_bedside_procedure), remarks, cghs_code, int(is_outsource), int(is_exclusive),
-                int(is_renewal), service_alias, int(blocked_by_tpa), int(is_routine),
-                service_id
-            ))
-        else:
-            if not is_it:
-                approval_required = True
-                deactive = True
-            cursor.execute("""
-                SELECT ISNULL(MAX(Service_ID), 0) + 1
-                FROM dbo.Service_Mst WITH (UPDLOCK, HOLDLOCK)
-            """)
-            next_service_id_row = cursor.fetchone()
-            next_service_id = int(next_service_id_row[0]) if next_service_id_row and next_service_id_row[0] else None
-            if not next_service_id:
-                raise RuntimeError("Unable to generate Service_ID")
-            cursor.execute("""
-                INSERT INTO dbo.Service_Mst (
-                    Service_ID, Service_Code, Service_Name, Deactive, DepartmentId, SubDepartmentId, Category_Id,
-                    Updated_By, Updated_On, Autorender, ServiceType, PatInvestigationVisible,
-                    UpdatedBy, UpdatedON, BasicRate, ProfitPer, SaleRate, Discount, FinalRate,
-                    DefaultItem, EmergencyCharges, Surcharge, DoctorCut, DocRequired,
-                ClinicalReportingFlag, SurchargeAmt, IsBedSideProcedure, Remarks, CGHSCode,
-                IsOutSourceService, IsExclusiveService, IsRenewal, ServiceAliasName,
-                BlockedByTPA, IsRoutineService
-            )
-            OUTPUT INSERTED.Service_ID
-            VALUES (
-                ?, ?, ?, ?, ?, ?, ?, ?, GETDATE(), ?, ?, ?,
-                ?, GETDATE(), ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?,
-                ?, ?, ?, ?, ?,
-                ?, ?, ?, ?,
-                ?, ?
-            )
-        """, (
-            next_service_id, service_code, service_name, int(deactive), department_id, subdepartment_id, category_id,
-            updated_by, int(autorender), service_type_id, int(pat_visible),
-            updated_by_alt, basic_rate, profit_per, sale_rate, discount, final_rate,
-            default_item, emergency_charges, surcharge, doctor_cut, int(doc_required),
-            int(clinical_reporting_flag), surcharge_amt, int(is_bedside_procedure), remarks,
-            cghs_code, int(is_outsource), int(is_exclusive), int(is_renewal), service_alias,
-            int(blocked_by_tpa), int(is_routine)
-        ))
-            row = cursor.fetchone()
-            service_id = int(row[0]) if row and row[0] else next_service_id
-
-        tariff_ids = []
-        cursor.execute("""
-            SELECT Tariff_ID, TariffScheme_ID, BillingClassID
-            FROM dbo.ServiceTariffSheet WITH (UPDLOCK, HOLDLOCK)
-            WHERE ServiceId = ?
-        """, (service_id,))
-        existing_tariffs = _service_addition_rows(cursor)
-        existing_map = {}
-        for row in existing_tariffs:
-            scheme_val = _service_addition_int(row.get("TariffScheme_ID"))
-            billing_val = _service_addition_int(row.get("BillingClassID"))
-            tariff_val = _service_addition_int(row.get("Tariff_ID"))
-            if scheme_val and billing_val and tariff_val:
-                existing_map[(scheme_val, billing_val)] = tariff_val
-
-        next_tariff_id = None
-        for row in rows_to_apply:
-            scheme_id = row["tariff_scheme_id"]
-            billing_class_id = row["billing_class_id"]
-            row_rate = row["rate"]
-            row_discount = row["discount_amt"]
-            key = (scheme_id, billing_class_id)
-            existing_id = existing_map.get(key)
-            if existing_id:
-                cursor.execute("""
-                    UPDATE dbo.ServiceTariffSheet
-                    SET Rate = ?, DiscountAmt = ?, UpdatedBy = ?, UpdatedOn = GETDATE(),
-                        UpdatedMacName = ?
-                    WHERE Tariff_ID = ?
-                """, (
-                    row_rate, row_discount, updated_by_alt,
-                    (session.get("username") or ""),
-                    existing_id
-                ))
-                tariff_ids.append(existing_id)
-            else:
-                if next_tariff_id is None:
-                    cursor.execute("""
-                        SELECT ISNULL(MAX(Tariff_ID), 0) + 1
-                        FROM dbo.ServiceTariffSheet WITH (UPDLOCK, HOLDLOCK)
-                    """)
-                    next_tariff_id_row = cursor.fetchone()
-                    next_tariff_id = int(next_tariff_id_row[0]) if next_tariff_id_row and next_tariff_id_row[0] else None
-                    if not next_tariff_id:
-                        raise RuntimeError("Unable to generate Tariff_ID")
-                cursor.execute("""
-                    INSERT INTO dbo.ServiceTariffSheet (
-                        Tariff_ID, ServiceId, TariffScheme_ID, RoomID, BillingClassID,
-                        Rate, DiscountAmt, UpdatedBy, UpdatedOn, UpdatedMacName,
-                        InsertedByUserID, InsertedON
-                    )
-                    OUTPUT INSERTED.Tariff_ID
-                    VALUES (?, ?, ?, 0, ?, ?, ?, ?, GETDATE(), ?, ?, GETDATE())
-                """, (
-                    next_tariff_id, service_id, scheme_id, billing_class_id,
-                    row_rate, row_discount, updated_by_alt,
-                    (session.get("username") or ""),
-                    updated_by
-                ))
-                tariff_row = cursor.fetchone()
-                if tariff_row and tariff_row[0]:
-                    tariff_ids.append(int(tariff_row[0]))
-                next_tariff_id += 1
-
-        try:
-            conn.commit()
-        except Exception:
-            pass
-        if approval_required:
-            _notify_it_service_approval(
-                service_id,
-                service_code,
-                service_name,
-                unit,
-                session.get("username") or ""
-            )
-        action = "updated" if is_update else "added"
-        return jsonify({
-            "status": "success",
-            "service_id": service_id,
-            "tariff_id": tariff_ids[0] if tariff_ids else None,
-            "tariff_ids": tariff_ids,
-            "action": action,
-            "approval_required": approval_required,
-            "message": f"Service {action} successfully."
-        })
-    except Exception as e:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        verb = "update" if is_update else "add"
-        return jsonify({"status": "error", "message": f"Failed to {verb} service: {e}"}), 500
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-@app.route('/health-package-service-addition')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def health_package_service_addition():
-    allowed_units = _allowed_units_for_session()
-    role = (session.get("role") or "").strip()
-    embed = str(request.args.get("embed") or "").strip() == "1"
-    account_id = session.get("accountid") or 0
-    if not account_id and role.lower() == "it":
-        account_id = 1
-    return render_template(
-        'health_package_service_addition.html',
-        allowed_units=allowed_units,
-        role=role,
-        embed=embed,
-        account_id=account_id,
-    )
-
-
-@app.route('/ip-package-service-addition')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def ip_package_service_addition():
-    allowed_units = _allowed_units_for_session()
-    role = (session.get("role") or "").strip()
-    embed = str(request.args.get("embed") or "").strip() == "1"
-    account_id = session.get("accountid") or 0
-    if not account_id and role.lower() == "it":
-        account_id = 1
-    return render_template(
-        'ip_package_service_addition.html',
-        allowed_units=allowed_units,
-        role=role,
-        embed=embed,
-        account_id=account_id,
-    )
-
-
-def _get_health_package_unit():
-    unit = (request.args.get("unit") or request.form.get("unit") or "").strip().upper()
-    if request.is_json:
-        data = request.get_json(silent=True) or {}
-        unit = unit or str(data.get("unit") or "").strip().upper()
-    allowed_units = _allowed_units_for_session()
-    if not allowed_units:
-        return None, (jsonify({"status": "error", "message": "No unit access assigned"}), 403)
-    if not unit:
-        if len(allowed_units) == 1:
-            unit = allowed_units[0]
-        else:
-            return None, (jsonify({"status": "error", "message": "Please select a unit"}), 400)
-    if unit not in allowed_units:
-        return None, (jsonify({"status": "error", "message": f"Unit {unit} not permitted"}), 403)
-    return unit, None
-
-
-def _health_package_rows(cursor):
-    cols = [c[0] for c in cursor.description]
-    rows = cursor.fetchall()
-    out = []
-    for row in rows:
-        rec = {}
-        for idx, col in enumerate(cols):
-            val = row[idx]
-            if isinstance(val, (datetime, date)):
-                val = val.isoformat(sep=" ")
-            if isinstance(val, Decimal):
-                val = float(val)
-            if isinstance(val, memoryview):
-                val = val.tobytes().decode(errors="ignore")
-            if isinstance(val, bytes):
-                val = val.decode(errors="ignore")
-            rec[col] = val
-        out.append(rec)
-    return out
-
-
-def _health_package_parse_date(raw):
-    if isinstance(raw, datetime):
-        return raw
-    if isinstance(raw, date):
-        return datetime.combine(raw, datetime.min.time())
-    if raw is None or str(raw).strip() == "":
-        return None
-    text = str(raw).strip()
-    try:
-        return datetime.fromisoformat(text)
-    except Exception:
-        try:
-            return datetime.strptime(text, "%Y-%m-%d")
-        except Exception:
-            return None
-
-
-def _health_package_next_code(cursor) -> str:
-    cursor.execute("""
-        SELECT ISNULL(MAX(HealthPlanID), 0)
-        FROM dbo.CPAHealthPlanMst
-    """)
-    row = cursor.fetchone()
-    next_id = int(row[0]) + 1 if row and row[0] is not None else 1
-    while True:
-        candidate = f"PHP-{next_id}"
-        cursor.execute(
-            "SELECT 1 FROM dbo.CPAHealthPlanMst WHERE HealthPlanCode = ?",
-            (candidate,),
-        )
-        if not cursor.fetchone():
-            return candidate
-        next_id += 1
-
-
-def _health_package_services(raw):
-    if raw is None:
-        return []
-    items = []
-    if isinstance(raw, (list, tuple, set)):
-        items = list(raw)
-    elif isinstance(raw, str):
-        txt = raw.strip()
-        if not txt:
-            return []
-        try:
-            parsed = json.loads(txt)
-            if isinstance(parsed, (list, tuple, set)):
-                items = list(parsed)
-            elif isinstance(parsed, dict):
-                items = [parsed]
-            else:
-                items = [parsed]
-        except Exception:
-            return []
-    elif isinstance(raw, dict):
-        items = [raw]
-    else:
-        return []
-
-    rows = []
-    for item in items:
-        if not isinstance(item, dict):
-            continue
-        service_id = _service_addition_int(
-            item.get("service_id") or item.get("pServiceid") or item.get("ServiceID")
-        )
-        if not service_id:
-            continue
-        quantity = _service_addition_int(
-            item.get("quantity") or item.get("pQuantity") or 1,
-            1,
-        )
-        rate = _service_addition_decimal(
-            item.get("rate") or item.get("pRate"), Decimal("0")
-        )
-        category_id = _service_addition_int(
-            item.get("category_id") or item.get("Category_Id") or item.get("ServiceCategoryID")
-        )
-        service_code = str(item.get("service_code") or item.get("Service_Code") or "").strip()
-        category_code = str(
-            item.get("service_category_code")
-            or item.get("ServiceCategory_Code")
-            or item.get("ServiceCategoryCode")
-            or ""
-        ).strip()
-        service_name = str(item.get("service_name") or item.get("Service_Name") or "").strip()
-        cghs_code = str(item.get("cghs_code") or item.get("CGHSCode") or "").strip()
-        amount = rate * Decimal(quantity or 0)
-        rows.append({
-            "service_id": service_id,
-            "quantity": quantity or 1,
-            "rate": rate,
-            "amount": amount,
-            "category_id": category_id,
-            "service_code": service_code,
-            "service_category_code": category_code,
-            "service_name": service_name,
-            "cghs_code": cghs_code,
-        })
-    return rows
-
-
-@app.route('/api/health_package/init')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_health_package_init():
-    from modules.db_connection import get_sql_connection
-
-    unit, err = _get_health_package_unit()
-    if err:
-        return err
-    conn = get_sql_connection(unit)
-    if not conn:
-        return jsonify({"status": "error", "message": "Unable to connect to database"}), 500
-    try:
-        cursor = conn.cursor()
-        cursor.execute("""
-            SELECT TariffScheme_ID, TariffScheme_Code, TariffScheme_Desc, Deactive, IsBaseTariffScheme
-            FROM dbo.CPATariffScheme_Mst
-            ORDER BY TariffScheme_Desc
-        """)
-        tariff_schemes = _health_package_rows(cursor)
-        return jsonify({
-            "status": "success",
-            "unit": unit,
-            "tariff_schemes": tariff_schemes,
-            "search_modes": [
-                {"id": 1, "label": "Service Name"},
-                {"id": 2, "label": "Service Code"},
-                {"id": 3, "label": "CGHS Code"},
-            ],
-        })
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-
-@app.route('/api/health_package/search')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_health_package_search():
-    from modules.db_connection import get_sql_connection
-
-    unit, err = _get_health_package_unit()
-    if err:
-        return err
-    query = (request.args.get("q") or "").strip()
-    page = _service_addition_int(request.args.get("page"), 1)
-    page_size = _service_addition_int(request.args.get("page_size"), 20)
-    page = max(1, page or 1)
-    page_size = max(1, min(100, page_size or 20))
-    if len(query) < 2 and not query.isdigit():
-        query = ""
-
-    conn = get_sql_connection(unit)
-    if not conn:
-        return jsonify({"status": "error", "message": "Unable to connect to database"}), 500
-    try:
-        cursor = conn.cursor()
-        where_sql = "PackageOrHCPlan = RTRIM('HCP')"
-        params = []
-        if query:
-            like = f"%{query}%"
-            package_id = _service_addition_int(query, -1)
-            where_sql += " AND (HealthPlanName LIKE ? OR HealthPlanCode LIKE ? OR HealthPlanID = ?)"
-            params.extend([like, like, package_id])
-
-        cursor.execute(f"SELECT COUNT(1) FROM dbo.CPAHealthPlanMst WHERE {where_sql}", params)
-        count_row = cursor.fetchone()
-        total = int(count_row[0]) if count_row and count_row[0] is not None else 0
-
-        start_row = (page - 1) * page_size + 1
-        end_row = page * page_size
-        cursor.execute(f"""
-            WITH Pack AS (
-                SELECT
-                    HealthPlanID, HealthPlanCode, HealthPlanName,
-                    LaunchDate, PackageCost, ValidityPeriod,
-                    NoOfVisitsAllowed, Deactive, Discount, BasicCost,
-                    (CASE WHEN Deactive = 1 THEN 'Deactive' ELSE 'Active' end) as Status,
-                    ROW_NUMBER() OVER (ORDER BY Deactive, HealthPlanName, HealthPlanID) AS rn
-                FROM dbo.CPAHealthPlanMst
-                WHERE {where_sql}
-            )
-            SELECT HealthPlanID, HealthPlanCode, HealthPlanName,
-                   LaunchDate, PackageCost, ValidityPeriod,
-                   NoOfVisitsAllowed, Deactive, Discount, BasicCost, Status
-            FROM Pack
-            WHERE rn BETWEEN ? AND ?
-            ORDER BY rn
-        """, (*params, start_row, end_row))
-        packages = _health_package_rows(cursor)
-        return jsonify({
-            "status": "success",
-            "packages": packages,
-            "page": page,
-            "page_size": page_size,
-            "total": total,
-        })
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-
-@app.route('/api/health_package/next_code')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_health_package_next_code():
-    from modules.db_connection import get_sql_connection
-
-    unit, err = _get_health_package_unit()
-    if err:
-        return err
-
-    conn = get_sql_connection(unit)
-    if not conn:
-        return jsonify({"status": "error", "message": "Unable to connect to database"}), 500
-    try:
-        cursor = conn.cursor()
-        next_code = _health_package_next_code(cursor)
-        return jsonify({
-            "status": "success",
-            "next_code": next_code,
-        })
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-
-@app.route('/api/health_package/detail')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_health_package_detail():
-    from modules.db_connection import get_sql_connection
-
-    unit, err = _get_health_package_unit()
-    if err:
-        return err
-    package_id = _service_addition_int(request.args.get("package_id"))
-    if not package_id:
-        return jsonify({"status": "error", "message": "Package ID is required."}), 400
-
-    conn = get_sql_connection(unit)
-    if not conn:
-        return jsonify({"status": "error", "message": "Unable to connect to database"}), 500
-    try:
-        cursor = conn.cursor()
-        cursor.execute("EXEC dbo.usp_GetOldPackDtl ?", (package_id,))
-        pack_row = cursor.fetchone()
-        if not pack_row:
-            return jsonify({"status": "error", "message": "Package not found."}), 404
-        package = {
-            "HealthPlanID": package_id,
-            "HealthPlanCode": pack_row[0],
-            "HealthPlanName": pack_row[1],
-            "LaunchDate": pack_row[2].isoformat(sep=" ") if isinstance(pack_row[2], (datetime, date)) else pack_row[2],
-            "PackageCost": pack_row[3],
-            "ValidityPeriod": pack_row[4],
-            "NoOfVisitsAllowed": pack_row[5],
-            "Discount": pack_row[6],
-            "BasicCost": pack_row[7],
-            "Deactive": pack_row[8],
-        }
-        cursor.execute("EXEC dbo.usp_GetOldPackServiceDtl ?", (package_id,))
-        services = _health_package_rows(cursor)
-
-        cat_ids = sorted({int(row.get("Category_Id")) for row in services if row.get("Category_Id") is not None})
-        cat_map = {}
-        if cat_ids:
-            placeholders = ",".join("?" for _ in cat_ids)
-            cursor.execute(
-                f"""
-                SELECT ServiceCategory_ID, ServiceCategory_Code
-                FROM dbo.Service_Category_Mst
-                WHERE ServiceCategory_ID IN ({placeholders})
-                """,
-                tuple(cat_ids),
-            )
-            for row in cursor.fetchall():
-                cat_map[int(row[0])] = str(row[1] or "").strip()
-        for row in services:
-            cat_id = row.get("Category_Id")
-            if cat_id is not None:
-                row["ServiceCategory_Code"] = cat_map.get(int(cat_id), "")
-
-        return jsonify({
-            "status": "success",
-            "package": package,
-            "services": services,
-        })
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-
-@app.route('/api/health_package/services')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_health_package_services():
-    from modules.db_connection import get_sql_connection
-
-    unit, err = _get_health_package_unit()
-    if err:
-        return err
-    query = (request.args.get("q") or "").strip()
-    if len(query) < 2:
-        return jsonify({"status": "success", "services": []})
-    scheme_id = _service_addition_int(request.args.get("scheme_id"))
-    tag = _service_addition_int(request.args.get("tag"), 1)
-    if not scheme_id:
-        return jsonify({"status": "error", "message": "Tariff scheme is required."}), 400
-
-    conn = get_sql_connection(unit)
-    if not conn:
-        return jsonify({"status": "error", "message": "Unable to connect to database"}), 500
-    try:
-        cursor = conn.cursor()
-        cursor.execute("EXEC dbo.usp_GetServicesBillingNewUp ?, ?, ?", (scheme_id, query, tag))
-        services = _health_package_rows(cursor)
-
-        cat_ids = sorted({int(row.get("Category_Id")) for row in services if row.get("Category_Id") is not None})
-        cat_map = {}
-        if cat_ids:
-            placeholders = ",".join("?" for _ in cat_ids)
-            cursor.execute(
-                f"""
-                SELECT ServiceCategory_ID, ServiceCategory_Code
-                FROM dbo.Service_Category_Mst
-                WHERE ServiceCategory_ID IN ({placeholders})
-                """,
-                tuple(cat_ids),
-            )
-            for row in cursor.fetchall():
-                cat_map[int(row[0])] = str(row[1] or "").strip()
-        for row in services:
-            cat_id = row.get("Category_Id")
-            if cat_id is not None:
-                row["ServiceCategory_Code"] = cat_map.get(int(cat_id), "")
-
-        return jsonify({
-            "status": "success",
-            "services": services,
-        })
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-
-@app.route('/api/health_package/submit', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_health_package_submit():
-    from modules.db_connection import get_sql_connection
-
-    unit, err = _get_health_package_unit()
-    if err:
-        return err
-    payload = request.get_json(silent=True) if request.is_json else None
-    data = payload or request.form or {}
-
-    mode = str(data.get("mode") or "").strip().lower()
-    package_id = _service_addition_int(data.get("package_id"))
-    is_update = bool(package_id) and mode == "update"
-    package_code = str(data.get("package_code") or "").strip()
-    package_name = str(data.get("package_name") or "").strip()
-    launch_date = _health_package_parse_date(data.get("launch_date"))
-    package_cost = _service_addition_decimal(data.get("package_cost"), Decimal("0"))
-    validity_period = _service_addition_int(data.get("validity_period"), 0)
-    visits_allowed = _service_addition_int(data.get("visits_allowed"), 0)
-    discount_amount = _service_addition_decimal(data.get("discount_amount"), Decimal("0"))
-    basic_cost = _service_addition_decimal(data.get("basic_cost"), Decimal("0"))
-    activation = _service_addition_int(data.get("activation"), 0)
-    updated_by = _service_addition_int(data.get("updated_by"), 0)
-    package_or_plan = str(data.get("package_or_plan") or "HCP").strip() or "HCP"
-    services = _health_package_services(data.get("services"))
-
-    if not package_code or not package_name or not launch_date:
-        return jsonify({"status": "error", "message": "Package code, name, and launch date are required."}), 400
-    if not services:
-        return jsonify({"status": "error", "message": "Add at least one service before saving."}), 400
-    if mode == "update" and not package_id:
-        return jsonify({"status": "error", "message": "Select a package to update."}), 400
-
-    conn = get_sql_connection(unit)
-    if not conn:
-        return jsonify({"status": "error", "message": "Unable to connect to database"}), 500
-    try:
-        cursor = conn.cursor()
-        updated_on = datetime.now()
-
-        if not is_update:
-            cursor.execute("""
-                SELECT TOP 1 HealthPlanID
-                FROM dbo.CPAHealthPlanMst
-                WHERE PackageOrHCPlan = ? AND HealthPlanCode = ?
-            """, (package_or_plan, package_code))
-            if cursor.fetchone():
-                return jsonify({
-                    "status": "error",
-                    "message": "Package code already exists. Please refresh to generate a new code."
-                }), 409
-
-        if is_update:
-            cursor.execute("""
-                EXEC dbo.usp_updateCPAHealthPackageMst
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-            """, (
-                package_id, package_code, package_name, launch_date, float(package_cost),
-                validity_period, visits_allowed, updated_by, updated_on,
-                float(discount_amount), float(basic_cost), package_or_plan,
-                str(updated_by), updated_on, activation,
-            ))
-            try:
-                cursor.fetchone()
-            except Exception:
-                pass
-            try:
-                while cursor.nextset():
-                    pass
-            except Exception:
-                pass
-            cursor.execute("""
-                DELETE FROM dbo.CPAHealthPlanDtlNew
-                WHERE HealthPlanID = ?
-            """, (package_id,))
-        else:
-            cursor.execute("""
-                EXEC dbo.usp_addCPAHealthPackageMst
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-            """, (
-                0, package_code, package_name, launch_date, float(package_cost),
-                validity_period, visits_allowed, updated_by, updated_on,
-                float(discount_amount), float(basic_cost), package_or_plan,
-                str(updated_by), updated_on, activation,
-            ))
-            row = cursor.fetchone()
-            package_id = int(row[0]) if row and row[0] else None
-            try:
-                while cursor.nextset():
-                    pass
-            except Exception:
-                pass
-
-        if not package_id:
-            raise RuntimeError("Package ID not created")
-
-        missing_service_ids = [
-            svc.get("service_id") for svc in services
-            if svc.get("service_id") and not svc.get("category_id")
-        ]
-        if missing_service_ids:
-            placeholders = ",".join("?" for _ in missing_service_ids)
-            cursor.execute(
-                f"""
-                SELECT Service_ID, Service_Code, Category_Id
-                FROM dbo.Service_Mst
-                WHERE Service_ID IN ({placeholders})
-                """,
-                tuple(missing_service_ids),
-            )
-            svc_map = {int(row[0]): {"code": row[1], "category_id": row[2]} for row in cursor.fetchall()}
-            for svc in services:
-                svc_id = svc.get("service_id")
-                if not svc_id:
-                    continue
-                info = svc_map.get(int(svc_id))
-                if info:
-                    if not svc.get("service_code"):
-                        svc["service_code"] = str(info.get("code") or "").strip()
-                    if not svc.get("category_id"):
-                        svc["category_id"] = info.get("category_id")
-
-        missing_categories = [svc.get("service_id") for svc in services if not svc.get("category_id")]
-        if missing_categories:
-            raise RuntimeError(f"Category missing for services {missing_categories}")
-
-        missing_cat_codes = {
-            s["category_id"] for s in services
-            if s.get("category_id") and not s.get("service_category_code")
-        }
-        cat_map = {}
-        if missing_cat_codes:
-            placeholders = ",".join("?" for _ in missing_cat_codes)
-            cursor.execute(
-                f"""
-                SELECT ServiceCategory_ID, ServiceCategory_Code
-                FROM dbo.Service_Category_Mst
-                WHERE ServiceCategory_ID IN ({placeholders})
-                """,
-                tuple(sorted(missing_cat_codes)),
-            )
-            for row in cursor.fetchall():
-                cat_map[int(row[0])] = str(row[1] or "").strip()
-
-        for svc in services:
-            category_code = svc.get("service_category_code") or cat_map.get(svc.get("category_id"), "")
-            cursor.execute("""
-                EXEC dbo.usp_addCPAHealthPackageDtl
-                    ?, ?, ?, ?, ?, ?, ?, ?, ?, ?
-            """, (
-                package_id,
-                svc.get("service_id"),
-                svc.get("service_code"),
-                svc.get("category_id"),
-                category_code,
-                int(svc.get("quantity") or 1),
-                float(svc.get("rate") or 0),
-                float(svc.get("amount") or 0),
-                str(updated_by),
-                updated_on,
-            ))
-
-        try:
-            conn.commit()
-        except Exception:
-            pass
-
-        action = "updated" if is_update else ("copied" if mode == "copy" else "added")
-        return jsonify({
-            "status": "success",
-            "package_id": package_id,
-            "action": action,
-            "message": f"Package {action} successfully.",
-        })
-    except Exception as e:
-        try:
-            conn.rollback()
-        except Exception:
-            pass
-        verb = "update" if is_update else "add"
-        return jsonify({"status": "error", "message": f"Failed to {verb} package: {e}"}), 500
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-
-@app.route('/api/ip_package/init')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_ip_package_init():
-    unit, err = _get_health_package_unit()
-    if err:
-        return err
-    result = data_fetch.fetch_ip_package_init(unit)
-    http_status = int(result.get("http_status") or (200 if result.get("status") == "success" else 500))
-    return jsonify(result), http_status
-
-
-@app.route('/api/ip_package/search')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_ip_package_search():
-    unit, err = _get_health_package_unit()
-    if err:
-        return err
-    query = (request.args.get("q") or "").strip()
-    page = _service_addition_int(request.args.get("page"), 1)
-    page_size = _service_addition_int(request.args.get("page_size"), 20)
-    result = data_fetch.search_ip_packages(unit, query, page, page_size)
-    http_status = int(result.get("http_status") or (200 if result.get("status") == "success" else 500))
-    return jsonify(result), http_status
-
-
-@app.route('/api/ip_package/next_code')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_ip_package_next_code():
-    unit, err = _get_health_package_unit()
-    if err:
-        return err
-    result = data_fetch.get_ip_package_next_code(unit, "IPP-")
-    http_status = int(result.get("http_status") or (200 if result.get("status") == "success" else 500))
-    return jsonify(result), http_status
-
-
-@app.route('/api/ip_package/detail')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_ip_package_detail():
-    unit, err = _get_health_package_unit()
-    if err:
-        return err
-    package_id = _service_addition_int(request.args.get("package_id"))
-    if not package_id:
-        return jsonify({"status": "error", "message": "Package ID is required."}), 400
-    result = data_fetch.get_ip_package_detail(unit, package_id)
-    http_status = int(result.get("http_status") or (200 if result.get("status") == "success" else 500))
-    return jsonify(result), http_status
-
-
-@app.route('/api/ip_package/services')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_ip_package_services():
-    unit, err = _get_health_package_unit()
-    if err:
-        return err
-    query = (request.args.get("q") or "").strip()
-    scheme_id = _service_addition_int(request.args.get("scheme_id"))
-    tag = _service_addition_int(request.args.get("tag"), 1)
-    if not scheme_id:
-        return jsonify({"status": "error", "message": "Tariff scheme is required."}), 400
-    result = data_fetch.search_ip_package_services(unit, scheme_id, query, tag)
-    http_status = int(result.get("http_status") or (200 if result.get("status") == "success" else 500))
-    return jsonify(result), http_status
-
-
-@app.route('/api/ip_package/submit', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_ip_package_submit():
-    unit, err = _get_health_package_unit()
-    if err:
-        return err
-    payload = request.get_json(silent=True) if request.is_json else None
-    data = payload or request.form or {}
-    result = data_fetch.save_ip_package(
-        unit,
-        data,
-        username=(session.get("username") or ""),
-    )
-    http_status = int(result.get("http_status") or (200 if result.get("status") == "success" else 500))
-    return jsonify(result), http_status
-
-@app.route('/purchase')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def purchase_module():
-    allowed_units = _allowed_purchase_units_for_session()
-    role = (session.get("role") or "").strip()
-    return (
-        render_template(
-            'purchase.html',
-            allowed_units=allowed_units,
-            is_executive=_role_base(role) == "Executive",
-            can_use_po_def_format=_can_use_def_po_print_format("AHLSTORE"),
-        ),
-        200,
-        {
-            "Cache-Control": "no-store, no-cache, must-revalidate, max-age=0",
-            "Pragma": "no-cache",
-            "Expires": "0",
-        },
-    )
+register_service_addition_routes(
+    app,
+    login_required=login_required,
+    allowed_units_for_session=_allowed_units_for_session,
+)
 
 
 # ============================================================
@@ -25023,8 +23888,8 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
     summary_value_style = ParagraphStyle("PoSummaryValue", parent=styles["Normal"], fontSize=9, alignment=TA_RIGHT, textColor=colors.black)
     summary_total_label_style = ParagraphStyle("PoSummaryTotalLabel", parent=summary_label_style, fontSize=10)
     summary_total_value_style = ParagraphStyle("PoSummaryTotalValue", parent=summary_value_style, fontSize=10, fontName="Helvetica-Bold")
-    item_name_style = ParagraphStyle("PoItemName", parent=styles["Normal"], fontSize=7, leading=9, textColor=colors.black)
-    item_spec_style = ParagraphStyle("PoItemSpec", parent=styles["Normal"], fontSize=8.5, leading=10.5, textColor=colors.HexColor("#334155"))
+    item_name_style = ParagraphStyle("PoItemName", parent=styles["Normal"], fontSize=7.4, leading=9.4, textColor=colors.black)
+    item_spec_style = ParagraphStyle("PoItemSpec", parent=styles["Normal"], fontSize=7.2, leading=9.2, textColor=colors.HexColor("#475569"))
     unit_cell_style = ParagraphStyle("PoUnitCell", parent=styles["Normal"], fontSize=6.5, leading=8, alignment=TA_CENTER, textColor=colors.black)
     item_center_style = ParagraphStyle("PoItemCenter", parent=styles["Normal"], fontSize=6.5, leading=8, alignment=TA_CENTER, textColor=colors.black)
     item_num_style = ParagraphStyle("PoItemNum", parent=styles["Normal"], fontSize=6.5, leading=8, alignment=TA_RIGHT, textColor=colors.black)
@@ -25406,12 +24271,13 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
     def _item_name_cell(name_val, manufacturer_val=None):
         item_text = escape(str(name_val or ""))
         manufacturer_text = str(manufacturer_val or "").strip()
+        name_markup = f"<font name='Helvetica-Bold'>{item_text}</font>"
         if manufacturer_text:
             return Paragraph(
-                f"{item_text}<br/><font color='#475569'>Mfr: {escape(manufacturer_text)}</font>",
+                f"{name_markup}<br/><font name='Helvetica' size='6.3' color='#64748b'>Mfr: {escape(manufacturer_text)}</font>",
                 item_name_style,
             )
-        return Paragraph(item_text, item_name_style)
+        return Paragraph(name_markup, item_name_style)
 
     def _unit_cell(unit_val):
         return Paragraph(escape(str(unit_val or "")), unit_cell_style)
@@ -25423,6 +24289,7 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
         return Paragraph(escape(str(val or "")), item_num_style)
 
     highlight_rows = []
+    item_data_rows = []
     spec_rows = []
     for idx, row in enumerate(items or [], start=1):
         qty = float(row.get("Qty") or 0)
@@ -25430,7 +24297,8 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
         discount_pct = float(row.get("Discount") or 0)
         gross = qty * rate
         discount_amt = gross * discount_pct / 100
-        taxable = max(gross - discount_amt, 0)
+        unit_discount_amt = float(row.get("UnitDiscount") or 0)
+        taxable = max(gross - discount_amt - unit_discount_amt, 0)
         cgst_amt = float(row.get("ExciseTaxamt") or 0)
         sgst_amt = float(row.get("TaxAmount") or 0)
         cgst_pct = float(row.get("Excisetax") or 0)
@@ -25441,7 +24309,7 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
         net_amt = float(row.get("NetAmount") or 0)
 
         gross_total += gross
-        discount_total += discount_amt
+        discount_total += discount_amt + unit_discount_amt
         taxable_total += taxable
         cgst_total += cgst_amt
         sgst_total += sgst_amt
@@ -25482,9 +24350,16 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
                 _num_cell(fmt_money(gst_amt)),
                 _num_cell(fmt_money(net_amt)),
             ])
+        item_data_rows.append(row_idx)
         specs_text = str(row.get("TechnicalSpecs") or "").strip()
         if specs_text:
-            label = Paragraph(f"<b>Technical Specs:</b> {_escape_with_line_breaks(specs_text)}", item_spec_style)
+            label = Paragraph(
+                (
+                    "<font color='#1e3a8a'><b>Technical Specs:</b></font> "
+                    f"<font color='#475569'>{_escape_with_line_breaks(specs_text)}</font>"
+                ),
+                item_spec_style,
+            )
             item_rows.append(["", label] + [""] * (len(item_rows[0]) - 2))
             spec_rows.append(len(item_rows) - 1)
 
@@ -25513,15 +24388,28 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
         ("BOTTOMPADDING", (0, 1), (-1, -1), 3),
         ("FONTSIZE", (4, 1), (-1, -1), 6.5),
     ]
+    for row_idx in item_data_rows:
+        table_style.append(("BACKGROUND", (1, row_idx), (1, row_idx), colors.HexColor("#f8fafc")))
+        table_style.append(("TEXTCOLOR", (1, row_idx), (1, row_idx), colors.HexColor("#0f172a")))
+        table_style.append(("LEFTPADDING", (1, row_idx), (1, row_idx), 5))
+        table_style.append(("RIGHTPADDING", (1, row_idx), (1, row_idx), 5))
+        table_style.append(("TOPPADDING", (0, row_idx), (-1, row_idx), 4))
+        table_style.append(("BOTTOMPADDING", (0, row_idx), (-1, row_idx), 4))
     for row_idx in highlight_rows:
         table_style.append(("BACKGROUND", (0, row_idx), (-1, row_idx), colors.HexColor("#f3f4f6")))
         table_style.append(("FONTNAME", (5, row_idx), (5, row_idx), "Helvetica-Bold"))
     for row_idx in spec_rows:
         table_style.append(("SPAN", (1, row_idx), (-1, row_idx)))
-        table_style.append(("BACKGROUND", (0, row_idx), (-1, row_idx), colors.HexColor("#f8fafc")))
-        table_style.append(("TEXTCOLOR", (1, row_idx), (-1, row_idx), colors.HexColor("#334155")))
+        table_style.append(("BACKGROUND", (0, row_idx), (0, row_idx), colors.white))
+        table_style.append(("BACKGROUND", (1, row_idx), (-1, row_idx), colors.HexColor("#f8fafc")))
+        table_style.append(("TEXTCOLOR", (1, row_idx), (-1, row_idx), colors.HexColor("#475569")))
         table_style.append(("ALIGN", (1, row_idx), (-1, row_idx), "LEFT"))
-        table_style.append(("FONTSIZE", (1, row_idx), (-1, row_idx), 8.5))
+        table_style.append(("FONTSIZE", (1, row_idx), (-1, row_idx), 7.2))
+        table_style.append(("LEFTPADDING", (1, row_idx), (-1, row_idx), 8))
+        table_style.append(("RIGHTPADDING", (1, row_idx), (-1, row_idx), 8))
+        table_style.append(("TOPPADDING", (1, row_idx), (-1, row_idx), 4))
+        table_style.append(("BOTTOMPADDING", (1, row_idx), (-1, row_idx), 5))
+        table_style.append(("LINEBEFORE", (1, row_idx), (1, row_idx), 1, colors.HexColor("#bfdbfe")))
     item_table.setStyle(TableStyle(table_style))
     elements.append(item_table)
     elements.append(Spacer(1, 10))
@@ -25807,21 +24695,26 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
     def _senior_approval_block(authority_name: str, authority_designation: str):
         authority_name = str(authority_name or "").strip()
         authority_designation = str(authority_designation or "").strip()
-        if not authority_name:
+        if not authority_name and not authority_designation:
             return []
         designation_text = authority_designation or "Director"
         if designation_text.startswith("(") and designation_text.endswith(")"):
             designation_line = designation_text
+            designation_only_line = designation_text[1:-1].strip() or "Director"
         else:
             designation_line = f"({designation_text})"
+            designation_only_line = designation_text
         unit_key = _unit_key(unit)
         company_line = "FOR ASAP IMPACT PVT. LTD." if unit_key in {"BALLIA", "BALLIASTORE"} else "FOR ASARFI HOSPITAL LTD"
         lines = [
             Paragraph(company_line, left_sign_company_style),
             Spacer(1, 10 * mm),
-            Paragraph(escape(authority_name), left_sign_name_style),
-            Paragraph(escape(designation_line), left_sign_designation_style),
         ]
+        if authority_name:
+            lines.append(Paragraph(escape(authority_name), left_sign_name_style))
+            lines.append(Paragraph(escape(designation_line), left_sign_designation_style))
+        else:
+            lines.append(Paragraph(escape(designation_only_line), left_sign_name_style))
         return lines
 
     if status_code == "A":
@@ -25890,6 +24783,8 @@ def _build_work_order_pdf_buffer(unit: str, header: dict, items: list[dict], app
     from reportlab.lib.enums import TA_CENTER, TA_JUSTIFY, TA_LEFT, TA_RIGHT
     from reportlab.platypus import KeepTogether, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
     from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.pdfbase import pdfmetrics
+    from reportlab.pdfbase.ttfonts import TTFont
     page_width, _ = A4
 
     def fmt_date(value):
@@ -25957,6 +24852,73 @@ def _build_work_order_pdf_buffer(unit: str, header: dict, items: list[dict], app
             return "For ASAP Impact Pvt. Ltd.", "ASAP Impact Pvt. Ltd."
         return "For Asarfi Hospital Ltd.", "Asarfi Hospital Ltd."
 
+    def _find_font_path(names):
+        win_dir = os.environ.get("WINDIR", "C:\\Windows")
+        font_dir = os.path.join(win_dir, "Fonts")
+        for name in names:
+            path = os.path.join(font_dir, name)
+            if os.path.exists(path):
+                return path
+        return None
+
+    def _register_work_order_pdf_fonts():
+        font_candidates = [
+            {
+                "family": "WoCalibri",
+                "normal": ["calibri.ttf"],
+                "bold": ["calibrib.ttf"],
+                "italic": ["calibrii.ttf"],
+                "bold_italic": ["calibriz.ttf"],
+            },
+            {
+                "family": "WoArial",
+                "normal": ["arial.ttf"],
+                "bold": ["arialbd.ttf"],
+                "italic": ["ariali.ttf"],
+                "bold_italic": ["arialbi.ttf"],
+            },
+            {
+                "family": "WoSegoeUI",
+                "normal": ["segoeui.ttf"],
+                "bold": ["segoeuib.ttf"],
+                "italic": ["segoeuii.ttf"],
+                "bold_italic": ["segoeuiz.ttf"],
+            },
+        ]
+        for candidate in font_candidates:
+            normal_path = _find_font_path(candidate["normal"])
+            bold_path = _find_font_path(candidate["bold"])
+            italic_path = _find_font_path(candidate["italic"])
+            bold_italic_path = _find_font_path(candidate["bold_italic"])
+            if not (normal_path and bold_path and italic_path and bold_italic_path):
+                continue
+            family_name = candidate["family"]
+            bold_name = f"{family_name}-Bold"
+            italic_name = f"{family_name}-Italic"
+            bold_italic_name = f"{family_name}-BoldItalic"
+            try:
+                if family_name not in pdfmetrics.getRegisteredFontNames():
+                    pdfmetrics.registerFont(TTFont(family_name, normal_path))
+                if bold_name not in pdfmetrics.getRegisteredFontNames():
+                    pdfmetrics.registerFont(TTFont(bold_name, bold_path))
+                if italic_name not in pdfmetrics.getRegisteredFontNames():
+                    pdfmetrics.registerFont(TTFont(italic_name, italic_path))
+                if bold_italic_name not in pdfmetrics.getRegisteredFontNames():
+                    pdfmetrics.registerFont(TTFont(bold_italic_name, bold_italic_path))
+                pdfmetrics.registerFontFamily(
+                    family_name,
+                    normal=family_name,
+                    bold=bold_name,
+                    italic=italic_name,
+                    boldItalic=bold_italic_name,
+                )
+                return family_name, bold_name
+            except Exception:
+                continue
+        return "Helvetica", "Helvetica-Bold"
+
+    font_regular_name, font_bold_name = _register_work_order_pdf_fonts()
+
     prepared_by_footer = str(header.get("Preparedby") or header.get("prepared_by") or "").strip()
 
     def draw_footer(canvas, doc_obj):
@@ -25966,7 +24928,7 @@ def _build_work_order_pdf_buffer(unit: str, header: dict, items: list[dict], app
         canvas.setStrokeColor(colors.HexColor("#cbd5e1"))
         canvas.setLineWidth(0.5)
         canvas.line(doc_obj.leftMargin, footer_line_y, page_width - doc_obj.rightMargin, footer_line_y)
-        canvas.setFont("Helvetica", 8)
+        canvas.setFont(font_regular_name, 8)
         canvas.setFillColor(colors.HexColor("#64748b"))
         canvas.drawString(doc_obj.leftMargin, footer_y, f"Prepared By: {prepared_by_footer or '-'}")
         canvas.drawCentredString(page_width / 2, footer_y, f"Page {canvas.getPageNumber()}")
@@ -26058,20 +25020,25 @@ def _build_work_order_pdf_buffer(unit: str, header: dict, items: list[dict], app
     )
 
     styles = getSampleStyleSheet()
+    styles["Normal"].fontName = font_regular_name
+    styles["Normal"].bulletFontName = font_regular_name
+    styles["Heading1"].fontName = font_bold_name
+    styles["Heading2"].fontName = font_bold_name
+    styles["Heading3"].fontName = font_bold_name
     header_style = ParagraphStyle("WoHeader", parent=styles["Heading1"], fontSize=17, leading=20, alignment=TA_CENTER, textColor=colors.HexColor("#7c2d12"))
     subheader_style = ParagraphStyle("WoSubHeader", parent=styles["Normal"], fontSize=9, leading=11, alignment=TA_CENTER, textColor=colors.HexColor("#475569"))
     title_style = ParagraphStyle("WoTitle", parent=styles["Heading2"], fontSize=13, leading=16, alignment=TA_CENTER, textColor=colors.HexColor("#0f172a"))
     section_style = ParagraphStyle("WoSection", parent=styles["Heading3"], fontSize=10, leading=12, textColor=colors.HexColor("#1e3a8a"), spaceBefore=6, spaceAfter=4)
-    label_style = ParagraphStyle("WoLabel", parent=styles["Normal"], fontSize=8, leading=10, fontName="Helvetica-Bold", textColor=colors.HexColor("#334155"))
+    label_style = ParagraphStyle("WoLabel", parent=styles["Normal"], fontSize=8, leading=10, fontName=font_bold_name, textColor=colors.HexColor("#334155"))
     value_style = ParagraphStyle("WoValue", parent=styles["Normal"], fontSize=8.7, leading=11, textColor=colors.black)
     intro_style = ParagraphStyle("WoIntro", parent=styles["Normal"], fontSize=9, leading=12, textColor=colors.HexColor("#111827"))
     item_text_style = ParagraphStyle("WoItemText", parent=styles["Normal"], fontSize=8, leading=10, textColor=colors.black)
     item_num_style = ParagraphStyle("WoItemNum", parent=styles["Normal"], fontSize=7.6, leading=9, alignment=TA_RIGHT, textColor=colors.black)
     item_center_style = ParagraphStyle("WoItemCenter", parent=styles["Normal"], fontSize=7.6, leading=9, alignment=TA_CENTER, textColor=colors.black)
     term_style = ParagraphStyle("WoTerm", parent=styles["Normal"], fontSize=8.5, leading=11, leftIndent=12, textColor=colors.HexColor("#111827"))
-    summary_label_style = ParagraphStyle("WoSummaryLabel", parent=styles["Normal"], fontSize=8.5, leading=10.5, fontName="Helvetica-Bold", textColor=colors.HexColor("#334155"))
+    summary_label_style = ParagraphStyle("WoSummaryLabel", parent=styles["Normal"], fontSize=8.5, leading=10.5, fontName=font_bold_name, textColor=colors.HexColor("#334155"))
     summary_value_style = ParagraphStyle("WoSummaryValue", parent=styles["Normal"], fontSize=8.5, leading=10.5, alignment=TA_RIGHT, textColor=colors.black)
-    sign_title_style = ParagraphStyle("WoSignTitle", parent=styles["Normal"], fontSize=8.5, leading=10.5, fontName="Helvetica-Bold", textColor=colors.HexColor("#1e3a8a"))
+    sign_title_style = ParagraphStyle("WoSignTitle", parent=styles["Normal"], fontSize=8.5, leading=10.5, fontName=font_bold_name, textColor=colors.HexColor("#1e3a8a"))
     sign_body_style = ParagraphStyle("WoSignBody", parent=styles["Normal"], fontSize=8.3, leading=10, textColor=colors.HexColor("#111827"))
     pending_style = ParagraphStyle("WoPending", parent=styles["Normal"], fontSize=10, leading=12, alignment=TA_CENTER, textColor=colors.HexColor("#b45309"))
 
@@ -26088,6 +25055,11 @@ def _build_work_order_pdf_buffer(unit: str, header: dict, items: list[dict], app
             @staticmethod
             def _attrs_map(attrs):
                 return {str(key or "").lower(): str(value or "") for key, value in attrs}
+
+            @staticmethod
+            def _escape_inline_text(value):
+                text = unescape(str(value or "")).replace("\xa0", " ").replace("\n", " ")
+                return escape(text, {"'": "&apos;", '"': "&quot;"})
 
             def _resolve_alignment(self, attrs):
                 class_name = str(attrs.get("class") or "").lower()
@@ -26190,7 +25162,7 @@ def _build_work_order_pdf_buffer(unit: str, header: dict, items: list[dict], app
             def handle_data(self, data):
                 if data is None:
                     return
-                text = escape(str(data), {"'": "&apos;", '"': "&quot;"}).replace("\n", " ")
+                text = self._escape_inline_text(data)
                 if text:
                     self._append_text(text)
 
@@ -26238,25 +25210,25 @@ def _build_work_order_pdf_buffer(unit: str, header: dict, items: list[dict], app
             for key, style in letter_body_styles.items()
         }
         heading_styles = {
-            "h1": ParagraphStyle("WoLetterH1", parent=letter_body_left, fontSize=13.5, leading=17, fontName="Helvetica-Bold", spaceBefore=3, spaceAfter=5),
-            "h2": ParagraphStyle("WoLetterH2", parent=letter_body_left, fontSize=12.2, leading=15, fontName="Helvetica-Bold", spaceBefore=3, spaceAfter=5),
-            "h3": ParagraphStyle("WoLetterH3", parent=letter_body_left, fontSize=11.1, leading=14, fontName="Helvetica-Bold", spaceBefore=3, spaceAfter=4),
-            "h4": ParagraphStyle("WoLetterH4", parent=letter_body_left, fontSize=10.2, leading=13, fontName="Helvetica-Bold", spaceBefore=2, spaceAfter=4),
+            "h1": ParagraphStyle("WoLetterH1", parent=letter_body_left, fontSize=13.5, leading=17, fontName=font_bold_name, spaceBefore=3, spaceAfter=5),
+            "h2": ParagraphStyle("WoLetterH2", parent=letter_body_left, fontSize=12.2, leading=15, fontName=font_bold_name, spaceBefore=3, spaceAfter=5),
+            "h3": ParagraphStyle("WoLetterH3", parent=letter_body_left, fontSize=11.1, leading=14, fontName=font_bold_name, spaceBefore=3, spaceAfter=4),
+            "h4": ParagraphStyle("WoLetterH4", parent=letter_body_left, fontSize=10.2, leading=13, fontName=font_bold_name, spaceBefore=2, spaceAfter=4),
         }
-        recipient_label_style = ParagraphStyle("WoRecipientLabel", parent=styles["Normal"], fontSize=9.1, leading=12, fontName="Helvetica-Bold", textColor=colors.HexColor("#1f2937"))
+        recipient_label_style = ParagraphStyle("WoRecipientLabel", parent=styles["Normal"], fontSize=9.1, leading=12, fontName=font_bold_name, textColor=colors.HexColor("#1f2937"))
         recipient_value_style = ParagraphStyle("WoRecipientValue", parent=styles["Normal"], fontSize=9.1, leading=12.3, textColor=colors.HexColor("#111827"))
-        subject_style = ParagraphStyle("WoSubject", parent=letter_body_left, fontSize=9.7, leading=13, fontName="Helvetica-Bold", textColor=colors.HexColor("#0f172a"), spaceBefore=2, spaceAfter=3)
-        detail_heading_style = ParagraphStyle("WoDetailHeading", parent=styles["Normal"], fontSize=8.1, leading=10.2, fontName="Helvetica-Bold", textColor=colors.HexColor("#1e3a8a"), spaceBefore=2, spaceAfter=4)
+        subject_style = ParagraphStyle("WoSubject", parent=letter_body_left, fontSize=9.7, leading=13, fontName=font_bold_name, textColor=colors.HexColor("#0f172a"), spaceBefore=2, spaceAfter=3)
+        detail_heading_style = ParagraphStyle("WoDetailHeading", parent=styles["Normal"], fontSize=8.1, leading=10.2, fontName=font_bold_name, textColor=colors.HexColor("#1e3a8a"), spaceBefore=2, spaceAfter=4)
         detail_line_style = ParagraphStyle("WoDetailLine", parent=styles["Normal"], fontSize=9.1, leading=13.1, textColor=colors.HexColor("#111827"), spaceAfter=3)
         closing_style = ParagraphStyle("WoClosing", parent=letter_body_left, alignment=TA_LEFT, spaceBefore=8, spaceAfter=2)
-        summary_heading_style = ParagraphStyle("WoSummaryHeading", parent=styles["Normal"], fontSize=8.1, leading=10.2, fontName="Helvetica-Bold", textColor=colors.HexColor("#1e3a8a"), spaceBefore=8, spaceAfter=4)
+        summary_heading_style = ParagraphStyle("WoSummaryHeading", parent=styles["Normal"], fontSize=8.1, leading=10.2, fontName=font_bold_name, textColor=colors.HexColor("#1e3a8a"), spaceBefore=8, spaceAfter=4)
         summary_line_style = ParagraphStyle("WoSummaryLine", parent=styles["Normal"], fontSize=9.1, leading=13.1, textColor=colors.HexColor("#111827"), spaceAfter=3)
-        summary_total_line_style = ParagraphStyle("WoSummaryTotalLine", parent=summary_line_style, fontName="Helvetica-Bold", textColor=colors.HexColor("#0f172a"), spaceBefore=2, spaceAfter=4)
-        sign_title_left_style = ParagraphStyle("WoSignTitleLeft", parent=styles["Normal"], fontSize=8.7, leading=10.5, fontName="Helvetica-Bold", textColor=colors.HexColor("#1e3a8a"), alignment=TA_LEFT)
+        summary_total_line_style = ParagraphStyle("WoSummaryTotalLine", parent=summary_line_style, fontName=font_bold_name, textColor=colors.HexColor("#0f172a"), spaceBefore=2, spaceAfter=4)
+        sign_title_left_style = ParagraphStyle("WoSignTitleLeft", parent=styles["Normal"], fontSize=8.7, leading=10.5, fontName=font_bold_name, textColor=colors.HexColor("#1e3a8a"), alignment=TA_LEFT)
         sign_title_right_style = ParagraphStyle("WoSignTitleRight", parent=sign_title_left_style, alignment=TA_RIGHT)
         sign_body_left_style = ParagraphStyle("WoSignBodyLeft", parent=styles["Normal"], fontSize=8.6, leading=11.2, textColor=colors.HexColor("#111827"), alignment=TA_LEFT, spaceAfter=2)
         sign_body_right_style = ParagraphStyle("WoSignBodyRight", parent=sign_body_left_style, alignment=TA_RIGHT, rightIndent=0)
-        sign_name_right_style = ParagraphStyle("WoSignNameRight", parent=sign_body_right_style, fontName="Helvetica-Bold", fontSize=9.0, leading=11.6, textColor=colors.HexColor("#0f172a"))
+        sign_name_right_style = ParagraphStyle("WoSignNameRight", parent=sign_body_right_style, fontName=font_bold_name, fontSize=9.0, leading=11.6, textColor=colors.HexColor("#0f172a"))
         sign_company_right_style = ParagraphStyle("WoSignCompanyRight", parent=sign_title_right_style, fontSize=9.0, leading=11.4, textColor=colors.HexColor("#111827"))
         sign_salutation_right_style = ParagraphStyle("WoSignSalutationRight", parent=sign_body_right_style, fontSize=9.0, leading=11.4, textColor=colors.HexColor("#111827"), spaceAfter=2)
 
@@ -26347,6 +25319,10 @@ def _build_work_order_pdf_buffer(unit: str, header: dict, items: list[dict], app
         primary_igst_pct = _safe_float(primary_item.get("IGSTPct") or primary_item.get("igst_pct"))
         primary_tax_pct = primary_cgst_pct + primary_sgst_pct + primary_igst_pct
         primary_for_amt = _safe_float(primary_item.get("ForAmount") or primary_item.get("for_amt"))
+        grand_total = _safe_float(totals.get("grand_total") or 0)
+
+        def has_meaningful_commercial_value(value):
+            return abs(_safe_float(value)) > 0.000001
 
         elements = []
         for idx, line in enumerate(header_lines(unit)):
@@ -26412,17 +25388,22 @@ def _build_work_order_pdf_buffer(unit: str, header: dict, items: list[dict], app
                 continue
             elements.append(Paragraph(block.get("text") or "", letter_body_styles.get(align_key, letter_body_styles["left"])))
 
-        elements.append(Spacer(1, 10))
-        elements.append(Paragraph("Commercial Terms", summary_heading_style))
         commercial_parts = []
         if items:
-            commercial_parts.append(f"Qty <b>{format_quantity(primary_qty)}</b>")
-            commercial_parts.append(f"Rate <b>{_format_indian_currency(primary_rate)}</b>")
-            if primary_discount_pct:
+            if has_meaningful_commercial_value(primary_qty):
+                commercial_parts.append(f"Qty <b>{format_quantity(primary_qty)}</b>")
+            if has_meaningful_commercial_value(primary_rate):
+                commercial_parts.append(f"Rate <b>{_format_indian_currency(primary_rate)}</b>")
+            if has_meaningful_commercial_value(primary_discount_pct):
                 commercial_parts.append(f"Discount <b>{primary_discount_pct:,.2f}%</b>")
-            commercial_parts.append(f"GST <b>{primary_tax_pct:,.2f}%</b>")
-            if primary_for_amt:
+            if has_meaningful_commercial_value(primary_tax_pct):
+                commercial_parts.append(f"GST <b>{primary_tax_pct:,.2f}%</b>")
+            if has_meaningful_commercial_value(primary_for_amt):
                 commercial_parts.append(f"F.O.R <b>{_format_indian_currency(primary_for_amt)}</b>")
+        show_commercial_section = bool(commercial_parts) or has_meaningful_commercial_value(grand_total)
+        if show_commercial_section:
+            elements.append(Spacer(1, 10))
+            elements.append(Paragraph("Commercial Terms", summary_heading_style))
         if commercial_parts:
             elements.append(
                 Paragraph(
@@ -26430,14 +25411,16 @@ def _build_work_order_pdf_buffer(unit: str, header: dict, items: list[dict], app
                     summary_line_style,
                 )
             )
-        elements.append(
-            Paragraph(
-                f"Grand Total: <b>{_format_indian_currency(totals.get('grand_total') or 0)}</b>",
-                summary_total_line_style,
+        if has_meaningful_commercial_value(grand_total):
+            elements.append(
+                Paragraph(
+                    f"Grand Total: <b>{_format_indian_currency(grand_total)}</b>",
+                    summary_total_line_style,
+                )
             )
-        )
-        elements.append(Spacer(1, 6))
-        elements.append(Paragraph(f"Amount in Words: <b>{escape(amount_words)}</b>", letter_body_styles["left"]))
+        if has_meaningful_commercial_value(grand_total):
+            elements.append(Spacer(1, 6))
+            elements.append(Paragraph(f"Amount in Words: <b>{escape(amount_words)}</b>", letter_body_styles["left"]))
 
         elements.append(Spacer(1, 10))
         elements.append(
@@ -26669,7 +25652,7 @@ def _build_work_order_pdf_buffer(unit: str, header: dict, items: list[dict], app
             [
                 ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e3a8a")),
                 ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-                ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+                ("FONTNAME", (0, 0), (-1, 0), font_bold_name),
                 ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#e2e8f0")),
                 ("VALIGN", (0, 0), (-1, -1), "TOP"),
                 ("LEFTPADDING", (0, 0), (-1, -1), 4),
@@ -26765,6903 +25748,6 @@ def _build_work_order_pdf_buffer(unit: str, header: dict, items: list[dict], app
     return buffer
 
 
-@app.route('/api/purchase/init')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_init():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-
-    try:
-        data_fetch.ensure_iv_item_technical_specs_column(unit)
-    except Exception:
-        pass
-    try:
-        data_fetch.ensure_po_purchasing_dept_column(unit)
-    except Exception:
-        pass
-    try:
-        data_fetch.ensure_po_special_notes_column(unit)
-    except Exception:
-        pass
-    try:
-        data_fetch.ensure_po_print_format_column(unit)
-    except Exception:
-        pass
-    try:
-        data_fetch.ensure_po_senior_approval_authority_column(unit)
-    except Exception:
-        pass
-    try:
-        data_fetch.ensure_po_senior_approval_designation_column(unit)
-    except Exception:
-        pass
-
-    # Avoid reserving PO numbers on page load; assign on save instead.
-    po_no = None
-    against_df = data_fetch.fetch_purchase_against(unit)
-    pack_df = data_fetch.fetch_purchase_pack_sizes(unit)
-    unit_df = data_fetch.fetch_purchase_unit_master(unit, include_inactive=False)
-    supplier_df = data_fetch.fetch_iv_suppliers(unit)
-    indent_count = data_fetch.fetch_new_pharmacy_indent_count(unit)
-    purchasing_departments_payload, default_purchasing_dept_id = _build_purchase_department_payload(unit)
-
-    against = []
-    if against_df is not None and not against_df.empty:
-        against_df = _clean_df_columns(against_df)
-        cols_map = {str(c).strip().lower(): c for c in against_df.columns}
-        id_col = cols_map.get("id")
-        name_col = cols_map.get("name")
-        if id_col and name_col:
-            for _, row in against_df.iterrows():
-                against.append({
-                    "id": row.get(id_col),
-                    "name": str(row.get(name_col) or "").strip()
-                })
-
-    pack_sizes = []
-    if pack_df is not None and not pack_df.empty:
-        pack_df = _clean_df_columns(pack_df)
-        cols_map = {str(c).strip().lower(): c for c in pack_df.columns}
-        id_col = cols_map.get("id")
-        name_col = cols_map.get("name")
-        if id_col and name_col:
-            for _, row in pack_df.iterrows():
-                pack_sizes.append({
-                    "id": row.get(id_col),
-                    "name": str(row.get(name_col) or "").strip()
-                })
-
-    units = []
-    if unit_df is not None and not unit_df.empty:
-        unit_df = _clean_df_columns(unit_df)
-        cols_map = {str(c).strip().lower(): c for c in unit_df.columns}
-        id_col = cols_map.get("id")
-        name_col = cols_map.get("name")
-        code_col = cols_map.get("code")
-        for _, row in unit_df.iterrows():
-            name_val = _normalize_purchase_unit_text(row.get(name_col) if name_col else "")
-            code_val = _normalize_purchase_unit_text(row.get(code_col) if code_col else "")
-            if not name_val and not code_val:
-                continue
-            if not name_val:
-                name_val = code_val
-            units.append(
-                {
-                    "id": row.get(id_col) if id_col else None,
-                    "code": code_val,
-                    "name": name_val,
-                    "unit": unit,
-                }
-            )
-
-    suppliers = []
-    if supplier_df is not None and not supplier_df.empty:
-        supplier_df = _clean_df_columns(supplier_df)
-        cols_map = {str(c).strip().lower(): c for c in supplier_df.columns}
-        id_col = cols_map.get("supplierid") or cols_map.get("id")
-        name_col = cols_map.get("suppliername") or cols_map.get("name")
-        code_col = cols_map.get("suppliercode") or cols_map.get("code")
-        email_col = (
-            cols_map.get("email")
-            or cols_map.get("emailid")
-            or cols_map.get("email_id")
-            or cols_map.get("e_mail")
-            or cols_map.get("e_mail_id")
-        )
-        for _, row in supplier_df.iterrows():
-            suppliers.append({
-                "id": row.get(id_col),
-                "name": str(row.get(name_col) or "").strip(),
-                "code": str(row.get(code_col) or "").strip(),
-                "email": str(row.get(email_col) or "").strip(),
-            })
-
-    return jsonify({
-        "status": "success",
-        "unit": unit,
-        "po_no": po_no,
-        "against": against,
-        "pack_sizes": pack_sizes,
-        "units": _sanitize_json_payload(units),
-        "suppliers": suppliers,
-        "indent_count": int(indent_count or 0),
-        "purchasing_departments": _sanitize_json_payload(purchasing_departments_payload),
-        "default_purchasing_dept_id": default_purchasing_dept_id,
-    })
-
-
-@app.route('/api/purchase/purchasing_dept_master/list')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_purchasing_dept_master_list():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    role_base = _role_base(session.get("role") or "")
-    departments, default_id = _build_purchase_department_payload(unit)
-    master_rows = _build_purchase_department_master_rows()
-    return jsonify({
-        "status": "success",
-        "unit": unit,
-        "departments": _sanitize_json_payload(master_rows),
-        "active_departments": _sanitize_json_payload(departments),
-        "default_purchasing_dept_id": default_id,
-        "permissions": _purchase_dept_master_permissions(role_base),
-    })
-
-
-@app.route('/api/purchase/purchasing_dept_master', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_purchasing_dept_master_save():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    role_base = _role_base(session.get("role") or "")
-    if role_base == "Executive":
-        return jsonify({"status": "error", "message": "Access denied for your role."}), 403
-    payload = request.get_json(silent=True) or {}
-    dept_payload = payload.get("purchasing_dept") or {}
-    dept_id = _safe_int(dept_payload.get("id"))
-    dept_name = str(dept_payload.get("name") or "").strip()
-    if not dept_name:
-        return jsonify({"status": "error", "message": "Purchasing department name is required."}), 400
-    result = _upsert_purchasing_department(dept_name, dept_id if dept_id > 0 else None)
-    if result.get("error"):
-        code = str(result.get("code") or "").strip().lower()
-        if code == "duplicate":
-            return jsonify({
-                "status": "error",
-                "message": result.get("error") or "Purchasing department already exists.",
-                "existing_id": result.get("existing_id"),
-            }), 409
-        if code == "not_found":
-            return jsonify({"status": "error", "message": result.get("error") or "Purchasing department not found."}), 404
-        return jsonify({"status": "error", "message": result.get("error") or "Failed to save purchasing department."}), 500
-    departments, default_id = _build_purchase_department_payload(unit)
-    master_rows = _build_purchase_department_master_rows()
-    return jsonify({
-        "status": "success",
-        "mode": result.get("mode") or ("update" if dept_id > 0 else "add"),
-        "department_id": result.get("dept_id"),
-        "department_name": result.get("name"),
-        "departments": _sanitize_json_payload(master_rows),
-        "active_departments": _sanitize_json_payload(departments),
-        "default_purchasing_dept_id": default_id,
-        "permissions": _purchase_dept_master_permissions(role_base),
-        "unit": unit,
-    })
-
-
-@app.route('/api/purchase/purchasing_dept_master/action', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_purchasing_dept_master_action():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    role_base = _role_base(session.get("role") or "")
-    if role_base == "Executive":
-        return jsonify({"status": "error", "message": "Access denied for your role."}), 403
-
-    payload = request.get_json(silent=True) or {}
-    action = str(payload.get("action") or "").strip().lower()
-    dept_id = _safe_int(payload.get("department_id"))
-    if dept_id <= 0:
-        return jsonify({"status": "error", "message": "Department id is required."}), 400
-    if action not in {"activate", "deactivate", "delete"}:
-        return jsonify({"status": "error", "message": "Invalid action."}), 400
-
-    if action == "delete" and role_base != "IT":
-        return jsonify({"status": "error", "message": "Only IT can delete purchasing departments."}), 403
-    if action in {"activate", "deactivate"} and role_base not in {"IT", "Management", "Departmental Head"}:
-        return jsonify({"status": "error", "message": "Access denied for your role."}), 403
-
-    if action == "delete":
-        result = _delete_purchasing_department(dept_id)
-    else:
-        result = _set_purchasing_department_active(dept_id, is_active=(action == "activate"))
-
-    if result.get("error"):
-        code = str(result.get("code") or "").strip().lower()
-        if code == "not_found":
-            return jsonify({"status": "error", "message": result.get("error") or "Purchasing department not found."}), 404
-        if code == "invalid_id":
-            return jsonify({"status": "error", "message": result.get("error") or "Invalid purchasing department id."}), 400
-        if code == "has_dependency":
-            incharge_count = int(result.get("incharge_count") or 0)
-            po_count = int(result.get("po_count") or 0)
-            parts = []
-            if incharge_count > 0:
-                parts.append(f"mapped in {incharge_count} incharge record(s)")
-            if po_count > 0:
-                parts.append(f"used in {po_count} PO record(s)")
-            detail = " and ".join(parts) if parts else "already mapped"
-            return jsonify({
-                "status": "error",
-                "message": f"Cannot delete this department because it is {detail}.",
-                "incharge_count": incharge_count,
-                "po_count": po_count,
-                "po_usage": result.get("po_usage") or [],
-            }), 409
-        if code == "dependency_check_failed":
-            failed_units = ", ".join(result.get("failed_units") or [])
-            msg = "Dependency check failed for one or more units."
-            if failed_units:
-                msg = f"Dependency check failed for units: {failed_units}."
-            return jsonify({
-                "status": "error",
-                "message": msg,
-                "failed_units": result.get("failed_units") or [],
-            }), 503
-        return jsonify({"status": "error", "message": result.get("error") or "Action failed."}), 500
-
-    departments, default_id = _build_purchase_department_payload(unit)
-    master_rows = _build_purchase_department_master_rows()
-    return jsonify({
-        "status": "success",
-        "action": action,
-        "department_id": dept_id,
-        "departments": _sanitize_json_payload(master_rows),
-        "active_departments": _sanitize_json_payload(departments),
-        "default_purchasing_dept_id": default_id,
-        "permissions": _purchase_dept_master_permissions(role_base),
-        "unit": unit,
-    })
-
-
-@app.route('/api/purchase/unit_master/list')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_unit_master_list():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    role_base = _role_base(session.get("role") or "")
-    master_rows = _build_purchase_unit_master_rows(unit)
-    active_rows = [row for row in master_rows if _safe_int(row.get("is_active"), 1) == 1]
-    return jsonify(
-        {
-            "status": "success",
-            "unit": unit,
-            "units": _sanitize_json_payload(master_rows),
-            "active_units": _sanitize_json_payload(active_rows),
-            "permissions": _purchase_unit_master_permissions(role_base),
-        }
-    )
-
-
-@app.route('/api/purchase/unit_master', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_unit_master_save():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    role_base = _role_base(session.get("role") or "")
-    if role_base == "Executive":
-        return jsonify({"status": "error", "message": "Access denied for your role."}), 403
-
-    payload = request.get_json(silent=True) or {}
-    unit_payload = payload.get("unit_master") or {}
-    unit_id = _safe_int(unit_payload.get("id"))
-    unit_name = _normalize_purchase_unit_text(unit_payload.get("name"))
-    unit_code = _normalize_purchase_unit_text(unit_payload.get("code")).upper()
-    if not unit_name:
-        return jsonify({"status": "error", "message": "Unit name is required."}), 400
-
-    result = data_fetch.upsert_purchase_unit_master(
-        unit,
-        unit_name=unit_name,
-        unit_code=unit_code,
-        unit_id=unit_id if unit_id > 0 else None,
-        reactivate=True,
-    )
-    if result.get("error"):
-        code = str(result.get("code") or "").strip().lower()
-        if code == "duplicate":
-            return jsonify(
-                {
-                    "status": "error",
-                    "message": result.get("error") or "Unit already exists.",
-                    "existing_id": result.get("existing_id"),
-                }
-            ), 409
-        if code == "not_found":
-            return jsonify({"status": "error", "message": result.get("error") or "Unit not found."}), 404
-        if code == "table_not_found":
-            return jsonify({"status": "error", "message": "Unit master table not found in selected unit database."}), 500
-        return jsonify({"status": "error", "message": result.get("error") or "Failed to save unit."}), 500
-
-    master_rows = _build_purchase_unit_master_rows(unit)
-    active_rows = [row for row in master_rows if _safe_int(row.get("is_active"), 1) == 1]
-    return jsonify(
-        {
-            "status": "success",
-            "mode": result.get("mode") or ("update" if unit_id > 0 else "add"),
-            "unit_id": result.get("unit_id"),
-            "unit_name": result.get("name") or unit_name,
-            "unit_code": result.get("code") or unit_code,
-            "units": _sanitize_json_payload(master_rows),
-            "active_units": _sanitize_json_payload(active_rows),
-            "permissions": _purchase_unit_master_permissions(role_base),
-            "unit": unit,
-        }
-    )
-
-
-@app.route('/api/purchase/unit_master/action', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_unit_master_action():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    role_base = _role_base(session.get("role") or "")
-    if role_base == "Executive":
-        return jsonify({"status": "error", "message": "Access denied for your role."}), 403
-
-    payload = request.get_json(silent=True) or {}
-    action = str(payload.get("action") or "").strip().lower()
-    unit_id = _safe_int(payload.get("unit_id"))
-    if unit_id <= 0:
-        return jsonify({"status": "error", "message": "Unit id is required."}), 400
-    if action not in {"activate", "deactivate"}:
-        return jsonify({"status": "error", "message": "Invalid action."}), 400
-    if role_base not in {"IT", "Management", "Departmental Head"}:
-        return jsonify({"status": "error", "message": "Access denied for your role."}), 403
-
-    result = data_fetch.set_purchase_unit_master_active(unit, unit_id, is_active=(action == "activate"))
-    if result.get("error"):
-        code = str(result.get("code") or "").strip().lower()
-        if code == "not_found":
-            return jsonify({"status": "error", "message": result.get("error") or "Unit not found."}), 404
-        if code == "invalid_id":
-            return jsonify({"status": "error", "message": result.get("error") or "Invalid unit id."}), 400
-        if code == "unsupported":
-            return jsonify({"status": "error", "message": "Selected unit database does not support activate/deactivate."}), 501
-        return jsonify({"status": "error", "message": result.get("error") or "Action failed."}), 500
-
-    master_rows = _build_purchase_unit_master_rows(unit)
-    active_rows = [row for row in master_rows if _safe_int(row.get("is_active"), 1) == 1]
-    return jsonify(
-        {
-            "status": "success",
-            "action": action,
-            "unit_id": unit_id,
-            "units": _sanitize_json_payload(master_rows),
-            "active_units": _sanitize_json_payload(active_rows),
-            "permissions": _purchase_unit_master_permissions(role_base),
-            "unit": unit,
-        }
-    )
-
-
-@app.route('/api/purchase/suppliers', methods=['GET', 'POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_suppliers():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    if request.method != "GET" and _role_base(session.get("role") or "") == "Executive":
-        return jsonify({"status": "error", "message": "Access denied for your role."}), 403
-
-    if request.method == 'GET':
-        supplier_df = data_fetch.fetch_iv_suppliers(unit)
-        if supplier_df is None:
-            return jsonify({"status": "error", "message": "Failed to fetch suppliers"}), 500
-        if supplier_df.empty:
-            return jsonify({"status": "success", "suppliers": [], "unit": unit})
-
-        suppliers = []
-        supplier_df = _clean_df_columns(supplier_df)
-        cols_map = {str(c).strip().lower(): c for c in supplier_df.columns}
-        id_col = cols_map.get("supplierid") or cols_map.get("id")
-        name_col = cols_map.get("suppliername") or cols_map.get("name")
-        code_col = cols_map.get("suppliercode") or cols_map.get("code")
-        email_col = (
-            cols_map.get("email")
-            or cols_map.get("emailid")
-            or cols_map.get("email_id")
-            or cols_map.get("e_mail")
-            or cols_map.get("e_mail_id")
-        )
-        for _, row in supplier_df.iterrows():
-            suppliers.append({
-                "id": row.get(id_col),
-                "name": str(row.get(name_col) or "").strip(),
-                "code": str(row.get(code_col) or "").strip(),
-                "email": str(row.get(email_col) or "").strip(),
-            })
-
-        return jsonify({"status": "success", "suppliers": suppliers, "unit": unit})
-
-    payload = request.get_json(silent=True) or {}
-    supplier = payload.get("supplier") or {}
-
-    name = str(supplier.get("name") or "").strip()
-    if not name:
-        return jsonify({"status": "error", "message": "Supplier name is required"}), 400
-
-    code = str(supplier.get("code") or "").strip()
-    if not code:
-        code = data_fetch.fetch_iv_supplier_number(unit, after_add=False)
-    if not code:
-        return jsonify({"status": "error", "message": "Failed to generate supplier code"}), 500
-
-    def _safe_int(val, default=0):
-        try:
-            return int(val)
-        except Exception:
-            return default
-
-    city_id = _safe_int(supplier.get("city_id"))
-    state_id = _safe_int(supplier.get("state_id"))
-    if not city_id or not state_id:
-        default_df = data_fetch.fetch_default_city_state(unit)
-        if default_df is not None and not default_df.empty:
-            default_df = _clean_df_columns(default_df)
-            cols_map = {str(c).strip().lower(): c for c in default_df.columns}
-            city_col = cols_map.get("city_id") or cols_map.get("cityid")
-            state_col = cols_map.get("state_id") or cols_map.get("stateid")
-            row = default_df.iloc[0].to_dict()
-            city_id = _safe_int(row.get(city_col), city_id)
-            state_id = _safe_int(row.get(state_col), state_id)
-
-    if not city_id or not state_id:
-        return jsonify({"status": "error", "message": "Default city/state not available"}), 400
-
-    now = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    updated_by = session.get("user_id") or session.get("user") or session.get("username")
-    updated_by = _safe_int(updated_by, 1)
-
-    supplier_params = {
-        "pId": 0,
-        "pCode": code,
-        "pName": name,
-        "pAddress": supplier.get("address") or "",
-        "pCity": city_id,
-        "pState": state_id,
-        "pPin": supplier.get("pin") or "",
-        "pContactperson": supplier.get("contact_person") or "",
-        "pContactdesignation": supplier.get("contact_designation") or "",
-        "pGroupid": _safe_int(supplier.get("group_id")),
-        "pCreditperiod": _safe_int(supplier.get("credit_period")),
-        "pDateofassociation": now,
-        "pFax": supplier.get("fax") or "",
-        "pPhone1": supplier.get("phone1") or "",
-        "pPhone2": supplier.get("phone2") or "",
-        "pCellphone": supplier.get("cellphone") or "",
-        "pEmail": supplier.get("email") or "",
-        "pWeb": supplier.get("web") or "",
-        "pCst": supplier.get("cst") or "",
-        "pMst": supplier.get("mst") or "",
-        "pTds": supplier.get("tds") or "",
-        "pExcisecode": supplier.get("excise_code") or "",
-        "pExportcode": supplier.get("export_code") or "",
-        "pLedgerid": _safe_int(supplier.get("ledger_id")),
-        "pEligableforadv": _safe_int(supplier.get("eligible_for_adv")),
-        "pBankname": supplier.get("bank_name") or "",
-        "pBankbranch": supplier.get("bank_branch") or "",
-        "pBankacno": supplier.get("bank_account") or "",
-        "pMcirno": supplier.get("mcir_no") or "",
-        "pNote": supplier.get("note") or "",
-        "pProposed": supplier.get("proposed") or "",
-        "pUpdatedby": updated_by,
-        "pUpdatedon": now,
-        "pSupptype": supplier.get("supplier_type") or "",
-        "pSociety": supplier.get("society") or "",
-        "pLandmark": supplier.get("landmark") or "",
-        "pIncomeTaxNo": supplier.get("income_tax_no") or "0",
-        "pVillage": _safe_int(supplier.get("village_id")),
-        "pPaytermsid": _safe_int(supplier.get("pay_terms_id")),
-    }
-
-    result = data_fetch.add_iv_supplier(unit, supplier_params)
-    if result.get("error"):
-        return jsonify({"status": "error", "message": result["error"]}), 500
-
-    return jsonify({
-        "status": "success",
-        "supplier_id": result.get("supplier_id"),
-        "supplier_code": code,
-        "supplier_name": name,
-        "unit": unit,
-    })
-
-
-@app.route('/api/purchase/supplier_email', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_supplier_email():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-
-    payload = request.get_json(silent=True) or {}
-    supplier_id = _safe_int(payload.get("supplier_id") or payload.get("id"))
-    email = _purchase_normalize_email(payload.get("email"))
-    if supplier_id <= 0:
-        _audit_log_event(
-            "purchase",
-            "supplier_email_update",
-            status="error",
-            entity_type="supplier",
-            unit=unit,
-            summary="Supplier ID is required",
-            details={"supplier_id": supplier_id},
-        )
-        return jsonify({"status": "error", "message": "Supplier ID is required"}), 400
-    if not _purchase_is_valid_email(email):
-        _audit_log_event(
-            "purchase",
-            "supplier_email_update",
-            status="error",
-            entity_type="supplier",
-            entity_id=str(supplier_id),
-            unit=unit,
-            summary="Invalid supplier email",
-            details={"email": email},
-        )
-        return jsonify({"status": "error", "message": "Enter a valid supplier email address"}), 400
-
-    result = data_fetch.update_iv_supplier_email(unit, supplier_id, email)
-    if result.get("error"):
-        err_msg = str(result.get("error") or "Failed to update supplier email")
-        status_code = 404 if "not found" in err_msg.lower() else 500
-        _audit_log_event(
-            "purchase",
-            "supplier_email_update",
-            status="error",
-            entity_type="supplier",
-            entity_id=str(supplier_id),
-            unit=unit,
-            summary="Supplier email update failed",
-            details={"email": email, "error": err_msg},
-        )
-        return jsonify({"status": "error", "message": err_msg}), status_code
-
-    _audit_log_event(
-        "purchase",
-        "supplier_email_update",
-        status="success",
-        entity_type="supplier",
-        entity_id=str(supplier_id),
-        unit=unit,
-        summary="Supplier email updated",
-        details={"email": email},
-    )
-    return jsonify({
-        "status": "success",
-        "supplier_id": supplier_id,
-        "email": email,
-        "unit": unit,
-    })
-
-
-@app.route('/api/purchase/suppliers/new_code')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_supplier_code():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    code = data_fetch.fetch_iv_supplier_number(unit, after_add=False)
-    if not code:
-        return jsonify({"status": "error", "message": "Failed to fetch supplier code"}), 500
-    return jsonify({"status": "success", "code": code, "unit": unit})
-
-
-@app.route('/api/purchase/suppliers/default_location')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_supplier_defaults():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    df = data_fetch.fetch_default_city_state(unit)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch default location"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "location": None, "unit": unit})
-
-    df = _clean_df_columns(df)
-    cols_map = {str(c).strip().lower(): c for c in df.columns}
-    city_id_col = cols_map.get("city_id") or cols_map.get("cityid")
-    city_name_col = cols_map.get("city_name") or cols_map.get("cityname")
-    state_id_col = cols_map.get("state_id") or cols_map.get("stateid")
-    state_name_col = cols_map.get("state_name") or cols_map.get("statename")
-    country_id_col = cols_map.get("country_id") or cols_map.get("countryid")
-    country_name_col = cols_map.get("country_name") or cols_map.get("countryname")
-    row = df.iloc[0]
-
-    location = {
-        "city_id": row.get(city_id_col),
-        "city_name": str(row.get(city_name_col) or "").strip(),
-        "state_id": row.get(state_id_col),
-        "state_name": str(row.get(state_name_col) or "").strip(),
-        "country_id": row.get(country_id_col),
-        "country_name": str(row.get(country_name_col) or "").strip(),
-    }
-
-    location = _sanitize_json_payload(location)
-    return jsonify({"status": "success", "location": location, "unit": unit})
-
-
-@app.route('/api/purchase/suppliers/states')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_supplier_states():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    df = data_fetch.fetch_state_list(unit)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch states"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "states": [], "unit": unit})
-    states = _build_master_list(
-        df,
-        ["state_id", "stateid", "id"],
-        ["state_name", "statename", "name"],
-        ["state_code", "statecode", "code"],
-    )
-    return jsonify({"status": "success", "states": _sanitize_json_payload(states), "unit": unit})
-
-
-@app.route('/api/purchase/suppliers/cities')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_supplier_cities():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    state_id_raw = request.args.get("state_id")
-    if state_id_raw and not str(state_id_raw).isdigit():
-        return jsonify({"status": "error", "message": "Invalid state id"}), 400
-    state_id = int(state_id_raw) if state_id_raw else 0
-    df = data_fetch.fetch_city_list(unit, state_id)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch cities"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "cities": [], "unit": unit})
-    cities = _build_master_list(
-        df,
-        ["city_id", "cityid", "id"],
-        ["city_name", "cityname", "name"],
-        ["city_code", "citycode", "code"],
-    )
-    return jsonify({"status": "success", "cities": _sanitize_json_payload(cities), "unit": unit})
-
-
-@app.route('/api/purchase/manufacturers/new_code')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_manufacturer_code():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    code = data_fetch.fetch_iv_manufacturer_number(unit)
-    if not code:
-        return jsonify({"status": "error", "message": "Failed to fetch manufacturer code"}), 500
-    return jsonify({"status": "success", "code": code, "unit": unit})
-
-
-@app.route('/api/purchase/manufacturers/default_location')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_manufacturer_defaults():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    df = data_fetch.fetch_default_city_state(unit)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch default location"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "location": None, "unit": unit})
-
-    df = _clean_df_columns(df)
-    cols_map = {str(c).strip().lower(): c for c in df.columns}
-    city_id_col = cols_map.get("city_id") or cols_map.get("cityid")
-    city_name_col = cols_map.get("city_name") or cols_map.get("cityname")
-    state_id_col = cols_map.get("state_id") or cols_map.get("stateid")
-    state_name_col = cols_map.get("state_name") or cols_map.get("statename")
-    country_id_col = cols_map.get("country_id") or cols_map.get("countryid")
-    country_name_col = cols_map.get("country_name") or cols_map.get("countryname")
-    row = df.iloc[0]
-
-    location = {
-        "city_id": row.get(city_id_col),
-        "city_name": str(row.get(city_name_col) or "").strip(),
-        "state_id": row.get(state_id_col),
-        "state_name": str(row.get(state_name_col) or "").strip(),
-        "country_id": row.get(country_id_col),
-        "country_name": str(row.get(country_name_col) or "").strip(),
-    }
-
-    location = _sanitize_json_payload(location)
-    return jsonify({"status": "success", "location": location, "unit": unit})
-
-
-@app.route('/api/purchase/manufacturers/states')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_manufacturer_states():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    df = data_fetch.fetch_state_list(unit)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch states"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "states": [], "unit": unit})
-    states = _build_master_list(df, ["state_id", "stateid", "id"], ["state_name", "statename", "name"], ["state_code", "statecode", "code"])
-    return jsonify({"status": "success", "states": _sanitize_json_payload(states), "unit": unit})
-
-
-@app.route('/api/purchase/manufacturers/cities')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_manufacturer_cities():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    state_id_raw = request.args.get("state_id")
-    if state_id_raw and not str(state_id_raw).isdigit():
-        return jsonify({"status": "error", "message": "Invalid state id"}), 400
-    state_id = int(state_id_raw) if state_id_raw else 0
-    df = data_fetch.fetch_city_list(unit, state_id)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch cities"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "cities": [], "unit": unit})
-    cities = _build_master_list(df, ["city_id", "cityid", "id"], ["city_name", "cityname", "name"], ["city_code", "citycode", "code"])
-    return jsonify({"status": "success", "cities": _sanitize_json_payload(cities), "unit": unit})
-
-
-@app.route('/api/purchase/supplier_master/list')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_supplier_master_list():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    df = data_fetch.fetch_iv_supplier_master_list(unit)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch supplier list"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "suppliers": [], "unit": unit})
-    suppliers = _build_master_list(df, ["id"], ["name"], ["code"])
-    return jsonify({"status": "success", "suppliers": _sanitize_json_payload(suppliers), "unit": unit})
-
-
-@app.route('/api/purchase/supplier_master/details')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_supplier_master_details():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    supplier_id_raw = request.args.get("supplier_id")
-    if not supplier_id_raw or not str(supplier_id_raw).isdigit():
-        return jsonify({"status": "error", "message": "Supplier ID is required"}), 400
-    df = data_fetch.fetch_iv_supplier_master_detail(unit, int(supplier_id_raw))
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch supplier details"}), 500
-    if df.empty:
-        return jsonify({"status": "error", "message": "Supplier not found"}), 404
-    df = _clean_df_columns(df)
-    row = df.iloc[0].to_dict()
-    supplier = {
-        "id": _row_value(row, ["ID", "Id"]),
-        "code": _row_value(row, ["Code"]),
-        "name": _row_value(row, ["Name"]),
-        "address": _row_value(row, ["Address"]),
-        "city_id": _row_value(row, ["City", "CityID", "City_Id", "City_ID"]),
-        "city_name": _row_value(row, ["City_Name", "CityName"]),
-        "state_id": _row_value(row, ["State", "StateID", "State_Id", "State_ID"]),
-        "state_name": _row_value(row, ["State_Name", "StateName"]),
-        "pin": _row_value(row, ["Pin"]),
-        "credit_period": _row_value(row, ["CreditPeriod"]),
-        "contact_person": _row_value(row, ["ContactPerson"]),
-        "contact_designation": _row_value(row, ["ContactDesignation"]),
-        "phone1": _row_value(row, ["Phone1"]),
-        "phone2": _row_value(row, ["Phone2"]),
-        "cellphone": _row_value(row, ["CellPhone", "Cellphone"]),
-        "email": _row_value(row, ["Email"]),
-        "excise_code": _row_value(row, ["ExciseCode", "Excise_Code"]),
-        "note": _row_value(row, ["Note"]),
-    }
-    return jsonify({"status": "success", "supplier": _sanitize_json_payload(supplier), "unit": unit})
-
-
-@app.route('/api/purchase/supplier_master', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_supplier_master():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    if _role_base(session.get("role") or "") == "Executive":
-        return jsonify({"status": "error", "message": "Access denied for your role."}), 403
-    payload = request.get_json(silent=True) or {}
-    supplier = payload.get("supplier") or {}
-
-    supplier_id = _safe_int(supplier.get("supplier_id") or supplier.get("id"))
-    existing = {}
-    if supplier_id:
-        existing_df = data_fetch.fetch_iv_supplier_master_detail(unit, supplier_id)
-        if existing_df is None:
-            return jsonify({"status": "error", "message": "Failed to load existing supplier"}), 500
-        if existing_df.empty:
-            return jsonify({"status": "error", "message": "Supplier not found"}), 404
-        existing_df = _clean_df_columns(existing_df)
-        existing = existing_df.iloc[0].to_dict()
-
-    name = str(supplier.get("name") or "").strip()
-    if not name and existing:
-        name = str(_row_value(existing, ["Name"]) or "").strip()
-    if not name:
-        return jsonify({"status": "error", "message": "Supplier name is required"}), 400
-
-    code = str(supplier.get("code") or "").strip()
-    if not code and existing:
-        code = str(_row_value(existing, ["Code"]) or "").strip()
-    if not code:
-        code = data_fetch.fetch_iv_supplier_number(unit, after_add=False)
-    if not code:
-        return jsonify({"status": "error", "message": "Failed to generate supplier code"}), 500
-
-    city_id = _safe_int(supplier.get("city_id")) if "city_id" in supplier else 0
-    state_id = _safe_int(supplier.get("state_id")) if "state_id" in supplier else 0
-    if not city_id and existing:
-        city_id = _safe_int(_row_value(existing, ["City", "CityID", "City_Id", "City_ID"]))
-    if not state_id and existing:
-        state_id = _safe_int(_row_value(existing, ["State", "StateID", "State_Id", "State_ID"]))
-    if not city_id or not state_id:
-        default_df = data_fetch.fetch_default_city_state(unit)
-        if default_df is not None and not default_df.empty:
-            default_df = _clean_df_columns(default_df)
-            cols_map = {str(c).strip().lower(): c for c in default_df.columns}
-            city_col = cols_map.get("city_id") or cols_map.get("cityid")
-            state_col = cols_map.get("state_id") or cols_map.get("stateid")
-            row = default_df.iloc[0].to_dict()
-            if not city_id:
-                city_id = _safe_int(row.get(city_col))
-            if not state_id:
-                state_id = _safe_int(row.get(state_col))
-    if not city_id or not state_id:
-        return jsonify({"status": "error", "message": "Default city/state not available"}), 400
-
-    now = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    updated_by = session.get("user_id") or session.get("user") or session.get("username")
-    updated_by = _safe_int(updated_by, 1)
-
-    params = _build_supplier_params(
-        supplier_id=supplier_id,
-        supplier=supplier,
-        code=code,
-        name=name,
-        city_id=city_id,
-        state_id=state_id,
-        updated_by=updated_by,
-        now_str=now,
-        existing=existing,
-    )
-
-    if supplier_id:
-        result = data_fetch.update_iv_supplier(unit, params)
-    else:
-        result = data_fetch.add_iv_supplier(unit, params)
-
-    if result.get("error"):
-        return jsonify({"status": "error", "message": result["error"]}), 500
-
-    mirror_outcomes = []
-    if not supplier_id:
-        mirror_supplier = dict(supplier or {})
-        mirror_supplier["name"] = name
-        mirror_supplier["code"] = code
-        mirror_outcomes = _mirror_new_supplier_master_to_family(unit, mirror_supplier, updated_by, now)
-    message, mirror_status = _build_replication_message(
-        "Supplier",
-        "updated" if supplier_id else "saved",
-        result.get("supplier_id") or supplier_id,
-        mirror_outcomes,
-    )
-
-    return jsonify({
-        "status": "success",
-        "supplier_id": result.get("supplier_id") or supplier_id,
-        "supplier_code": code,
-        "supplier_name": name,
-        "unit": unit,
-        "mode": "update" if supplier_id else "add",
-        "mirrored_units": [row.get("unit") for row in mirror_outcomes if row.get("status") == "mirrored"],
-        "mirror_failures": [row for row in mirror_outcomes if row.get("status") == "failed"],
-        "mirror_status": mirror_status,
-        "message": message,
-    })
-
-
-@app.route('/api/purchase/manufacturer_master/list')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_manufacturer_master_list():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    df = data_fetch.fetch_iv_manufacturer_master_list(unit)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch manufacturer list"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "manufacturers": [], "unit": unit})
-    manufacturers = _build_master_list(df, ["id"], ["name"], ["code"])
-    return jsonify({"status": "success", "manufacturers": _sanitize_json_payload(manufacturers), "unit": unit})
-
-
-@app.route('/api/purchase/manufacturer_master/details')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_manufacturer_master_details():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    manufacturer_id_raw = request.args.get("manufacturer_id")
-    if not manufacturer_id_raw or not str(manufacturer_id_raw).isdigit():
-        return jsonify({"status": "error", "message": "Manufacturer ID is required"}), 400
-    df = data_fetch.fetch_iv_manufacturer_master_detail(unit, int(manufacturer_id_raw))
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch manufacturer details"}), 500
-    if df.empty:
-        return jsonify({"status": "error", "message": "Manufacturer not found"}), 404
-    df = _clean_df_columns(df)
-    row = df.iloc[0].to_dict()
-    manufacturer = {
-        "id": _row_value(row, ["ID", "Id"]),
-        "code": _row_value(row, ["Code"]),
-        "name": _row_value(row, ["Name"]),
-        "address": _row_value(row, ["Address"]),
-        "city_id": _row_value(row, ["City", "CityID", "City_Id", "City_ID"]),
-        "city_name": _row_value(row, ["City_Name", "CityName"]),
-        "city_code": _row_value(row, ["City_Code", "CityCode"]),
-        "state_id": _row_value(row, ["State", "StateID", "State_Id", "State_ID"]),
-        "state_name": _row_value(row, ["State_Name", "StateName"]),
-        "state_code": _row_value(row, ["State_Code", "StateCode"]),
-        "pin": _row_value(row, ["Pin"]),
-        "contact_person": _row_value(row, ["ContactPerson"]),
-        "contact_designation": _row_value(row, ["ContactDesignation"]),
-        "phone1": _row_value(row, ["Phone1"]),
-        "phone2": _row_value(row, ["Phone2"]),
-        "cellphone": _row_value(row, ["CellPhone", "Cellphone"]),
-        "web": _row_value(row, ["Web"]),
-        "email": _row_value(row, ["Email"]),
-        "bank_name": _row_value(row, ["BankName"]),
-        "bank_account": _row_value(row, ["BankAcNo", "BankAcNO"]),
-        "bank_branch": _row_value(row, ["BankBranch"]),
-        "note": _row_value(row, ["Note"]),
-        "society": _row_value(row, ["Society"]),
-        "landmark": _row_value(row, ["Landmark", "landmark"]),
-        "village_id": _row_value(row, ["VillageID", "VillageId"]),
-        "village": _row_value(row, ["Village"]),
-    }
-    return jsonify({"status": "success", "manufacturer": _sanitize_json_payload(manufacturer), "unit": unit})
-
-
-@app.route('/api/purchase/manufacturer_master', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_manufacturer_master():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    if _role_base(session.get("role") or "") == "Executive":
-        return jsonify({"status": "error", "message": "Access denied for your role."}), 403
-    payload = request.get_json(silent=True) or {}
-    manufacturer = payload.get("manufacturer") or {}
-
-    manufacturer_id = _safe_int(manufacturer.get("manufacturer_id") or manufacturer.get("id"))
-    existing = {}
-    if manufacturer_id:
-        existing_df = data_fetch.fetch_iv_manufacturer_master_detail(unit, manufacturer_id)
-        if existing_df is None:
-            return jsonify({"status": "error", "message": "Failed to load existing manufacturer"}), 500
-        if existing_df.empty:
-            return jsonify({"status": "error", "message": "Manufacturer not found"}), 404
-        existing_df = _clean_df_columns(existing_df)
-        existing = existing_df.iloc[0].to_dict()
-
-    name = str(manufacturer.get("name") or "").strip()
-    if not name and existing:
-        name = str(_row_value(existing, ["Name"]) or "").strip()
-    if not name:
-        return jsonify({"status": "error", "message": "Manufacturer name is required"}), 400
-
-    code = str(manufacturer.get("code") or "").strip()
-    if not code and existing:
-        code = str(_row_value(existing, ["Code"]) or "").strip()
-    if not code:
-        code = data_fetch.fetch_iv_manufacturer_number(unit)
-    if not code:
-        return jsonify({"status": "error", "message": "Failed to generate manufacturer code"}), 500
-
-    city_id = _safe_int(manufacturer.get("city_id")) if "city_id" in manufacturer else 0
-    state_id = _safe_int(manufacturer.get("state_id")) if "state_id" in manufacturer else 0
-    if not city_id and existing:
-        city_id = _safe_int(_row_value(existing, ["City", "CityID", "City_Id", "City_ID"]))
-    if not state_id and existing:
-        state_id = _safe_int(_row_value(existing, ["State", "StateID", "State_Id", "State_ID"]))
-    if not city_id or not state_id:
-        default_df = data_fetch.fetch_default_city_state(unit)
-        if default_df is not None and not default_df.empty:
-            default_df = _clean_df_columns(default_df)
-            cols_map = {str(c).strip().lower(): c for c in default_df.columns}
-            city_col = cols_map.get("city_id") or cols_map.get("cityid")
-            state_col = cols_map.get("state_id") or cols_map.get("stateid")
-            row = default_df.iloc[0].to_dict()
-            if not city_id:
-                city_id = _safe_int(row.get(city_col))
-            if not state_id:
-                state_id = _safe_int(row.get(state_col))
-    if not city_id or not state_id:
-        return jsonify({"status": "error", "message": "Default city/state not available"}), 400
-
-    now = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    updated_by = session.get("user_id") or session.get("user") or session.get("username")
-    updated_by = _safe_int(updated_by, 1)
-
-    params = _build_manufacturer_params(
-        manufacturer_id=manufacturer_id,
-        manufacturer=manufacturer,
-        code=code,
-        name=name,
-        city_id=city_id,
-        state_id=state_id,
-        updated_by=updated_by,
-        now_str=now,
-        existing=existing,
-    )
-
-    if manufacturer_id:
-        result = data_fetch.update_iv_manufacturer(unit, params)
-    else:
-        result = data_fetch.add_iv_manufacturer(unit, params)
-
-    if result.get("error"):
-        return jsonify({"status": "error", "message": result["error"]}), 500
-
-    return jsonify({
-        "status": "success",
-        "manufacturer_id": result.get("manufacturer_id") or manufacturer_id,
-        "manufacturer_code": code,
-        "manufacturer_name": name,
-        "unit": unit,
-        "mode": "update" if manufacturer_id else "add",
-    })
-
-
-@app.route('/api/purchase/item_master/init')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_item_master_init():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    meta = _load_item_master_lists(unit)
-    return jsonify({
-        "status": "success",
-        "unit": unit,
-        "pack_sizes": meta.get("pack_sizes") or [],
-        "categories": meta.get("categories") or [],
-        "groups": meta.get("groups") or [],
-        "subgroups": meta.get("subgroups") or [],
-        "units": meta.get("units") or [],
-        "locations": meta.get("locations") or [],
-        "defaults": meta.get("defaults") or {},
-    })
-
-
-@app.route('/api/purchase/item_master/groups')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_item_master_groups():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    type_id_raw = request.args.get("type_id")
-    if not type_id_raw or not str(type_id_raw).isdigit():
-        return jsonify({"status": "error", "message": "Type ID is required"}), 400
-    df = data_fetch.fetch_item_groups_by_type(unit, int(type_id_raw))
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch groups"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "groups": [], "unit": unit})
-    df = _clean_df_columns(df)
-    cols = {str(c).strip().lower(): c for c in df.columns}
-    id_col = cols.get("id")
-    name_col = cols.get("name")
-    rows = []
-    if id_col and name_col:
-        for _, row in df.iterrows():
-            rows.append({
-                "id": row.get(id_col),
-                "name": str(row.get(name_col) or "").strip(),
-            })
-    return jsonify({"status": "success", "groups": _sanitize_json_payload(rows), "unit": unit})
-
-
-@app.route('/api/purchase/item_master/subgroups')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_item_master_subgroups():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    group_id_raw = request.args.get("group_id")
-    if not group_id_raw or not str(group_id_raw).isdigit():
-        return jsonify({"status": "error", "message": "Group ID is required"}), 400
-    df = data_fetch.fetch_item_subgroups_by_group(unit, int(group_id_raw))
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch subgroups"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "subgroups": [], "unit": unit})
-    df = _clean_df_columns(df)
-    cols = {str(c).strip().lower(): c for c in df.columns}
-    id_col = cols.get("id")
-    name_col = cols.get("name")
-    rows = []
-    if id_col and name_col:
-        for _, row in df.iterrows():
-            rows.append({
-                "id": row.get(id_col),
-                "name": str(row.get(name_col) or "").strip(),
-            })
-    return jsonify({"status": "success", "subgroups": _sanitize_json_payload(rows), "unit": unit})
-
-
-@app.route('/api/purchase/item_master/list')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_item_master_list():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    df = data_fetch.fetch_item_master_list(unit)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch items"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "items": [], "unit": unit})
-    df = _clean_df_columns(df)
-    cols = {str(c).strip().lower(): c for c in df.columns}
-    id_col = cols.get("id")
-    code_col = cols.get("code")
-    name_col = cols.get("name")
-    product_col = cols.get("productcode") or cols.get("product_code")
-    rows = []
-    for _, row in df.iterrows():
-        rows.append({
-            "id": row.get(id_col),
-            "code": str(row.get(code_col) or "").strip(),
-            "name": str(row.get(name_col) or "").strip(),
-            "product_code": str(row.get(product_col) or "").strip() if product_col else "",
-        })
-    return jsonify({"status": "success", "items": _sanitize_json_payload(rows), "unit": unit})
-
-
-@app.route('/api/purchase/item_master/details')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_item_master_details():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    item_id_raw = request.args.get("item_id")
-    if not item_id_raw or not str(item_id_raw).isdigit():
-        return jsonify({"status": "error", "message": "Item ID is required"}), 400
-    df = data_fetch.fetch_item_master_detail(unit, int(item_id_raw))
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch item details"}), 500
-    if df.empty:
-        return jsonify({"status": "error", "message": "Item not found"}), 404
-    df = _clean_df_columns(df)
-    row = df.iloc[0].to_dict()
-    payload = _sanitize_json_payload({
-        "id": _row_value(row, ["ID", "Id"]),
-        "code": _row_value(row, ["Code"]),
-        "name": _row_value(row, ["Name"]),
-        "descriptive_name": _row_value(row, ["DescriptiveName"]),
-        "technical_specs": _row_value(row, ["TechnicalSpecs", "TechnicalSpec", "TechSpecs", "TechSpec"]),
-        "product_code": _row_value(row, ["ProductCode"]),
-        "item_type_id": _row_value(row, ["ItemTypeID", "ItemTypeId"]),
-        "item_group_id": _row_value(row, ["ItemGroupID", "ItemGroupId"]),
-        "sub_group_id": _row_value(row, ["SubGroupID", "SubGroupId"]),
-        "unit_id": _row_value(row, ["UnitID", "UnitId"]),
-        "location_id": _row_value(row, ["LocationID", "LocationId"]),
-        "pack_size_id": _row_value(row, ["PackSizeID", "PackSizeId"]),
-        "standard_rate": _row_value(row, ["StandardRate"]),
-        "sales_price": _row_value(row, ["SalesPrice", "Salesprice"]),
-        "sales_tax": _row_value(row, ["SalesTax", "Salestax"]),
-        "current_qty": _row_value(row, ["CurrentQty"]),
-        "max_level": _row_value(row, ["MaxLevel"]),
-        "min_level": _row_value(row, ["MinLevel"]),
-        "reorder_level": _row_value(row, ["ReOrderLevel", "ReorderLevel"]),
-        "batch_required": _row_value(row, ["BatchRequired"]),
-        "expiry_required": _row_value(row, ["ExpiryDtRequired"]),
-        "active": _row_value(row, ["Active"]),
-        "loose_selling": _row_value(row, ["ChkLooseSelling"]),
-        "quality_control": _row_value(row, ["chkQualityCtrl", "ChkQualityCtrl"]),
-        "vat_on": _row_value(row, ["VatOn"]),
-        "medicine_type_id": _row_value(row, ["MedicineTypeId", "MedicineTypeID"]),
-    })
-    return jsonify({"status": "success", "item": payload, "unit": unit})
-
-
-@app.route('/api/purchase/item_master/manufacturers', methods=['GET', 'POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_item_master_manufacturers():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-
-    if request.method == 'GET':
-        item_id_raw = request.args.get("item_id")
-        if not item_id_raw or not str(item_id_raw).isdigit():
-            return jsonify({"status": "error", "message": "Item ID is required"}), 400
-        df = data_fetch.fetch_item_manufacturer_links(unit, int(item_id_raw))
-        if df is None:
-            return jsonify({"status": "error", "message": "Failed to fetch manufacturer links"}), 500
-        if df.empty:
-            return jsonify({"status": "success", "links": [], "unit": unit})
-        df = _clean_df_columns(df)
-        cols = {str(c).strip().lower(): c for c in df.columns}
-        link_col = cols.get("linkid") or cols.get("link_id")
-        item_col = cols.get("itemid") or cols.get("item_id")
-        manu_col = cols.get("manufacturerid") or cols.get("id")
-        name_col = cols.get("manufacturername") or cols.get("name")
-        code_col = cols.get("manufacturercode") or cols.get("code")
-        rows = []
-        for _, row in df.iterrows():
-            rows.append({
-                "link_id": row.get(link_col),
-                "item_id": row.get(item_col),
-                "manufacturer_id": row.get(manu_col),
-                "name": str(row.get(name_col) or "").strip() if name_col else "",
-                "code": str(row.get(code_col) or "").strip() if code_col else "",
-            })
-        return jsonify({"status": "success", "links": _sanitize_json_payload(rows), "unit": unit})
-
-    if _role_base(session.get("role") or "") == "Executive":
-        return jsonify({"status": "error", "message": "Access denied for your role."}), 403
-    payload = request.get_json(silent=True) or {}
-    item_id = _safe_int(payload.get("item_id") or payload.get("itemId"))
-    manufacturer_id = _safe_int(payload.get("manufacturer_id") or payload.get("manufacturerId") or payload.get("id"))
-    if not item_id or not manufacturer_id:
-        return jsonify({"status": "error", "message": "Item ID and manufacturer ID are required"}), 400
-    now_str = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    user_token = str(session.get("user_id") or session.get("user") or session.get("username") or "1")
-    result = data_fetch.add_item_manufacturer_link(
-        unit,
-        int(item_id),
-        int(manufacturer_id),
-        user_token,
-        now_str,
-        request.remote_addr,
-    )
-    if result.get("error"):
-        return jsonify({"status": "error", "message": result["error"]}), 500
-    return jsonify({
-        "status": "success",
-        "link_id": result.get("link_id"),
-        "created": result.get("created", True),
-        "unit": unit,
-    })
-
-
-@app.route('/api/purchase/item_master', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_item_master_create():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    if _role_base(session.get("role") or "") == "Executive":
-        return jsonify({"status": "error", "message": "Access denied for your role."}), 403
-    try:
-        data_fetch.ensure_iv_item_technical_specs_column(unit)
-    except Exception:
-        pass
-    payload = request.get_json(silent=True) or {}
-    item = payload.get("item") or {}
-
-    item_id = _safe_int(item.get("item_id"))
-    name = str(item.get("name") or "").strip()
-    if not name:
-        return jsonify({"status": "error", "message": "Item name is required"}), 400
-    descriptive_name_raw = str(item.get("descriptive_name") or "").strip()
-    descriptive_name = descriptive_name_raw or name
-    if len(descriptive_name) > ITEM_MASTER_DESCRIPTIVE_NAME_MAX:
-        return jsonify({
-            "status": "error",
-            "message": (
-                f"Descriptive Name supports maximum {ITEM_MASTER_DESCRIPTIVE_NAME_MAX} characters. "
-                "Please use Technical Specs / Description for long narration."
-            ),
-        }), 400
-
-    store_name = str(item.get("store_name") or item.get("location_name") or "").strip()
-    location_id = _safe_int(item.get("location_id"))
-    pack_size_id = _safe_int(item.get("pack_size_id"))
-    unit_id = _safe_int(item.get("unit_id"))
-    unit_name = str(item.get("unit_name") or item.get("unit") or "").strip()
-    rate = _safe_float(item.get("rate"))
-    mrp = _safe_float(item.get("mrp"))
-    gst_raw = item.get("gst_pct")
-    gst = _safe_float(gst_raw)
-    allow_zero_rate_mrp = _unit_allows_zero_rate_mrp(unit)
-
-    missing = []
-    if not location_id and not store_name:
-        missing.append("store")
-    if not pack_size_id:
-        missing.append("pack size")
-    if not unit_id and not unit_name:
-        missing.append("unit")
-    if rate < 0 or (rate <= 0 and not allow_zero_rate_mrp):
-        missing.append("rate")
-    if mrp < 0 or (mrp <= 0 and not allow_zero_rate_mrp):
-        missing.append("mrp")
-    if str(gst_raw or "").strip() == "" or gst < 0:
-        missing.append("gst")
-    if missing:
-        return jsonify({"status": "error", "message": f"Missing required fields: {', '.join(missing)}"}), 400
-
-    if not unit_id and unit_name:
-        unit_id_resolved, unit_err = _ensure_purchase_unit_master_entry(unit, unit_name)
-        if unit_err:
-            return jsonify({"status": "error", "message": f"Failed to save unit '{unit_name}': {unit_err}"}), 500
-        unit_id = unit_id_resolved
-
-    meta = _load_item_master_lists(unit)
-    defaults = meta.get("defaults", {})
-    lookups = meta.get("lookups", {})
-    now_str = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    user_token = str(session.get("user_id") or session.get("user") or session.get("username") or "1")
-
-    item_payload = {
-        "name": name,
-        "descriptive_name": descriptive_name,
-        "technical_specs": item.get("technical_specs") or "",
-        "product_code": item.get("product_code") or "",
-        "item_type_id": _safe_int(item.get("item_type_id"), defaults.get("item_type_id")),
-        "item_group_id": _safe_int(item.get("item_group_id"), defaults.get("item_group_id")),
-        "sub_group_id": _safe_int(item.get("sub_group_id"), defaults.get("sub_group_id")),
-        "unit_id": unit_id,
-        "unit_name": unit_name,
-        "location_id": location_id,
-        "location_name": store_name,
-        "pack_size_id": pack_size_id or defaults.get("pack_size_id"),
-        "standard_rate": rate,
-        "sales_price": mrp,
-        "gst_pct": gst,
-        "batch_required": bool(item.get("batch_required")),
-        "expiry_required": bool(item.get("expiry_required", True)),
-        "loose_selling": bool(item.get("loose_selling")),
-        "quality_control": bool(item.get("quality_control")),
-        "active": bool(item.get("active", True)),
-        "vat_on": item.get("vat_on") or "P",
-        "medicine_type_id": _safe_int(item.get("medicine_type_id"), defaults.get("medicine_type_id")),
-    }
-
-    if item_id:
-        detail_df = data_fetch.fetch_item_master_detail(unit, item_id)
-        if detail_df is None:
-            return jsonify({"status": "error", "message": "Failed to fetch existing item"}), 500
-        if detail_df.empty:
-            return jsonify({"status": "error", "message": "Item not found"}), 404
-        detail_df = _clean_df_columns(detail_df)
-        existing = detail_df.iloc[0].to_dict()
-        params = _build_item_update_params(
-            item_id,
-            item_payload,
-            defaults,
-            lookups,
-            user_token,
-            now_str,
-            request.remote_addr,
-            existing,
-        )
-        result = data_fetch.update_iv_item(unit, params)
-    else:
-        params = _build_item_master_params(item_payload, defaults, lookups, user_token, now_str, request.remote_addr)
-        result = data_fetch.add_iv_item(unit, params)
-    if result.get("error"):
-        return jsonify({"status": "error", "message": result["error"]}), 500
-
-    mirror_outcomes = []
-    if not item_id:
-        mirror_outcomes = _mirror_new_item_master_to_family(unit, item_payload, user_token, now_str, request.remote_addr)
-    message, mirror_status = _build_replication_message(
-        "Item",
-        "updated" if item_id else "saved",
-        item_id or result.get("item_id"),
-        mirror_outcomes,
-    )
-    return jsonify({
-        "status": "success",
-        "item_id": item_id or result.get("item_id"),
-        "item_name": name,
-        "unit": unit,
-        "mirrored_units": [row.get("unit") for row in mirror_outcomes if row.get("status") == "mirrored"],
-        "mirror_failures": [row for row in mirror_outcomes if row.get("status") == "failed"],
-        "mirror_status": mirror_status,
-        "message": message,
-    })
-
-
-@app.route('/api/purchase/pm_indent/init')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_pm_indent_init():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-
-    # Avoid reserving indent numbers on page load; assign on save instead.
-    indent_no = None
-    dept_df = data_fetch.fetch_departments_for_indent(unit)
-    pack_df = data_fetch.fetch_purchase_pack_sizes(unit)
-    category_df = data_fetch.fetch_item_categories(unit)
-
-    departments = []
-    if dept_df is not None and not dept_df.empty:
-        dept_df = _clean_df_columns(dept_df)
-        cols = {str(c).strip().lower(): c for c in dept_df.columns}
-        id_col = cols.get("department_id") or cols.get("departmentid") or cols.get("id")
-        name_col = cols.get("department_name") or cols.get("name")
-        code_col = cols.get("department_code") or cols.get("code")
-        for _, row in dept_df.iterrows():
-            departments.append({
-                "id": row.get(id_col),
-                "name": str(row.get(name_col) or "").strip(),
-                "code": str(row.get(code_col) or "").strip(),
-            })
-
-    pack_sizes = []
-    if pack_df is not None and not pack_df.empty:
-        pack_df = _clean_df_columns(pack_df)
-        cols = {str(c).strip().lower(): c for c in pack_df.columns}
-        id_col = cols.get("id")
-        name_col = cols.get("name")
-        if id_col and name_col:
-            for _, row in pack_df.iterrows():
-                pack_sizes.append({
-                    "id": row.get(id_col),
-                    "name": str(row.get(name_col) or "").strip(),
-                })
-
-    categories = []
-    if category_df is not None and not category_df.empty:
-        category_df = _clean_df_columns(category_df)
-        cols = {str(c).strip().lower(): c for c in category_df.columns}
-        id_col = cols.get("id")
-        name_col = cols.get("name")
-        code_col = cols.get("code")
-        for _, row in category_df.iterrows():
-            categories.append({
-                "id": row.get(id_col),
-                "name": str(row.get(name_col) or "").strip(),
-                "code": str(row.get(code_col) or "").strip(),
-            })
-
-    return jsonify({
-        "status": "success",
-        "unit": unit,
-        "indent_no": indent_no,
-        "departments": departments,
-        "pack_sizes": pack_sizes,
-        "categories": categories,
-    })
-
-
-@app.route('/api/purchase/pm_indent/stores')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_pm_indent_stores():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    dept_id = request.args.get("department_id")
-    if not dept_id:
-        return jsonify({"status": "error", "message": "Department is required"}), 400
-    try:
-        dept_id = int(dept_id)
-    except Exception:
-        return jsonify({"status": "error", "message": "Invalid department"}), 400
-
-    df = data_fetch.fetch_substores_for_department(unit, dept_id)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch stores"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "stores": [], "unit": unit})
-
-    df = _clean_df_columns(df)
-    cols = {str(c).strip().lower(): c for c in df.columns}
-    id_col = cols.get("id")
-    name_col = cols.get("storename") or cols.get("name")
-    code_col = cols.get("storecode") or cols.get("code")
-    stores = []
-    for _, row in df.iterrows():
-        stores.append({
-            "id": row.get(id_col),
-            "name": str(row.get(name_col) or "").strip(),
-            "code": str(row.get(code_col) or "").strip(),
-        })
-    return jsonify({"status": "success", "stores": stores, "unit": unit})
-
-
-@app.route('/api/purchase/pm_indent/items')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_pm_indent_items():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    item_type_id = request.args.get("item_type_id")
-    if not item_type_id:
-        return jsonify({"status": "error", "message": "Category type is required"}), 400
-    try:
-        item_type_id = int(item_type_id)
-    except Exception:
-        return jsonify({"status": "error", "message": "Invalid category type"}), 400
-
-    df = data_fetch.fetch_indent_items_catalog(unit, item_type_id)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch items"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "items": [], "unit": unit})
-
-    df = _clean_df_columns(df)
-    cols = {str(c).strip().lower(): c for c in df.columns}
-    id_col = cols.get("id")
-    name_col = cols.get("itemname") or cols.get("name")
-    pack_col = cols.get("packsizeid") or cols.get("packsize_id")
-    rate_col = cols.get("lastporate") or cols.get("rate")
-    mrp_col = cols.get("mrp")
-    vat_col = cols.get("vat")
-    consumption_col = cols.get("code")
-    stock_col = cols.get("unitname")
-    unit_id_col = cols.get("unitid")
-
-    consumption_df = data_fetch.fetch_last_30_day_item_consumption(unit)
-    consumption_map = {}
-    if consumption_df is not None and not consumption_df.empty:
-        consumption_df = _clean_df_columns(consumption_df)
-        cons_cols = {str(c).strip().lower(): c for c in consumption_df.columns}
-        cons_item_col = cons_cols.get("itemid") or cons_cols.get("item_id")
-        cons_qty_col = cons_cols.get("totalqtyconsumedlast30days") or cons_cols.get("totalqty") or cons_cols.get("qty")
-        if cons_item_col and cons_qty_col:
-            for _, row in consumption_df.iterrows():
-                try:
-                    item_id = int(row[cons_item_col])
-                except Exception:
-                    continue
-                try:
-                    consumption_map[item_id] = float(row[cons_qty_col] or 0)
-                except Exception:
-                    consumption_map[item_id] = 0.0
-    item_master_map = {}
-    if id_col:
-        item_ids = []
-        for val in df[id_col].tolist():
-            try:
-                item_ids.append(int(val))
-            except Exception:
-                continue
-        item_master_map = _get_item_master_rate_mrp_map(unit, item_ids)
-
-    rows = []
-    for _, row in df.iterrows():
-        item_id = row.get(id_col) if id_col else None
-        try:
-            item_id = int(item_id)
-        except Exception:
-            item_id = None
-        rate_val = _safe_float(row.get(rate_col), None) if rate_col else None
-        mrp_val = _safe_float(row.get(mrp_col), None) if mrp_col else None
-        vat_val = _safe_float(row.get(vat_col), None) if vat_col else None
-        fallback = item_master_map.get(item_id or -1, {})
-        if rate_val is None or rate_val <= 0:
-            rate_val = fallback.get("rate")
-        if mrp_val is None or mrp_val <= 0:
-            mrp_val = fallback.get("mrp")
-        if vat_val is None or vat_val <= 0:
-            vat_val = fallback.get("tax")
-        rows.append({
-            "id": row.get(id_col),
-            "name": str(row.get(name_col) or "").strip(),
-            "packsize_id": row.get(pack_col),
-            "last_po_rate": rate_val or 0,
-            "mrp": mrp_val or 0,
-            "vat": vat_val or 0,
-            "last_15_days": consumption_map.get(item_id, row.get(consumption_col)),
-            "current_stock": row.get(stock_col),
-            "unit_id": row.get(unit_id_col),
-        })
-    rows = _sanitize_json_payload(rows)
-    return jsonify({"status": "success", "items": rows, "unit": unit})
-
-
-def _find_duplicate_purchase_item_refs(
-    items: list,
-    *,
-    id_keys: tuple[str, ...] = ("item_id", "id", "ItemID", "ItemId"),
-    name_keys: tuple[str, ...] = ("item_name", "name", "ItemName"),
-    qty_keys: tuple[str, ...] = ("qty", "Qty", "item_qty", "ItemQty"),
-    require_positive_qty: bool = False,
-) -> dict:
-    duplicate_ids = []
-    duplicate_names = []
-    seen_ids = set()
-    seen_names = set()
-
-    for raw_item in (items or []):
-        item = raw_item or {}
-        item_id = 0
-        for key in id_keys:
-            try:
-                item_id = int(item.get(key) or 0)
-            except Exception:
-                item_id = 0
-            if item_id:
-                break
-
-        qty = 0.0
-        for key in qty_keys:
-            if key in item:
-                try:
-                    qty = float(item.get(key) or 0)
-                except Exception:
-                    qty = 0.0
-                break
-        if require_positive_qty and qty <= 0:
-            continue
-
-        if item_id > 0:
-            if item_id in seen_ids and item_id not in duplicate_ids:
-                duplicate_ids.append(item_id)
-            seen_ids.add(item_id)
-            continue
-
-        # For rows without item id (manual entries), dedupe by item name.
-        name_raw = ""
-        for key in name_keys:
-            if key in item and item.get(key) is not None:
-                name_raw = str(item.get(key) or "").strip()
-                if name_raw:
-                    break
-        name_key = name_raw.lower()
-        if not name_key:
-            continue
-        if name_key in seen_names and name_raw not in duplicate_names:
-            duplicate_names.append(name_raw)
-        seen_names.add(name_key)
-
-    return {"duplicate_ids": duplicate_ids, "duplicate_names": duplicate_names}
-
-
-def _format_duplicate_item_labels(items: list, duplicate_ids: list[int]) -> list[str]:
-    labels = []
-    for dup_id in duplicate_ids or []:
-        name = ""
-        for item in items or []:
-            try:
-                item_id = int((item or {}).get("item_id") or (item or {}).get("id") or 0)
-            except Exception:
-                item_id = 0
-            if item_id != dup_id:
-                continue
-            name = str((item or {}).get("item_name") or (item or {}).get("name") or "").strip()
-            if name:
-                break
-        labels.append(f"{dup_id} ({name})" if name else str(dup_id))
-    return labels
-
-
-@app.route('/api/purchase/pm_indent', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_pm_indent_create():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-
-    payload = request.get_json(silent=True) or {}
-    header = payload.get("header") or {}
-    items = payload.get("items") or []
-
-    def _safe_int(val, default=0):
-        try:
-            return int(val)
-        except Exception:
-            return default
-
-    department_id = _safe_int(header.get("department_id"))
-    store_id = _safe_int(header.get("store_id"))
-    item_category_id = _safe_int(header.get("item_category_id"))
-    if not department_id:
-        _audit_log_event(
-            "purchase",
-            "indent_create",
-            status="error",
-            entity_type="indent",
-            unit=unit,
-            summary="Department is required",
-        )
-        return jsonify({"status": "error", "message": "Department is required"}), 400
-    if not store_id:
-        _audit_log_event(
-            "purchase",
-            "indent_create",
-            status="error",
-            entity_type="indent",
-            unit=unit,
-            summary="Store is required",
-        )
-        return jsonify({"status": "error", "message": "Store is required"}), 400
-    if not item_category_id:
-        _audit_log_event(
-            "purchase",
-            "indent_create",
-            status="error",
-            entity_type="indent",
-            unit=unit,
-            summary="Category type is required",
-        )
-        return jsonify({"status": "error", "message": "Category type is required"}), 400
-    if not items:
-        _audit_log_event(
-            "purchase",
-            "indent_create",
-            status="error",
-            entity_type="indent",
-            unit=unit,
-            summary="At least one item is required",
-        )
-        return jsonify({"status": "error", "message": "At least one item is required"}), 400
-    dup_check = _find_duplicate_purchase_item_refs(items, require_positive_qty=True)
-    if dup_check["duplicate_ids"]:
-        dup_labels = _format_duplicate_item_labels(items, dup_check["duplicate_ids"])
-        preview = ", ".join(dup_labels[:8])
-        more = f" (+{len(dup_labels) - 8} more)" if len(dup_labels) > 8 else ""
-        msg = f"Duplicate items are not allowed in indent. Remove repeated item(s): {preview}{more}."
-        _audit_log_event(
-            "purchase",
-            "indent_create",
-            status="error",
-            entity_type="indent",
-            unit=unit,
-            summary="Duplicate indent items detected",
-            details={"duplicates": dup_labels},
-        )
-        return jsonify({"status": "error", "message": msg, "duplicates": dup_labels}), 400
-
-    now = datetime.now(tz=LOCAL_TZ)
-    updated_by = _safe_int(session.get("user_id") or session.get("user") or session.get("username"), 1)
-    indent_date = header.get("indent_date") or now.strftime("%Y-%m-%d")
-    delivery_start = header.get("delivery_start") or indent_date
-    delivery_end = header.get("delivery_end") or "1900-01-01"
-
-    indent_no = str(header.get("indent_no") or "").strip()
-    indent_id = _safe_int(header.get("indent_id"))
-    indent_params = {
-        "pIndentid": indent_id,
-        "pIndentnumber": indent_no,
-        "pDepartmentid": department_id,
-        "pBudgetid": _safe_int(header.get("budget_id")),
-        "pRemarks": header.get("remarks") or "",
-        "pPropindication": _safe_int(header.get("prop_indication"), -1),
-        "pIndentnature": header.get("indent_nature") or "",
-        "pDeliverystartdate": delivery_start,
-        "pDeliveryenddate": delivery_end,
-        "pItemcategoryid": item_category_id,
-        "pUpdatedon": now.strftime("%Y-%m-%d %H:%M:%S"),
-        "pUpdatedby": updated_by,
-        "pStatus": header.get("status") or "P",
-        "pAuthorisedremarks": header.get("authorised_remarks") or "",
-        "pAuthorisedby": _safe_int(header.get("authorised_by")),
-        "pAuthorisedon": header.get("authorised_on") or "1900-01-01",
-        "pAuthorised": _safe_int(header.get("authorised")),
-        "pProcurementId": _safe_int(header.get("procurement_id")),
-        "pStoreId": store_id,
-        "pInsertedby": updated_by,
-    }
-
-    if indent_id:
-        mst_result = data_fetch.add_pm_indent_mst(unit, indent_params)
-    else:
-        mst_result = data_fetch.add_pm_indent_mst_with_autonumber(unit, indent_params)
-    if mst_result.get("error"):
-        _audit_log_event(
-            "purchase",
-            "indent_create",
-            status="error",
-            entity_type="indent",
-            unit=unit,
-            summary="Indent creation failed",
-            details={"error": mst_result.get("error")},
-        )
-        return jsonify({"status": "error", "message": mst_result["error"]}), 500
-
-    indent_id = mst_result.get("indent_id") or indent_id
-    indent_no = mst_result.get("indent_no") or indent_no
-    if not indent_id and indent_no:
-        indent_id = data_fetch.fetch_indent_id_by_number(unit, indent_no)
-    if not indent_id:
-        _audit_log_event(
-            "purchase",
-            "indent_create",
-            status="error",
-            entity_type="indent",
-            unit=unit,
-            summary="Failed to create indent",
-            details={"indent_no": indent_no},
-        )
-        return jsonify({"status": "error", "message": "Failed to create indent"}), 500
-
-    detail_errors = []
-    for item in items:
-        try:
-            item_id = _safe_int(item.get("item_id") or item.get("id"))
-            qty = float(item.get("qty") or 0)
-            if not item_id or qty <= 0:
-                continue
-            rate = float(item.get("rate") or item.get("last_po_rate") or 0)
-            tax_pct = float(item.get("tax_pct") or item.get("vat") or 0)
-            tax_amount = float(item.get("tax_amount") or 0)
-            if tax_amount == 0 and tax_pct:
-                tax_amount = (rate * qty) * tax_pct / 100
-            estimated_cost = float(item.get("estimated_cost") or 0)
-            if estimated_cost == 0:
-                estimated_cost = (rate * qty) + tax_amount
-
-            detail_params = {
-                "pIndentdetailid": _safe_int(item.get("detail_id")),
-                "pIndentid": int(indent_id),
-                "pItemid": item_id,
-                "pItemrate": rate,
-                "pItemqty": qty,
-                "pEstimatedcost": estimated_cost,
-                "pSalestax": float(item.get("sales_tax") or 0),
-                "pExcisetax": float(item.get("excise_tax") or 0),
-                "pEscalated": _safe_int(item.get("escalated")),
-                "pLandingrate": float(item.get("landing_rate") or 0),
-                "pDeliveryStartDate": item.get("delivery_start") or delivery_start or "1900-01-01",
-                "pDeliveryendDate": item.get("delivery_end") or delivery_end or "1900-01-01",
-                "pAuthoriseQty": float(item.get("authorise_qty") or 0),
-                "ppacksizeId": _safe_int(item.get("packsize_id")),
-                "pfreeqty": float(item.get("free_qty") or 0),
-                "pDiscount": float(item.get("discount") or 0),
-                "pTax": tax_pct,
-                "pTaxAmount": tax_amount,
-                "pVATOn": item.get("vat_on") or "M",
-                "pVAT": item.get("vat_code") or "E",
-                "pMRP": float(item.get("mrp") or 0),
-                "pConsumeQty": float(item.get("consume_qty") or 0),
-                "pIssueQty": float(item.get("issue_qty") or 0),
-            }
-            res = data_fetch.add_pm_indent_details(unit, detail_params)
-            if res.get("error"):
-                detail_errors.append(res["error"])
-        except Exception as e:
-            detail_errors.append(str(e))
-
-    if detail_errors:
-        _audit_log_event(
-            "purchase",
-            "indent_create",
-            status="partial",
-            entity_type="indent",
-            entity_id=str(indent_id),
-            unit=unit,
-            summary="Indent created but some items failed",
-            details={"indent_no": indent_no, "errors": detail_errors},
-        )
-        return jsonify({
-            "status": "partial",
-            "indent_id": indent_id,
-            "indent_no": indent_no,
-            "message": "Indent created but some items failed",
-            "errors": detail_errors,
-        }), 207
-
-    _audit_log_event(
-        "purchase",
-        "indent_create",
-        status="success",
-        entity_type="indent",
-        entity_id=str(indent_id),
-        unit=unit,
-        summary="Indent created",
-        details={
-            "indent_no": indent_no,
-            "department_id": department_id,
-            "store_id": store_id,
-            "item_category_id": item_category_id,
-            "item_count": len(items),
-            "status": indent_params.get("pStatus"),
-        },
-    )
-    return jsonify({"status": "success", "indent_id": indent_id, "indent_no": indent_no})
-
-
-@app.route('/api/purchase/pm_indent/pending')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_pm_indent_pending():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    df = data_fetch.fetch_pending_pm_indents(unit)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch pending indents"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "indents": [], "unit": unit})
-
-    df = _clean_df_columns(df)
-    cols = {str(c).strip().lower(): c for c in df.columns}
-    id_col = cols.get("indentid") or cols.get("id")
-    num_col = cols.get("indent number") or cols.get("indentnumber")
-    date_col = cols.get("indent date") or cols.get("indentdate") or cols.get("deliverystartdate")
-    status_col = cols.get("status") or cols.get("indentstatus") or cols.get("indent_status")
-    rows = []
-    for _, row in df.iterrows():
-        rows.append({
-            "id": row.get(id_col),
-            "number": str(row.get(num_col) or "").strip(),
-            "date": row.get(date_col),
-            "status": str(row.get(status_col) or "").strip().upper() if status_col else "",
-        })
-    rows = _sanitize_json_payload(rows)
-    return jsonify({"status": "success", "indents": rows, "unit": unit})
-
-
-@app.route('/api/purchase/pm_indent/drafts')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_pm_indent_drafts():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    df = data_fetch.fetch_pm_indents_by_status(unit, ["D", "P"])
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch draft indents"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "indents": [], "unit": unit})
-
-    df = _clean_df_columns(df)
-    cols = {str(c).strip().lower(): c for c in df.columns}
-    id_col = cols.get("indentid") or cols.get("id")
-    num_col = cols.get("indentnumber") or cols.get("indent number")
-    date_col = cols.get("deliverystartdate") or cols.get("indentdate") or cols.get("indent date")
-    status_col = cols.get("status")
-    rows = []
-    for _, row in df.iterrows():
-        rows.append({
-            "id": row.get(id_col),
-            "number": str(row.get(num_col) or "").strip(),
-            "date": row.get(date_col),
-            "status": str(row.get(status_col) or "").strip().upper(),
-        })
-    rows = _sanitize_json_payload(rows)
-    return jsonify({"status": "success", "indents": rows, "unit": unit})
-
-
-@app.route('/api/purchase/pm_indent/<int:indent_id>')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_pm_indent_details(indent_id: int):
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-
-    mst_df = data_fetch.fetch_pm_indent_mst_other(unit, indent_id)
-    if mst_df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch indent"}), 500
-    if mst_df.empty:
-        return jsonify({"status": "error", "message": "Indent not found"}), 404
-
-    mst_df = _clean_df_columns(mst_df)
-    mst_row = mst_df.iloc[0].to_dict()
-    header = _sanitize_json_payload(mst_row)
-
-    items_df = data_fetch.fetch_pm_indent_items_detail(unit, indent_id)
-    if items_df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch indent items"}), 500
-    items = []
-    if not items_df.empty:
-        items_df = _clean_df_columns(items_df)
-        items = _sanitize_json_payload(items_df.to_dict(orient="records"))
-
-    return jsonify({"status": "success", "header": header, "items": items, "unit": unit})
-
-
-@app.route('/api/purchase/pm_indent_update', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_pm_indent_update():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-
-    payload = request.get_json(silent=True) or {}
-    header = payload.get("header") or {}
-    items = payload.get("items") or []
-
-    def _safe_int(val, default=0):
-        try:
-            return int(val)
-        except Exception:
-            return default
-
-    indent_id = _safe_int(header.get("indent_id"))
-    if not indent_id:
-        _audit_log_event(
-            "purchase",
-            "indent_update",
-            status="error",
-            entity_type="indent",
-            unit=unit,
-            summary="Indent ID is required for update",
-        )
-        return jsonify({"status": "error", "message": "Indent ID is required for update"}), 400
-    if not items:
-        _audit_log_event(
-            "purchase",
-            "indent_update",
-            status="error",
-            entity_type="indent",
-            entity_id=str(indent_id),
-            unit=unit,
-            summary="At least one item is required",
-        )
-        return jsonify({"status": "error", "message": "At least one item is required"}), 400
-    dup_check = _find_duplicate_purchase_item_refs(items, require_positive_qty=True)
-    if dup_check["duplicate_ids"]:
-        dup_labels = _format_duplicate_item_labels(items, dup_check["duplicate_ids"])
-        preview = ", ".join(dup_labels[:8])
-        more = f" (+{len(dup_labels) - 8} more)" if len(dup_labels) > 8 else ""
-        msg = f"Duplicate items are not allowed in indent. Remove repeated item(s): {preview}{more}."
-        _audit_log_event(
-            "purchase",
-            "indent_update",
-            status="error",
-            entity_type="indent",
-            entity_id=str(indent_id),
-            unit=unit,
-            summary="Duplicate indent items detected",
-            details={"duplicates": dup_labels},
-        )
-        return jsonify({"status": "error", "message": msg, "duplicates": dup_labels}), 400
-
-    mst_df = data_fetch.fetch_pm_indent_mst_other(unit, indent_id)
-    if mst_df is None:
-        _audit_log_event(
-            "purchase",
-            "indent_update",
-            status="error",
-            entity_type="indent",
-            entity_id=str(indent_id),
-            unit=unit,
-            summary="Failed to fetch indent",
-        )
-        return jsonify({"status": "error", "message": "Failed to fetch indent"}), 500
-    if mst_df.empty:
-        _audit_log_event(
-            "purchase",
-            "indent_update",
-            status="error",
-            entity_type="indent",
-            entity_id=str(indent_id),
-            unit=unit,
-            summary="Indent not found",
-        )
-        return jsonify({"status": "error", "message": "Indent not found"}), 404
-    mst_df = _clean_df_columns(mst_df)
-    mst_row = mst_df.iloc[0].to_dict()
-    status_raw = str(_row_value(mst_row, ["Status"]) or "").strip().upper()
-    if status_raw != "D":
-        _audit_log_event(
-            "purchase",
-            "indent_update",
-            status="error",
-            entity_type="indent",
-            entity_id=str(indent_id),
-            unit=unit,
-            summary="Only Draft indents can be updated",
-            details={"current_status": status_raw},
-        )
-        return jsonify({"status": "error", "message": "Only Draft indents can be updated"}), 400
-
-    now = datetime.now(tz=LOCAL_TZ)
-    updated_by = _safe_int(session.get("user_id") or session.get("user") or session.get("username"), 1)
-    indent_date = header.get("indent_date") or _row_value(mst_row, ["DeliveryStartDate", "IndentDate"]) or now.strftime("%Y-%m-%d")
-    delivery_start = header.get("delivery_start") or indent_date
-    delivery_end = header.get("delivery_end") or _row_value(mst_row, ["DeliveryEndDate"]) or "1900-01-01"
-
-    indent_params = {
-        "pIndentid": indent_id,
-        "pIndentnumber": header.get("indent_no") or _row_value(mst_row, ["IndentNumber"]) or "",
-        "pDepartmentid": _safe_int(header.get("department_id") or _row_value(mst_row, ["DepartmentId"])),
-        "pBudgetid": _safe_int(header.get("budget_id") or _row_value(mst_row, ["BudgetId"])),
-        "pRemarks": header.get("remarks") or _row_value(mst_row, ["Remarks"]) or "",
-        "pPropindication": _safe_int(header.get("prop_indication") or _row_value(mst_row, ["PropIndication"]), -1),
-        "pIndentnature": header.get("indent_nature") or _row_value(mst_row, ["IndentNature"]) or "",
-        "pDeliverystartdate": delivery_start,
-        "pDeliveryenddate": delivery_end,
-        "pItemcategoryid": _safe_int(header.get("item_category_id") or _row_value(mst_row, ["ItemCategoryId"])),
-        "pUpdatedon": now.strftime("%Y-%m-%d %H:%M:%S"),
-        "pUpdatedby": updated_by,
-        "pStatus": header.get("status") or status_raw or "P",
-        "pAuthorisedremarks": header.get("authorised_remarks") or _row_value(mst_row, ["AuthorisedRemarks"]) or "",
-        "pAuthorisedby": _safe_int(header.get("authorised_by") or _row_value(mst_row, ["AuthorisedBy"])),
-        "pAuthorisedon": header.get("authorised_on") or _row_value(mst_row, ["AuthorisedOn"]) or "1900-01-01",
-        "pAuthorised": _safe_int(header.get("authorised") or _row_value(mst_row, ["Authorised"])),
-        "pProcurementId": _safe_int(header.get("procurement_id") or _row_value(mst_row, ["ProcurementId"])),
-        "pStoreId": _safe_int(header.get("store_id") or _row_value(mst_row, ["StoreId"])),
-    }
-
-    upd_result = data_fetch.update_pm_indent_mst(unit, indent_params)
-    if upd_result.get("error"):
-        _audit_log_event(
-            "purchase",
-            "indent_update",
-            status="error",
-            entity_type="indent",
-            entity_id=str(indent_id),
-            unit=unit,
-            summary="Indent update failed",
-            details={"error": upd_result.get("error")},
-        )
-        return jsonify({"status": "error", "message": upd_result["error"]}), 500
-
-    clear_result = data_fetch.clear_pm_indent_details(unit, indent_id)
-    if clear_result.get("error"):
-        _audit_log_event(
-            "purchase",
-            "indent_update",
-            status="error",
-            entity_type="indent",
-            entity_id=str(indent_id),
-            unit=unit,
-            summary="Failed to clear indent items before update",
-            details={"error": clear_result.get("error")},
-        )
-        return jsonify({"status": "error", "message": clear_result["error"]}), 500
-
-    detail_errors = []
-    for item in items:
-        try:
-            item_id = _safe_int(item.get("item_id") or item.get("id"))
-            qty = float(item.get("qty") or 0)
-            if not item_id or qty <= 0:
-                continue
-            rate = float(item.get("rate") or item.get("last_po_rate") or 0)
-            tax_pct = float(item.get("tax_pct") or item.get("vat") or 0)
-            tax_amount = float(item.get("tax_amount") or 0)
-            if tax_amount == 0 and tax_pct:
-                tax_amount = (rate * qty) * tax_pct / 100
-            estimated_cost = float(item.get("estimated_cost") or 0)
-            if estimated_cost == 0:
-                estimated_cost = (rate * qty) + tax_amount
-
-            detail_params = {
-                "pIndentdetailid": _safe_int(item.get("detail_id")),
-                "pIndentid": int(indent_id),
-                "pItemid": item_id,
-                "pItemrate": rate,
-                "pItemqty": qty,
-                "pEstimatedcost": estimated_cost,
-                "pSalestax": float(item.get("sales_tax") or 0),
-                "pExcisetax": float(item.get("excise_tax") or 0),
-                "pEscalated": _safe_int(item.get("escalated")),
-                "pLandingrate": float(item.get("landing_rate") or 0),
-                "pDeliveryStartDate": item.get("delivery_start") or delivery_start or "1900-01-01",
-                "pDeliveryendDate": item.get("delivery_end") or delivery_end or "1900-01-01",
-                "pAuthoriseQty": float(item.get("authorise_qty") or 0),
-                "ppacksizeId": _safe_int(item.get("packsize_id")),
-                "pfreeqty": float(item.get("free_qty") or 0),
-                "pDiscount": float(item.get("discount") or 0),
-                "pTax": tax_pct,
-                "pTaxAmount": tax_amount,
-                "pVATOn": item.get("vat_on") or "M",
-                "pVAT": item.get("vat_code") or "E",
-                "pMRP": float(item.get("mrp") or 0),
-                "pConsumeQty": float(item.get("consume_qty") or 0),
-                "pIssueQty": float(item.get("issue_qty") or 0),
-            }
-            res = data_fetch.add_pm_indent_details(unit, detail_params)
-            if res.get("error"):
-                detail_errors.append(res["error"])
-        except Exception as e:
-            detail_errors.append(str(e))
-
-    if detail_errors:
-        _audit_log_event(
-            "purchase",
-            "indent_update",
-            status="partial",
-            entity_type="indent",
-            entity_id=str(indent_id),
-            unit=unit,
-            summary="Indent updated but some items failed",
-            details={"errors": detail_errors, "indent_no": indent_params.get("pIndentnumber")},
-        )
-        return jsonify({
-            "status": "partial",
-            "indent_id": indent_id,
-            "message": "Indent updated but some items failed",
-            "errors": detail_errors,
-        }), 207
-
-    _audit_log_event(
-        "purchase",
-        "indent_update",
-        status="success",
-        entity_type="indent",
-        entity_id=str(indent_id),
-        unit=unit,
-        summary="Indent updated",
-        details={
-            "indent_no": indent_params.get("pIndentnumber"),
-            "old_status": status_raw,
-            "new_status": indent_params.get("pStatus"),
-            "item_count": len(items),
-        },
-    )
-    return jsonify({"status": "success", "indent_id": indent_id, "indent_no": indent_params.get("pIndentnumber")})
-
-
-@app.route('/api/purchase/pm_indent/authorize', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_pm_indent_authorize():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    payload = request.get_json(silent=True) or {}
-    indent_id = payload.get("indent_id")
-    action = str(payload.get("action") or "").strip().lower()
-    remarks = payload.get("remarks") or ""
-    if not indent_id:
-        _audit_log_event(
-            "purchase",
-            "indent_authorize",
-            status="error",
-            entity_type="indent",
-            unit=unit,
-            summary="Indent ID is required",
-        )
-        return jsonify({"status": "error", "message": "Indent ID is required"}), 400
-    if action not in {"authorize", "cancel"}:
-        _audit_log_event(
-            "purchase",
-            "indent_authorize",
-            status="error",
-            entity_type="indent",
-            entity_id=str(indent_id),
-            unit=unit,
-            summary="Invalid action",
-            details={"action": action},
-        )
-        return jsonify({"status": "error", "message": "Invalid action"}), 400
-
-    mst_df = data_fetch.fetch_pm_indent_mst_other(unit, int(indent_id))
-    if mst_df is None:
-        _audit_log_event(
-            "purchase",
-            "indent_authorize",
-            status="error",
-            entity_type="indent",
-            entity_id=str(indent_id),
-            unit=unit,
-            summary="Failed to fetch indent",
-        )
-        return jsonify({"status": "error", "message": "Failed to fetch indent"}), 500
-    if mst_df.empty:
-        _audit_log_event(
-            "purchase",
-            "indent_authorize",
-            status="error",
-            entity_type="indent",
-            entity_id=str(indent_id),
-            unit=unit,
-            summary="Indent not found",
-        )
-        return jsonify({"status": "error", "message": "Indent not found"}), 404
-
-    mst_df = _clean_df_columns(mst_df)
-    row = {str(k).strip().lower(): v for k, v in mst_df.iloc[0].to_dict().items()}
-    now = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    try:
-        updated_by = int(payload.get("user_id") or session.get("user_id") or session.get("user") or session.get("username") or 1)
-    except Exception:
-        updated_by = 1
-    status_val = "A" if action == "authorize" else "C"
-    authorised_flag = -1 if action == "authorize" else 0
-
-    def _pick(*names, default=None):
-        for name in names:
-            key = name.lower()
-            if key in row:
-                return row.get(key)
-        return default
-
-    params = {
-        "pIndentid": int(indent_id),
-        "pIndentnumber": _pick("IndentNumber", "Indent Number", default=""),
-        "pDepartmentid": _pick("DepartmentId", default=0),
-        "pBudgetid": _pick("BudgetId", default=0),
-        "pRemarks": _pick("Remarks", default=""),
-        "pPropindication": _pick("PropIndication", default=-1),
-        "pIndentnature": _pick("IndentNature", default=""),
-        "pDeliverystartdate": _pick("DeliveryStartDate", default="1900-01-01"),
-        "pDeliveryenddate": _pick("DeliveryEndDate", default="1900-01-01"),
-        "pItemcategoryid": _pick("ItemCategoryId", default=0),
-        "pUpdatedon": now,
-        "pUpdatedby": updated_by,
-        "pStatus": status_val,
-        "pAuthorisedremarks": remarks,
-        "pAuthorisedby": updated_by if action == "authorize" else 0,
-        "pAuthorisedon": now,
-        "pAuthorised": authorised_flag,
-        "pProcurementId": _pick("ProcurementTypeID", "ProcurementTypeId", default=0),
-        "pStoreId": _pick("Storeid", "StoreId", default=0),
-    }
-
-    result = data_fetch.update_pm_indent_mst(unit, params)
-    if result.get("error"):
-        _audit_log_event(
-            "purchase",
-            "indent_authorize",
-            status="error",
-            entity_type="indent",
-            entity_id=str(indent_id),
-            unit=unit,
-            summary="Indent authorization failed",
-            details={"error": result.get("error"), "action": action},
-        )
-        return jsonify({"status": "error", "message": result["error"]}), 500
-
-    detail_update = None
-    if action == "authorize":
-        detail_update = data_fetch.update_pm_indent_details_authorised_qty(unit, int(indent_id), None)
-    else:
-        detail_update = data_fetch.update_pm_indent_details_authorised_qty(unit, int(indent_id), 0)
-    if detail_update and detail_update.get("error"):
-        _audit_log_event(
-            "purchase",
-            "indent_authorize",
-            status="error",
-            entity_type="indent",
-            entity_id=str(indent_id),
-            unit=unit,
-            summary="Indent detail update failed",
-            details={"error": detail_update.get("error"), "action": action},
-        )
-        return jsonify({"status": "error", "message": detail_update["error"]}), 500
-
-    _audit_log_event(
-        "purchase",
-        "indent_authorize",
-        status="success",
-        entity_type="indent",
-        entity_id=str(indent_id),
-        unit=unit,
-        summary="Indent authorization updated",
-        details={"action": action, "remarks": remarks},
-    )
-    return jsonify({"status": "success", "indent_id": int(indent_id), "action": action})
-
-
-@app.route('/api/purchase/indents')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_indents():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-
-    df = data_fetch.fetch_authorized_po_indents(unit)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch indents"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "indents": []})
-
-    df = _clean_df_columns(df)
-    cols_map = {str(c).strip().lower(): c for c in df.columns}
-    id_col = cols_map.get("indentid") or cols_map.get("id")
-    num_col = cols_map.get("indentnumber") or cols_map.get("indent_no") or cols_map.get("indentno")
-    date_col = (
-        cols_map.get("indentdate")
-        or cols_map.get("indent date")
-        or cols_map.get("indent_date")
-        or cols_map.get("indentdt")
-        or cols_map.get("indent_dt")
-        or cols_map.get("deliverydate")
-        or cols_map.get("deliverystartdate")
-        or cols_map.get("delivery start date")
-        or cols_map.get("date")
-    )
-    if not date_col:
-        for col in df.columns:
-            col_l = str(col).strip().lower()
-            if "date" in col_l and ("indent" in col_l or "delivery" in col_l):
-                date_col = col
-                break
-    if not date_col:
-        for col in df.columns:
-            col_l = str(col).strip().lower()
-            if "date" in col_l:
-                date_col = col
-                break
-
-    indents = []
-    for _, row in df.iterrows():
-        indents.append({
-            "id": row.get(id_col),
-            "number": str(row.get(num_col) or "").strip(),
-            "date": row.get(date_col),
-        })
-    indents = _sanitize_json_payload(indents)
-    indents.sort(key=lambda r: (r.get("id") or 0), reverse=True)
-    return jsonify({"status": "success", "indents": indents, "unit": unit})
-
-
-@app.route('/api/purchase/indent/<int:indent_id>/details')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_indent_details(indent_id: int):
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    df = data_fetch.fetch_indent_details_for_po(unit, indent_id)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch indent details"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "items": [], "unit": unit})
-
-    df = _clean_df_columns(df)
-    cols = []
-    seen = {}
-    for col in df.columns:
-        base = str(col).strip()
-        if base in seen:
-            seen[base] += 1
-            cols.append(f"{base}_{seen[base]}")
-        else:
-            seen[base] = 0
-            cols.append(base)
-    df.columns = cols
-    rows = df.to_dict(orient="records")
-    for row in rows:
-        qty_val = row.get("ItemQty")
-        if qty_val in (None, ""):
-            for key in row.keys():
-                key_l = key.lower()
-                if key_l in ("itemqty", "item_qty", "indentqty", "indent_qty", "reqqty", "requiredqty", "required_qty", "qty"):
-                    qty_val = row.get(key)
-                    break
-            if qty_val in (None, ""):
-                for key in row.keys():
-                    if "itemqty" in key.lower():
-                        qty_val = row.get(key)
-                        break
-        row["ItemQty"] = qty_val
-    rows = _sanitize_json_payload(rows)
-    return jsonify({"status": "success", "items": rows, "unit": unit})
-
-
-@app.route('/api/purchase/indent/<int:indent_id>/suppliers')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_indent_suppliers(indent_id: int):
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    df = data_fetch.fetch_indent_suppliers_for_po(unit, indent_id)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch indent suppliers"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "suppliers": [], "unit": unit})
-    df = _clean_df_columns(df)
-    rows = _sanitize_json_payload(df.to_dict(orient="records"))
-    return jsonify({"status": "success", "suppliers": rows, "unit": unit})
-
-
-@app.route('/api/purchase/items_last_rate')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_items_last_rate():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    df = data_fetch.fetch_items_last_po_rate(unit)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch items"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "items": [], "unit": unit})
-
-    df = _clean_df_columns(df)
-    stock_df = data_fetch.fetch_store_stock_summary(unit, [2, 3, 15])
-    stock_map = {}
-    if stock_df is not None and not stock_df.empty:
-        stock_df = _clean_df_columns(stock_df)
-        stock_cols = {str(c).strip().lower(): c for c in stock_df.columns}
-        stock_item_col = stock_cols.get("itemid") or stock_cols.get("item_id") or stock_cols.get("id")
-        stock_qty_col = stock_cols.get("currentstock") or stock_cols.get("stock") or stock_cols.get("qty") or stock_cols.get("balance")
-        if stock_item_col and stock_qty_col:
-            for _, row in stock_df.iterrows():
-                try:
-                    item_id = int(row[stock_item_col])
-                except Exception:
-                    continue
-                try:
-                    stock_map[item_id] = float(row[stock_qty_col] or 0)
-                except Exception:
-                    stock_map[item_id] = 0.0
-
-    consumption_df = data_fetch.fetch_last_30_day_item_consumption(unit)
-    consumption_map = {}
-    if consumption_df is not None and not consumption_df.empty:
-        consumption_df = _clean_df_columns(consumption_df)
-        cons_cols = {str(c).strip().lower(): c for c in consumption_df.columns}
-        cons_item_col = cons_cols.get("itemid") or cons_cols.get("item_id")
-        cons_qty_col = cons_cols.get("totalqtyconsumedlast30days") or cons_cols.get("totalqty") or cons_cols.get("qty")
-        if cons_item_col and cons_qty_col:
-            for _, row in consumption_df.iterrows():
-                try:
-                    item_id = int(row[cons_item_col])
-                except Exception:
-                    continue
-                try:
-                    consumption_map[item_id] = float(row[cons_qty_col] or 0)
-                except Exception:
-                    consumption_map[item_id] = 0.0
-
-    cols = {str(c).strip().lower(): c for c in df.columns}
-    id_col = next((c for c in df.columns if str(c).strip().lower() in ("id", "itemid", "item_id")), None)
-    if id_col:
-        item_ids = []
-        for val in df[id_col].tolist():
-            try:
-                item_ids.append(int(val))
-            except Exception:
-                continue
-        item_master_map = _get_item_master_rate_mrp_map(unit, item_ids)
-        rate_cols = [
-            cols.get("lastporate"),
-            cols.get("last_po_rate"),
-            cols.get("itemrate"),
-            cols.get("rate"),
-            cols.get("standardrate"),
-        ]
-        mrp_cols = [
-            cols.get("mrp"),
-            cols.get("salesprice"),
-            cols.get("sales_price"),
-        ]
-        tax_cols = [
-            cols.get("vat"),
-            cols.get("salestax"),
-            cols.get("sales_tax"),
-            cols.get("tax"),
-        ]
-        rates = []
-        mrps = []
-        taxes = []
-        for _, row in df.iterrows():
-            try:
-                item_id = int(row.get(id_col))
-            except Exception:
-                item_id = None
-            fallback = item_master_map.get(item_id or -1, {})
-            rate_val = _first_numeric_value(row, rate_cols)
-            if rate_val is None or rate_val <= 0:
-                rate_val = fallback.get("rate")
-            if rate_val is None:
-                rate_val = 0.0
-            mrp_val = _first_numeric_value(row, mrp_cols)
-            if mrp_val is None or mrp_val <= 0:
-                mrp_val = fallback.get("mrp")
-            if mrp_val is None:
-                mrp_val = 0.0
-            tax_val = _first_numeric_value(row, tax_cols)
-            if tax_val is None or tax_val <= 0:
-                tax_val = fallback.get("tax")
-            if tax_val is None:
-                tax_val = 0.0
-            rates.append(rate_val)
-            mrps.append(mrp_val)
-            taxes.append(tax_val)
-
-        df["LastPoRate"] = rates
-        df["ItemRate"] = rates
-        df["MRP"] = mrps
-        df["Mrp"] = mrps
-        df["VAT"] = taxes
-        df["Tax"] = taxes
-
-        def _map_stock_value(val):
-            try:
-                item_id = int(val)
-            except Exception:
-                return 0.0
-            return stock_map.get(item_id, 0.0)
-
-        df["CurrentStock"] = df[id_col].apply(_map_stock_value)
-        def _map_consumption_value(val):
-            try:
-                item_id = int(val)
-            except Exception:
-                return 0.0
-            return consumption_map.get(item_id, 0.0)
-
-        df["Last30Days"] = df[id_col].apply(_map_consumption_value)
-    else:
-        df["CurrentStock"] = 0.0
-        df["Last30Days"] = 0.0
-    rows = _sanitize_json_payload(df.to_dict(orient="records"))
-    return jsonify({"status": "success", "items": rows, "unit": unit})
-
-
-@app.route('/api/purchase/po_lookup')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_po_lookup():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    query = (request.args.get("q") or "").strip()
-    if not query:
-        return jsonify({"status": "error", "message": "Please enter a PO number or ID"}), 400
-
-    po_id = None
-    po_no = None
-    if query.isdigit():
-        po_id = int(query)
-    else:
-        po_no = query
-        if po_no.upper().startswith("PO-"):
-            po_no = po_no.upper()
-
-    header_df = data_fetch.fetch_purchase_po_header(unit, po_id=po_id, po_no=po_no)
-    if header_df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch PO"}), 500
-    if header_df.empty:
-        return jsonify({"status": "error", "message": "PO not found"}), 404
-
-    header_df = _clean_df_columns(header_df)
-    header_row = header_df.iloc[0].to_dict()
-    po_id_val = _safe_int(header_row.get("ID"))
-    if po_id_val > 0 and not str(header_row.get("PONo") or "").strip():
-        try:
-            po_no_fix = data_fetch.ensure_purchase_po_number(unit, po_id_val, preferred_po_no=po_no)
-            ensured_po_no = str(po_no_fix.get("po_no") or "").strip()
-            if ensured_po_no:
-                header_row["PONo"] = ensured_po_no
-        except Exception:
-            pass
-    status_code = str(header_row.get("Status") or "").strip().upper()
-    status_label = {
-        "D": "Draft",
-        "P": "Pending Approval",
-        "A": "Approved",
-    }.get(status_code, "Draft")
-
-    header_payload = _sanitize_json_payload({
-        "po_id": header_row.get("ID"),
-        "po_no": header_row.get("PONo"),
-        "po_date": header_row.get("PODate"),
-        "supplier_id": header_row.get("SupplierID"),
-        "supplier_name": header_row.get("SupplierName"),
-        "supplier_code": header_row.get("SupplierCode"),
-        "supplier_email": header_row.get("SupplierEmail"),
-        "supplier_gstin": header_row.get("SupplierGSTIN"),
-        "ref_no": header_row.get("RefNo"),
-        "subject": header_row.get("Subject"),
-        "credit_days": header_row.get("CreditDays"),
-        "notes": header_row.get("Notes"),
-        "special_notes": header_row.get("SpecialNotes"),
-        "senior_approval_authority_name": header_row.get("SeniorApprovalAuthorityName"),
-        "senior_approval_authority_designation": header_row.get("SeniorApprovalAuthorityDesignation"),
-        "prepared_by": header_row.get("Preparedby"),
-        "delivery_terms": header_row.get("DeliveryTerms"),
-        "payment_terms": header_row.get("PaymentsTerms"),
-        "other_terms": header_row.get("OtherTerms"),
-        "freight_charges": header_row.get("Custom1") or 0,
-        "packing_charges": header_row.get("Custom2") or 0,
-        "print_format": _saved_po_print_format(header_row),
-        "against": header_row.get("Against"),
-        "against_id": header_row.get("AgainstId"),
-        "indent_id": header_row.get("PurchaseIndentId"),
-        "purchasing_dept_id": header_row.get("PurchasingDeptId"),
-        "purchasing_dept_name": _resolve_purchasing_department_name(_safe_int(header_row.get("PurchasingDeptId"))),
-        "status_code": status_code or "D",
-        "status_label": status_label,
-    })
-
-
-    if status_code == "P":
-        otp_rec = _fetch_latest_purchase_otp_request(int(header_row.get("ID") or 0))
-        if otp_rec:
-            header_payload["otp_request_id"] = otp_rec.get("request_id")
-
-    items_df = data_fetch.fetch_purchase_po_items(unit, po_id=header_row.get("ID"))
-    if items_df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch PO items"}), 500
-    items_payload = []
-    if not items_df.empty:
-        items_df = _clean_df_columns(items_df)
-        for row in items_df.to_dict(orient="records"):
-            items_payload.append(_sanitize_json_payload({
-                "detail_id": row.get("DetailID"),
-                "item_id": row.get("ItemID"),
-                "item_name": row.get("ItemName"),
-                "item_code": row.get("ItemCode"),
-                "store_name": row.get("StoreName"),
-                "unit": row.get("UnitName"),
-                "technical_specs": row.get("TechnicalSpecs"),
-                "pack_size_id": row.get("PackSizeId"),
-                "qty": row.get("Qty"),
-                "free_qty": row.get("FreeQty"),
-                "rate": row.get("Rate"),
-                "discount_pct": row.get("Discount"),
-                "mrp": row.get("MRP"),
-                "for_amt": row.get("Fore"),
-                "net_amt": row.get("NetAmount"),
-                "tax_pct": row.get("Tax"),
-                "tax_amt": row.get("TaxAmount"),
-                "excise_pct": row.get("Excisetax"),
-                "excise_amt": row.get("ExciseTaxamt"),
-                "custom1": row.get("Custom1"),
-                "custom2": row.get("Custom2"),
-            }))
-
-    return jsonify({
-        "status": "success",
-        "header": header_payload,
-        "items": items_payload,
-        "unit": unit,
-    })
-
-
-@app.route('/api/purchase/po_list')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_po_list():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    status = request.args.get("status") or "open"
-    limit_raw = request.args.get("limit") or "200"
-    query = request.args.get("q")
-    item_query = request.args.get("item_q")
-    try:
-        limit = int(limit_raw)
-    except Exception:
-        limit = 200
-    df = data_fetch.fetch_purchase_po_list(unit, status=status, limit=limit, query=query, item_query=item_query)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch PO list"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "items": [], "unit": unit})
-    df = _clean_df_columns(df)
-    rows = _sanitize_json_payload(df.to_dict(orient="records"))
-    return jsonify({"status": "success", "items": rows, "unit": unit})
-
-
-def _purchase_po_valuation_floor_date() -> date:
-    try:
-        return datetime.strptime(PO_VALUATION_START_DATE, "%Y-%m-%d").date()
-    except Exception:
-        return datetime.now(tz=LOCAL_TZ).date()
-
-
-def _purchase_po_valuation_parse_date(raw_value) -> date | None:
-    raw = str(raw_value or "").strip()
-    if not raw:
-        return None
-    for fmt in ("%Y-%m-%d", "%d-%m-%Y", "%d/%m/%Y", "%Y/%m/%d", "%m/%d/%Y", "%m-%d-%Y"):
-        try:
-            return datetime.strptime(raw, fmt).date()
-        except Exception:
-            continue
-    try:
-        parsed = pd.to_datetime(raw, errors="coerce", dayfirst=True)
-        if pd.isna(parsed):
-            return None
-        return parsed.date()
-    except Exception:
-        return None
-
-
-def _purchase_po_valuation_month_end(target: date) -> date:
-    start = date(target.year, target.month, 1)
-    if target.month == 12:
-        nxt = date(target.year + 1, 1, 1)
-    else:
-        nxt = date(target.year, target.month + 1, 1)
-    return nxt - timedelta(days=1)
-
-
-def _purchase_po_valuation_shift_month(target: date, month_offset: int) -> date:
-    month_index = (target.year * 12) + (target.month - 1) + int(month_offset or 0)
-    year = month_index // 12
-    month = (month_index % 12) + 1
-    day = min(target.day, _purchase_po_valuation_month_end(date(year, month, 1)).day)
-    return date(year, month, day)
-
-
-def _purchase_po_valuation_fy_start_year(target: date | None = None) -> int:
-    target = target or datetime.now(tz=LOCAL_TZ).date()
-    return target.year if target.month >= 4 else (target.year - 1)
-
-
-def _purchase_po_valuation_fy_label(start_year: int) -> str:
-    return f"FY {start_year}-{str(start_year + 1)[-2:]}"
-
-
-def _purchase_po_valuation_parse_fy_start_year(raw_value, fallback_year: int) -> int:
-    raw = str(raw_value or "").strip()
-    if not raw:
-        return int(fallback_year)
-    match = re.search(r"(\d{4})", raw)
-    if match:
-        return _safe_int(match.group(1), fallback_year)
-    return int(fallback_year)
-
-
-def _purchase_po_valuation_fiscal_quarter_bounds(start_year: int, quarter_no: int) -> tuple[date, date]:
-    quarter_no = max(1, min(4, _safe_int(quarter_no, 1)))
-    if quarter_no == 1:
-        return date(start_year, 4, 1), date(start_year, 6, 30)
-    if quarter_no == 2:
-        return date(start_year, 7, 1), date(start_year, 9, 30)
-    if quarter_no == 3:
-        return date(start_year, 10, 1), date(start_year, 12, 31)
-    return date(start_year + 1, 1, 1), date(start_year + 1, 3, 31)
-
-
-def _purchase_po_valuation_fiscal_quarter_for_date(target: date) -> tuple[int, int]:
-    start_year = _purchase_po_valuation_fy_start_year(target)
-    if 4 <= target.month <= 6:
-        return start_year, 1
-    if 7 <= target.month <= 9:
-        return start_year, 2
-    if 10 <= target.month <= 12:
-        return start_year, 3
-    return start_year, 4
-
-
-def _purchase_po_valuation_fiscal_quarter_label(start_year: int, quarter_no: int) -> str:
-    return f"Q{quarter_no} {_purchase_po_valuation_fy_label(start_year)}"
-
-
-def _purchase_po_valuation_date_text(value) -> str:
-    if isinstance(value, datetime):
-        return value.date().isoformat()
-    if isinstance(value, date):
-        return value.isoformat()
-    parsed = _purchase_po_valuation_parse_date(value)
-    return parsed.isoformat() if parsed else ""
-
-
-def _purchase_po_valuation_pretty_date(value) -> str:
-    parsed = _purchase_po_valuation_parse_date(value)
-    return parsed.strftime("%d %b %Y") if parsed else "-"
-
-
-def _resolve_purchase_po_valuation_period(period_mode: str, period_value: str, from_raw: str, to_raw: str) -> dict:
-    today = datetime.now(tz=LOCAL_TZ).date()
-    floor_dt = _purchase_po_valuation_floor_date()
-    mode = str(period_mode or "").strip().lower()
-    if mode not in {"day", "month", "quarter", "year", "custom"}:
-        mode = "custom" if (str(from_raw or "").strip() or str(to_raw or "").strip()) else "month"
-
-    current_fy = _purchase_po_valuation_fy_start_year(today)
-    period_token = ""
-    label = ""
-    trend_grain = "day"
-
-    if mode == "day":
-        selected = _purchase_po_valuation_parse_date(period_value or from_raw or today.isoformat()) or today
-        from_dt = selected
-        to_dt = selected
-        prev_from_dt = selected - timedelta(days=1)
-        prev_to_dt = prev_from_dt
-        period_token = selected.isoformat()
-        label = selected.strftime("%d %b %Y")
-        quarter_fy = _purchase_po_valuation_fy_start_year(selected)
-        quarter_no = _purchase_po_valuation_fiscal_quarter_for_date(selected)[1]
-        year_fy = quarter_fy
-    elif mode == "month":
-        month_match = re.match(r"^\s*(\d{4})-(\d{2})\s*$", str(period_value or "").strip())
-        if month_match:
-            selected = date(_safe_int(month_match.group(1), today.year), _safe_int(month_match.group(2), today.month), 1)
-        else:
-            parsed_month = _purchase_po_valuation_parse_date(period_value or from_raw or today.isoformat()) or today
-            selected = date(parsed_month.year, parsed_month.month, 1)
-        from_dt = selected
-        to_dt = _purchase_po_valuation_month_end(selected)
-        prev_from_dt = _purchase_po_valuation_shift_month(selected, -1)
-        prev_to_dt = _purchase_po_valuation_month_end(prev_from_dt)
-        period_token = f"{selected.year:04d}-{selected.month:02d}"
-        label = selected.strftime("%B %Y")
-        quarter_fy, quarter_no = _purchase_po_valuation_fiscal_quarter_for_date(selected)
-        year_fy = quarter_fy
-    elif mode == "quarter":
-        quarter_match = re.match(r"^\s*(\d{4})(?:-\d{2,4})?-FQ([1-4])\s*$", str(period_value or "").strip(), flags=re.IGNORECASE)
-        if quarter_match:
-            quarter_fy = _safe_int(quarter_match.group(1), current_fy)
-            quarter_no = _safe_int(quarter_match.group(2), 1)
-        else:
-            quarter_fy, quarter_no = _purchase_po_valuation_fiscal_quarter_for_date(today)
-        from_dt, to_dt = _purchase_po_valuation_fiscal_quarter_bounds(quarter_fy, quarter_no)
-        if quarter_no == 1:
-            prev_from_dt, prev_to_dt = _purchase_po_valuation_fiscal_quarter_bounds(quarter_fy - 1, 4)
-        else:
-            prev_from_dt, prev_to_dt = _purchase_po_valuation_fiscal_quarter_bounds(quarter_fy, quarter_no - 1)
-        period_token = f"{quarter_fy}-FQ{quarter_no}"
-        label = _purchase_po_valuation_fiscal_quarter_label(quarter_fy, quarter_no)
-        year_fy = quarter_fy
-        trend_grain = "month"
-    elif mode == "year":
-        year_fy = _purchase_po_valuation_parse_fy_start_year(period_value, current_fy)
-        from_dt = date(year_fy, 4, 1)
-        to_dt = date(year_fy + 1, 3, 31)
-        prev_from_dt = date(year_fy - 1, 4, 1)
-        prev_to_dt = date(year_fy, 3, 31)
-        period_token = f"{year_fy}-{year_fy + 1}"
-        label = _purchase_po_valuation_fy_label(year_fy)
-        quarter_no = 1
-        trend_grain = "fiscal_quarter"
-    else:
-        from_dt = _purchase_po_valuation_parse_date(from_raw or period_value or today.isoformat()) or today
-        to_dt = _purchase_po_valuation_parse_date(to_raw or from_raw or period_value or today.isoformat()) or from_dt
-        if to_dt < from_dt:
-            to_dt = from_dt
-        span_days = max(1, (to_dt - from_dt).days + 1)
-        prev_to_dt = from_dt - timedelta(days=1)
-        prev_from_dt = prev_to_dt - timedelta(days=span_days - 1)
-        period_token = ""
-        label = f"{from_dt.strftime('%d %b %Y')} to {to_dt.strftime('%d %b %Y')}"
-        quarter_fy, quarter_no = _purchase_po_valuation_fiscal_quarter_for_date(from_dt)
-        year_fy = quarter_fy
-        trend_grain = "day" if span_days <= 62 else "month"
-
-    if from_dt < floor_dt:
-        from_dt = floor_dt
-    if to_dt < from_dt:
-        to_dt = from_dt
-
-    comparison_available = True
-    if prev_from_dt < floor_dt or prev_to_dt < floor_dt:
-        comparison_available = False
-        prev_from_dt = None
-        prev_to_dt = None
-
-    days_in_range = max(1, (to_dt - from_dt).days + 1)
-    mode_labels = {
-        "day": "Day",
-        "month": "Month",
-        "quarter": "Quarter",
-        "year": "Year",
-        "custom": "Custom Date Range",
-    }
-
-    return {
-        "mode": mode,
-        "mode_label": mode_labels.get(mode, "Month"),
-        "value": period_token,
-        "label": label,
-        "from_date": from_dt,
-        "to_date": to_dt,
-        "from": from_dt.isoformat(),
-        "to": to_dt.isoformat(),
-        "from_display": from_dt.strftime("%d %b %Y"),
-        "to_display": to_dt.strftime("%d %b %Y"),
-        "range_label": f"{from_dt.strftime('%d %b %Y')} to {to_dt.strftime('%d %b %Y')}",
-        "days_in_range": days_in_range,
-        "previous_from_date": prev_from_dt,
-        "previous_to_date": prev_to_dt,
-        "previous_from": prev_from_dt.isoformat() if prev_from_dt else "",
-        "previous_to": prev_to_dt.isoformat() if prev_to_dt else "",
-        "previous_label": (
-            f"{prev_from_dt.strftime('%d %b %Y')} to {prev_to_dt.strftime('%d %b %Y')}"
-            if (prev_from_dt and prev_to_dt)
-            else "No prior baseline"
-        ),
-        "comparison_available": comparison_available,
-        "trend_grain": trend_grain,
-        "available_from": floor_dt.isoformat(),
-        "fiscal_year_start": year_fy,
-        "fiscal_year_label": _purchase_po_valuation_fy_label(year_fy),
-        "controls": {
-            "day": from_dt.isoformat() if mode == "day" else today.isoformat(),
-            "month": f"{from_dt.year:04d}-{from_dt.month:02d}" if mode == "month" else f"{today.year:04d}-{today.month:02d}",
-            "quarter_fy": str(quarter_fy),
-            "quarter": f"FQ{quarter_no}",
-            "year_fy": str(year_fy),
-            "custom_from": from_dt.isoformat(),
-            "custom_to": to_dt.isoformat(),
-        },
-    }
-
-
-def _purchase_po_valuation_request_context(source=None):
-    allowed_units = _allowed_purchase_units_for_session()
-    if not allowed_units:
-        return None, (jsonify({"status": "error", "message": "No unit access assigned"}), 403)
-
-    src = source if source is not None else request.args
-
-    def _src_value(key: str, default=""):
-        if isinstance(src, dict):
-            return src.get(key, default)
-        try:
-            return src.get(key, default)
-        except Exception:
-            return default
-
-    requested_unit = str(_src_value("unit") or "").strip().upper()
-    if requested_unit and requested_unit not in allowed_units:
-        return None, (jsonify({"status": "error", "message": f"Unit {requested_unit} not permitted"}), 403)
-
-    scope = str(_src_value("scope") or "").strip().lower()
-    if scope not in {"current_unit", "all_permitted_units"}:
-        scope = "current_unit"
-
-    current_unit = requested_unit or (allowed_units[0] if len(allowed_units) == 1 else "")
-    if scope == "all_permitted_units":
-        units_to_use = allowed_units[:]
-    else:
-        if not current_unit:
-            return None, (jsonify({"status": "error", "message": "Please select a unit"}), 400)
-        units_to_use = [current_unit]
-
-    try:
-        period_meta = _resolve_purchase_po_valuation_period(
-            str(_src_value("period_mode") or "").strip(),
-            str(_src_value("period_value") or "").strip(),
-            str(_src_value("from") or "").strip(),
-            str(_src_value("to") or "").strip(),
-        )
-    except Exception as exc:
-        return None, (jsonify({"status": "error", "message": str(exc) or "Invalid period selection"}), 400)
-
-    return {
-        "allowed_units": allowed_units,
-        "requested_unit": requested_unit,
-        "current_unit": current_unit,
-        "scope": scope,
-        "units_to_use": units_to_use,
-        "purchasing_dept_id": _safe_int(_src_value("purchasing_dept_id"), 0),
-        "store_filter": str(_src_value("store_name") or "").strip(),
-        "force_sync": str(_src_value("sync") or "").strip().lower() in {"1", "true", "yes", "y"},
-        "period_meta": period_meta,
-    }, None
-
-
-def _purchase_po_valuation_query_line_rows(
-    units_to_use: list[str],
-    from_iso: str,
-    to_iso: str,
-    purchasing_dept_id: int = 0,
-) -> pd.DataFrame:
-    columns = [
-        "Unit",
-        "POID",
-        "PONo",
-        "PODate",
-        "StoreName",
-        "SupplierName",
-        "PurchasingDeptId",
-        "PurchasingDeptName",
-        "DeptName",
-        "CategoryName",
-        "SubCategoryName",
-        "Qty",
-        "LineValue",
-    ]
-    if not units_to_use:
-        return pd.DataFrame(columns=columns)
-
-    with _get_login_db_connection() as conn:
-        _ensure_purchase_po_valuation_table(conn)
-        placeholders = ",".join("?" * len(units_to_use))
-        where_clauses = [
-            "PODate >= ?",
-            "PODate <= ?",
-            f"Unit IN ({placeholders})",
-            "ISNULL(LTRIM(RTRIM(Status)), '') = 'A'",
-        ]
-        params = [from_iso, to_iso] + list(units_to_use)
-        if purchasing_dept_id > 0:
-            where_clauses.append("ISNULL(PurchasingDeptId, 0) = ?")
-            params.append(purchasing_dept_id)
-        sql = f"""
-            SELECT
-                UPPER(LTRIM(RTRIM(Unit))) AS Unit,
-                ISNULL(POID, 0) AS POID,
-                LTRIM(RTRIM(ISNULL(PONo, ''))) AS PONo,
-                PODate,
-                COALESCE(NULLIF(LTRIM(RTRIM(StoreName)), ''), 'Unknown') AS StoreName,
-                COALESCE(NULLIF(LTRIM(RTRIM(SupplierName)), ''), 'Unknown') AS SupplierName,
-                ISNULL(PurchasingDeptId, 0) AS PurchasingDeptId,
-                COALESCE(
-                    NULLIF(LTRIM(RTRIM(PurchasingDeptName)), ''),
-                    CASE
-                        WHEN ISNULL(PurchasingDeptId, 0) > 0
-                            THEN CONCAT('Dept ', CONVERT(NVARCHAR(20), PurchasingDeptId))
-                        ELSE 'Unmapped'
-                    END
-                ) AS PurchasingDeptName,
-                COALESCE(NULLIF(LTRIM(RTRIM(DeptName)), ''), 'Unknown') AS DeptName,
-                COALESCE(NULLIF(LTRIM(RTRIM(CategoryName)), ''), 'Unknown') AS CategoryName,
-                COALESCE(NULLIF(LTRIM(RTRIM(SubCategoryName)), ''), 'Unknown') AS SubCategoryName,
-                CAST(ISNULL(Qty, 0) AS FLOAT) AS Qty,
-                CAST(ISNULL(LineValue, 0) AS FLOAT) AS LineValue
-            FROM dbo.HID_Purchase_PO_Valuation
-            WHERE {" AND ".join(where_clauses)}
-            ORDER BY PODate DESC, POID DESC, StoreName, SupplierName
-        """
-        df = pd.read_sql(sql, conn, params=params)
-
-    if df is None or df.empty:
-        return pd.DataFrame(columns=columns)
-
-    df = _clean_df_columns(df)
-    for col, fallback in {
-        "Unit": "",
-        "PONo": "",
-        "StoreName": "Unknown",
-        "SupplierName": "Unknown",
-        "PurchasingDeptName": "Unmapped",
-        "DeptName": "Unknown",
-        "CategoryName": "Unknown",
-        "SubCategoryName": "Unknown",
-    }.items():
-        if col not in df.columns:
-            df[col] = fallback
-        df[col] = df[col].apply(lambda value, fb=fallback: (str(value or "").strip() or fb))
-
-    for col in ["POID", "PurchasingDeptId"]:
-        if col not in df.columns:
-            df[col] = 0
-        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
-
-    for col in ["Qty", "LineValue"]:
-        if col not in df.columns:
-            df[col] = 0.0
-        df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0).astype(float)
-
-    if "PODate" not in df.columns:
-        df["PODate"] = None
-    df["PODate"] = pd.to_datetime(df["PODate"], errors="coerce").dt.date
-    df = df[df["POID"] > 0].copy()
-    if df.empty:
-        return pd.DataFrame(columns=columns)
-
-    df["POKey"] = df["Unit"].astype(str) + "::" + df["POID"].astype(str)
-    df["StoreNameUpper"] = df["StoreName"].astype(str).str.upper()
-    return df
-
-
-def _purchase_po_valuation_group_rows(df: pd.DataFrame, group_cols: list[str]) -> list[dict]:
-    if df is None or df.empty:
-        return []
-    grouped = (
-        df.groupby(group_cols, dropna=False)
-        .agg(
-            POCount=("POKey", "nunique"),
-            TotalValue=("LineValue", "sum"),
-            TotalQty=("Qty", "sum"),
-            LastPODate=("PODate", "max"),
-        )
-        .reset_index()
-    )
-    grouped["AvgValuePerPO"] = grouped.apply(
-        lambda row: (_safe_float(row.get("TotalValue")) / _safe_int(row.get("POCount"), 0))
-        if _safe_int(row.get("POCount"), 0) > 0
-        else 0.0,
-        axis=1,
-    )
-    grouped = grouped.sort_values(["TotalValue", "POCount"], ascending=[False, False], kind="stable")
-    rows = []
-    for _, row in grouped.iterrows():
-        entry = {}
-        for col in group_cols:
-            entry[col] = _safe_int(row.get(col), 0) if col == "PurchasingDeptId" else row.get(col)
-        entry["POCount"] = _safe_int(row.get("POCount"), 0)
-        entry["TotalValue"] = round(_safe_float(row.get("TotalValue")), 2)
-        entry["TotalQty"] = round(_safe_float(row.get("TotalQty")), 3)
-        entry["AvgValuePerPO"] = round(_safe_float(row.get("AvgValuePerPO")), 2)
-        entry["LastPODate"] = _purchase_po_valuation_date_text(row.get("LastPODate"))
-        rows.append(entry)
-    return rows
-
-
-def _purchase_po_valuation_store_options(df: pd.DataFrame) -> list[dict]:
-    if df is None or df.empty:
-        return []
-    grouped = (
-        df.groupby(["StoreName"], dropna=False)
-        .agg(TotalValue=("LineValue", "sum"))
-        .reset_index()
-        .sort_values(["TotalValue", "StoreName"], ascending=[False, True], kind="stable")
-    )
-    return [
-        {
-            "StoreName": row.get("StoreName"),
-            "TotalValue": round(_safe_float(row.get("TotalValue")), 2),
-        }
-        for _, row in grouped.iterrows()
-    ]
-
-
-def _purchase_po_valuation_detail_rows(df: pd.DataFrame) -> list[dict]:
-    if df is None or df.empty:
-        return []
-    detail_rows = []
-    group_cols = [
-        "Unit",
-        "POKey",
-        "POID",
-        "PONo",
-        "PODate",
-        "SupplierName",
-        "PurchasingDeptId",
-        "PurchasingDeptName",
-    ]
-    for group_key, group_df in df.groupby(group_cols, dropna=False, sort=False):
-        unit, _, poid, po_no, po_date, supplier_name, purchasing_dept_id, purchasing_dept_name = group_key
-        stores = sorted({str(value or "").strip() for value in group_df["StoreName"].tolist() if str(value or "").strip()})
-        depts = sorted({str(value or "").strip() for value in group_df["DeptName"].tolist() if str(value or "").strip() and str(value or "").strip().lower() != "unknown"})
-        categories = sorted({str(value or "").strip() for value in group_df["CategoryName"].tolist() if str(value or "").strip() and str(value or "").strip().lower() != "unknown"})
-        subcategories = sorted({str(value or "").strip() for value in group_df["SubCategoryName"].tolist() if str(value or "").strip() and str(value or "").strip().lower() != "unknown"})
-        store_display = stores[0] if len(stores) == 1 else (f"Multiple ({len(stores)})" if stores else "Unknown")
-        detail_rows.append(
-            {
-                "POID": _safe_int(poid, 0),
-                "PONo": str(po_no or "").strip(),
-                "PODate": _purchase_po_valuation_date_text(po_date),
-                "Unit": str(unit or "").strip(),
-                "StoreName": store_display,
-                "StoreList": ", ".join(stores) if stores else store_display,
-                "StoreCount": len(stores) if stores else 1,
-                "PurchasingDeptId": _safe_int(purchasing_dept_id, 0),
-                "PurchasingDeptName": str(purchasing_dept_name or "").strip() or "Unmapped",
-                "SupplierName": str(supplier_name or "").strip() or "Unknown",
-                "Qty": round(_safe_float(group_df["Qty"].sum()), 3),
-                "GrossAmount": round(_safe_float(group_df["LineValue"].sum()), 2),
-                "DeptNames": ", ".join(depts) if depts else "-",
-                "CategoryNames": ", ".join(categories) if categories else "-",
-                "SubCategoryNames": ", ".join(subcategories) if subcategories else "-",
-            }
-        )
-    detail_rows.sort(
-        key=lambda row: (
-            -_safe_float(row.get("GrossAmount")),
-            str(row.get("PODate") or ""),
-            str(row.get("PONo") or ""),
-        )
-    )
-    return detail_rows
-
-
-def _purchase_po_valuation_bucket_specs(from_dt: date, to_dt: date, grain: str) -> list[dict]:
-    specs = []
-    if grain == "fiscal_quarter":
-        fy_start, quarter_no = _purchase_po_valuation_fiscal_quarter_for_date(from_dt)
-        bucket_start, bucket_end = _purchase_po_valuation_fiscal_quarter_bounds(fy_start, quarter_no)
-        while bucket_start <= to_dt:
-            specs.append(
-                {
-                    "key": f"{fy_start}-FQ{quarter_no}",
-                    "label": _purchase_po_valuation_fiscal_quarter_label(fy_start, quarter_no),
-                    "start": bucket_start,
-                    "end": bucket_end,
-                }
-            )
-            if quarter_no == 4:
-                fy_start += 1
-                quarter_no = 1
-            else:
-                quarter_no += 1
-            bucket_start, bucket_end = _purchase_po_valuation_fiscal_quarter_bounds(fy_start, quarter_no)
-        return specs
-
-    if grain == "month":
-        current = date(from_dt.year, from_dt.month, 1)
-        while current <= to_dt:
-            specs.append(
-                {
-                    "key": f"{current.year:04d}-{current.month:02d}",
-                    "label": current.strftime("%b %Y"),
-                    "start": current,
-                    "end": _purchase_po_valuation_month_end(current),
-                }
-            )
-            current = _purchase_po_valuation_shift_month(current, 1)
-        return specs
-
-    current = from_dt
-    while current <= to_dt:
-        specs.append(
-            {
-                "key": current.isoformat(),
-                "label": current.strftime("%d %b"),
-                "start": current,
-                "end": current,
-            }
-        )
-        current += timedelta(days=1)
-    return specs
-
-
-def _purchase_po_valuation_bucket_key(target: date, grain: str) -> str:
-    if grain == "fiscal_quarter":
-        fy_start, quarter_no = _purchase_po_valuation_fiscal_quarter_for_date(target)
-        return f"{fy_start}-FQ{quarter_no}"
-    if grain == "month":
-        return f"{target.year:04d}-{target.month:02d}"
-    return target.isoformat()
-
-
-def _purchase_po_valuation_trend_rows(df: pd.DataFrame, period_meta: dict) -> list[dict]:
-    from_dt = period_meta.get("from_date")
-    to_dt = period_meta.get("to_date")
-    grain = str(period_meta.get("trend_grain") or "day")
-    if not isinstance(from_dt, date) or not isinstance(to_dt, date):
-        return []
-    specs = _purchase_po_valuation_bucket_specs(from_dt, to_dt, grain)
-    if not specs:
-        return []
-    totals = {}
-    if df is not None and not df.empty:
-        for _, row in df.iterrows():
-            po_date = row.get("PODate")
-            if not isinstance(po_date, date):
-                continue
-            key = _purchase_po_valuation_bucket_key(po_date, grain)
-            entry = totals.setdefault(key, {"value": 0.0, "po_keys": set()})
-            entry["value"] += _safe_float(row.get("LineValue"))
-            entry["po_keys"].add(str(row.get("POKey") or ""))
-    trend_rows = []
-    for spec in specs:
-        entry = totals.get(spec["key"], {"value": 0.0, "po_keys": set()})
-        trend_rows.append(
-            {
-                "BucketKey": spec["key"],
-                "BucketLabel": spec["label"],
-                "BucketStart": spec["start"].isoformat(),
-                "BucketEnd": min(spec["end"], to_dt).isoformat(),
-                "POCount": len([po_key for po_key in entry["po_keys"] if po_key]),
-                "TotalValue": round(_safe_float(entry["value"]), 2),
-            }
-        )
-    return trend_rows
-
-
-def _build_purchase_po_valuation_payload(resolved_context: dict, status_callback=None) -> dict:
-    def _notify(stage: str, message: str):
-        if callable(status_callback):
-            try:
-                status_callback(stage, message)
-            except Exception:
-                pass
-
-    units_to_use = list(resolved_context.get("units_to_use") or [])
-    purchasing_dept_id = _safe_int(resolved_context.get("purchasing_dept_id"), 0)
-    store_filter = str(resolved_context.get("store_filter") or "").strip()
-    store_filter_upper = store_filter.upper()
-    period_meta = dict(resolved_context.get("period_meta") or {})
-    sync_from = str(period_meta.get("from") or "")
-    if period_meta.get("comparison_available") and str(period_meta.get("previous_from") or ""):
-        sync_from = min(sync_from, str(period_meta.get("previous_from") or ""))
-
-    did_sync = False
-    cache_ts = None
-    cache_age_seconds = None
-    cache_key = _po_val_sync_key(units_to_use)
-    with PO_VAL_SYNC_LOCK:
-        cache_entry = PO_VAL_SYNC_CACHE.get(cache_key)
-    if cache_entry:
-        cache_ts = cache_entry.get("ts")
-        if cache_ts:
-            cache_age_seconds = max(0, int(time.time() - float(cache_ts)))
-
-    _notify("loading_data", "Loading filtered PO valuation data...")
-    if _po_val_should_sync(units_to_use, sync_from, force=bool(resolved_context.get("force_sync"))):
-        try:
-            _sync_purchase_po_valuation_rows(units_to_use, sync_from)
-            _po_val_sync_cache_put(units_to_use, sync_from)
-            did_sync = True
-            cache_ts = time.time()
-            cache_age_seconds = 0
-        except Exception as exc:
-            print(f"PO valuation sync failed: {exc}")
-
-    current_base_df = _purchase_po_valuation_query_line_rows(
-        units_to_use,
-        str(period_meta.get("from") or ""),
-        str(period_meta.get("to") or ""),
-        purchasing_dept_id=purchasing_dept_id,
-    )
-    if store_filter_upper and current_base_df is not None and not current_base_df.empty:
-        current_df = current_base_df[current_base_df["StoreNameUpper"] == store_filter_upper].copy()
-    else:
-        current_df = current_base_df.copy() if current_base_df is not None else pd.DataFrame()
-
-    previous_df = pd.DataFrame()
-    if period_meta.get("comparison_available") and str(period_meta.get("previous_from") or "") and str(period_meta.get("previous_to") or ""):
-        previous_base_df = _purchase_po_valuation_query_line_rows(
-            units_to_use,
-            str(period_meta.get("previous_from") or ""),
-            str(period_meta.get("previous_to") or ""),
-            purchasing_dept_id=purchasing_dept_id,
-        )
-        if store_filter_upper and previous_base_df is not None and not previous_base_df.empty:
-            previous_df = previous_base_df[previous_base_df["StoreNameUpper"] == store_filter_upper].copy()
-        else:
-            previous_df = previous_base_df.copy() if previous_base_df is not None else pd.DataFrame()
-
-    _notify("computing_summaries", "Computing KPI cards and ranked summaries...")
-    unit_rows = _purchase_po_valuation_group_rows(current_df, ["Unit"])
-    store_rows = _purchase_po_valuation_group_rows(current_df, ["Unit", "StoreName"])
-    supplier_rows = _purchase_po_valuation_group_rows(current_df, ["Unit", "SupplierName"])
-    purchasing_dept_rows = _purchase_po_valuation_group_rows(current_df, ["Unit", "PurchasingDeptId", "PurchasingDeptName"])
-    dept_rows = _purchase_po_valuation_group_rows(current_df[current_df["DeptName"].str.lower() != "unknown"], ["Unit", "DeptName"]) if current_df is not None and not current_df.empty else []
-    category_rows = _purchase_po_valuation_group_rows(current_df[current_df["CategoryName"].str.lower() != "unknown"], ["Unit", "CategoryName"]) if current_df is not None and not current_df.empty else []
-    subcategory_rows = _purchase_po_valuation_group_rows(current_df[current_df["SubCategoryName"].str.lower() != "unknown"], ["Unit", "SubCategoryName"]) if current_df is not None and not current_df.empty else []
-    detail_rows = _purchase_po_valuation_detail_rows(current_df)
-    trend_rows = _purchase_po_valuation_trend_rows(current_df, period_meta)
-    store_options = _purchase_po_valuation_store_options(current_base_df)
-
-    total_value = round(_safe_float(current_df["LineValue"].sum()), 2) if current_df is not None and not current_df.empty else 0.0
-    total_qty = round(_safe_float(current_df["Qty"].sum()), 3) if current_df is not None and not current_df.empty else 0.0
-    po_count = int(current_df["POKey"].nunique()) if current_df is not None and not current_df.empty else 0
-    supplier_count = int(current_df["SupplierName"].nunique()) if current_df is not None and not current_df.empty else 0
-    store_count = int(current_df["StoreName"].nunique()) if current_df is not None and not current_df.empty else 0
-    purchasing_dept_count = int(current_df["PurchasingDeptName"].nunique()) if current_df is not None and not current_df.empty else 0
-    avg_po_value = round((total_value / po_count), 2) if po_count > 0 else 0.0
-    avg_daily_spend = round((total_value / max(1, _safe_int(period_meta.get("days_in_range"), 1))), 2)
-
-    previous_total_value = None
-    delta_value = None
-    delta_pct = None
-    if previous_df is not None and not previous_df.empty:
-        previous_total_value = round(_safe_float(previous_df["LineValue"].sum()), 2)
-        delta_value = round(total_value - previous_total_value, 2)
-        if previous_total_value > 0:
-            delta_pct = round((delta_value / previous_total_value) * 100.0, 2)
-    elif period_meta.get("comparison_available"):
-        previous_total_value = 0.0
-        delta_value = round(total_value, 2)
-
-    top_contributor = None
-    if str(resolved_context.get("scope") or "") == "all_permitted_units" and len(unit_rows) > 1:
-        top_unit = unit_rows[0] if unit_rows else None
-        if top_unit:
-            top_contributor = {
-                "Label": str(top_unit.get("Unit") or "").strip() or "All Units",
-                "Type": "Unit",
-                "TotalValue": top_unit.get("TotalValue"),
-                "POCount": top_unit.get("POCount"),
-            }
-    if not top_contributor and store_rows:
-        top_store = store_rows[0]
-        top_contributor = {
-            "Label": str(top_store.get("StoreName") or "").strip() or "Unknown",
-            "Type": "Store",
-            "TotalValue": top_store.get("TotalValue"),
-            "POCount": top_store.get("POCount"),
-        }
-
-    purchasing_dept_options = []
-    seen_dept_ids = set()
-    for dept in (_fetch_purchasing_departments(include_inactive=False) or []):
-        dept_id = _safe_int(dept.get("Id"), 0)
-        dept_name = str(dept.get("PurchasingDeptName") or "").strip()
-        if dept_id > 0 and dept_name and dept_id not in seen_dept_ids:
-            purchasing_dept_options.append({"id": dept_id, "name": dept_name})
-            seen_dept_ids.add(dept_id)
-    purchasing_dept_options.sort(key=lambda row: str(row.get("name") or "").lower())
-
-    scope = str(resolved_context.get("scope") or "current_unit")
-    current_unit = str(resolved_context.get("current_unit") or "").strip().upper()
-    unit_context_label = current_unit if scope == "current_unit" else (
-        f"All permitted units ({len(units_to_use)})" if len(units_to_use) != 1 else (units_to_use[0] if units_to_use else "All permitted units")
-    )
-
-    summary_payload = {
-        "total_value": total_value,
-        "total_qty": total_qty,
-        "po_count": po_count,
-        "supplier_count": supplier_count,
-        "store_count": store_count,
-        "purchasing_dept_count": purchasing_dept_count,
-        "avg_po_value": avg_po_value,
-        "avg_daily_spend": avg_daily_spend,
-        "previous_total_value": previous_total_value,
-        "delta_value": delta_value,
-        "delta_pct": delta_pct,
-        "top_unit": unit_rows[0] if unit_rows else None,
-        "top_store": store_rows[0] if store_rows else None,
-        "top_supplier": supplier_rows[0] if supplier_rows else None,
-        "top_purchasing_dept": purchasing_dept_rows[0] if purchasing_dept_rows else None,
-        "top_contributor": top_contributor,
-    }
-
-    period_meta_payload = {
-        "mode": period_meta.get("mode"),
-        "mode_label": period_meta.get("mode_label"),
-        "value": period_meta.get("value"),
-        "label": period_meta.get("label"),
-        "from": period_meta.get("from"),
-        "to": period_meta.get("to"),
-        "from_display": period_meta.get("from_display"),
-        "to_display": period_meta.get("to_display"),
-        "range_label": period_meta.get("range_label"),
-        "days_in_range": period_meta.get("days_in_range"),
-        "previous_from": period_meta.get("previous_from"),
-        "previous_to": period_meta.get("previous_to"),
-        "previous_label": period_meta.get("previous_label"),
-        "comparison_available": period_meta.get("comparison_available"),
-        "trend_grain": period_meta.get("trend_grain"),
-        "available_from": period_meta.get("available_from"),
-        "fiscal_year_start": period_meta.get("fiscal_year_start"),
-        "fiscal_year_label": period_meta.get("fiscal_year_label"),
-        "controls": period_meta.get("controls") or {},
-        "scope": scope,
-        "scope_label": "All Permitted Units" if scope == "all_permitted_units" else "Current Unit",
-        "unit_context_label": unit_context_label,
-    }
-
-    payload = {
-        "status": "success",
-        "rows": store_rows,
-        "unit_rows": unit_rows,
-        "supplier_rows": supplier_rows,
-        "purchasing_dept_rows": purchasing_dept_rows,
-        "dept_rows": dept_rows,
-        "category_rows": category_rows,
-        "subcategory_rows": subcategory_rows,
-        "detail_rows": detail_rows,
-        "store_detail_rows": [],
-        "supplier_detail_rows": [],
-        "store_options": store_options,
-        "purchasing_dept_options": purchasing_dept_options,
-        "trend_rows": trend_rows,
-        "summary": summary_payload,
-        "period_meta": period_meta_payload,
-        "filters": {
-            "selected_unit": current_unit if scope == "current_unit" else "",
-            "current_unit": current_unit,
-            "scope": scope,
-            "unit_context_label": unit_context_label,
-            "purchasing_dept_id": purchasing_dept_id if purchasing_dept_id > 0 else 0,
-            "store_name": store_filter,
-        },
-        "from": period_meta.get("from"),
-        "to": period_meta.get("to"),
-        "units": units_to_use,
-        "allowed_units": list(resolved_context.get("allowed_units") or []),
-        "sync_status": "synced" if did_sync else "cached",
-        "sync_cache_age_seconds": cache_age_seconds,
-        "sync_cache_ts": cache_ts,
-    }
-    return _sanitize_json_payload(payload)
-
-
-@app.route('/api/purchase/po_valuation_storewise')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_po_valuation_storewise():
-    resolved_context, error = _purchase_po_valuation_request_context()
-    if error:
-        return error
-    try:
-        payload = _build_purchase_po_valuation_payload(resolved_context)
-        return jsonify(payload)
-    except Exception as exc:
-        print(f"PO valuation fetch failed: {exc}")
-        return jsonify({"status": "error", "message": "Failed to load PO valuation"}), 500
-
-
-def _purchase_po_valuation_pdf_filename(payload: dict) -> str:
-    period_meta = payload.get("period_meta") or {}
-    filters = payload.get("filters") or {}
-    current_unit = str(filters.get("current_unit") or "").strip().upper()
-    if str(filters.get("scope") or "") == "all_permitted_units":
-        unit_token = "ALL_UNITS"
-    else:
-        unit_token = current_unit or "UNIT"
-    from_iso = str(period_meta.get("from") or "NA")
-    to_iso = str(period_meta.get("to") or "NA")
-    filename = f"PO_Valuation_{unit_token}_{from_iso}_to_{to_iso}.pdf"
-    return re.sub(r"[^A-Za-z0-9_.-]+", "_", filename)
-
-
-def _build_purchase_po_valuation_pdf(payload: dict, exported_by: str) -> bytes:
-    from html import escape
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib import colors
-    from reportlab.lib.units import mm
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_LEFT, TA_CENTER, TA_RIGHT
-
-    styles = getSampleStyleSheet()
-
-    def _p(text: str, style):
-        return Paragraph(escape(str(text or "")), style)
-
-    title_style = ParagraphStyle(
-        "po_val_pdf_title",
-        parent=styles["Title"],
-        fontName="Helvetica-Bold",
-        fontSize=18,
-        leading=21,
-        textColor=colors.HexColor("#0f172a"),
-        alignment=TA_LEFT,
-    )
-    sub_style = ParagraphStyle(
-        "po_val_pdf_sub",
-        parent=styles["Normal"],
-        fontName="Helvetica",
-        fontSize=10,
-        leading=13,
-        textColor=colors.HexColor("#475569"),
-        alignment=TA_LEFT,
-    )
-    section_style = ParagraphStyle(
-        "po_val_pdf_section",
-        parent=styles["Heading3"],
-        fontName="Helvetica-Bold",
-        fontSize=12,
-        leading=14,
-        textColor=colors.HexColor("#0f172a"),
-        alignment=TA_LEFT,
-        spaceBefore=8,
-        spaceAfter=6,
-    )
-    note_style = ParagraphStyle(
-        "po_val_pdf_note",
-        parent=styles["Normal"],
-        fontName="Helvetica",
-        fontSize=8.5,
-        leading=11,
-        textColor=colors.HexColor("#64748b"),
-        alignment=TA_LEFT,
-    )
-    body_left_style = ParagraphStyle(
-        "po_val_pdf_cell_left",
-        parent=styles["Normal"],
-        fontName="Helvetica",
-        fontSize=7.8,
-        leading=9.2,
-        textColor=colors.HexColor("#0f172a"),
-        alignment=TA_LEFT,
-        wordWrap="CJK",
-    )
-    body_right_style = ParagraphStyle(
-        "po_val_pdf_cell_right",
-        parent=body_left_style,
-        alignment=TA_RIGHT,
-    )
-    body_center_style = ParagraphStyle(
-        "po_val_pdf_cell_center",
-        parent=body_left_style,
-        alignment=TA_CENTER,
-    )
-
-    def _styled_table(data, col_widths, align_right_cols=None, align_center_cols=None):
-        align_right_cols = align_right_cols or []
-        align_center_cols = align_center_cols or []
-        if not data:
-            data = [["-"]]
-        prepared = [list(data[0])]
-        for row in data[1:]:
-            out_row = []
-            for idx, cell in enumerate(row):
-                cell_text = str(cell if cell is not None else "")
-                if idx in align_right_cols:
-                    out_row.append(Paragraph(escape(cell_text), body_right_style))
-                elif idx in align_center_cols:
-                    out_row.append(Paragraph(escape(cell_text), body_center_style))
-                else:
-                    out_row.append(Paragraph(escape(cell_text), body_left_style))
-            prepared.append(out_row)
-        table = Table(prepared, colWidths=[width * mm for width in col_widths], repeatRows=1)
-        style_cmds = [
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f172a")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-            ("FONTSIZE", (0, 0), (-1, -1), 8),
-            ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
-            ("GRID", (0, 0), (-1, -1), 0.25, colors.HexColor("#cbd5e1")),
-            ("LEFTPADDING", (0, 0), (-1, -1), 4),
-            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
-            ("TOPPADDING", (0, 0), (-1, -1), 3),
-            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
-            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-        ]
-        for idx in align_right_cols:
-            style_cmds.append(("ALIGN", (idx, 1), (idx, -1), "RIGHT"))
-            style_cmds.append(("ALIGN", (idx, 0), (idx, 0), "RIGHT"))
-        for idx in align_center_cols:
-            style_cmds.append(("ALIGN", (idx, 1), (idx, -1), "CENTER"))
-            style_cmds.append(("ALIGN", (idx, 0), (idx, 0), "CENTER"))
-        table.setStyle(TableStyle(style_cmds))
-        return table
-
-    period_meta = payload.get("period_meta") or {}
-    filters = payload.get("filters") or {}
-    summary = payload.get("summary") or {}
-    detail_rows = list(payload.get("detail_rows") or [])
-    exported_at = datetime.now(tz=LOCAL_TZ).strftime("%d-%b-%Y %I:%M %p")
-
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=landscape(A4),
-        leftMargin=10 * mm,
-        rightMargin=10 * mm,
-        topMargin=11 * mm,
-        bottomMargin=16 * mm,
-    )
-    elements = [
-        _p("PO Valuation Expenditure Report", title_style),
-        _p("Professional budgeting export for purchasing department review and management presentation", sub_style),
-        Spacer(1, 5),
-    ]
-
-    dept_label = "All purchasing departments"
-    selected_dept_id = _safe_int(filters.get("purchasing_dept_id"), 0)
-    for dept in (payload.get("purchasing_dept_options") or []):
-        if _safe_int(dept.get("id"), 0) == selected_dept_id:
-            dept_label = str(dept.get("name") or dept_label)
-            break
-    store_label = str(filters.get("store_name") or "").strip() or "All stores"
-    prev_total = summary.get("previous_total_value")
-    prev_label = (
-        f"Rs. {_format_indian_currency(_safe_float(prev_total))}"
-        if prev_total is not None
-        else "No prior baseline"
-    )
-    meta_rows = [
-        ["Period", str(period_meta.get("mode_label") or "-"), "Resolved Range", str(period_meta.get("range_label") or "-"), "Scope", str(period_meta.get("scope_label") or "-")],
-        ["Unit Context", str(period_meta.get("unit_context_label") or "-"), "Purchasing Dept", dept_label, "Store", store_label],
-        ["Exported By", exported_by or "-", "Exported At", exported_at, "Previous Period", prev_label],
-    ]
-    elements.append(_styled_table([["Field", "Value", "Field", "Value", "Field", "Value"]] + meta_rows, [24, 44, 26, 54, 24, 66]))
-    elements.append(Spacer(1, 8))
-
-    elements.append(_p("Executive KPI Summary", section_style))
-    kpi_rows = [
-        ["Metric", "Value", "Metric", "Value"],
-        ["Total Expenditure", f"Rs. {_format_indian_currency(_safe_float(summary.get('total_value')))}", "PO Count", str(_safe_int(summary.get("po_count"), 0))],
-        ["Average PO Value", f"Rs. {_format_indian_currency(_safe_float(summary.get('avg_po_value')))}", "Average Spend / Day", f"Rs. {_format_indian_currency(_safe_float(summary.get('avg_daily_spend')))}"],
-        [
-            "Previous Period Delta",
-            (
-                f"Rs. {_format_indian_currency(_safe_float(summary.get('delta_value')))}"
-                if summary.get("delta_value") is not None
-                else "No prior baseline"
-            ),
-            "Delta %",
-            (
-                f"{_safe_float(summary.get('delta_pct')):.2f}%"
-                if summary.get("delta_pct") is not None
-                else "-"
-            ),
-        ],
-        [
-            "Top Contributor",
-            str((summary.get("top_contributor") or {}).get("Label") or "-"),
-            "Contributor Type",
-            str((summary.get("top_contributor") or {}).get("Type") or "-"),
-        ],
-    ]
-    elements.append(_styled_table(kpi_rows, [34, 58, 34, 58], align_right_cols=[1, 3]))
-    elements.append(Spacer(1, 6))
-
-    def _append_ranked_section(title: str, rows: list[dict], label_fn, limit: int = 20):
-        if not rows:
-            return
-        render_rows = rows[:limit]
-        table_rows = [["#", "Label", "POs", "Qty", "Expenditure"]]
-        for idx, row in enumerate(render_rows, start=1):
-            table_rows.append(
-                [
-                    str(idx),
-                    label_fn(row),
-                    str(_safe_int(row.get("POCount"), 0)),
-                    f"{_safe_float(row.get('TotalQty')):.2f}",
-                    f"Rs. {_format_indian_currency(_safe_float(row.get('TotalValue')))}",
-                ]
-            )
-        elements.append(_p(title, section_style))
-        if len(rows) > limit:
-            elements.append(_p(f"Showing top {limit} rows by expenditure.", note_style))
-            elements.append(Spacer(1, 3))
-        elements.append(_styled_table(table_rows, [10, 90, 16, 22, 34], align_right_cols=[2, 3, 4], align_center_cols=[0]))
-        elements.append(Spacer(1, 6))
-
-    unit_rows = list(payload.get("unit_rows") or [])
-    if len(unit_rows) > 1:
-        _append_ranked_section("Unit-wise Summary", unit_rows, lambda row: str(row.get("Unit") or "-"))
-    _append_ranked_section("Store-wise Summary", list(payload.get("rows") or []), lambda row: f"{row.get('StoreName') or '-'} ({row.get('Unit') or '-'})")
-    _append_ranked_section("Purchasing Department Summary", list(payload.get("purchasing_dept_rows") or []), lambda row: f"{row.get('PurchasingDeptName') or '-'} ({row.get('Unit') or '-'})")
-    _append_ranked_section("Supplier Summary", list(payload.get("supplier_rows") or []), lambda row: f"{row.get('SupplierName') or '-'} ({row.get('Unit') or '-'})")
-    _append_ranked_section("Department Summary", list(payload.get("dept_rows") or []), lambda row: f"{row.get('DeptName') or '-'} ({row.get('Unit') or '-'})")
-    _append_ranked_section("Category Summary", list(payload.get("category_rows") or []), lambda row: f"{row.get('CategoryName') or '-'} ({row.get('Unit') or '-'})")
-
-    elements.append(PageBreak())
-    elements.append(_p("PO Detail Appendix", section_style))
-    max_detail_rows = 1500
-    render_details = detail_rows[:max_detail_rows]
-    if len(detail_rows) > max_detail_rows:
-        elements.append(_p(f"Appendix truncated to first {max_detail_rows} PO rows out of {len(detail_rows)}.", note_style))
-        elements.append(Spacer(1, 4))
-    if render_details:
-        detail_table_rows = [["PO Date", "PO No", "Unit", "Store", "Purchasing Dept", "Supplier", "Qty", "Gross Amount"]]
-        for row in render_details:
-            detail_table_rows.append(
-                [
-                    str(row.get("PODate") or "-"),
-                    str(row.get("PONo") or "-"),
-                    str(row.get("Unit") or "-"),
-                    str(row.get("StoreName") or "-"),
-                    str(row.get("PurchasingDeptName") or "-"),
-                    str(row.get("SupplierName") or "-"),
-                    f"{_safe_float(row.get('Qty')):.2f}",
-                    f"Rs. {_format_indian_currency(_safe_float(row.get('GrossAmount')))}",
-                ]
-            )
-        elements.append(_styled_table(detail_table_rows, [18, 24, 16, 36, 32, 58, 18, 26], align_right_cols=[6, 7]))
-    else:
-        elements.append(_p("No PO details were found for the selected filters.", note_style))
-
-    footer_line_1 = f"PO Valuation Expenditure Report | {period_meta.get('range_label') or '-'}"
-    footer_line_2 = f"Exported By: {exported_by or '-'} | Exported At: {exported_at}"
-
-    def _on_page(canvas, doc_obj):
-        canvas.saveState()
-        canvas.setStrokeColor(colors.HexColor("#cbd5e1"))
-        canvas.setLineWidth(0.5)
-        canvas.line(doc_obj.leftMargin, 11 * mm, doc_obj.pagesize[0] - doc_obj.rightMargin, 11 * mm)
-        canvas.setFont("Helvetica", 8)
-        canvas.setFillColor(colors.HexColor("#475569"))
-        canvas.drawString(doc_obj.leftMargin, 7 * mm, footer_line_1)
-        canvas.drawString(doc_obj.leftMargin, 4.2 * mm, footer_line_2)
-        canvas.drawRightString(doc_obj.pagesize[0] - doc_obj.rightMargin, 4.2 * mm, f"Page {doc_obj.page}")
-        canvas.restoreState()
-
-    doc.build(elements, onFirstPage=_on_page, onLaterPages=_on_page)
-    return buffer.getvalue()
-
-
-def _run_purchase_po_valuation_pdf_job(job_id: str, resolved_context: dict, exported_by: str):
-    try:
-        def _job_stage(stage: str, message: str):
-            _excel_job_update(job_id, state="running", stage=stage, message=message, filename=None, format="pdf")
-
-        _job_stage("loading_data", "Loading filtered PO valuation data...")
-        payload = _build_purchase_po_valuation_payload(resolved_context, status_callback=_job_stage)
-        _job_stage("rendering_pdf", "Rendering professional PDF export...")
-        pdf_bytes = _build_purchase_po_valuation_pdf(payload, exported_by)
-        filename = _purchase_po_valuation_pdf_filename(payload)
-        _export_cache_put_bytes("purchase_po_valuation_pdf_job", pdf_bytes, job_id)
-        _excel_job_update(job_id, state="done", stage="ready", message="PDF export ready.", filename=filename, format="pdf")
-    except Exception as exc:
-        _excel_job_update(job_id, state="error", stage="error", message=str(exc), error=str(exc), filename=None, format="pdf")
-
-
-@app.route('/api/purchase/po_valuation_export_pdf_job', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_po_valuation_export_pdf_job():
-    source = request.get_json(silent=True) if request.is_json else (request.form.to_dict(flat=True) if request.form else {})
-    resolved_context, error = _purchase_po_valuation_request_context(source or {})
-    if error:
-        return error
-    exported_by = (session.get("username") or session.get("user") or "Unknown").strip() or "Unknown"
-    job_id = token_hex(16)
-    _excel_job_update(job_id, state="queued", stage="queued", message="PDF export queued.", filename=None, format="pdf")
-    EXPORT_EXECUTOR.submit(_run_purchase_po_valuation_pdf_job, job_id, resolved_context, exported_by)
-    return jsonify({"status": "queued", "job_id": job_id})
-
-
-@app.route('/api/purchase/po_valuation_export_pdf_job_status')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_po_valuation_export_pdf_job_status():
-    job_id = (request.args.get("job_id") or "").strip()
-    if not job_id:
-        return jsonify({"status": "error", "message": "Missing job id"}), 400
-    entry = _excel_job_get(job_id)
-    if not entry:
-        return jsonify({"status": "error", "message": "Job not found"}), 404
-    return jsonify({
-        "status": "success",
-        "state": entry.get("state"),
-        "stage": entry.get("stage"),
-        "message": entry.get("message"),
-        "error": entry.get("error"),
-        "filename": entry.get("filename"),
-        "format": entry.get("format"),
-    })
-
-
-@app.route('/api/purchase/po_valuation_export_pdf_job_result')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_po_valuation_export_pdf_job_result():
-    job_id = (request.args.get("job_id") or "").strip()
-    if not job_id:
-        return "Missing job id", 400
-    entry = _excel_job_get(job_id)
-    if not entry:
-        return "Job not found", 404
-    if entry.get("state") != "done":
-        return "Job not ready", 409
-    data = _export_cache_get_bytes("purchase_po_valuation_pdf_job", job_id)
-    if not data:
-        return "Export expired", 404
-    return send_file(
-        io.BytesIO(data),
-        mimetype="application/pdf",
-        as_attachment=True,
-        download_name=str(entry.get("filename") or "PO_Valuation.pdf"),
-    )
-
-
-@app.route('/api/purchase/po', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_create_po():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    try:
-        data_fetch.ensure_po_purchasing_dept_column(unit)
-    except Exception:
-        pass
-    try:
-        data_fetch.ensure_po_special_notes_column(unit)
-    except Exception:
-        pass
-    try:
-        data_fetch.ensure_po_print_format_column(unit)
-    except Exception:
-        pass
-    try:
-        data_fetch.ensure_po_senior_approval_authority_column(unit)
-    except Exception:
-        pass
-    try:
-        data_fetch.ensure_po_senior_approval_designation_column(unit)
-    except Exception:
-        pass
-
-    payload = request.get_json(silent=True) or {}
-    header = payload.get("header") or {}
-    items = payload.get("items") or []
-
-    supplier_id = int(header.get("supplier_id") or 0)
-    if not supplier_id:
-        _audit_log_event(
-            "purchase",
-            "po_create",
-            status="error",
-            entity_type="po",
-            unit=unit,
-            summary="Supplier is required",
-            details={"po_no": header.get("po_no"), "item_count": len(items)},
-        )
-        return jsonify({"status": "error", "message": "Supplier is required"}), 400
-    if not items:
-        _audit_log_event(
-            "purchase",
-            "po_create",
-            status="error",
-            entity_type="po",
-            unit=unit,
-            summary="At least one item is required",
-            details={"po_no": header.get("po_no")},
-        )
-        return jsonify({"status": "error", "message": "At least one item is required"}), 400
-    dup_check = _find_duplicate_purchase_item_refs(items, require_positive_qty=False)
-    if dup_check["duplicate_ids"] or dup_check["duplicate_names"]:
-        dup_labels = _format_duplicate_item_labels(items, dup_check["duplicate_ids"])
-        name_labels = dup_check["duplicate_names"] or []
-        label_parts = []
-        if dup_labels:
-            label_parts.append(", ".join(dup_labels[:8]) + (f" (+{len(dup_labels) - 8} more)" if len(dup_labels) > 8 else ""))
-        if name_labels:
-            label_parts.append(", ".join(name_labels[:5]) + (f" (+{len(name_labels) - 5} more)" if len(name_labels) > 5 else ""))
-        msg_detail = " | ".join([part for part in label_parts if part])
-        msg = f"Duplicate items are not allowed in PO. Remove repeated item(s): {msg_detail}."
-        _audit_log_event(
-            "purchase",
-            "po_create",
-            status="error",
-            entity_type="po",
-            unit=unit,
-            summary="Duplicate PO items detected",
-            details={"duplicate_ids": dup_labels, "duplicate_names": name_labels},
-        )
-        return jsonify(
-            {
-                "status": "error",
-                "message": msg,
-                "duplicate_ids": dup_labels,
-                "duplicate_names": name_labels,
-            }
-        ), 400
-
-    for item in items:
-        if item.get("gst_pct") is None:
-            cgst_pct = _safe_float(item.get("cgst_pct"))
-            sgst_pct = _safe_float(item.get("sgst_pct"))
-            igst_pct = _safe_float(item.get("igst_pct"))
-            item["gst_pct"] = (cgst_pct + sgst_pct) if (cgst_pct or sgst_pct) else igst_pct
-
-    cgst_total = 0.0
-    sgst_total = 0.0
-    for item in items:
-        cgst_amt = float(item.get("cgst_amt") or 0)
-        sgst_amt = float(item.get("sgst_amt") or 0)
-        igst_amt = float(item.get("igst_amt") or 0)
-        if igst_amt and not (cgst_amt or sgst_amt):
-            cgst_amt = igst_amt / 2
-            sgst_amt = igst_amt / 2
-        cgst_total += cgst_amt
-        sgst_total += sgst_amt
-
-    totals = header.get("totals") or {}
-    tax_total = float(totals.get("tax_total") or 0)
-    discount_total = float(totals.get("discount_total") or 0)
-    amount_total = float(totals.get("grand_total") or 0)
-    for_total = float(totals.get("for_total") or 0)
-    excise_total = float(totals.get("excise_total") or 0)
-
-    tax_total = sgst_total
-    excise_total = cgst_total
-
-    status_raw = str(header.get("status") or "Draft").strip().lower()
-    status_map = {
-        "draft": "D",
-        "pending approval": "P",
-        "approved": "A",
-    }
-    status_code = status_map.get(status_raw, "D")
-    purchasing_dept_id = _safe_int(header.get("purchasing_dept_id"))
-    selected_po_print_format = _resolve_po_print_format_for_persistence(
-        unit,
-        header.get("print_format"),
-        existing_format=None,
-        purchasing_dept_id=purchasing_dept_id,
-    )
-    if status_code == "P" and purchasing_dept_id <= 0:
-        _audit_log_event(
-            "purchase",
-            "po_create",
-            status="error",
-            entity_type="po",
-            unit=unit,
-            summary="Purchasing department is required for approval",
-            details={"po_no": header.get("po_no")},
-        )
-        return jsonify({"status": "error", "message": "Please select Purchasing Dept before submitting for approval."}), 400
-
-    now = datetime.now(tz=LOCAL_TZ)
-    created_items, item_errors = _ensure_item_masters_for_po(unit, items, now.strftime("%Y-%m-%d %H:%M:%S"))
-    if item_errors:
-        _audit_log_event(
-            "purchase",
-            "po_create",
-            status="error",
-            entity_type="po",
-            unit=unit,
-            summary="Item master creation failed",
-            details={"errors": item_errors, "po_no": header.get("po_no")},
-        )
-        return jsonify({"status": "error", "message": "Item master creation failed", "errors": item_errors}), 400
-
-    def _num_or_text(val):
-        try:
-            if val is None or val == "":
-                return None
-            return float(val)
-        except Exception:
-            return val
-
-    po_params = {
-        "pId": int(header.get("po_id") or 0),
-        "pSupplierid": supplier_id,
-        "pTenderid": int(header.get("tender_id") or 0),
-        "pPono": header.get("po_no"),
-        "pPodate": header.get("po_date"),
-        "pDeliveryterms": header.get("delivery_terms"),
-        "pPaymentsterms": header.get("payment_terms"),
-        "pOtherterms": header.get("other_terms"),
-        "pTaxid": int(header.get("tax_id") or 0),
-        "pTax": tax_total,
-        "pDiscount": discount_total,
-        "pAmount": amount_total,
-        "pCreditdays": int(header.get("credit_days") or 0),
-        "pPocomplete": int(bool(header.get("po_complete"))),
-        "pNotes": header.get("notes"),
-        "pSpecialNotes": header.get("special_notes"),
-        "SeniorApprovalAuthorityName": header.get("senior_approval_authority_name"),
-        "SeniorApprovalAuthorityDesignation": header.get("senior_approval_authority_designation"),
-        "pPreparedby": header.get("prepared_by"),
-        "pCustom1": _num_or_text(header.get("freight_charges")),
-        "pCustom2": _num_or_text(header.get("packing_charges")),
-        "pUpdatedby": int(header.get("updated_by") or 0),
-        "pUpdatedon": header.get("updated_on"),
-        "pSignauthorityperson": header.get("sign_authority_person"),
-        "pSignauthoritypdesig": header.get("sign_authority_desig"),
-        "pRefno": header.get("ref_no"),
-        "pSubject": header.get("subject"),
-        "pAuthorizationid": int(header.get("authorization_id") or 0),
-        "pPurchaseIndentId": int(header.get("indent_id") or 0),
-        "pInsertedByUserID": session.get("username") or session.get("user"),
-        "pInsertedON": now.strftime("%Y-%m-%d %H:%M:%S"),
-        "pInsertedMacName": header.get("mac_name"),
-        "pInsertedMacID": header.get("mac_id"),
-        "pInsertedIPAddress": request.remote_addr,
-        "Against": header.get("against_name") or header.get("against"),
-        "QuotationId": int(header.get("quotation_id") or 0),
-        "TotalFORe": for_total,
-        "TotalExciseAmt": excise_total,
-        "AgainstId": int(header.get("against_id") or 0),
-        "Status": status_code,
-        "PurchasingDeptId": purchasing_dept_id if purchasing_dept_id > 0 else None,
-        "POPrintFormat": selected_po_print_format,
-    }
-
-    mst_result = data_fetch.add_iv_po_mst_with_autonumber(unit, po_params)
-    if mst_result.get("error"):
-        _audit_log_event(
-            "purchase",
-            "po_create",
-            status="error",
-            entity_type="po",
-            unit=unit,
-            summary="PO creation failed",
-            details={"error": mst_result.get("error"), "po_no": header.get("po_no")},
-        )
-        return jsonify({"status": "error", "message": mst_result["error"]}), 500
-    po_id = mst_result.get("po_id")
-    if not po_id:
-        _audit_log_event(
-            "purchase",
-            "po_create",
-            status="error",
-            entity_type="po",
-            unit=unit,
-            summary="PO creation failed (missing PO ID)",
-            details={"po_no": header.get("po_no")},
-        )
-        return jsonify({"status": "error", "message": "Failed to create PO"}), 500
-
-    po_no = str(mst_result.get("po_no") or "").strip()
-    if not po_no:
-        try:
-            saved_header_df = data_fetch.fetch_purchase_po_header(unit, po_id=po_id)
-            if saved_header_df is not None and not saved_header_df.empty:
-                saved_header_df = _clean_df_columns(saved_header_df)
-                saved_po_no = str(saved_header_df.iloc[0].get("PONo") or "").strip()
-                if saved_po_no:
-                    po_no = saved_po_no
-        except Exception:
-            pass
-    if not po_no:
-        po_no = str(header.get("po_no") or "").strip() or f"PO-{po_id}"
-    try:
-        po_no_fix = data_fetch.ensure_purchase_po_number(unit, int(po_id), preferred_po_no=po_no)
-        ensured_po_no = str(po_no_fix.get("po_no") or "").strip()
-        if ensured_po_no:
-            po_no = ensured_po_no
-    except Exception:
-        pass
-
-    detail_errors = []
-    detail_params = []
-    for row_idx, item in enumerate(items, start=1):
-        try:
-            cgst_pct = float(item.get("cgst_pct") or 0)
-            sgst_pct = float(item.get("sgst_pct") or 0)
-            igst_pct = float(item.get("igst_pct") or 0)
-            cgst_amt = float(item.get("cgst_amt") or 0)
-            sgst_amt = float(item.get("sgst_amt") or 0)
-            igst_amt = float(item.get("igst_amt") or 0)
-
-            if igst_pct and not (cgst_pct or sgst_pct):
-                cgst_pct = igst_pct / 2
-                sgst_pct = igst_pct / 2
-            if igst_amt and not (cgst_amt or sgst_amt):
-                cgst_amt = igst_amt / 2
-                sgst_amt = igst_amt / 2
-
-            item_params = {
-                "pId": int(item.get("id") or 0),
-                "pPoid": int(po_id),
-                "pItemid": int(item.get("item_id") or 0),
-                "pQty": float(item.get("qty") or 0),
-                "pPackSizeId": int(item.get("pack_size_id") or 0),
-                "pRate": float(item.get("rate") or 0),
-                "pFreeqty": float(item.get("free_qty") or 0),
-                "pDiscount": float(item.get("discount_pct") or 0),
-                "pTax": sgst_pct,
-                "pTaxamount": sgst_amt,
-                "pMRP": float(item.get("mrp") or 0),
-                "pVATOn": item.get("vat_on"),
-                "pVAT": item.get("vat"),
-                "pCustom1": item.get("custom1"),
-                "pCustom2": item.get("custom2"),
-                "pInsertedByUserID": session.get("username") or session.get("user"),
-                "pInsertedON": now.strftime("%Y-%m-%d %H:%M:%S"),
-                "pInsertedMacName": item.get("mac_name"),
-                "pInsertedMacID": item.get("mac_id"),
-                "pInsertedIPAddress": request.remote_addr,
-                "Fore": float(item.get("for_amt") or 0),
-                "Excisetax": cgst_pct,
-                "ExciseTaxamt": cgst_amt,
-                "NetAmount": float(item.get("net_amt") or 0),
-                "lendingRate": float(item.get("lending_rate") or 0),
-                "UnitFor": float(item.get("unit_for") or 0),
-                "UnitDiscount": float(item.get("unit_discount") or 0),
-                "_row_no": row_idx,
-                "_item_name": item.get("item_name"),
-            }
-            detail_params.append(item_params)
-        except Exception as e:
-            detail_errors.append(f"Row {row_idx}: {e}")
-    if detail_params:
-        bulk_result = data_fetch.add_iv_po_dtl_many(unit, detail_params)
-        if bulk_result.get("error"):
-            detail_errors.append(str(bulk_result.get("error")))
-        else:
-            detail_errors.extend(list(bulk_result.get("errors") or []))
-
-    if detail_errors:
-        _audit_log_event(
-            "purchase",
-            "po_create",
-            status="partial",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="PO created but some items failed",
-            details={"errors": detail_errors, "po_no": po_no},
-        )
-        return jsonify({
-            "status": "partial",
-            "po_id": po_id,
-            "message": "PO created but some items failed",
-            "errors": detail_errors,
-        }), 207
-
-    otp_request_id = None
-    if status_code == "P":
-        otp_result = _create_purchase_otp_request(
-            unit=unit,
-            po_no=po_no,
-            po_id=po_id,
-            amount=amount_total,
-            supplier_name=header.get("supplier_name") or "",
-            reason=header.get("subject") or header.get("notes") or "",
-            requested_by=session.get("username") or session.get("user") or "",
-            purchasing_dept_id=purchasing_dept_id if purchasing_dept_id > 0 else None,
-        )
-        if otp_result.get("error"):
-            _audit_log_event(
-                "purchase",
-                "po_create",
-                status="error",
-                entity_type="po",
-                entity_id=str(po_id),
-                unit=unit,
-                summary="OTP request failed",
-                details={"error": otp_result.get("error"), "po_no": po_no},
-            )
-            return jsonify({"status": "error", "message": otp_result["error"]}), 500
-        otp_request_id = otp_result.get("request_id")
-        if otp_request_id:
-            _insert_purchase_otp_request(po_id, po_no, unit, int(otp_request_id), session.get("username") or session.get("user"))
-
-    response = {"status": "success", "po_id": po_id, "po_no": po_no}
-    if otp_request_id:
-        response["request_id"] = otp_request_id
-    if created_items:
-        response["created_items"] = created_items
-    _audit_log_event(
-        "purchase",
-        "po_create",
-        status="success",
-        entity_type="po",
-        entity_id=str(po_id),
-        unit=unit,
-        summary="PO created",
-        details={
-            "po_no": po_no,
-            "header": _normalize_po_header_for_audit(header, totals, status_code),
-            "item_count": len(items),
-            "created_items": created_items,
-            "otp_request_id": otp_request_id,
-        },
-        request_id=str(otp_request_id) if otp_request_id else None,
-    )
-    return jsonify(response)
-
-
-@app.route('/api/purchase/po_update', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_update_po():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    try:
-        data_fetch.ensure_po_purchasing_dept_column(unit)
-    except Exception:
-        pass
-    try:
-        data_fetch.ensure_po_special_notes_column(unit)
-    except Exception:
-        pass
-    try:
-        data_fetch.ensure_po_senior_approval_authority_column(unit)
-    except Exception:
-        pass
-    try:
-        data_fetch.ensure_po_senior_approval_designation_column(unit)
-    except Exception:
-        pass
-
-    payload = request.get_json(silent=True) or {}
-    header = payload.get("header") or {}
-    items = payload.get("items") or []
-
-    po_id = int(header.get("po_id") or 0)
-    if not po_id:
-        _audit_log_event(
-            "purchase",
-            "po_update",
-            status="error",
-            entity_type="po",
-            unit=unit,
-            summary="PO ID is required for update",
-            details={"po_no": header.get("po_no")},
-        )
-        return jsonify({"status": "error", "message": "PO ID is required for update"}), 400
-    if not items:
-        _audit_log_event(
-            "purchase",
-            "po_update",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="At least one item is required",
-            details={"po_no": header.get("po_no")},
-        )
-        return jsonify({"status": "error", "message": "At least one item is required"}), 400
-    dup_check = _find_duplicate_purchase_item_refs(items, require_positive_qty=False)
-    if dup_check["duplicate_ids"] or dup_check["duplicate_names"]:
-        dup_labels = _format_duplicate_item_labels(items, dup_check["duplicate_ids"])
-        name_labels = dup_check["duplicate_names"] or []
-        label_parts = []
-        if dup_labels:
-            label_parts.append(", ".join(dup_labels[:8]) + (f" (+{len(dup_labels) - 8} more)" if len(dup_labels) > 8 else ""))
-        if name_labels:
-            label_parts.append(", ".join(name_labels[:5]) + (f" (+{len(name_labels) - 5} more)" if len(name_labels) > 5 else ""))
-        msg_detail = " | ".join([part for part in label_parts if part])
-        msg = f"Duplicate items are not allowed in PO. Remove repeated item(s): {msg_detail}."
-        _audit_log_event(
-            "purchase",
-            "po_update",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="Duplicate PO items detected",
-            details={"duplicate_ids": dup_labels, "duplicate_names": name_labels},
-        )
-        return jsonify(
-            {
-                "status": "error",
-                "message": msg,
-                "duplicate_ids": dup_labels,
-                "duplicate_names": name_labels,
-            }
-        ), 400
-
-    for item in items:
-        if item.get("gst_pct") is None:
-            cgst_pct = _safe_float(item.get("cgst_pct"))
-            sgst_pct = _safe_float(item.get("sgst_pct"))
-            igst_pct = _safe_float(item.get("igst_pct"))
-            item["gst_pct"] = (cgst_pct + sgst_pct) if (cgst_pct or sgst_pct) else igst_pct
-
-    header_df = data_fetch.fetch_purchase_po_header(unit, po_id=po_id)
-    if header_df is None:
-        _audit_log_event(
-            "purchase",
-            "po_update",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="Failed to fetch PO for update",
-        )
-        return jsonify({"status": "error", "message": "Failed to fetch PO for update"}), 500
-    if header_df.empty:
-        _audit_log_event(
-            "purchase",
-            "po_update",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="PO not found",
-        )
-        return jsonify({"status": "error", "message": "PO not found"}), 404
-    header_df = _clean_df_columns(header_df)
-    existing_header = header_df.iloc[0].to_dict()
-    current_status = str(header_df.iloc[0].get("Status") or "").strip().upper()
-    if current_status not in {"D", "P"}:
-        _audit_log_event(
-            "purchase",
-            "po_update",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="Only Draft or Pending Approval POs can be updated",
-            details={"current_status": current_status},
-        )
-        return jsonify({"status": "error", "message": "Only Draft or Pending Approval POs can be updated"}), 400
-
-    existing_items = []
-    try:
-        items_df = data_fetch.fetch_purchase_po_items(unit, po_id)
-        if items_df is not None and not items_df.empty:
-            items_df = _clean_df_columns(items_df)
-            existing_items = items_df.to_dict(orient="records")
-    except Exception:
-        existing_items = []
-
-    cgst_total = 0.0
-    sgst_total = 0.0
-    for item in items:
-        cgst_amt = float(item.get("cgst_amt") or 0)
-        sgst_amt = float(item.get("sgst_amt") or 0)
-        igst_amt = float(item.get("igst_amt") or 0)
-        if igst_amt and not (cgst_amt or sgst_amt):
-            cgst_amt = igst_amt / 2
-            sgst_amt = igst_amt / 2
-        cgst_total += cgst_amt
-        sgst_total += sgst_amt
-
-    totals = header.get("totals") or {}
-    tax_total = float(totals.get("tax_total") or 0)
-    discount_total = float(totals.get("discount_total") or 0)
-    amount_total = float(totals.get("grand_total") or 0)
-    for_total = float(totals.get("for_total") or 0)
-
-    tax_total = sgst_total
-    excise_total = cgst_total
-
-    status_raw = str(header.get("status") or "Draft").strip().lower()
-    status_map = {
-        "draft": "D",
-        "pending approval": "P",
-        "approved": "A",
-    }
-    status_code = status_map.get(status_raw, "D")
-    purchasing_dept_id = _safe_int(header.get("purchasing_dept_id"))
-    selected_po_print_format = _resolve_po_print_format_for_persistence(
-        unit,
-        header.get("print_format"),
-        existing_format=existing_header.get("POPrintFormat"),
-        purchasing_dept_id=purchasing_dept_id,
-    )
-    if status_code == "P" and purchasing_dept_id <= 0:
-        _audit_log_event(
-            "purchase",
-            "po_update",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="Purchasing department is required for approval",
-            details={"po_no": header.get("po_no")},
-        )
-        return jsonify({"status": "error", "message": "Please select Purchasing Dept before submitting for approval."}), 400
-
-    now = datetime.now(tz=LOCAL_TZ)
-    created_items, item_errors = _ensure_item_masters_for_po(unit, items, now.strftime("%Y-%m-%d %H:%M:%S"))
-    if item_errors:
-        _audit_log_event(
-            "purchase",
-            "po_update",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="Item master creation failed",
-            details={"errors": item_errors, "po_no": header.get("po_no")},
-        )
-        return jsonify({"status": "error", "message": "Item master creation failed", "errors": item_errors}), 400
-
-    def _num_or_text(val):
-        try:
-            if val is None or val == "":
-                return None
-            return float(val)
-        except Exception:
-            return val
-
-    po_params = {
-        "pId": po_id,
-        "pSupplierid": int(header.get("supplier_id") or 0),
-        "pTenderid": int(header.get("tender_id") or 0),
-        "pPono": header.get("po_no") or existing_header.get("PONo"),
-        "pPodate": header.get("po_date"),
-        "pDeliveryterms": header.get("delivery_terms"),
-        "pPaymentsterms": header.get("payment_terms"),
-        "pOtherterms": header.get("other_terms"),
-        "pTaxid": int(header.get("tax_id") or 0),
-        "pTax": tax_total,
-        "pDiscount": discount_total,
-        "pAmount": amount_total,
-        "pCreditdays": int(header.get("credit_days") or 0),
-        "pPocomplete": int(bool(header.get("po_complete"))),
-        "pNotes": header.get("notes"),
-        "pSpecialNotes": header.get("special_notes"),
-        "SeniorApprovalAuthorityName": header.get("senior_approval_authority_name"),
-        "SeniorApprovalAuthorityDesignation": header.get("senior_approval_authority_designation"),
-        "pPreparedby": header.get("prepared_by"),
-        "pCustom1": _num_or_text(header.get("freight_charges")),
-        "pCustom2": _num_or_text(header.get("packing_charges")),
-        "pSignauthorityperson": header.get("sign_authority_person"),
-        "pSignauthoritypdesig": header.get("sign_authority_desig"),
-        "pRefno": header.get("ref_no"),
-        "pSubject": header.get("subject"),
-        "pAuthorizationid": int(header.get("authorization_id") or 0),
-        "pPurchaseIndentId": int(header.get("indent_id") or 0),
-        "Against": header.get("against_name") or header.get("against"),
-        "QuotationId": int(header.get("quotation_id") or 0),
-        "TotalFORe": for_total,
-        "TotalExciseAmt": excise_total,
-        "AgainstId": int(header.get("against_id") or 0),
-        "Status": status_code,
-        "PurchasingDeptId": purchasing_dept_id if purchasing_dept_id > 0 else None,
-        "POPrintFormat": selected_po_print_format,
-        "pUpdatedby": int(header.get("updated_by") or 0),
-        "pUpdatedon": now.strftime("%Y-%m-%d %H:%M:%S"),
-    }
-
-    mst_result = data_fetch.update_iv_po_mst(unit, po_params)
-    if mst_result.get("error"):
-        _audit_log_event(
-            "purchase",
-            "po_update",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="PO update failed",
-            details={"error": mst_result.get("error"), "po_no": header.get("po_no")},
-        )
-        return jsonify({"status": "error", "message": mst_result["error"]}), 500
-
-    po_no = str(header.get("po_no") or existing_header.get("PONo") or "").strip()
-    try:
-        po_no_fix = data_fetch.ensure_purchase_po_number(unit, int(po_id), preferred_po_no=po_no)
-        ensured_po_no = str(po_no_fix.get("po_no") or "").strip()
-        if ensured_po_no:
-            po_no = ensured_po_no
-    except Exception:
-        pass
-    if not po_no:
-        po_no = f"PO-{po_id}"
-
-
-    clear_result = data_fetch.clear_iv_po_dtl(unit, po_id)
-    if clear_result.get("error"):
-        _audit_log_event(
-            "purchase",
-            "po_update",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="Failed to clear PO items before update",
-            details={"error": clear_result.get("error")},
-        )
-        return jsonify({"status": "error", "message": clear_result["error"]}), 500
-
-    detail_errors = []
-    detail_params = []
-    for row_idx, item in enumerate(items, start=1):
-        try:
-            cgst_pct = float(item.get("cgst_pct") or 0)
-            sgst_pct = float(item.get("sgst_pct") or 0)
-            igst_pct = float(item.get("igst_pct") or 0)
-            cgst_amt = float(item.get("cgst_amt") or 0)
-            sgst_amt = float(item.get("sgst_amt") or 0)
-            igst_amt = float(item.get("igst_amt") or 0)
-
-            if igst_pct and not (cgst_pct or sgst_pct):
-                cgst_pct = igst_pct / 2
-                sgst_pct = igst_pct / 2
-            if igst_amt and not (cgst_amt or sgst_amt):
-                cgst_amt = igst_amt / 2
-                sgst_amt = igst_amt / 2
-
-            item_params = {
-                "pId": int(item.get("id") or 0),
-                "pPoid": int(po_id),
-                "pItemid": int(item.get("item_id") or 0),
-                "pQty": float(item.get("qty") or 0),
-                "pPackSizeId": int(item.get("pack_size_id") or 0),
-                "pRate": float(item.get("rate") or 0),
-                "pFreeqty": float(item.get("free_qty") or 0),
-                "pDiscount": float(item.get("discount_pct") or 0),
-                "pTax": sgst_pct,
-                "pTaxamount": sgst_amt,
-                "pMRP": float(item.get("mrp") or 0),
-                "pVATOn": item.get("vat_on"),
-                "pVAT": item.get("vat"),
-                "pCustom1": item.get("custom1"),
-                "pCustom2": item.get("custom2"),
-                "pInsertedByUserID": session.get("username") or session.get("user"),
-                "pInsertedON": now.strftime("%Y-%m-%d %H:%M:%S"),
-                "pInsertedMacName": item.get("mac_name"),
-                "pInsertedMacID": item.get("mac_id"),
-                "pInsertedIPAddress": request.remote_addr,
-                "Fore": float(item.get("for_amt") or 0),
-                "Excisetax": cgst_pct,
-                "ExciseTaxamt": cgst_amt,
-                "NetAmount": float(item.get("net_amt") or 0),
-                "lendingRate": float(item.get("lending_rate") or 0),
-                "UnitFor": float(item.get("unit_for") or 0),
-                "UnitDiscount": float(item.get("unit_discount") or 0),
-                "_row_no": row_idx,
-                "_item_name": item.get("item_name"),
-            }
-            detail_params.append(item_params)
-        except Exception as e:
-            detail_errors.append(f"Row {row_idx}: {e}")
-    if detail_params:
-        bulk_result = data_fetch.add_iv_po_dtl_many(unit, detail_params)
-        if bulk_result.get("error"):
-            detail_errors.append(str(bulk_result.get("error")))
-        else:
-            detail_errors.extend(list(bulk_result.get("errors") or []))
-
-    if detail_errors:
-        old_header = _normalize_po_header_for_audit(existing_header)
-        new_header = _normalize_po_header_for_audit(header, totals, status_code)
-        _audit_log_event(
-            "purchase",
-            "po_update",
-            status="partial",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="PO updated but some items failed",
-            details={
-                "po_no": po_no,
-                "header_changes": _diff_simple_fields(old_header, new_header, ["supplier_id", "supplier_name", "purchasing_dept_id", "senior_approval_authority_name", "senior_approval_authority_designation", "po_date", "status", "amount", "tax_total", "discount_total"]),
-                "items": _diff_po_items(existing_items, items),
-                "errors": detail_errors,
-            },
-        )
-        return jsonify({
-            "status": "partial",
-            "po_id": po_id,
-            "message": "PO updated but some items failed",
-            "errors": detail_errors,
-        }), 207
-
-    otp_request_id = None
-    if status_code == "P":
-        otp_result = _create_purchase_otp_request(
-            unit=unit,
-            po_no=po_no,
-            po_id=po_id,
-            amount=amount_total,
-            supplier_name=header.get("supplier_name") or "",
-            reason=header.get("subject") or header.get("notes") or "",
-            requested_by=session.get("username") or session.get("user") or "",
-            purchasing_dept_id=purchasing_dept_id if purchasing_dept_id > 0 else None,
-        )
-        if otp_result.get("error"):
-            _audit_log_event(
-                "purchase",
-                "po_update",
-                status="error",
-                entity_type="po",
-                entity_id=str(po_id),
-                unit=unit,
-                summary="OTP request failed",
-                details={"error": otp_result.get("error"), "po_no": po_no},
-            )
-            return jsonify({"status": "error", "message": otp_result["error"]}), 500
-        otp_request_id = otp_result.get("request_id")
-        if otp_request_id:
-            _insert_purchase_otp_request(po_id, po_no, unit, int(otp_request_id), session.get("username") or session.get("user"))
-
-    response = {"status": "success", "po_id": po_id, "po_no": po_no}
-    if otp_request_id:
-        response["request_id"] = otp_request_id
-    if created_items:
-        response["created_items"] = created_items
-    old_header = _normalize_po_header_for_audit(existing_header)
-    new_header = _normalize_po_header_for_audit(header, totals, status_code)
-    _audit_log_event(
-        "purchase",
-        "po_update",
-        status="success",
-        entity_type="po",
-        entity_id=str(po_id),
-        unit=unit,
-        summary="PO updated",
-        details={
-            "po_no": po_no,
-            "header_changes": _diff_simple_fields(old_header, new_header, ["supplier_id", "supplier_name", "purchasing_dept_id", "senior_approval_authority_name", "senior_approval_authority_designation", "po_date", "status", "amount", "tax_total", "discount_total"]),
-            "items": _diff_po_items(existing_items, items),
-            "otp_request_id": otp_request_id,
-            "created_items": created_items,
-        },
-        request_id=str(otp_request_id) if otp_request_id else None,
-    )
-    return jsonify(response)
-
-
-@app.route('/api/purchase/po_approve', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_po_approve():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-
-    payload = request.get_json(silent=True) or {}
-    po_id = int(payload.get("po_id") or 0)
-    request_id = int(payload.get("request_id") or 0)
-    otp = (payload.get("otp") or "").strip()
-    auto_email_requested = _is_truthy(payload.get("auto_email_supplier_pdf"))
-    supplier_email_override = _purchase_normalize_email(
-        payload.get("supplier_email") or payload.get("to_email") or payload.get("email")
-    )
-    raw_auto_email_format = str(payload.get("auto_email_format") or payload.get("format") or "").strip().lower()
-    auto_email_print_format = "standard"
-
-    if not po_id or not request_id or not otp:
-        _audit_log_event(
-            "purchase",
-            "po_approve",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id) if po_id else None,
-            unit=unit,
-            summary="PO ID, request ID, and OTP are required",
-        )
-        return jsonify({"status": "error", "message": "PO ID, request ID, and OTP are required"}), 400
-
-    header_df = data_fetch.fetch_purchase_po_header(unit, po_id=po_id)
-    if header_df is None:
-        _audit_log_event(
-            "purchase",
-            "po_approve",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="Failed to fetch PO",
-        )
-        return jsonify({"status": "error", "message": "Failed to fetch PO"}), 500
-    if header_df.empty:
-        _audit_log_event(
-            "purchase",
-            "po_approve",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="PO not found",
-        )
-        return jsonify({"status": "error", "message": "PO not found"}), 404
-    header_df = _clean_df_columns(header_df)
-    header_row = header_df.iloc[0].to_dict()
-    status_code = str(header_row.get("Status") or "").strip().upper()
-    if status_code != "P":
-        _audit_log_event(
-            "purchase",
-            "po_approve",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="Only Pending Approval POs can be approved",
-            details={"current_status": status_code},
-        )
-        return jsonify({"status": "error", "message": "Only Pending Approval POs can be approved"}), 400
-
-    otp_result = _validate_purchase_otp(request_id, otp)
-    if otp_result.get("error"):
-        _audit_log_event(
-            "purchase",
-            "po_approve",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="OTP validation failed",
-            details={"error": otp_result.get("error")},
-            request_id=str(request_id),
-        )
-        return jsonify({"status": "error", "message": otp_result["error"]}), 500
-    if not otp_result.get("valid"):
-        _audit_log_event(
-            "purchase",
-            "po_approve",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="Invalid OTP",
-            details={"message": otp_result.get("message")},
-            request_id=str(request_id),
-        )
-        return jsonify({"status": "error", "message": otp_result.get("message") or "Invalid OTP"}), 400
-
-    req_type = str(otp_result.get("request_type") or "").strip().upper()
-    if req_type and req_type != OTP_PO_REQUEST_TYPE:
-        _audit_log_event(
-            "purchase",
-            "po_approve",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="OTP request type mismatch",
-            details={"request_type": req_type},
-            request_id=str(request_id),
-        )
-        return jsonify({"status": "error", "message": "OTP request type mismatch"}), 400
-
-    otp_po_no = str(otp_result.get("bill_no") or "").strip().upper()
-    if po_id > 0 and not str(header_row.get("PONo") or "").strip():
-        try:
-            po_no_fix = data_fetch.ensure_purchase_po_number(unit, po_id, preferred_po_no=otp_po_no or None)
-            ensured_po_no = str(po_no_fix.get("po_no") or "").strip()
-            if ensured_po_no:
-                header_row["PONo"] = ensured_po_no
-        except Exception:
-            pass
-    po_no = str(header_row.get("PONo") or "").strip().upper()
-    if po_no and otp_po_no and po_no != otp_po_no:
-        _audit_log_event(
-            "purchase",
-            "po_approve",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="OTP does not match this PO",
-            details={"po_no": po_no, "otp_po_no": otp_po_no},
-            request_id=str(request_id),
-        )
-        return jsonify({"status": "error", "message": "OTP does not match this PO"}), 400
-
-    status_result = data_fetch.update_po_status(unit, po_id, "A")
-    if status_result.get("error"):
-        _audit_log_event(
-            "purchase",
-            "po_approve",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="PO approval failed",
-            details={"error": status_result.get("error")},
-            request_id=str(request_id),
-        )
-        return jsonify({"status": "error", "message": status_result["error"]}), 500
-
-    user = session.get("username") or session.get("user") or ""
-    _mark_central_otp_used(request_id, user)
-    _mark_purchase_otp_used(po_id, request_id, user)
-    try:
-        req_meta = _fetch_purchase_otp_request_by_id(request_id)
-        mail_result = _send_purchase_po_approval_email(unit, po_id, header_row, req_meta)
-        if mail_result.get("status") == "error":
-            print(f"PO approval email failed: {mail_result.get('message')}")
-    except Exception as e:
-        print(f"PO approval email error: {e}")
-
-    auto_email_result = {
-        "requested": bool(auto_email_requested),
-        "status": "skipped",
-        "message": "Auto email option not selected",
-    }
-    if auto_email_requested:
-        po_no_val = str(header_row.get("PONo") or f"PO-{po_id}")
-        supplier_id = _safe_int(header_row.get("SupplierID"))
-        supplier_email = _purchase_normalize_email(header_row.get("SupplierEmail"))
-        if _purchase_is_valid_email(supplier_email_override):
-            supplier_email = supplier_email_override
-            header_row["SupplierEmail"] = supplier_email
-        if not _purchase_is_valid_email(supplier_email):
-            auto_email_result = {
-                "requested": True,
-                "status": "skipped",
-                "message": "Supplier email is missing or invalid",
-                "recipient": supplier_email,
-            }
-            _audit_log_event(
-                "purchase",
-                "po_auto_email_on_approve",
-                status="error",
-                entity_type="po",
-                entity_id=str(po_id),
-                unit=unit,
-                summary="Supplier auto-email skipped due to invalid email",
-                details={
-                    "po_no": po_no_val,
-                    "supplier_id": supplier_id,
-                    "recipient": supplier_email,
-                },
-                request_id=str(request_id),
-            )
-        else:
-            try:
-                items_df = data_fetch.fetch_purchase_po_items(unit, po_id)
-                if items_df is None:
-                    raise RuntimeError("Failed to fetch PO items for supplier email")
-                items_df = _clean_df_columns(items_df)
-                items = items_df.to_dict(orient="records") if not items_df.empty else []
-
-                approval_meta = _fetch_purchase_approval_meta(po_id)
-                header_pdf = dict(header_row)
-                header_pdf["Status"] = "A"
-                header_pdf["SupplierEmail"] = supplier_email
-                header_pdf["PurchasingDeptName"] = _resolve_purchasing_department_name(
-                    _safe_int(header_row.get("PurchasingDeptId"))
-                )
-                pdf_buffer = _build_po_pdf_buffer(
-                    unit,
-                    header_pdf,
-                    items,
-                    approval_meta,
-                    print_format=auto_email_print_format,
-                )
-                pdf_bytes = pdf_buffer.getvalue() if pdf_buffer else b""
-
-                po_date_val = header_row.get("PODate")
-                if isinstance(po_date_val, (datetime, date)):
-                    po_date_text = po_date_val.strftime("%d-%b-%Y")
-                else:
-                    po_date_text = str(po_date_val or "")[:10]
-                snapshot = {
-                    "unit": unit,
-                    "po_no": po_no_val,
-                    "po_date": po_date_text,
-                    "supplier": str(header_row.get("SupplierName") or ""),
-                    "amount": _format_indian_currency(header_row.get("Amount") or 0),
-                    "subject": str(header_row.get("Subject") or ""),
-                }
-                mail_subject = f"Purchase Order {po_no_val}"
-                mail_body = _build_po_supplier_dispatch_email_body(snapshot)
-                mail_filename = f"PO_{po_no_val}.pdf"
-                mail_result_supplier = _send_graph_mail_with_attachment(
-                    subject=mail_subject,
-                    body_html=mail_body,
-                    to_recipients=[supplier_email],
-                    filename=mail_filename,
-                    content_bytes=pdf_bytes,
-                )
-                if str(mail_result_supplier.get("status") or "").strip().lower() == "success":
-                    auto_email_result = {
-                        "requested": True,
-                        "status": "success",
-                        "recipient": supplier_email,
-                    }
-                    _audit_log_event(
-                        "purchase",
-                        "po_auto_email_on_approve",
-                        status="success",
-                        entity_type="po",
-                        entity_id=str(po_id),
-                        unit=unit,
-                        summary="Supplier PO PDF auto-emailed on approval",
-                        details={
-                            "po_no": po_no_val,
-                            "supplier_id": supplier_id,
-                            "recipient": supplier_email,
-                        },
-                        request_id=str(request_id),
-                    )
-                else:
-                    err_msg = str(mail_result_supplier.get("message") or "Failed to send supplier email")
-                    auto_email_result = {
-                        "requested": True,
-                        "status": "error",
-                        "recipient": supplier_email,
-                        "message": err_msg,
-                    }
-                    _audit_log_event(
-                        "purchase",
-                        "po_auto_email_on_approve",
-                        status="error",
-                        entity_type="po",
-                        entity_id=str(po_id),
-                        unit=unit,
-                        summary="Supplier PO PDF auto-email failed",
-                        details={
-                            "po_no": po_no_val,
-                            "supplier_id": supplier_id,
-                            "recipient": supplier_email,
-                            "mail_result": mail_result_supplier,
-                        },
-                        request_id=str(request_id),
-                    )
-            except Exception as e:
-                auto_email_result = {
-                    "requested": True,
-                    "status": "error",
-                    "recipient": supplier_email,
-                    "message": str(e),
-                }
-                _audit_log_event(
-                    "purchase",
-                    "po_auto_email_on_approve",
-                    status="error",
-                    entity_type="po",
-                    entity_id=str(po_id),
-                    unit=unit,
-                    summary="Supplier PO PDF auto-email error",
-                    details={
-                        "po_no": po_no_val,
-                        "supplier_id": supplier_id,
-                        "recipient": supplier_email,
-                        "error": str(e),
-                    },
-                    request_id=str(request_id),
-                )
-
-    _audit_log_event(
-        "purchase",
-        "po_approve",
-        status="success",
-        entity_type="po",
-        entity_id=str(po_id),
-        unit=unit,
-        summary="PO approved",
-        details={
-            "po_no": header_row.get("PONo"),
-            "auto_email": auto_email_result if auto_email_result.get("requested") else None,
-        },
-        request_id=str(request_id),
-    )
-    return jsonify(
-        {
-            "status": "success",
-            "po_id": po_id,
-            "po_no": header_row.get("PONo"),
-            "auto_email": auto_email_result,
-        }
-    )
-
-
-@app.route('/api/purchase/po_resend_otp', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_po_resend_otp():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    try:
-        data_fetch.ensure_po_purchasing_dept_column(unit)
-    except Exception:
-        pass
-
-    payload = request.get_json(silent=True) or {}
-    po_id = int(payload.get("po_id") or 0)
-    if not po_id:
-        _audit_log_event(
-            "purchase",
-            "po_resend_otp",
-            status="error",
-            entity_type="po",
-            unit=unit,
-            summary="PO ID is required",
-        )
-        return jsonify({"status": "error", "message": "PO ID is required"}), 400
-
-    header_df = data_fetch.fetch_purchase_po_header(unit, po_id=po_id)
-    if header_df is None:
-        _audit_log_event(
-            "purchase",
-            "po_resend_otp",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="Failed to fetch PO",
-        )
-        return jsonify({"status": "error", "message": "Failed to fetch PO"}), 500
-    if header_df.empty:
-        _audit_log_event(
-            "purchase",
-            "po_resend_otp",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="PO not found",
-        )
-        return jsonify({"status": "error", "message": "PO not found"}), 404
-    header_df = _clean_df_columns(header_df)
-    header_row = header_df.iloc[0].to_dict()
-    status_code = str(header_row.get("Status") or "").strip().upper()
-    if status_code != "P":
-        _audit_log_event(
-            "purchase",
-            "po_resend_otp",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="OTP can be resent only for Pending Approval POs",
-            details={"current_status": status_code},
-        )
-        return jsonify({"status": "error", "message": "OTP can be resent only for Pending Approval POs"}), 400
-
-    po_no = header_row.get("PONo") or f"PO-{po_id}"
-    amount_total = header_row.get("Amount") or 0
-    purchasing_dept_id = _safe_int(header_row.get("PurchasingDeptId"))
-    otp_result = _create_purchase_otp_request(
-        unit=unit,
-        po_no=po_no,
-        po_id=po_id,
-        amount=amount_total,
-        supplier_name=header_row.get("SupplierName") or "",
-        reason=header_row.get("Subject") or header_row.get("Notes") or "",
-        requested_by=session.get("username") or session.get("user") or "",
-        purchasing_dept_id=purchasing_dept_id if purchasing_dept_id > 0 else None,
-    )
-    if otp_result.get("error"):
-        _audit_log_event(
-            "purchase",
-            "po_resend_otp",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id),
-            unit=unit,
-            summary="OTP request failed",
-            details={"error": otp_result.get("error"), "po_no": po_no},
-        )
-        return jsonify({"status": "error", "message": otp_result["error"]}), 500
-    otp_request_id = otp_result.get("request_id")
-    if otp_request_id:
-        _insert_purchase_otp_request(po_id, po_no, unit, int(otp_request_id), session.get("username") or session.get("user"))
-
-    _audit_log_event(
-        "purchase",
-        "po_resend_otp",
-        status="success",
-        entity_type="po",
-        entity_id=str(po_id),
-        unit=unit,
-        summary="OTP resent",
-        details={"po_no": po_no, "request_id": otp_request_id},
-        request_id=str(otp_request_id) if otp_request_id else None,
-    )
-    return jsonify({"status": "success", "po_id": po_id, "po_no": po_no, "request_id": otp_request_id})
-
-
-@app.route('/api/purchase/po_print')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_po_print():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-    po_id_raw = request.args.get("po_id")
-    po_no = (request.args.get("po_no") or "").strip()
-    po_id = int(po_id_raw) if str(po_id_raw or "").isdigit() else None
-    raw_format = (request.args.get("format") or "").strip().lower()
-    if not po_id and not po_no:
-        return jsonify({"status": "error", "message": "PO ID or PO number is required"}), 400
-
-    header_df = data_fetch.fetch_purchase_po_header(unit, po_id=po_id, po_no=po_no)
-    if header_df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch PO"}), 500
-    if header_df.empty:
-        return jsonify({"status": "error", "message": "PO not found"}), 404
-    header_df = _clean_df_columns(header_df)
-    header = header_df.iloc[0].to_dict()
-    header["PurchasingDeptName"] = _resolve_purchasing_department_name(_safe_int(header.get("PurchasingDeptId")))
-    print_format = _resolve_po_print_format_for_render(
-        unit,
-        requested_format=raw_format,
-        header_row=header,
-        purchasing_dept_id=_safe_int(header.get("PurchasingDeptId")),
-    )
-    po_id = int(header.get("ID") or po_id or 0)
-    if po_id > 0 and not str(header.get("PONo") or "").strip():
-        try:
-            po_no_fix = data_fetch.ensure_purchase_po_number(unit, po_id, preferred_po_no=po_no)
-            ensured_po_no = str(po_no_fix.get("po_no") or "").strip()
-            if ensured_po_no:
-                header["PONo"] = ensured_po_no
-        except Exception:
-            pass
-    items_df = data_fetch.fetch_purchase_po_items(unit, po_id)
-    if items_df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch PO items"}), 500
-    items_df = _clean_df_columns(items_df)
-    items = items_df.to_dict(orient="records") if not items_df.empty else []
-    approval_meta = _fetch_purchase_approval_meta(po_id)
-
-    pdf_buffer = _build_po_pdf_buffer(unit, header, items, approval_meta, print_format=print_format)
-    filename = f"PO_{header.get('PONo') or po_no or po_id}.pdf"
-    return send_file(
-        pdf_buffer,
-        mimetype="application/pdf",
-        as_attachment=False,
-        download_name=filename,
-    )
-
-
-@app.route('/api/purchase/po_email_pdf', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_po_email_pdf():
-    unit, error = _get_purchase_unit()
-    if error:
-        return error
-
-    payload = request.get_json(silent=True) or {}
-    po_id = _safe_int(payload.get("po_id"))
-    po_no = str(payload.get("po_no") or "").strip()
-    to_email = _purchase_normalize_email(payload.get("to_email") or payload.get("email"))
-    raw_format = str(payload.get("format") or "").strip().lower()
-
-    if po_id <= 0 and not po_no:
-        _audit_log_event(
-            "purchase",
-            "po_email_pdf",
-            status="error",
-            entity_type="po",
-            unit=unit,
-            summary="PO ID or PO number is required",
-        )
-        return jsonify({"status": "error", "message": "PO ID or PO number is required"}), 400
-    if not _purchase_is_valid_email(to_email):
-        _audit_log_event(
-            "purchase",
-            "po_email_pdf",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id) if po_id > 0 else None,
-            unit=unit,
-            summary="Invalid recipient email",
-            details={"to_email": to_email, "po_no": po_no},
-        )
-        return jsonify({"status": "error", "message": "Enter a valid recipient email address"}), 400
-
-    header_df = data_fetch.fetch_purchase_po_header(
-        unit,
-        po_id=po_id if po_id > 0 else None,
-        po_no=po_no,
-    )
-    if header_df is None:
-        _audit_log_event(
-            "purchase",
-            "po_email_pdf",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id) if po_id > 0 else None,
-            unit=unit,
-            summary="Failed to fetch PO",
-            details={"po_no": po_no},
-        )
-        return jsonify({"status": "error", "message": "Failed to fetch PO"}), 500
-    if header_df.empty:
-        _audit_log_event(
-            "purchase",
-            "po_email_pdf",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id) if po_id > 0 else None,
-            unit=unit,
-            summary="PO not found",
-            details={"po_no": po_no},
-        )
-        return jsonify({"status": "error", "message": "PO not found"}), 404
-
-    header_df = _clean_df_columns(header_df)
-    header_row = header_df.iloc[0].to_dict()
-    print_format = _resolve_po_print_format_for_render(
-        unit,
-        requested_format=raw_format,
-        header_row=header_row,
-        purchasing_dept_id=_safe_int(header_row.get("PurchasingDeptId")),
-    )
-    po_id_val = _safe_int(header_row.get("ID"), po_id)
-    if po_id_val > 0 and not str(header_row.get("PONo") or "").strip():
-        try:
-            po_no_fix = data_fetch.ensure_purchase_po_number(unit, po_id_val, preferred_po_no=po_no)
-            ensured_po_no = str(po_no_fix.get("po_no") or "").strip()
-            if ensured_po_no:
-                header_row["PONo"] = ensured_po_no
-        except Exception:
-            pass
-    po_no_val = str(header_row.get("PONo") or po_no or f"PO-{po_id_val}")
-    status_code = str(header_row.get("Status") or "").strip().upper()
-    if status_code != "A":
-        _audit_log_event(
-            "purchase",
-            "po_email_pdf",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id_val),
-            unit=unit,
-            summary="Only approved POs can be emailed",
-            details={"po_no": po_no_val, "status": status_code},
-        )
-        return jsonify({"status": "error", "message": "Only approved POs can be emailed"}), 400
-
-    supplier_id = _safe_int(header_row.get("SupplierID"))
-    if supplier_id <= 0:
-        _audit_log_event(
-            "purchase",
-            "po_email_pdf",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id_val),
-            unit=unit,
-            summary="Supplier not linked to PO",
-            details={"po_no": po_no_val},
-        )
-        return jsonify({"status": "error", "message": "Supplier not linked to PO"}), 400
-
-    email_update_result = data_fetch.update_iv_supplier_email(unit, supplier_id, to_email)
-    if email_update_result.get("error"):
-        err_msg = str(email_update_result.get("error") or "Failed to update supplier email")
-        status_code = 404 if "not found" in err_msg.lower() else 500
-        _audit_log_event(
-            "purchase",
-            "po_email_pdf",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id_val),
-            unit=unit,
-            summary="Failed to update supplier email before dispatch",
-            details={"po_no": po_no_val, "supplier_id": supplier_id, "to_email": to_email, "error": err_msg},
-        )
-        return jsonify({"status": "error", "message": err_msg}), status_code
-
-    items_df = data_fetch.fetch_purchase_po_items(unit, po_id_val)
-    if items_df is None:
-        _audit_log_event(
-            "purchase",
-            "po_email_pdf",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id_val),
-            unit=unit,
-            summary="Failed to fetch PO items",
-            details={"po_no": po_no_val},
-        )
-        return jsonify({"status": "error", "message": "Failed to fetch PO items"}), 500
-    items_df = _clean_df_columns(items_df)
-    items = items_df.to_dict(orient="records") if not items_df.empty else []
-
-    approval_meta = _fetch_purchase_approval_meta(po_id_val)
-    header_pdf = dict(header_row)
-    header_pdf["PurchasingDeptName"] = _resolve_purchasing_department_name(_safe_int(header_row.get("PurchasingDeptId")))
-    header_pdf["SupplierEmail"] = to_email
-    pdf_buffer = _build_po_pdf_buffer(unit, header_pdf, items, approval_meta, print_format=print_format)
-    pdf_bytes = pdf_buffer.getvalue() if pdf_buffer else b""
-
-    po_date_val = header_row.get("PODate")
-    if isinstance(po_date_val, (datetime, date)):
-        po_date_text = po_date_val.strftime("%d-%b-%Y")
-    else:
-        po_date_text = str(po_date_val or "")[:10]
-    snapshot = {
-        "unit": unit,
-        "po_no": po_no_val,
-        "po_date": po_date_text,
-        "supplier": str(header_row.get("SupplierName") or ""),
-        "amount": _format_indian_currency(header_row.get("Amount") or 0),
-        "subject": str(header_row.get("Subject") or ""),
-    }
-    mail_subject = f"Purchase Order {po_no_val}"
-    mail_body = _build_po_supplier_dispatch_email_body(snapshot)
-    mail_filename = f"PO_{po_no_val}.pdf"
-    mail_result = _send_graph_mail_with_attachment(
-        subject=mail_subject,
-        body_html=mail_body,
-        to_recipients=[to_email],
-        filename=mail_filename,
-        content_bytes=pdf_bytes,
-    )
-    if str(mail_result.get("status") or "").strip().lower() != "success":
-        err_msg = str(mail_result.get("message") or "Failed to send email")
-        _audit_log_event(
-            "purchase",
-            "po_email_pdf",
-            status="error",
-            entity_type="po",
-            entity_id=str(po_id_val),
-            unit=unit,
-            summary="PO email send failed",
-            details={
-                "po_no": po_no_val,
-                "supplier_id": supplier_id,
-                "recipient": to_email,
-                "mail_result": mail_result,
-            },
-        )
-        return jsonify({"status": "error", "message": err_msg, "mail_status": mail_result}), 500
-
-    _audit_log_event(
-        "purchase",
-        "po_email_pdf",
-        status="success",
-        entity_type="po",
-        entity_id=str(po_id_val),
-        unit=unit,
-        summary="PO PDF emailed to supplier",
-        details={
-            "po_no": po_no_val,
-            "supplier_id": supplier_id,
-            "recipient": to_email,
-            "mail_result": mail_result,
-        },
-    )
-    return jsonify({
-        "status": "success",
-        "message": f"PO PDF emailed to {to_email}",
-        "po_id": po_id_val,
-        "po_no": po_no_val,
-        "recipient": to_email,
-        "mail_status": mail_result,
-    })
-
-
-@app.route('/api/purchase/work_order/init')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_work_order_init():
-    unit, error = _get_work_order_unit()
-    if error:
-        return error
-    _ensure_work_order_schema(unit)
-
-    unit_df = data_fetch.fetch_purchase_unit_master(unit, include_inactive=False)
-    supplier_df = data_fetch.fetch_iv_suppliers(unit)
-    purchasing_departments_payload, default_purchasing_dept_id = _build_purchase_department_payload(unit)
-
-    units = []
-    if unit_df is not None and not unit_df.empty:
-        unit_df = _clean_df_columns(unit_df)
-        cols_map = {str(c).strip().lower(): c for c in unit_df.columns}
-        id_col = cols_map.get("id")
-        name_col = cols_map.get("name")
-        code_col = cols_map.get("code")
-        for _, row in unit_df.iterrows():
-            name_val = _normalize_purchase_unit_text(row.get(name_col) if name_col else "")
-            code_val = _normalize_purchase_unit_text(row.get(code_col) if code_col else "")
-            if not name_val and not code_val:
-                continue
-            if not name_val:
-                name_val = code_val
-            units.append(
-                {
-                    "id": row.get(id_col) if id_col else None,
-                    "code": code_val,
-                    "name": name_val,
-                    "unit": unit,
-                }
-            )
-
-    suppliers = []
-    if supplier_df is not None and not supplier_df.empty:
-        supplier_df = _clean_df_columns(supplier_df)
-        cols_map = {str(c).strip().lower(): c for c in supplier_df.columns}
-        id_col = cols_map.get("supplierid") or cols_map.get("id")
-        name_col = cols_map.get("suppliername") or cols_map.get("name")
-        code_col = cols_map.get("suppliercode") or cols_map.get("code")
-        email_col = (
-            cols_map.get("email")
-            or cols_map.get("emailid")
-            or cols_map.get("email_id")
-            or cols_map.get("e_mail")
-            or cols_map.get("e_mail_id")
-        )
-        for _, row in supplier_df.iterrows():
-            suppliers.append(
-                {
-                    "id": row.get(id_col),
-                    "name": str(row.get(name_col) or "").strip(),
-                    "code": str(row.get(code_col) or "").strip(),
-                    "email": str(row.get(email_col) or "").strip(),
-                }
-            )
-
-    return jsonify(
-        {
-            "status": "success",
-            "unit": unit,
-            "wo_no": None,
-            "units": _sanitize_json_payload(units),
-            "suppliers": suppliers,
-            "purchasing_departments": _sanitize_json_payload(purchasing_departments_payload),
-            "default_purchasing_dept_id": default_purchasing_dept_id,
-        }
-    )
-
-
-@app.route('/api/purchase/work_order_lookup')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_work_order_lookup():
-    unit, error = _get_work_order_unit()
-    if error:
-        return error
-    _ensure_work_order_schema(unit)
-
-    query = (request.args.get("q") or "").strip()
-    if not query:
-        return jsonify({"status": "error", "message": "Please enter a Work Order number or ID"}), 400
-
-    wo_id = None
-    wo_no = None
-    if query.isdigit():
-        wo_id = int(query)
-    else:
-        wo_no = query.upper() if query.upper().startswith("WO-") else query
-
-    header_df = data_fetch.fetch_work_order_header(unit, wo_id=wo_id, wo_no=wo_no)
-    if header_df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch Work Order"}), 500
-    if header_df.empty:
-        return jsonify({"status": "error", "message": "Work Order not found"}), 404
-
-    header_df = _clean_df_columns(header_df)
-    header_row = header_df.iloc[0].to_dict()
-    wo_id_val = _safe_int(header_row.get("ID"))
-    if wo_id_val > 0 and not str(header_row.get("PONo") or "").strip():
-        try:
-            wo_no_fix = data_fetch.ensure_work_order_number(unit, wo_id_val, preferred_wo_no=wo_no)
-            ensured_wo_no = str(wo_no_fix.get("wo_no") or "").strip()
-            if ensured_wo_no:
-                header_row["PONo"] = ensured_wo_no
-        except Exception:
-            pass
-    status_code = str(header_row.get("Status") or "").strip().upper()
-    header_payload = _build_work_order_header_payload(header_row, status_code=status_code)
-
-    if status_code == "P":
-        otp_rec = _fetch_latest_purchase_otp_request(wo_id_val)
-        if otp_rec:
-            header_payload["otp_request_id"] = otp_rec.get("request_id")
-
-    items_df = data_fetch.fetch_work_order_items(unit, wo_id_val)
-    if items_df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch Work Order items"}), 500
-
-    items_payload = []
-    if not items_df.empty:
-        items_df = _clean_df_columns(items_df)
-        for row in items_df.to_dict(orient="records"):
-            cgst_pct = _safe_float(row.get("CGSTPct"))
-            sgst_pct = _safe_float(row.get("SGSTPct"))
-            igst_pct = _safe_float(row.get("IGSTPct"))
-            cgst_amt = _safe_float(row.get("CGSTAmt"))
-            sgst_amt = _safe_float(row.get("SGSTAmt"))
-            igst_amt = _safe_float(row.get("IGSTAmt"))
-            items_payload.append(
-                _sanitize_json_payload(
-                    {
-                        "detail_id": row.get("DetailID"),
-                        "line_no": row.get("LineNo"),
-                        "item_name": row.get("ItemName"),
-                        "unit": row.get("UnitName"),
-                        "qty": row.get("Qty"),
-                        "rate": row.get("Rate"),
-                        "discount_pct": row.get("Discount"),
-                        "taxable_amt": row.get("TaxableAmount"),
-                        "cgst_pct": cgst_pct,
-                        "sgst_pct": sgst_pct,
-                        "igst_pct": igst_pct,
-                        "gst_pct": (cgst_pct + sgst_pct) if (cgst_pct or sgst_pct) else igst_pct,
-                        "cgst_amt": cgst_amt,
-                        "sgst_amt": sgst_amt,
-                        "igst_amt": igst_amt,
-                        "gst_amt": cgst_amt + sgst_amt + igst_amt,
-                        "for_amt": row.get("ForAmount"),
-                        "net_amt": row.get("NetAmount"),
-                        "line_notes": row.get("LineNotes"),
-                    }
-                )
-            )
-
-    header_payload["totals"] = _sanitize_json_payload(
-        _fallback_work_order_summary_from_header(header_row, _summarize_work_order_totals(items_payload))
-    )
-    return jsonify({"status": "success", "header": header_payload, "items": items_payload, "unit": unit})
-
-
-@app.route('/api/purchase/work_order_list')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_work_order_list():
-    unit, error = _get_work_order_unit()
-    if error:
-        return error
-    _ensure_work_order_schema(unit)
-
-    status = request.args.get("status") or "open"
-    limit_raw = request.args.get("limit") or "200"
-    query = request.args.get("q")
-    item_query = request.args.get("item_q")
-    try:
-        limit = int(limit_raw)
-    except Exception:
-        limit = 200
-    df = data_fetch.fetch_work_order_list(unit, status=status, limit=limit, query=query, item_query=item_query)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch Work Order list"}), 500
-    if df.empty:
-        return jsonify({"status": "success", "items": [], "unit": unit})
-    df = _clean_df_columns(df)
-    rows = _sanitize_json_payload(df.to_dict(orient="records"))
-    return jsonify({"status": "success", "items": rows, "unit": unit})
-
-
-@app.route('/api/purchase/work_order', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_create_work_order():
-    unit, error = _get_work_order_unit()
-    if error:
-        return error
-    _ensure_work_order_schema(unit)
-
-    payload = request.get_json(silent=True) or {}
-    header = payload.get("header") or {}
-    items = payload.get("items") or []
-    body_html = _normalize_work_order_body_html(header.get("body_html"))
-    body_text = _work_order_body_to_plain_text(body_html)
-
-    supplier_id = _safe_int(header.get("supplier_id"))
-    if supplier_id <= 0:
-        _audit_log_event(
-            "purchase",
-            "work_order_create",
-            status="error",
-            entity_type="work_order",
-            unit=unit,
-            summary="Supplier is required",
-            details={"wo_no": header.get("wo_no"), "item_count": len(items)},
-        )
-        return jsonify({"status": "error", "message": "Supplier is required"}), 400
-    if not items and not body_text:
-        _audit_log_event(
-            "purchase",
-            "work_order_create",
-            status="error",
-            entity_type="work_order",
-            unit=unit,
-            summary="Work Order body is required",
-            details={"wo_no": header.get("wo_no")},
-        )
-        return jsonify({"status": "error", "message": "Enter the Work Order body before saving."}), 400
-
-    normalized_items, item_errors = _normalize_work_order_items(items)
-    if item_errors:
-        _audit_log_event(
-            "purchase",
-            "work_order_create",
-            status="error",
-            entity_type="work_order",
-            unit=unit,
-            summary="Invalid Work Order lines",
-            details={"errors": item_errors, "wo_no": header.get("wo_no")},
-        )
-        return jsonify({"status": "error", "message": "Invalid Work Order lines", "errors": item_errors}), 400
-
-    totals = _resolve_work_order_totals(normalized_items, header.get("totals"))
-    if not normalized_items:
-        if totals.get("grand_total", 0) <= 0 and totals.get("gross_total", 0) <= 0 and totals.get("taxable_total", 0) <= 0:
-            _audit_log_event(
-                "purchase",
-                "work_order_create",
-                status="error",
-                entity_type="work_order",
-                unit=unit,
-                summary="Work Order totals are required",
-                details={"wo_no": header.get("wo_no")},
-            )
-            return jsonify({"status": "error", "message": "Enter Work Order totals before saving."}), 400
-        normalized_items = [_build_work_order_fallback_item(header, body_text, totals)]
-
-    status_raw = str(header.get("status") or "Draft").strip().lower()
-    status_map = {"draft": "D", "pending approval": "P", "approved": "A"}
-    status_code = status_map.get(status_raw, "D")
-    purchasing_dept_id = _safe_int(header.get("purchasing_dept_id"))
-    if status_code == "P" and purchasing_dept_id <= 0:
-        _audit_log_event(
-            "purchase",
-            "work_order_create",
-            status="error",
-            entity_type="work_order",
-            unit=unit,
-            summary="Purchasing department is required for approval",
-            details={"wo_no": header.get("wo_no")},
-        )
-        return jsonify({"status": "error", "message": "Please select Purchasing Dept before submitting for approval."}), 400
-
-    now = datetime.now(tz=LOCAL_TZ)
-
-    def _num_or_text(val):
-        try:
-            if val is None or val == "":
-                return None
-            return float(val)
-        except Exception:
-            return val
-
-    wo_params = {
-        "pId": _safe_int(header.get("wo_id")),
-        "pSupplierid": supplier_id,
-        "pTenderid": _safe_int(header.get("tender_id")),
-        "pPono": header.get("wo_no"),
-        "pPodate": header.get("wo_date"),
-        "pDeliveryterms": header.get("delivery_terms"),
-        "pPaymentsterms": header.get("payment_terms"),
-        "pOtherterms": header.get("other_terms"),
-        "pTaxid": _safe_int(header.get("tax_id")),
-        "pTax": totals.get("tax_total") or 0,
-        "pDiscount": totals.get("discount_total") or 0,
-        "pAmount": totals.get("grand_total") or 0,
-        "pCreditdays": _safe_int(header.get("credit_days")),
-        "pPocomplete": 0,
-        "pNotes": header.get("notes"),
-        "pSpecialNotes": header.get("special_notes"),
-        "WorkOrderBodyHtml": body_html,
-        "SeniorApprovalAuthorityName": header.get("senior_approval_authority_name"),
-        "SeniorApprovalAuthorityDesignation": header.get("senior_approval_authority_designation"),
-        "pPreparedby": header.get("prepared_by"),
-        "pCustom1": _num_or_text(header.get("freight_charges")),
-        "pCustom2": _num_or_text(header.get("packing_charges")),
-        "pUpdatedby": _safe_int(header.get("updated_by")),
-        "pUpdatedon": header.get("updated_on"),
-        "pSignauthorityperson": header.get("sign_authority_person"),
-        "pSignauthoritypdesig": header.get("sign_authority_desig"),
-        "pRefno": header.get("ref_no"),
-        "pSubject": header.get("subject"),
-        "pAuthorizationid": _safe_int(header.get("authorization_id")),
-        "pPurchaseIndentId": 0,
-        "pInsertedByUserID": session.get("username") or session.get("user"),
-        "pInsertedON": now.strftime("%Y-%m-%d %H:%M:%S"),
-        "pInsertedMacName": header.get("mac_name"),
-        "pInsertedMacID": header.get("mac_id"),
-        "pInsertedIPAddress": request.remote_addr,
-        "Against": "Work Order",
-        "QuotationId": _safe_int(header.get("quotation_id")),
-        "TotalFORe": totals.get("for_total") or 0,
-        "TotalExciseAmt": totals.get("tax_total") or 0,
-        "AgainstId": 0,
-        "Status": status_code,
-        "PurchasingDeptId": purchasing_dept_id if purchasing_dept_id > 0 else None,
-    }
-
-    mst_result = data_fetch.add_iv_work_order_mst(unit, wo_params)
-    if mst_result.get("error"):
-        _audit_log_event(
-            "purchase",
-            "work_order_create",
-            status="error",
-            entity_type="work_order",
-            unit=unit,
-            summary="Work Order creation failed",
-            details={"error": mst_result.get("error"), "wo_no": header.get("wo_no")},
-        )
-        return jsonify({"status": "error", "message": mst_result["error"]}), 500
-    wo_id = mst_result.get("wo_id")
-    if not wo_id:
-        _audit_log_event(
-            "purchase",
-            "work_order_create",
-            status="error",
-            entity_type="work_order",
-            unit=unit,
-            summary="Work Order creation failed (missing ID)",
-            details={"wo_no": header.get("wo_no")},
-        )
-        return jsonify({"status": "error", "message": "Failed to create Work Order"}), 500
-
-    wo_no = str(mst_result.get("wo_no") or "").strip()
-    if not wo_no:
-        try:
-            wo_no_fix = data_fetch.ensure_work_order_number(unit, int(wo_id), preferred_wo_no=header.get("wo_no"))
-            ensured_wo_no = str(wo_no_fix.get("wo_no") or "").strip()
-            if ensured_wo_no:
-                wo_no = ensured_wo_no
-        except Exception:
-            pass
-    if not wo_no:
-        wo_no = f"WO-{wo_id}"
-
-    detail_params = []
-    for item in normalized_items:
-        detail_params.append(
-            {
-                "WOID": int(wo_id),
-                "LineNo": item.get("line_no"),
-                "ItemName": item.get("item_name"),
-                "UnitName": item.get("unit_name"),
-                "Qty": item.get("qty"),
-                "Rate": item.get("rate"),
-                "DiscountPct": item.get("discount_pct"),
-                "TaxableAmount": item.get("taxable_amount"),
-                "CGSTPct": item.get("cgst_pct"),
-                "SGSTPct": item.get("sgst_pct"),
-                "IGSTPct": item.get("igst_pct"),
-                "CGSTAmt": item.get("cgst_amt"),
-                "SGSTAmt": item.get("sgst_amt"),
-                "IGSTAmt": item.get("igst_amt"),
-                "ForAmount": item.get("for_amount"),
-                "NetAmount": item.get("net_amount"),
-                "LineNotes": item.get("line_notes"),
-                "CreatedBy": session.get("username") or session.get("user"),
-                "UpdatedBy": session.get("username") or session.get("user"),
-                "_row_no": item.get("line_no"),
-            }
-        )
-    bulk_result = data_fetch.add_work_order_dtl_many(unit, detail_params)
-    if bulk_result.get("error"):
-        _audit_log_event(
-            "purchase",
-            "work_order_create",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Failed to save Work Order detail rows",
-            details={"wo_no": wo_no, "error": bulk_result.get("error")},
-        )
-        return jsonify({"status": "error", "message": bulk_result.get("error")}), 500
-    detail_errors = list(bulk_result.get("errors") or [])
-    if detail_errors:
-        _audit_log_event(
-            "purchase",
-            "work_order_create",
-            status="partial",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Work Order created but some rows failed",
-            details={"wo_no": wo_no, "errors": detail_errors},
-        )
-        return jsonify({"status": "partial", "wo_id": wo_id, "wo_no": wo_no, "errors": detail_errors}), 207
-
-    otp_request_id = None
-    if status_code == "P":
-        otp_result = _create_work_order_otp_request(
-            unit=unit,
-            wo_no=wo_no,
-            wo_id=wo_id,
-            amount=totals.get("grand_total") or 0,
-            supplier_name=header.get("supplier_name") or "",
-            reason=header.get("subject") or header.get("notes") or "",
-            requested_by=session.get("username") or session.get("user") or "",
-            purchasing_dept_id=purchasing_dept_id if purchasing_dept_id > 0 else None,
-        )
-        if otp_result.get("error"):
-            _audit_log_event(
-                "purchase",
-                "work_order_create",
-                status="error",
-                entity_type="work_order",
-                entity_id=str(wo_id),
-                unit=unit,
-                summary="OTP request failed",
-                details={"error": otp_result.get("error"), "wo_no": wo_no},
-            )
-            return jsonify({"status": "error", "message": otp_result["error"]}), 500
-        otp_request_id = otp_result.get("request_id")
-        if otp_request_id:
-            _insert_purchase_otp_request(wo_id, wo_no, unit, int(otp_request_id), session.get("username") or session.get("user"))
-
-    response = {"status": "success", "wo_id": wo_id, "wo_no": wo_no}
-    if otp_request_id:
-        response["request_id"] = otp_request_id
-    _audit_log_event(
-        "purchase",
-        "work_order_create",
-        status="success",
-        entity_type="work_order",
-        entity_id=str(wo_id),
-        unit=unit,
-        summary="Work Order created",
-        details={
-            "wo_no": wo_no,
-            "header": _normalize_work_order_header_for_audit(header, totals, status_code),
-            "item_count": len(normalized_items),
-            "otp_request_id": otp_request_id,
-        },
-        request_id=str(otp_request_id) if otp_request_id else None,
-    )
-    return jsonify(response)
-
-
-@app.route('/api/purchase/work_order_update', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_update_work_order():
-    unit, error = _get_work_order_unit()
-    if error:
-        return error
-    _ensure_work_order_schema(unit)
-
-    payload = request.get_json(silent=True) or {}
-    header = payload.get("header") or {}
-    items = payload.get("items") or []
-    body_html = _normalize_work_order_body_html(header.get("body_html"))
-    body_text = _work_order_body_to_plain_text(body_html)
-
-    wo_id = _safe_int(header.get("wo_id"))
-    if wo_id <= 0:
-        _audit_log_event(
-            "purchase",
-            "work_order_update",
-            status="error",
-            entity_type="work_order",
-            unit=unit,
-            summary="Work Order ID is required for update",
-            details={"wo_no": header.get("wo_no")},
-        )
-        return jsonify({"status": "error", "message": "Work Order ID is required for update"}), 400
-    if not items and not body_text:
-        _audit_log_event(
-            "purchase",
-            "work_order_update",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Work Order body is required",
-            details={"wo_no": header.get("wo_no")},
-        )
-        return jsonify({"status": "error", "message": "Enter the Work Order body before saving."}), 400
-
-    normalized_items, item_errors = _normalize_work_order_items(items)
-    if item_errors:
-        _audit_log_event(
-            "purchase",
-            "work_order_update",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Invalid Work Order lines",
-            details={"errors": item_errors, "wo_no": header.get("wo_no")},
-        )
-        return jsonify({"status": "error", "message": "Invalid Work Order lines", "errors": item_errors}), 400
-
-    header_df = data_fetch.fetch_work_order_header(unit, wo_id=wo_id)
-    if header_df is None:
-        _audit_log_event(
-            "purchase",
-            "work_order_update",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Failed to fetch Work Order for update",
-        )
-        return jsonify({"status": "error", "message": "Failed to fetch Work Order for update"}), 500
-    if header_df.empty:
-        _audit_log_event(
-            "purchase",
-            "work_order_update",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Work Order not found",
-        )
-        return jsonify({"status": "error", "message": "Work Order not found"}), 404
-    header_df = _clean_df_columns(header_df)
-    existing_header = header_df.iloc[0].to_dict()
-    current_status = str(existing_header.get("Status") or "").strip().upper()
-    if current_status not in {"D", "P"}:
-        _audit_log_event(
-            "purchase",
-            "work_order_update",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Only Draft or Pending Approval Work Orders can be updated",
-            details={"current_status": current_status},
-        )
-        return jsonify({"status": "error", "message": "Only Draft or Pending Approval Work Orders can be updated"}), 400
-
-    totals = _resolve_work_order_totals(normalized_items, header.get("totals"))
-    if not normalized_items:
-        if totals.get("grand_total", 0) <= 0 and totals.get("gross_total", 0) <= 0 and totals.get("taxable_total", 0) <= 0:
-            _audit_log_event(
-                "purchase",
-                "work_order_update",
-                status="error",
-                entity_type="work_order",
-                entity_id=str(wo_id),
-                unit=unit,
-                summary="Work Order totals are required",
-                details={"wo_no": header.get("wo_no")},
-            )
-            return jsonify({"status": "error", "message": "Enter Work Order totals before saving."}), 400
-        normalized_items = [_build_work_order_fallback_item(header, body_text, totals)]
-    status_raw = str(header.get("status") or "Draft").strip().lower()
-    status_map = {"draft": "D", "pending approval": "P", "approved": "A"}
-    status_code = status_map.get(status_raw, "D")
-    purchasing_dept_id = _safe_int(header.get("purchasing_dept_id"))
-    if status_code == "P" and purchasing_dept_id <= 0:
-        _audit_log_event(
-            "purchase",
-            "work_order_update",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Purchasing department is required for approval",
-            details={"wo_no": header.get("wo_no")},
-        )
-        return jsonify({"status": "error", "message": "Please select Purchasing Dept before submitting for approval."}), 400
-
-    now = datetime.now(tz=LOCAL_TZ)
-
-    def _num_or_text(val):
-        try:
-            if val is None or val == "":
-                return None
-            return float(val)
-        except Exception:
-            return val
-
-    wo_params = {
-        "pId": wo_id,
-        "pSupplierid": _safe_int(header.get("supplier_id") or existing_header.get("SupplierID")),
-        "pTenderid": _safe_int(header.get("tender_id")),
-        "pPono": header.get("wo_no") or existing_header.get("PONo"),
-        "pPodate": header.get("wo_date"),
-        "pDeliveryterms": header.get("delivery_terms"),
-        "pPaymentsterms": header.get("payment_terms"),
-        "pOtherterms": header.get("other_terms"),
-        "pTaxid": _safe_int(header.get("tax_id")),
-        "pTax": totals.get("tax_total") or 0,
-        "pDiscount": totals.get("discount_total") or 0,
-        "pAmount": totals.get("grand_total") or 0,
-        "pCreditdays": _safe_int(header.get("credit_days")),
-        "pPocomplete": 0,
-        "pNotes": header.get("notes"),
-        "pSpecialNotes": header.get("special_notes"),
-        "WorkOrderBodyHtml": body_html,
-        "SeniorApprovalAuthorityName": header.get("senior_approval_authority_name"),
-        "SeniorApprovalAuthorityDesignation": header.get("senior_approval_authority_designation"),
-        "pPreparedby": header.get("prepared_by"),
-        "pCustom1": _num_or_text(header.get("freight_charges")),
-        "pCustom2": _num_or_text(header.get("packing_charges")),
-        "pSignauthorityperson": header.get("sign_authority_person"),
-        "pSignauthoritypdesig": header.get("sign_authority_desig"),
-        "pRefno": header.get("ref_no"),
-        "pSubject": header.get("subject"),
-        "pAuthorizationid": _safe_int(header.get("authorization_id")),
-        "pPurchaseIndentId": 0,
-        "Against": "Work Order",
-        "QuotationId": _safe_int(header.get("quotation_id")),
-        "TotalFORe": totals.get("for_total") or 0,
-        "TotalExciseAmt": totals.get("tax_total") or 0,
-        "AgainstId": 0,
-        "Status": status_code,
-        "PurchasingDeptId": purchasing_dept_id if purchasing_dept_id > 0 else None,
-        "pUpdatedby": _safe_int(header.get("updated_by")),
-        "pUpdatedon": now.strftime("%Y-%m-%d %H:%M:%S"),
-    }
-
-    mst_result = data_fetch.update_iv_work_order_mst(unit, wo_params)
-    if mst_result.get("error"):
-        _audit_log_event(
-            "purchase",
-            "work_order_update",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Work Order update failed",
-            details={"error": mst_result.get("error"), "wo_no": header.get("wo_no")},
-        )
-        return jsonify({"status": "error", "message": mst_result["error"]}), 500
-
-    wo_no = str(mst_result.get("wo_no") or header.get("wo_no") or existing_header.get("PONo") or "").strip()
-    if not wo_no:
-        try:
-            wo_no_fix = data_fetch.ensure_work_order_number(unit, int(wo_id), preferred_wo_no=header.get("wo_no"))
-            ensured_wo_no = str(wo_no_fix.get("wo_no") or "").strip()
-            if ensured_wo_no:
-                wo_no = ensured_wo_no
-        except Exception:
-            pass
-    if not wo_no:
-        wo_no = f"WO-{wo_id}"
-
-    clear_result = data_fetch.clear_work_order_dtl(unit, wo_id)
-    if clear_result.get("error"):
-        _audit_log_event(
-            "purchase",
-            "work_order_update",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Failed to clear Work Order lines before update",
-            details={"error": clear_result.get("error")},
-        )
-        return jsonify({"status": "error", "message": clear_result["error"]}), 500
-
-    detail_params = []
-    for item in normalized_items:
-        detail_params.append(
-            {
-                "WOID": int(wo_id),
-                "LineNo": item.get("line_no"),
-                "ItemName": item.get("item_name"),
-                "UnitName": item.get("unit_name"),
-                "Qty": item.get("qty"),
-                "Rate": item.get("rate"),
-                "DiscountPct": item.get("discount_pct"),
-                "TaxableAmount": item.get("taxable_amount"),
-                "CGSTPct": item.get("cgst_pct"),
-                "SGSTPct": item.get("sgst_pct"),
-                "IGSTPct": item.get("igst_pct"),
-                "CGSTAmt": item.get("cgst_amt"),
-                "SGSTAmt": item.get("sgst_amt"),
-                "IGSTAmt": item.get("igst_amt"),
-                "ForAmount": item.get("for_amount"),
-                "NetAmount": item.get("net_amount"),
-                "LineNotes": item.get("line_notes"),
-                "CreatedBy": session.get("username") or session.get("user"),
-                "UpdatedBy": session.get("username") or session.get("user"),
-                "_row_no": item.get("line_no"),
-            }
-        )
-    bulk_result = data_fetch.add_work_order_dtl_many(unit, detail_params)
-    if bulk_result.get("error"):
-        _audit_log_event(
-            "purchase",
-            "work_order_update",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Failed to save Work Order detail rows",
-            details={"wo_no": wo_no, "error": bulk_result.get("error")},
-        )
-        return jsonify({"status": "error", "message": bulk_result.get("error")}), 500
-    detail_errors = list(bulk_result.get("errors") or [])
-    if detail_errors:
-        _audit_log_event(
-            "purchase",
-            "work_order_update",
-            status="partial",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Work Order updated but some rows failed",
-            details={"wo_no": wo_no, "errors": detail_errors},
-        )
-        return jsonify({"status": "partial", "wo_id": wo_id, "wo_no": wo_no, "errors": detail_errors}), 207
-
-    otp_request_id = None
-    if status_code == "P":
-        otp_result = _create_work_order_otp_request(
-            unit=unit,
-            wo_no=wo_no,
-            wo_id=wo_id,
-            amount=totals.get("grand_total") or 0,
-            supplier_name=header.get("supplier_name") or existing_header.get("SupplierName") or "",
-            reason=header.get("subject") or header.get("notes") or "",
-            requested_by=session.get("username") or session.get("user") or "",
-            purchasing_dept_id=purchasing_dept_id if purchasing_dept_id > 0 else None,
-        )
-        if otp_result.get("error"):
-            _audit_log_event(
-                "purchase",
-                "work_order_update",
-                status="error",
-                entity_type="work_order",
-                entity_id=str(wo_id),
-                unit=unit,
-                summary="OTP request failed",
-                details={"error": otp_result.get("error"), "wo_no": wo_no},
-            )
-            return jsonify({"status": "error", "message": otp_result["error"]}), 500
-        otp_request_id = otp_result.get("request_id")
-        if otp_request_id:
-            _insert_purchase_otp_request(wo_id, wo_no, unit, int(otp_request_id), session.get("username") or session.get("user"))
-
-    response = {"status": "success", "wo_id": wo_id, "wo_no": wo_no}
-    if otp_request_id:
-        response["request_id"] = otp_request_id
-    _audit_log_event(
-        "purchase",
-        "work_order_update",
-        status="success",
-        entity_type="work_order",
-        entity_id=str(wo_id),
-        unit=unit,
-        summary="Work Order updated",
-        details={
-            "wo_no": wo_no,
-            "old_header": _normalize_work_order_header_for_audit(existing_header),
-            "new_header": _normalize_work_order_header_for_audit(header, totals, status_code),
-            "item_count": len(normalized_items),
-            "otp_request_id": otp_request_id,
-        },
-        request_id=str(otp_request_id) if otp_request_id else None,
-    )
-    return jsonify(response)
-
-
-@app.route('/api/purchase/work_order_approve', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_work_order_approve():
-    unit, error = _get_work_order_unit()
-    if error:
-        return error
-    _ensure_work_order_schema(unit)
-
-    payload = request.get_json(silent=True) or {}
-    wo_id = _safe_int(payload.get("wo_id"))
-    request_id = _safe_int(payload.get("request_id"))
-    otp = str(payload.get("otp") or "").strip()
-    auto_email_requested = _is_truthy(payload.get("auto_email_supplier_pdf"))
-    supplier_email_override = _purchase_normalize_email(payload.get("supplier_email") or payload.get("to_email") or payload.get("email"))
-    raw_auto_email_format = str(payload.get("auto_email_format") or payload.get("format") or "").strip().lower()
-    is_it = (session.get("role") or "").strip() == "IT"
-    auto_email_print_format = "def" if is_it and raw_auto_email_format == "def" else None
-
-    if wo_id <= 0 or request_id <= 0 or not otp:
-        _audit_log_event(
-            "purchase",
-            "work_order_approve",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id) if wo_id > 0 else None,
-            unit=unit,
-            summary="Work Order ID, request ID, and OTP are required",
-        )
-        return jsonify({"status": "error", "message": "Work Order ID, request ID, and OTP are required"}), 400
-
-    header_df = data_fetch.fetch_work_order_header(unit, wo_id=wo_id)
-    if header_df is None:
-        _audit_log_event(
-            "purchase",
-            "work_order_approve",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Failed to fetch Work Order",
-        )
-        return jsonify({"status": "error", "message": "Failed to fetch Work Order"}), 500
-    if header_df.empty:
-        _audit_log_event(
-            "purchase",
-            "work_order_approve",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Work Order not found",
-        )
-        return jsonify({"status": "error", "message": "Work Order not found"}), 404
-    header_df = _clean_df_columns(header_df)
-    header_row = header_df.iloc[0].to_dict()
-    auto_email_print_format = _resolve_po_print_format_for_render(
-        unit,
-        requested_format=raw_auto_email_format,
-        header_row=header_row,
-        purchasing_dept_id=_safe_int(header_row.get("PurchasingDeptId")),
-    )
-    status_code = str(header_row.get("Status") or "").strip().upper()
-    if status_code != "P":
-        _audit_log_event(
-            "purchase",
-            "work_order_approve",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Only Pending Approval Work Orders can be approved",
-            details={"current_status": status_code},
-        )
-        return jsonify({"status": "error", "message": "Only Pending Approval Work Orders can be approved"}), 400
-
-    otp_result = _validate_purchase_otp(request_id, otp)
-    if otp_result.get("error"):
-        _audit_log_event(
-            "purchase",
-            "work_order_approve",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="OTP validation failed",
-            details={"error": otp_result.get("error")},
-            request_id=str(request_id),
-        )
-        return jsonify({"status": "error", "message": otp_result["error"]}), 500
-    if not otp_result.get("valid"):
-        _audit_log_event(
-            "purchase",
-            "work_order_approve",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Invalid OTP",
-            details={"message": otp_result.get("message")},
-            request_id=str(request_id),
-        )
-        return jsonify({"status": "error", "message": otp_result.get("message") or "Invalid OTP"}), 400
-
-    req_type = str(otp_result.get("request_type") or "").strip().upper()
-    if req_type and req_type != OTP_WORK_ORDER_REQUEST_TYPE:
-        _audit_log_event(
-            "purchase",
-            "work_order_approve",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="OTP request type mismatch",
-            details={"request_type": req_type},
-            request_id=str(request_id),
-        )
-        return jsonify({"status": "error", "message": "OTP request type mismatch"}), 400
-
-    otp_wo_no = str(otp_result.get("bill_no") or "").strip().upper()
-    if wo_id > 0 and not str(header_row.get("PONo") or "").strip():
-        try:
-            wo_no_fix = data_fetch.ensure_work_order_number(unit, wo_id, preferred_wo_no=otp_wo_no or None)
-            ensured_wo_no = str(wo_no_fix.get("wo_no") or "").strip()
-            if ensured_wo_no:
-                header_row["PONo"] = ensured_wo_no
-        except Exception:
-            pass
-    wo_no = str(header_row.get("PONo") or "").strip().upper()
-    if wo_no and otp_wo_no and wo_no != otp_wo_no:
-        _audit_log_event(
-            "purchase",
-            "work_order_approve",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="OTP does not match this Work Order",
-            details={"wo_no": wo_no, "otp_wo_no": otp_wo_no},
-            request_id=str(request_id),
-        )
-        return jsonify({"status": "error", "message": "OTP does not match this Work Order"}), 400
-
-    status_result = data_fetch.update_work_order_status(unit, wo_id, "A")
-    if status_result.get("error"):
-        _audit_log_event(
-            "purchase",
-            "work_order_approve",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Work Order approval failed",
-            details={"error": status_result.get("error")},
-            request_id=str(request_id),
-        )
-        return jsonify({"status": "error", "message": status_result["error"]}), 500
-
-    user = session.get("username") or session.get("user") or ""
-    _mark_central_otp_used(request_id, user)
-    _mark_purchase_otp_used(wo_id, request_id, user)
-    try:
-        req_meta = _fetch_purchase_otp_request_by_id(request_id)
-        mail_result = _send_purchase_work_order_approval_email(unit, wo_id, header_row, req_meta)
-        if mail_result.get("status") == "error":
-            print(f"Work Order approval email failed: {mail_result.get('message')}")
-    except Exception as e:
-        print(f"Work Order approval email error: {e}")
-
-    auto_email_result = {"requested": bool(auto_email_requested), "status": "skipped", "message": "Auto email option not selected"}
-    if auto_email_requested:
-        wo_no_val = str(header_row.get("PONo") or f"WO-{wo_id}")
-        supplier_id = _safe_int(header_row.get("SupplierID"))
-        supplier_email = _purchase_normalize_email(header_row.get("SupplierEmail"))
-        if _purchase_is_valid_email(supplier_email_override):
-            supplier_email = supplier_email_override
-            header_row["SupplierEmail"] = supplier_email
-        if not _purchase_is_valid_email(supplier_email):
-            auto_email_result = {
-                "requested": True,
-                "status": "skipped",
-                "message": "Supplier email is missing or invalid",
-                "recipient": supplier_email,
-            }
-            _audit_log_event(
-                "purchase",
-                "work_order_auto_email_on_approve",
-                status="error",
-                entity_type="work_order",
-                entity_id=str(wo_id),
-                unit=unit,
-                summary="Supplier auto-email skipped due to invalid email",
-                details={"wo_no": wo_no_val, "supplier_id": supplier_id, "recipient": supplier_email},
-                request_id=str(request_id),
-            )
-        else:
-            try:
-                items_df = data_fetch.fetch_work_order_items(unit, wo_id)
-                if items_df is None:
-                    raise RuntimeError("Failed to fetch Work Order items for supplier email")
-                items_df = _clean_df_columns(items_df)
-                items_rows = items_df.to_dict(orient="records") if not items_df.empty else []
-
-                approval_meta = _fetch_purchase_approval_meta(wo_id)
-                header_pdf = dict(header_row)
-                header_pdf["Status"] = "A"
-                header_pdf["SupplierEmail"] = supplier_email
-                header_pdf["PurchasingDeptName"] = _resolve_purchasing_department_name(_safe_int(header_row.get("PurchasingDeptId")))
-                pdf_buffer = _build_work_order_pdf_buffer(
-                    unit,
-                    header_pdf,
-                    items_rows,
-                    approval_meta,
-                    print_format=auto_email_print_format,
-                )
-                pdf_bytes = pdf_buffer.getvalue() if pdf_buffer else b""
-
-                snapshot = {
-                    "unit": unit,
-                    "wo_no": wo_no_val,
-                    "wo_date": header_row.get("PODate").strftime("%d-%b-%Y")
-                    if isinstance(header_row.get("PODate"), (datetime, date))
-                    else str(header_row.get("PODate") or "")[:10],
-                    "supplier": str(header_row.get("SupplierName") or ""),
-                    "amount": _format_indian_currency(header_row.get("Amount") or 0),
-                    "subject": str(header_row.get("Subject") or ""),
-                }
-                mail_subject = f"Work Order {wo_no_val}"
-                mail_body = _build_work_order_supplier_dispatch_email_body(snapshot)
-                mail_filename = f"WO_{wo_no_val}.pdf"
-                mail_result_supplier = _send_graph_mail_with_attachment(
-                    subject=mail_subject,
-                    body_html=mail_body,
-                    to_recipients=[supplier_email],
-                    filename=mail_filename,
-                    content_bytes=pdf_bytes,
-                )
-                if str(mail_result_supplier.get("status") or "").strip().lower() == "success":
-                    auto_email_result = {"requested": True, "status": "success", "recipient": supplier_email}
-                    _audit_log_event(
-                        "purchase",
-                        "work_order_auto_email_on_approve",
-                        status="success",
-                        entity_type="work_order",
-                        entity_id=str(wo_id),
-                        unit=unit,
-                        summary="Supplier Work Order PDF auto-emailed on approval",
-                        details={"wo_no": wo_no_val, "supplier_id": supplier_id, "recipient": supplier_email},
-                        request_id=str(request_id),
-                    )
-                else:
-                    err_msg = str(mail_result_supplier.get("message") or "Failed to send supplier email")
-                    auto_email_result = {
-                        "requested": True,
-                        "status": "error",
-                        "recipient": supplier_email,
-                        "message": err_msg,
-                    }
-                    _audit_log_event(
-                        "purchase",
-                        "work_order_auto_email_on_approve",
-                        status="error",
-                        entity_type="work_order",
-                        entity_id=str(wo_id),
-                        unit=unit,
-                        summary="Supplier Work Order PDF auto-email failed",
-                        details={
-                            "wo_no": wo_no_val,
-                            "supplier_id": supplier_id,
-                            "recipient": supplier_email,
-                            "mail_result": mail_result_supplier,
-                        },
-                        request_id=str(request_id),
-                    )
-            except Exception as e:
-                auto_email_result = {
-                    "requested": True,
-                    "status": "error",
-                    "recipient": supplier_email,
-                    "message": str(e),
-                }
-                _audit_log_event(
-                    "purchase",
-                    "work_order_auto_email_on_approve",
-                    status="error",
-                    entity_type="work_order",
-                    entity_id=str(wo_id),
-                    unit=unit,
-                    summary="Supplier Work Order PDF auto-email error",
-                    details={"wo_no": wo_no_val, "supplier_id": supplier_id, "recipient": supplier_email, "error": str(e)},
-                    request_id=str(request_id),
-                )
-
-    _audit_log_event(
-        "purchase",
-        "work_order_approve",
-        status="success",
-        entity_type="work_order",
-        entity_id=str(wo_id),
-        unit=unit,
-        summary="Work Order approved",
-        details={"wo_no": header_row.get("PONo"), "auto_email": auto_email_result if auto_email_result.get("requested") else None},
-        request_id=str(request_id),
-    )
-    return jsonify({"status": "success", "wo_id": wo_id, "wo_no": header_row.get("PONo"), "auto_email": auto_email_result})
-
-
-@app.route('/api/purchase/work_order_resend_otp', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_work_order_resend_otp():
-    unit, error = _get_work_order_unit()
-    if error:
-        return error
-    _ensure_work_order_schema(unit)
-
-    payload = request.get_json(silent=True) or {}
-    wo_id = _safe_int(payload.get("wo_id"))
-    if wo_id <= 0:
-        _audit_log_event(
-            "purchase",
-            "work_order_resend_otp",
-            status="error",
-            entity_type="work_order",
-            unit=unit,
-            summary="Work Order ID is required",
-        )
-        return jsonify({"status": "error", "message": "Work Order ID is required"}), 400
-
-    header_df = data_fetch.fetch_work_order_header(unit, wo_id=wo_id)
-    if header_df is None:
-        _audit_log_event(
-            "purchase",
-            "work_order_resend_otp",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Failed to fetch Work Order",
-        )
-        return jsonify({"status": "error", "message": "Failed to fetch Work Order"}), 500
-    if header_df.empty:
-        _audit_log_event(
-            "purchase",
-            "work_order_resend_otp",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="Work Order not found",
-        )
-        return jsonify({"status": "error", "message": "Work Order not found"}), 404
-    header_df = _clean_df_columns(header_df)
-    header_row = header_df.iloc[0].to_dict()
-    status_code = str(header_row.get("Status") or "").strip().upper()
-    if status_code != "P":
-        _audit_log_event(
-            "purchase",
-            "work_order_resend_otp",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="OTP can be resent only for Pending Approval Work Orders",
-            details={"current_status": status_code},
-        )
-        return jsonify({"status": "error", "message": "OTP can be resent only for Pending Approval Work Orders"}), 400
-
-    wo_no = str(header_row.get("PONo") or f"WO-{wo_id}")
-    amount_total = header_row.get("Amount") or 0
-    purchasing_dept_id = _safe_int(header_row.get("PurchasingDeptId"))
-    otp_result = _create_work_order_otp_request(
-        unit=unit,
-        wo_no=wo_no,
-        wo_id=wo_id,
-        amount=amount_total,
-        supplier_name=header_row.get("SupplierName") or "",
-        reason=header_row.get("Subject") or header_row.get("Notes") or "",
-        requested_by=session.get("username") or session.get("user") or "",
-        purchasing_dept_id=purchasing_dept_id if purchasing_dept_id > 0 else None,
-    )
-    if otp_result.get("error"):
-        _audit_log_event(
-            "purchase",
-            "work_order_resend_otp",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id),
-            unit=unit,
-            summary="OTP request failed",
-            details={"error": otp_result.get("error"), "wo_no": wo_no},
-        )
-        return jsonify({"status": "error", "message": otp_result["error"]}), 500
-    otp_request_id = otp_result.get("request_id")
-    if otp_request_id:
-        _insert_purchase_otp_request(wo_id, wo_no, unit, int(otp_request_id), session.get("username") or session.get("user"))
-
-    _audit_log_event(
-        "purchase",
-        "work_order_resend_otp",
-        status="success",
-        entity_type="work_order",
-        entity_id=str(wo_id),
-        unit=unit,
-        summary="OTP resent",
-        details={"wo_no": wo_no, "request_id": otp_request_id},
-        request_id=str(otp_request_id) if otp_request_id else None,
-    )
-    return jsonify({"status": "success", "wo_id": wo_id, "wo_no": wo_no, "request_id": otp_request_id})
-
-
-@app.route('/api/purchase/work_order_print')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_work_order_print():
-    unit, error = _get_work_order_unit()
-    if error:
-        return error
-    _ensure_work_order_schema(unit)
-
-    wo_id_raw = request.args.get("wo_id")
-    wo_no = (request.args.get("wo_no") or "").strip()
-    wo_id = int(wo_id_raw) if str(wo_id_raw or "").isdigit() else None
-    raw_format = (request.args.get("format") or "").strip().lower()
-    is_it = (session.get("role") or "").strip() == "IT"
-    print_format = "def" if is_it and raw_format == "def" else None
-    if not wo_id and not wo_no:
-        return jsonify({"status": "error", "message": "Work Order ID or number is required"}), 400
-
-    header_df = data_fetch.fetch_work_order_header(unit, wo_id=wo_id, wo_no=wo_no)
-    if header_df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch Work Order"}), 500
-    if header_df.empty:
-        return jsonify({"status": "error", "message": "Work Order not found"}), 404
-    header_df = _clean_df_columns(header_df)
-    header = header_df.iloc[0].to_dict()
-    header["PurchasingDeptName"] = _resolve_purchasing_department_name(_safe_int(header.get("PurchasingDeptId")))
-    wo_id_val = _safe_int(header.get("ID"), wo_id)
-    if wo_id_val > 0 and not str(header.get("PONo") or "").strip():
-        try:
-            wo_no_fix = data_fetch.ensure_work_order_number(unit, wo_id_val, preferred_wo_no=wo_no)
-            ensured_wo_no = str(wo_no_fix.get("wo_no") or "").strip()
-            if ensured_wo_no:
-                header["PONo"] = ensured_wo_no
-        except Exception:
-            pass
-
-    items_df = data_fetch.fetch_work_order_items(unit, wo_id_val)
-    if items_df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch Work Order items"}), 500
-    items_df = _clean_df_columns(items_df)
-    items_rows = items_df.to_dict(orient="records") if not items_df.empty else []
-    approval_meta = _fetch_purchase_approval_meta(wo_id_val)
-
-    pdf_buffer = _build_work_order_pdf_buffer(unit, header, items_rows, approval_meta, print_format=print_format)
-    filename = f"WO_{header.get('PONo') or wo_no or wo_id_val}.pdf"
-    return send_file(pdf_buffer, mimetype="application/pdf", as_attachment=False, download_name=filename)
-
-
-@app.route('/api/purchase/work_order_email_pdf', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_purchase_work_order_email_pdf():
-    unit, error = _get_work_order_unit()
-    if error:
-        return error
-    _ensure_work_order_schema(unit)
-
-    payload = request.get_json(silent=True) or {}
-    wo_id = _safe_int(payload.get("wo_id"))
-    wo_no = str(payload.get("wo_no") or "").strip()
-    to_email = _purchase_normalize_email(payload.get("to_email") or payload.get("email"))
-    raw_format = str(payload.get("format") or "").strip().lower()
-    is_it = (session.get("role") or "").strip() == "IT"
-    print_format = "def" if is_it and raw_format == "def" else None
-
-    if wo_id <= 0 and not wo_no:
-        _audit_log_event(
-            "purchase",
-            "work_order_email_pdf",
-            status="error",
-            entity_type="work_order",
-            unit=unit,
-            summary="Work Order ID or number is required",
-        )
-        return jsonify({"status": "error", "message": "Work Order ID or number is required"}), 400
-    if not _purchase_is_valid_email(to_email):
-        _audit_log_event(
-            "purchase",
-            "work_order_email_pdf",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id) if wo_id > 0 else None,
-            unit=unit,
-            summary="Invalid recipient email",
-            details={"to_email": to_email, "wo_no": wo_no},
-        )
-        return jsonify({"status": "error", "message": "Enter a valid recipient email address"}), 400
-
-    header_df = data_fetch.fetch_work_order_header(unit, wo_id=wo_id if wo_id > 0 else None, wo_no=wo_no)
-    if header_df is None:
-        _audit_log_event(
-            "purchase",
-            "work_order_email_pdf",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id) if wo_id > 0 else None,
-            unit=unit,
-            summary="Failed to fetch Work Order",
-            details={"wo_no": wo_no},
-        )
-        return jsonify({"status": "error", "message": "Failed to fetch Work Order"}), 500
-    if header_df.empty:
-        _audit_log_event(
-            "purchase",
-            "work_order_email_pdf",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id) if wo_id > 0 else None,
-            unit=unit,
-            summary="Work Order not found",
-            details={"wo_no": wo_no},
-        )
-        return jsonify({"status": "error", "message": "Work Order not found"}), 404
-
-    header_df = _clean_df_columns(header_df)
-    header_row = header_df.iloc[0].to_dict()
-    wo_id_val = _safe_int(header_row.get("ID"), wo_id)
-    if wo_id_val > 0 and not str(header_row.get("PONo") or "").strip():
-        try:
-            wo_no_fix = data_fetch.ensure_work_order_number(unit, wo_id_val, preferred_wo_no=wo_no)
-            ensured_wo_no = str(wo_no_fix.get("wo_no") or "").strip()
-            if ensured_wo_no:
-                header_row["PONo"] = ensured_wo_no
-        except Exception:
-            pass
-    wo_no_val = str(header_row.get("PONo") or wo_no or f"WO-{wo_id_val}")
-    status_code = str(header_row.get("Status") or "").strip().upper()
-    if status_code != "A":
-        _audit_log_event(
-            "purchase",
-            "work_order_email_pdf",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id_val),
-            unit=unit,
-            summary="Only approved Work Orders can be emailed",
-            details={"wo_no": wo_no_val, "status": status_code},
-        )
-        return jsonify({"status": "error", "message": "Only approved Work Orders can be emailed"}), 400
-
-    supplier_id = _safe_int(header_row.get("SupplierID"))
-    if supplier_id <= 0:
-        _audit_log_event(
-            "purchase",
-            "work_order_email_pdf",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id_val),
-            unit=unit,
-            summary="Supplier not linked to Work Order",
-            details={"wo_no": wo_no_val},
-        )
-        return jsonify({"status": "error", "message": "Supplier not linked to Work Order"}), 400
-
-    email_update_result = data_fetch.update_iv_supplier_email(unit, supplier_id, to_email)
-    if email_update_result.get("error"):
-        err_msg = str(email_update_result.get("error") or "Failed to update supplier email")
-        http_status = 404 if "not found" in err_msg.lower() else 500
-        _audit_log_event(
-            "purchase",
-            "work_order_email_pdf",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id_val),
-            unit=unit,
-            summary="Failed to update supplier email before dispatch",
-            details={"wo_no": wo_no_val, "supplier_id": supplier_id, "to_email": to_email, "error": err_msg},
-        )
-        return jsonify({"status": "error", "message": err_msg}), http_status
-
-    items_df = data_fetch.fetch_work_order_items(unit, wo_id_val)
-    if items_df is None:
-        _audit_log_event(
-            "purchase",
-            "work_order_email_pdf",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id_val),
-            unit=unit,
-            summary="Failed to fetch Work Order items",
-            details={"wo_no": wo_no_val},
-        )
-        return jsonify({"status": "error", "message": "Failed to fetch Work Order items"}), 500
-    items_df = _clean_df_columns(items_df)
-    items_rows = items_df.to_dict(orient="records") if not items_df.empty else []
-
-    approval_meta = _fetch_purchase_approval_meta(wo_id_val)
-    header_pdf = dict(header_row)
-    header_pdf["PurchasingDeptName"] = _resolve_purchasing_department_name(_safe_int(header_row.get("PurchasingDeptId")))
-    header_pdf["SupplierEmail"] = to_email
-    pdf_buffer = _build_work_order_pdf_buffer(unit, header_pdf, items_rows, approval_meta, print_format=print_format)
-    pdf_bytes = pdf_buffer.getvalue() if pdf_buffer else b""
-
-    snapshot = {
-        "unit": unit,
-        "wo_no": wo_no_val,
-        "wo_date": header_row.get("PODate").strftime("%d-%b-%Y")
-        if isinstance(header_row.get("PODate"), (datetime, date))
-        else str(header_row.get("PODate") or "")[:10],
-        "supplier": str(header_row.get("SupplierName") or ""),
-        "amount": _format_indian_currency(header_row.get("Amount") or 0),
-        "subject": str(header_row.get("Subject") or ""),
-    }
-    mail_subject = f"Work Order {wo_no_val}"
-    mail_body = _build_work_order_supplier_dispatch_email_body(snapshot)
-    mail_filename = f"WO_{wo_no_val}.pdf"
-    mail_result = _send_graph_mail_with_attachment(
-        subject=mail_subject,
-        body_html=mail_body,
-        to_recipients=[to_email],
-        filename=mail_filename,
-        content_bytes=pdf_bytes,
-    )
-    if str(mail_result.get("status") or "").strip().lower() != "success":
-        err_msg = str(mail_result.get("message") or "Failed to send email")
-        _audit_log_event(
-            "purchase",
-            "work_order_email_pdf",
-            status="error",
-            entity_type="work_order",
-            entity_id=str(wo_id_val),
-            unit=unit,
-            summary="Work Order email send failed",
-            details={"wo_no": wo_no_val, "supplier_id": supplier_id, "recipient": to_email, "mail_result": mail_result},
-        )
-        return jsonify({"status": "error", "message": err_msg, "mail_status": mail_result}), 500
-
-    _audit_log_event(
-        "purchase",
-        "work_order_email_pdf",
-        status="success",
-        entity_type="work_order",
-        entity_id=str(wo_id_val),
-        unit=unit,
-        summary="Work Order PDF emailed to supplier",
-        details={"wo_no": wo_no_val, "supplier_id": supplier_id, "recipient": to_email, "mail_result": mail_result},
-    )
-    return jsonify(
-        {
-            "status": "success",
-            "message": f"Work Order PDF emailed to {to_email}",
-            "wo_id": wo_id_val,
-            "wo_no": wo_no_val,
-            "recipient": to_email,
-            "mail_status": mail_result,
-        }
-    )
-
-
 @app.route('/discount-module')
 @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
 def discount_module():
@@ -33688,7 +25774,7 @@ def api_gst_sales():
     if not fresh:
         cached = _gst_cache_get(cache_key)
         if cached and cached.get("sales") is not None:
-            records = _sanitize_json_payload(cached["sales"] or [])
+            records = _sanitize_json_payload(_gst_normalize_records(cached["sales"] or []))
             return jsonify({"status": "success", "data": records, "unit": target_unit, "count": len(records)})
 
     df = data_fetch.fetch_gst_drug_sales(target_unit, start_date, end_date)
@@ -33697,6 +25783,7 @@ def api_gst_sales():
     if df.empty:
         return jsonify({"status": "success", "data": [], "unit": target_unit, "count": 0}), 200
 
+    df = _gst_normalize_df(df)
     for col in df.columns:
         if pd.api.types.is_datetime64_any_dtype(df[col]):
             df[col] = pd.to_datetime(df[col], errors="coerce").dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -33725,7 +25812,7 @@ def api_gst_returns():
     if not fresh:
         cached = _gst_cache_get(cache_key)
         if cached and cached.get("returns") is not None:
-            records = _sanitize_json_payload(cached["returns"] or [])
+            records = _sanitize_json_payload(_gst_normalize_records(cached["returns"] or []))
             return jsonify({"status": "success", "data": records, "unit": target_unit, "count": len(records)})
 
     df = data_fetch.fetch_gst_drug_returns(target_unit, start_date, end_date)
@@ -33734,6 +25821,7 @@ def api_gst_returns():
     if df.empty:
         return jsonify({"status": "success", "data": [], "unit": target_unit, "count": 0}), 200
 
+    df = _gst_normalize_df(df)
     for col in df.columns:
         if pd.api.types.is_datetime64_any_dtype(df[col]):
             df[col] = pd.to_datetime(df[col], errors="coerce").dt.strftime("%Y-%m-%d %H:%M:%S")
@@ -33998,11 +26086,37 @@ def _gst_norm_filters(raw_filters: list[str] | None, total: int = 12) -> list[st
     return filters[:total]
 
 
+def _gst_normalize_tax_pct(value) -> float:
+    pct = round(_safe_float(value), 4)
+    # Legacy 12% rows now belong to the active 5% slab.
+    if abs(pct - 12.0) < 1e-6:
+        return 5.0
+    return pct
+
+
+def _gst_normalize_records(records: list[dict] | None) -> list[dict]:
+    normalized = []
+    for row in records or []:
+        item = dict(row or {})
+        for key in ("Taxid", "TaxId", "TaxID"):
+            if key in item:
+                item[key] = _gst_normalize_tax_pct(item.get(key))
+        normalized.append(item)
+    return normalized
+
+
+def _gst_normalize_df(df: pd.DataFrame | None) -> pd.DataFrame | None:
+    if df is None or df.empty:
+        return df
+    df = df.copy()
+    for col in ("Taxid", "TaxId", "TaxID"):
+        if col in df.columns:
+            df[col] = df[col].apply(_gst_normalize_tax_pct)
+    return df
+
+
 def _gst_tax_pct_display(value) -> str:
-    try:
-        pct = float(value or 0)
-    except Exception:
-        pct = 0.0
+    pct = _gst_normalize_tax_pct(value)
     if abs(pct - round(pct)) < 1e-6:
         return f"{int(round(pct))}%"
     text = f"{pct:.4f}".rstrip("0").rstrip(".")
@@ -34023,7 +26137,7 @@ def _gst_row_matches_filters(values: list, filters: list[str]) -> bool:
 
 def _gst_sales_filter_values(row: dict) -> list[str]:
     amt = _safe_float(_row_value(row, ["TotalAmt", "TotalAmount", "Amount"]))
-    tax_pct = _safe_float(_row_value(row, ["Taxid", "TaxId", "TaxID"]))
+    tax_pct = _gst_normalize_tax_pct(_row_value(row, ["Taxid", "TaxId", "TaxID"]))
     tax_component = amt * tax_pct / (100 + tax_pct) if tax_pct else 0.0
     cgst = tax_component / 2
     sgst = tax_component / 2
@@ -34046,7 +26160,7 @@ def _gst_sales_filter_values(row: dict) -> list[str]:
 
 def _gst_return_filter_values(row: dict) -> list[str]:
     amt = _safe_float(_row_value(row, ["ReturnAmt", "ReturnAmount", "Amount"]))
-    tax_pct = _safe_float(_row_value(row, ["Taxid", "TaxId", "TaxID"]))
+    tax_pct = _gst_normalize_tax_pct(_row_value(row, ["Taxid", "TaxId", "TaxID"]))
     tax_component = amt * tax_pct / (100 + tax_pct) if tax_pct else 0.0
     cgst = tax_component / 2
     sgst = tax_component / 2
@@ -34095,6 +26209,9 @@ def _build_gst_export_bytes(
     if df_returns is None:
         df_returns = pd.DataFrame()
 
+    df_sales = _gst_normalize_df(df_sales)
+    df_returns = _gst_normalize_df(df_returns)
+
     _gst_cache_put(
         cache_key,
         {
@@ -34136,7 +26253,7 @@ def _build_gst_export_bytes(
     returns_details = []
 
     for r in sales_records:
-        tax_pct = _safe_float(_row_value(r, ["Taxid", "TaxId", "TaxID"]))
+        tax_pct = _gst_normalize_tax_pct(_row_value(r, ["Taxid", "TaxId", "TaxID"]))
         amt = _safe_float(_row_value(r, ["TotalAmt", "TotalAmount", "Amount"]))
         tax_component = amt * tax_pct / (100 + tax_pct) if tax_pct else 0.0
         cgst = tax_component / 2
@@ -34178,7 +26295,7 @@ def _build_gst_export_bytes(
             })
 
     for r in returns_records:
-        tax_pct = _safe_float(_row_value(r, ["Taxid", "TaxId", "TaxID"]))
+        tax_pct = _gst_normalize_tax_pct(_row_value(r, ["Taxid", "TaxId", "TaxID"]))
         amt = _safe_float(_row_value(r, ["ReturnAmt", "ReturnAmount", "Amount"]))
         tax_component = amt * tax_pct / (100 + tax_pct) if tax_pct else 0.0
         cgst = tax_component / 2
@@ -35180,6 +27297,9 @@ def api_modification_virtual_visit_create():
     data = request.get_json(silent=True) or {}
     unit = (data.get("unit") or "").strip().upper()
     username = (session.get("username") or session.get("user") or "").strip()
+    referral_no_provided = ("referral_no" in data) or ("referralNo" in data)
+    referral_date_provided = ("referral_date" in data) or ("referralDate" in data)
+    payer_tpa_name_provided = ("payer_tpa_name" in data) or ("payerTpaName" in data)
 
     allowed_units = _modification_units(_allowed_units_for_session())
     if not unit:
@@ -35206,6 +27326,12 @@ def api_modification_virtual_visit_create():
         doc_id=data.get("doc_id", data.get("docId")),
         discharge_type_id=data.get("discharge_type_id", data.get("dischargeTypeId")),
         visit_status=data.get("visit_status", data.get("visitStatus")),
+        referral_no=data.get("referral_no", data.get("referralNo")),
+        referral_date=data.get("referral_date", data.get("referralDate")),
+        payer_tpa_name=data.get("payer_tpa_name", data.get("payerTpaName")),
+        referral_no_provided=referral_no_provided,
+        referral_date_provided=referral_date_provided,
+        payer_tpa_name_provided=payer_tpa_name_provided,
         username=username,
     )
     if result.get("error"):
@@ -35219,22 +27345,7 @@ def api_modification_virtual_visit_create():
             "mode": result.get("mode"),
         }
         return jsonify(response), status_code
-    return jsonify({
-        "success": True,
-        "visit_id": result.get("visit_id"),
-        "patient_id": result.get("patient_id"),
-        "reg_no": result.get("reg_no"),
-        "patient_name": result.get("patient_name"),
-        "mode": result.get("mode"),
-        "source_visit_id": result.get("source_visit_id"),
-        "patient_type_id": result.get("patient_type_id"),
-        "pay_type": result.get("pay_type"),
-        "settled_bill_count": result.get("settled_bill_count"),
-        "settled_total_amount": result.get("settled_total_amount"),
-        "receipt_count": result.get("receipt_count"),
-        "receipt_numbers": result.get("receipt_numbers"),
-        "settled_invoice_ids": result.get("settled_invoice_ids"),
-    })
+    return jsonify(result)
 
 
 @app.route('/api/modifications/virtual_visit/update', methods=['POST'])
@@ -35243,6 +27354,9 @@ def api_modification_virtual_visit_update():
     data = request.get_json(silent=True) or {}
     unit = (data.get("unit") or "").strip().upper()
     username = (session.get("username") or session.get("user") or "").strip()
+    referral_no_provided = ("referral_no" in data) or ("referralNo" in data)
+    referral_date_provided = ("referral_date" in data) or ("referralDate" in data)
+    payer_tpa_name_provided = ("payer_tpa_name" in data) or ("payerTpaName" in data)
 
     allowed_units = _modification_units(_allowed_units_for_session())
     if not unit:
@@ -35272,6 +27386,12 @@ def api_modification_virtual_visit_update():
         discharge_type_id=data.get("discharge_type_id", data.get("dischargeTypeId")),
         visit_status=data.get("visit_status", data.get("visitStatus")),
         visit_status_provided=visit_status_provided,
+        referral_no=data.get("referral_no", data.get("referralNo")),
+        referral_date=data.get("referral_date", data.get("referralDate")),
+        payer_tpa_name=data.get("payer_tpa_name", data.get("payerTpaName")),
+        referral_no_provided=referral_no_provided,
+        referral_date_provided=referral_date_provided,
+        payer_tpa_name_provided=payer_tpa_name_provided,
         username=username,
     )
     if result.get("error"):
@@ -35285,22 +27405,7 @@ def api_modification_virtual_visit_update():
             "mode": result.get("mode"),
         }
         return jsonify(response), status_code
-    return jsonify({
-        "success": True,
-        "visit_id": result.get("visit_id"),
-        "patient_id": result.get("patient_id"),
-        "reg_no": result.get("reg_no"),
-        "patient_name": result.get("patient_name"),
-        "mode": result.get("mode"),
-        "source_visit_id": result.get("source_visit_id"),
-        "patient_type_id": result.get("patient_type_id"),
-        "pay_type": result.get("pay_type"),
-        "settled_bill_count": result.get("settled_bill_count"),
-        "settled_total_amount": result.get("settled_total_amount"),
-        "receipt_count": result.get("receipt_count"),
-        "receipt_numbers": result.get("receipt_numbers"),
-        "settled_invoice_ids": result.get("settled_invoice_ids"),
-    })
+    return jsonify(result)
 
 
 @app.route('/api/modifications/virtual_visit/source_visits')
@@ -37320,6 +29425,7 @@ def _virtual_visit_resolve_schema(conn):
     pst_map = _get_table_columns_map(conn, "PatientSubType_Mst")
     employee_map = _get_table_columns_map(conn, "employee_mst")
     billing_map = _get_table_columns_map(conn, "Billing_Mst")
+    corp_bill_map = _get_table_columns_map(conn, "Corp_Bill_Mst")
     receipt_map = _get_table_columns_map(conn, "Receipt_mst")
     receipt_dtl_map = _get_table_columns_map(conn, "Receipt_Dtls")
 
@@ -37344,6 +29450,11 @@ def _virtual_visit_resolve_schema(conn):
             "source_visit_id": _resolve_column(vd_map, ["sourceVisitId", "SourceVisitId", "SourceVisitID"]),
             "source_visit_no": _resolve_column(vd_map, ["sourceVisitNo", "SourceVisitNo", "SourceVisitNO"]),
             "source_admission_no": _resolve_column(vd_map, ["sourceAdmissionNo", "SourceAdmissionNo", "SourceAdmissionNO"]),
+            "referral_no": _resolve_column(vd_map, ["referralNo", "ReferralNo", "ReferralNO"]),
+            "referral_date": _resolve_column(vd_map, ["referralDate", "ReferralDate", "Referral_Date"]),
+            "payer_tpa_name": _resolve_column(vd_map, ["payerTpaName", "PayerTpaName", "PayerTPAName", "Payer_TPA_Name"]),
+            "verified_by_user": _resolve_column(vd_map, ["verifiedByUserName", "VerifiedByUserName", "Verified_By_User_Name"]),
+            "settlement_mode": _resolve_column(vd_map, ["settlementMode", "SettlementMode", "Settlement_Mode"]),
         },
         "visit": {
             "visit_id": _resolve_column(visit_map, ["Visit_ID", "VisitID", "visitId", "visit_id"]),
@@ -37400,6 +29511,15 @@ def _virtual_visit_resolve_schema(conn):
             "cancel_status": _resolve_column(billing_map, ["CancelStatus", "Cancel_Status", "Canceled", "Cancelled"]),
             "updated_by": _resolve_column(billing_map, ["UpdatedBy", "Updated_By", "UpdatedByUserID"]),
             "updated_on": _resolve_column(billing_map, ["UpdatedOn", "Updated_On", "UpdatedON"]),
+        },
+        "corp_bill": {
+            "cbill_id": _resolve_column(corp_bill_map, ["CBill_ID", "CBillId", "CBillID", "cbill_id"]),
+            "visit_id": _resolve_column(corp_bill_map, ["Visit_ID", "VisitId", "VisitID", "visit_id"]),
+            "patient_id": _resolve_column(corp_bill_map, ["PatientID", "PatientId", "patientId", "patient_id"]),
+            "bill_id": _resolve_column(corp_bill_map, ["Bill_ID", "BillId", "BillID", "bill_id"]),
+            "duplicate_visit_id": _resolve_column(corp_bill_map, ["duplicateVisitId", "DuplicateVisitId", "DuplicateVisitID"]),
+            "updated_by": _resolve_column(corp_bill_map, ["Updated_By", "UpdatedBy", "UpdatedByUserID"]),
+            "updated_on": _resolve_column(corp_bill_map, ["Updated_On", "UpdatedOn", "UpdatedON"]),
         },
         "receipt": {
             "receipt_id": _resolve_column(receipt_map, ["Receipt_ID", "ReceiptId", "ReceiptID", "receipt_id"]),
@@ -37691,7 +29811,7 @@ def _virtual_visit_insert_receipt_mst(conn, cursor, schema, source_row: dict[str
         ("amount", amount_val),
         ("note", note_text),
         ("invoice_no", bill_row.get("bill_id")),
-        ("payment_against", "Bill"),
+        ("payment_against", 10),
         ("payment_mode", 11),
         ("receipt_type", receipt_type),
         ("updated_by", account_id),
@@ -38173,7 +30293,12 @@ def _virtual_visit_fetch_existing_duplicate(cursor, schema, visit_id_val: int):
             {_virtual_visit_sql_expr('vd', vd_cols.get('visit_status'), 'VisitStatus')},
             {_virtual_visit_sql_expr('vd', vd_cols.get('source_visit_id'), 'SourceVisitId')},
             {_virtual_visit_sql_expr('vd', vd_cols.get('source_visit_no'), 'SourceVisitNo')},
-            {_virtual_visit_sql_expr('vd', vd_cols.get('source_admission_no'), 'SourceAdmissionNo')}
+            {_virtual_visit_sql_expr('vd', vd_cols.get('source_admission_no'), 'SourceAdmissionNo')},
+            {_virtual_visit_sql_expr('vd', vd_cols.get('referral_no'), 'ReferralNo')},
+            {_virtual_visit_sql_expr('vd', vd_cols.get('referral_date'), 'ReferralDate')},
+            {_virtual_visit_sql_expr('vd', vd_cols.get('payer_tpa_name'), 'PayerTpaName')},
+            {_virtual_visit_sql_expr('vd', vd_cols.get('verified_by_user'), 'VerifiedByUserName')},
+            {_virtual_visit_sql_expr('vd', vd_cols.get('settlement_mode'), 'SettlementMode')}
         FROM dbo.Visit_Duplicate vd WITH (UPDLOCK, ROWLOCK)
         WHERE vd.{vd_cols['visit_id']} = ?
         """,
@@ -38197,6 +30322,11 @@ def _virtual_visit_fetch_existing_duplicate(cursor, schema, visit_id_val: int):
         "source_visit_id": _coerce_int(getattr(row, "SourceVisitId", None), allow_none=True),
         "source_visit_no": str(getattr(row, "SourceVisitNo", "") or "").strip(),
         "source_admission_no": str(getattr(row, "SourceAdmissionNo", "") or "").strip(),
+        "referral_no": str(getattr(row, "ReferralNo", "") or "").strip(),
+        "referral_date": getattr(row, "ReferralDate", None),
+        "payer_tpa_name": str(getattr(row, "PayerTpaName", "") or "").strip(),
+        "verified_by_user": str(getattr(row, "VerifiedByUserName", "") or "").strip(),
+        "settlement_mode": str(getattr(row, "SettlementMode", "") or "").strip(),
     }
 
 
@@ -38235,6 +30365,11 @@ def _virtual_visit_insert_duplicate(cursor, schema, values: dict[str, object], a
         ("source_visit_id", values.get("source_visit_id")),
         ("source_visit_no", values.get("source_visit_no")),
         ("source_admission_no", values.get("source_admission_no")),
+        ("referral_no", values.get("referral_no")),
+        ("referral_date", values.get("referral_date")),
+        ("payer_tpa_name", values.get("payer_tpa_name")),
+        ("verified_by_user", values.get("verified_by_user")),
+        ("settlement_mode", values.get("settlement_mode")),
     ]
     for key, value in ordered_pairs:
         column_name = vd_cols.get(key)
@@ -38305,6 +30440,53 @@ def _virtual_visit_touch_source_visit(cursor, schema, source_visit_id_val: int, 
     )
 
 
+def _virtual_visit_link_corp_bills(cursor, schema, source_row: dict[str, object], duplicate_visit_id: int, account_id: int):
+    corp_cols = schema["corp_bill"]
+    visit_id_val = _coerce_int(source_row.get("visit_id"), allow_none=True)
+    if not visit_id_val or not corp_cols.get("visit_id") or not corp_cols.get("duplicate_visit_id"):
+        return {"linked_corp_bill_count": 0}
+
+    where_parts = [f"{corp_cols['visit_id']} = ?"]
+    where_params = [visit_id_val]
+
+    patient_id_val = _coerce_int(source_row.get("patient_id"), allow_none=True)
+    if patient_id_val and corp_cols.get("patient_id"):
+        where_parts.append(f"{corp_cols['patient_id']} = ?")
+        where_params.append(patient_id_val)
+
+    where_sql = " AND ".join(where_parts)
+    cursor.execute(
+        f"""
+        SELECT COUNT(1) AS MatchCount
+        FROM dbo.Corp_Bill_Mst WITH (UPDLOCK, HOLDLOCK, ROWLOCK)
+        WHERE {where_sql}
+        """,
+        tuple(where_params),
+    )
+    row = cursor.fetchone()
+    match_count = _coerce_int(getattr(row, "MatchCount", None), allow_none=True) or 0
+    if match_count <= 0:
+        return {"linked_corp_bill_count": 0}
+
+    updates = [f"{corp_cols['duplicate_visit_id']} = ?"]
+    update_params = [duplicate_visit_id]
+    if corp_cols.get("updated_by"):
+        updates.append(f"{corp_cols['updated_by']} = ?")
+        update_params.append(account_id)
+    if corp_cols.get("updated_on"):
+        updates.append(f"{corp_cols['updated_on']} = GETDATE()")
+
+    cursor.execute(
+        f"""
+        UPDATE dbo.Corp_Bill_Mst
+        SET {", ".join(updates)}
+        WHERE {where_sql}
+        """,
+        (*update_params, *where_params),
+    )
+    return {"linked_corp_bill_count": match_count}
+
+
 def _virtual_visit_result_payload(
     patient_row: dict[str, object],
     visit_id_val: int | None,
@@ -38327,6 +30509,12 @@ def _virtual_visit_result_payload(
     }
     for key, value in extra.items():
         if value is not None:
+            if isinstance(value, datetime):
+                payload[key] = value.isoformat()
+                continue
+            if isinstance(value, date):
+                payload[key] = value.isoformat()
+                continue
             payload[key] = value
     return payload
 
@@ -38348,8 +30536,14 @@ def _save_virtual_visit_duplicate(
     visit_type_id=None,
     doc_id=None,
     discharge_type_id=None,
+    referral_no=None,
+    referral_date=None,
+    payer_tpa_name=None,
     visit_status=None,
     visit_status_provided: bool = False,
+    referral_no_provided: bool = False,
+    referral_date_provided: bool = False,
+    payer_tpa_name_provided: bool = False,
     dry_run: bool = False,
 ):
     from modules.db_connection import get_sql_connection
@@ -38370,6 +30564,9 @@ def _save_virtual_visit_duplicate(
     doc_id_provided = _virtual_visit_is_provided(doc_id)
     discharge_type_provided = _virtual_visit_is_provided(discharge_type_id)
     visit_status_value_provided = visit_status_provided or _virtual_visit_is_provided(visit_status)
+    referral_no_value_provided = referral_no_provided or _virtual_visit_is_provided(referral_no)
+    referral_date_value_provided = referral_date_provided or _virtual_visit_is_provided(referral_date)
+    payer_tpa_name_value_provided = payer_tpa_name_provided or _virtual_visit_is_provided(payer_tpa_name)
 
     visit_id_val = _coerce_int(visit_id, allow_none=True)
     source_visit_id_val = _coerce_int(source_visit_id, allow_none=True)
@@ -38381,6 +30578,10 @@ def _save_virtual_visit_duplicate(
     visit_dt_val = _parse_datetime_input(visit_date)
     discharge_dt_val = _parse_datetime_input(discharge_date)
     pay_type_val, pay_type_error = _normalize_virtual_visit_pay_type(pay_type)
+    referral_no_txt = str(referral_no or "").strip()
+    referral_date_txt = str(referral_date or "").strip()
+    payer_tpa_name_txt = str(payer_tpa_name or "").strip()
+    referral_dt_val = _parse_datetime_input(referral_date) if referral_date_txt else None
     mode_raw = str(mode or "").strip().lower()
 
     if operation == "update" and not visit_id_val:
@@ -38401,6 +30602,8 @@ def _save_virtual_visit_duplicate(
         return _virtual_visit_error("Visit Date is invalid.")
     if discharge_date_provided and not discharge_dt_val:
         return _virtual_visit_error("Discharge Date is invalid.")
+    if referral_date_value_provided and referral_date_txt and not referral_dt_val:
+        return _virtual_visit_error("Referral Date is invalid.")
     if visit_status_value_provided and visit_status_val is None and _virtual_visit_is_provided(visit_status):
         return _virtual_visit_error("Visit Status is invalid.")
     if pay_type_error:
@@ -38439,6 +30642,11 @@ def _save_virtual_visit_duplicate(
             ("sourceVisitId", "source_visit_id"),
             ("sourceVisitNo", "source_visit_no"),
             ("sourceAdmissionNo", "source_admission_no"),
+            ("referralNo", "referral_no"),
+            ("referralDate", "referral_date"),
+            ("payerTpaName", "payer_tpa_name"),
+            ("verifiedByUserName", "verified_by_user"),
+            ("settlementMode", "settlement_mode"),
             ("updatedBy", "updated_by"),
             ("updatedOn", "updated_on"),
         ]
@@ -38490,6 +30698,14 @@ def _save_virtual_visit_duplicate(
             if missing_visit:
                 conn.rollback()
                 return _virtual_visit_migration_error(unit_norm, "Visit", missing_visit)
+            corp_required = [
+                ("Visit_ID", "visit_id"),
+                ("duplicateVisitId", "duplicate_visit_id"),
+            ]
+            missing_corp_bill = _virtual_visit_missing_columns(schema["corp_bill"], corp_required)
+            if missing_corp_bill:
+                conn.rollback()
+                return _virtual_visit_migration_error(unit_norm, "Corp_Bill_Mst", missing_corp_bill)
 
         if operation == "create" and final_mode == "linked":
             source_row = _virtual_visit_fetch_source_visit(cursor, schema, source_visit_id_val)
@@ -38544,6 +30760,11 @@ def _save_virtual_visit_duplicate(
                 "source_visit_id": source_row.get("visit_id"),
                 "source_visit_no": source_row.get("visit_no"),
                 "source_admission_no": source_row.get("admission_no"),
+                "referral_no": "",
+                "referral_date": None,
+                "payer_tpa_name": "",
+                "verified_by_user": "",
+                "settlement_mode": "",
                 "visit_status": None,
             }
 
@@ -38609,7 +30830,10 @@ def _save_virtual_visit_duplicate(
             conn.rollback()
             return _virtual_visit_error("Patient Type is required.")
 
-        final_pay_type = pay_type_val if pay_type_provided else base_values.get("pay_type")
+        if operation == "create" and final_mode == "linked":
+            final_pay_type = 2
+        else:
+            final_pay_type = pay_type_val if pay_type_provided else base_values.get("pay_type")
         if operation == "create" and final_pay_type not in (1, 2):
             conn.rollback()
             return _virtual_visit_error("Patient Category is required.")
@@ -38661,6 +30885,48 @@ def _save_virtual_visit_duplicate(
             final_source_visit_no = None
             final_source_admission_no = None
 
+        if final_mode == "linked":
+            if operation == "create":
+                final_referral_no = referral_no_txt
+                final_referral_date = referral_dt_val.date() if referral_dt_val else None
+                final_payer_tpa_name = payer_tpa_name_txt
+                final_verified_by_user = str(username or "").strip()
+                if not final_referral_no:
+                    conn.rollback()
+                    return _virtual_visit_error("Referral Number is required for linked create.")
+                if not final_referral_date:
+                    conn.rollback()
+                    return _virtual_visit_error("Referral Date is required for linked create.")
+                if not final_payer_tpa_name:
+                    conn.rollback()
+                    return _virtual_visit_error("Payer / TPA Name is required for linked create.")
+                if not final_verified_by_user:
+                    conn.rollback()
+                    return _virtual_visit_error("Verified By user could not be resolved from the current login.")
+            else:
+                final_referral_no = referral_no_txt if referral_no_value_provided else str(base_values.get("referral_no") or "").strip()
+                if referral_date_value_provided:
+                    final_referral_date = referral_dt_val.date() if referral_dt_val else None
+                else:
+                    final_referral_date = base_values.get("referral_date")
+                final_payer_tpa_name = payer_tpa_name_txt if payer_tpa_name_value_provided else str(base_values.get("payer_tpa_name") or "").strip()
+                proof_fields_touched = referral_no_value_provided or referral_date_value_provided or payer_tpa_name_value_provided
+                if proof_fields_touched:
+                    if final_referral_no or final_referral_date or final_payer_tpa_name:
+                        final_verified_by_user = str(username or "").strip()
+                        if not final_verified_by_user:
+                            conn.rollback()
+                            return _virtual_visit_error("Verified By user could not be resolved from the current login.")
+                    else:
+                        final_verified_by_user = None
+                else:
+                    final_verified_by_user = str(base_values.get("verified_by_user") or "").strip() or None
+        else:
+            final_referral_no = None
+            final_referral_date = None
+            final_payer_tpa_name = None
+            final_verified_by_user = None
+
         patient_row = _virtual_visit_fetch_patient(cursor, schema, final_patient_id)
         if patient_row.get("error"):
             conn.rollback()
@@ -38669,22 +30935,15 @@ def _save_virtual_visit_duplicate(
         account_id = _resolve_account_id(username) or 0
         settlement_preview = None
         source_due_rows = None
+        final_settlement_mode = None
         if operation == "create" and final_mode == "linked" and final_source_visit_id:
             due_result = _virtual_visit_fetch_source_due_bills(cursor, schema, int(final_source_visit_id))
             if due_result.get("error"):
                 conn.rollback()
                 return due_result
             source_due_rows = due_result.get("rows") or []
-            if not source_due_rows:
-                conn.rollback()
-                return _virtual_visit_error(
-                    "No pending due amount was found for this visit. Please consult IT/Accounts department before continuing.",
-                    error_code="source_due_zero",
-                    status_code=409,
-                    source_visit_id=final_source_visit_id,
-                    mode="linked",
-                )
             total_due = sum((Decimal(str(row.get("due_amount") or 0)) for row in source_due_rows), Decimal("0"))
+            final_settlement_mode = "auto_settle" if source_due_rows else "no_receipt_needed"
             settlement_preview = {
                 "settled_bill_count": len(source_due_rows),
                 "settled_total_amount": float(total_due),
@@ -38695,7 +30954,10 @@ def _save_virtual_visit_duplicate(
                     for row in source_due_rows
                     if _coerce_int(row.get("bill_id"), allow_none=True)
                 ],
+                "settlement_mode": final_settlement_mode,
             }
+        elif final_mode == "linked":
+            final_settlement_mode = str(base_values.get("settlement_mode") or "").strip() or None
 
         if dry_run:
             conn.rollback()
@@ -38706,6 +30968,11 @@ def _save_virtual_visit_duplicate(
                 final_source_visit_id,
                 final_patient_type_id,
                 final_pay_type,
+                referral_no=final_referral_no,
+                referral_date=final_referral_date,
+                payer_tpa_name=final_payer_tpa_name,
+                verified_by_user=final_verified_by_user,
+                settlement_mode=final_settlement_mode,
                 **(settlement_preview or {}),
             )
 
@@ -38727,24 +30994,47 @@ def _save_virtual_visit_duplicate(
                     "source_visit_id": final_source_visit_id,
                     "source_visit_no": final_source_visit_no,
                     "source_admission_no": final_source_admission_no,
+                    "referral_no": final_referral_no,
+                    "referral_date": final_referral_date,
+                    "payer_tpa_name": final_payer_tpa_name,
+                    "verified_by_user": final_verified_by_user,
+                    "settlement_mode": final_settlement_mode,
                 },
                 account_id,
             )
             created_visit_id = insert_result.get("visit_id")
             settlement_result = None
+            corp_bill_result = {"linked_corp_bill_count": 0}
             if final_mode == "linked" and final_source_visit_id:
-                settlement_result = _virtual_visit_settle_source_bills(
-                    conn,
+                if source_due_rows:
+                    settlement_result = _virtual_visit_settle_source_bills(
+                        conn,
+                        cursor,
+                        schema,
+                        source_row,
+                        account_id,
+                        due_rows=source_due_rows,
+                    )
+                    if settlement_result.get("error"):
+                        conn.rollback()
+                        return settlement_result
+                else:
+                    settlement_result = {
+                        "settled_bill_count": 0,
+                        "settled_total_amount": 0.0,
+                        "receipt_count": 0,
+                        "receipt_numbers": [],
+                        "settled_invoice_ids": [],
+                        "settlement_mode": "no_receipt_needed",
+                    }
+                _virtual_visit_touch_source_visit(cursor, schema, final_source_visit_id, created_visit_id, account_id)
+                corp_bill_result = _virtual_visit_link_corp_bills(
                     cursor,
                     schema,
                     source_row,
+                    created_visit_id,
                     account_id,
-                    due_rows=source_due_rows,
                 )
-                if settlement_result.get("error"):
-                    conn.rollback()
-                    return settlement_result
-                _virtual_visit_touch_source_visit(cursor, schema, final_source_visit_id, created_visit_id, account_id)
             conn.commit()
             return _virtual_visit_result_payload(
                 patient_row,
@@ -38753,7 +31043,12 @@ def _save_virtual_visit_duplicate(
                 final_source_visit_id,
                 final_patient_type_id,
                 final_pay_type,
+                referral_no=final_referral_no,
+                referral_date=final_referral_date,
+                payer_tpa_name=final_payer_tpa_name,
+                verified_by_user=final_verified_by_user,
                 **(settlement_result or {}),
+                **corp_bill_result,
             )
 
         updates = [
@@ -38764,6 +31059,11 @@ def _save_virtual_visit_duplicate(
             (schema["vd"].get("pay_type"), final_pay_type),
             (schema["vd"].get("doc_id"), final_doc_id),
             (schema["vd"].get("discharge_type_id"), final_discharge_type_id),
+            (schema["vd"].get("referral_no"), final_referral_no),
+            (schema["vd"].get("referral_date"), final_referral_date),
+            (schema["vd"].get("payer_tpa_name"), final_payer_tpa_name),
+            (schema["vd"].get("verified_by_user"), final_verified_by_user),
+            (schema["vd"].get("settlement_mode"), final_settlement_mode),
         ]
         if final_mode == "linked":
             updates.extend([
@@ -38796,8 +31096,16 @@ def _save_virtual_visit_duplicate(
             """,
             (*update_params, visit_id_val),
         )
+        corp_bill_result = {"linked_corp_bill_count": 0}
         if final_mode == "linked" and final_source_visit_id:
             _virtual_visit_touch_source_visit(cursor, schema, final_source_visit_id, visit_id_val, account_id)
+            corp_bill_result = _virtual_visit_link_corp_bills(
+                cursor,
+                schema,
+                source_row,
+                visit_id_val,
+                account_id,
+            )
         conn.commit()
         return _virtual_visit_result_payload(
             patient_row,
@@ -38806,6 +31114,12 @@ def _save_virtual_visit_duplicate(
             final_source_visit_id,
             final_patient_type_id,
             final_pay_type,
+            referral_no=final_referral_no,
+            referral_date=final_referral_date,
+            payer_tpa_name=final_payer_tpa_name,
+            verified_by_user=final_verified_by_user,
+            settlement_mode=final_settlement_mode,
+            **corp_bill_result,
         )
     except Exception as e:
         try:
@@ -38831,6 +31145,12 @@ def _create_virtual_visit_duplicate(
     discharge_type_id,
     username: str,
     visit_status=None,
+    referral_no=None,
+    referral_date=None,
+    payer_tpa_name=None,
+    referral_no_provided: bool = False,
+    referral_date_provided: bool = False,
+    payer_tpa_name_provided: bool = False,
     dry_run: bool = False,
     mode=None,
     source_visit_id=None,
@@ -38852,7 +31172,13 @@ def _create_virtual_visit_duplicate(
         visit_type_id=visit_type_id,
         doc_id=doc_id,
         discharge_type_id=discharge_type_id,
+        referral_no=referral_no,
+        referral_date=referral_date,
+        payer_tpa_name=payer_tpa_name,
         visit_status=visit_status,
+        referral_no_provided=referral_no_provided,
+        referral_date_provided=referral_date_provided,
+        payer_tpa_name_provided=payer_tpa_name_provided,
         dry_run=dry_run,
     )
 
@@ -38870,6 +31196,12 @@ def _update_virtual_visit_duplicate(
     username: str,
     visit_status=None,
     visit_status_provided: bool = False,
+    referral_no=None,
+    referral_date=None,
+    payer_tpa_name=None,
+    referral_no_provided: bool = False,
+    referral_date_provided: bool = False,
+    payer_tpa_name_provided: bool = False,
     dry_run: bool = False,
     mode=None,
     source_visit_id=None,
@@ -38892,8 +31224,14 @@ def _update_virtual_visit_duplicate(
         visit_type_id=visit_type_id,
         doc_id=doc_id,
         discharge_type_id=discharge_type_id,
+        referral_no=referral_no,
+        referral_date=referral_date,
+        payer_tpa_name=payer_tpa_name,
         visit_status=visit_status,
         visit_status_provided=visit_status_provided,
+        referral_no_provided=referral_no_provided,
+        referral_date_provided=referral_date_provided,
+        payer_tpa_name_provided=payer_tpa_name_provided,
         dry_run=dry_run,
     )
 
@@ -39463,17 +31801,48 @@ def api_visit_edit_apply():
 
 
 def _corp_recon_allowed_units_for_session() -> list[str]:
-    allowed = _modification_units(_allowed_units_for_session())
-    result = []
-    seen = set()
-    for unit in (allowed or []):
-        unit_key = str(unit or "").strip().upper()
-        if not unit_key or unit_key in seen:
+    return _corporate_units(_allowed_units_for_session(include_corporate_only=True))
+
+
+def _is_sharpsight_corp_unit(unit: str) -> bool:
+    return str(unit or "").strip().upper() == "SHARPSIGHT"
+
+
+def _session_user_id() -> int | None:
+    for cand in (
+        session.get("user_id"),
+        session.get("userid"),
+        session.get("userId"),
+        session.get("id"),
+    ):
+        if cand in (None, "", " "):
             continue
-        if unit_key in CORP_RECON_UNITS:
-            seen.add(unit_key)
-            result.append(unit_key)
-    return result
+        try:
+            parsed = int(str(cand).strip())
+        except Exception:
+            parsed = None
+        if parsed and parsed > 0:
+            return parsed
+    return None
+
+
+def _corp_receipt_month_end(raw_month: str | None) -> date | None:
+    txt = str(raw_month or "").strip()
+    if not txt:
+        return None
+    m = re.match(r"^(\d{4})-(\d{2})$", txt)
+    if not m:
+        return None
+    year = int(m.group(1))
+    month = int(m.group(2))
+    if month < 1 or month > 12:
+        return None
+    start = date(year, month, 1)
+    if month == 12:
+        next_month = date(year + 1, 1, 1)
+    else:
+        next_month = date(year, month + 1, 1)
+    return next_month - timedelta(days=1)
 
 
 def _corp_recon_cache_key(unit: str) -> tuple[str, str]:
@@ -39659,6 +32028,14 @@ def _corp_recon_can_writeoff_session() -> bool:
     return has_section_access(CORP_RECON_WRITEOFF_SECTION)
 
 
+def _corp_recon_can_take_receipt_session() -> bool:
+    return bool(
+        has_section_access(CORP_RECON_RECEIPT_SECTION)
+        or has_section_access("corporate_management")
+        or has_section_access(CORP_RECON_WRITEOFF_SECTION)
+    )
+
+
 def _corp_recon_resolve_unit(raw_unit: str | None):
     allowed_units = _corp_recon_allowed_units_for_session()
     if not allowed_units:
@@ -39821,6 +32198,16 @@ def _corp_recon_subtype_summary_from_rows(rows_df: pd.DataFrame) -> list[dict]:
         work["status_all_time"] = "Unpaid"
     if "balance_all_time" not in work.columns:
         work["balance_all_time"] = 0.0
+    for amount_col in (
+        "BillAmount",
+        "receipt_total_all_time",
+        "tds_total_all_time",
+        "rebate_discount_all_time",
+        "writeoff_total_all_time",
+        "settled_total_all_time",
+    ):
+        if amount_col not in work.columns:
+            work[amount_col] = 0.0
 
     subtype_series = work["PatientSubType"].fillna("").astype(str).str.strip()
     source_series = work["BillSourceKey"].fillna("").astype(str).str.strip().str.upper()
@@ -39833,6 +32220,7 @@ def _corp_recon_subtype_summary_from_rows(rows_df: pd.DataFrame) -> list[dict]:
     work["is_partial"] = (status_series == "partial").astype(int)
     work["is_unpaid"] = (status_series == "unpaid").astype(int)
     work["is_overpaid"] = (status_series == "overpaid").astype(int)
+    work["is_closing_qty"] = ((status_series == "partial") | (status_series == "unpaid") | (status_series == "overpaid")).astype(int)
     work["is_opening_source"] = (source_series == "OPENING").astype(int)
     work["is_corporate_source"] = (source_series != "OPENING").astype(int)
     work["is_settled_corporate"] = ((status_series == "settled") & (source_series != "OPENING")).astype(int)
@@ -39843,14 +32231,26 @@ def _corp_recon_subtype_summary_from_rows(rows_df: pd.DataFrame) -> list[dict]:
     work["is_unpaid_opening"] = ((status_series == "unpaid") & (source_series == "OPENING")).astype(int)
     work["is_overpaid_corporate"] = ((status_series == "overpaid") & (source_series != "OPENING")).astype(int)
     work["is_overpaid_opening"] = ((status_series == "overpaid") & (source_series == "OPENING")).astype(int)
+    work["bill_amount_num"] = pd.to_numeric(work["BillAmount"], errors="coerce").fillna(0.0).astype(float)
+    work["receipt_total_all_time_num"] = pd.to_numeric(work["receipt_total_all_time"], errors="coerce").fillna(0.0).astype(float)
+    work["tds_total_all_time_num"] = pd.to_numeric(work["tds_total_all_time"], errors="coerce").fillna(0.0).astype(float)
+    work["rebate_discount_all_time_num"] = pd.to_numeric(work["rebate_discount_all_time"], errors="coerce").fillna(0.0).astype(float)
+    work["writeoff_total_all_time_num"] = pd.to_numeric(work["writeoff_total_all_time"], errors="coerce").fillna(0.0).astype(float)
+    work["settled_total_all_time_num"] = pd.to_numeric(work["settled_total_all_time"], errors="coerce").fillna(0.0).astype(float)
     work["balance_all_time_num"] = pd.to_numeric(work["balance_all_time"], errors="coerce").fillna(0.0).astype(float)
 
     grp = (
         work.groupby("SubtypeGroup", dropna=False)
         .agg(
             bills=("SubtypeGroup", "size"),
+            bill_amount=("bill_amount_num", "sum"),
             corporate_bills=("is_corporate_source", "sum"),
             opening_bills=("is_opening_source", "sum"),
+            receipt_all_time=("receipt_total_all_time_num", "sum"),
+            tds_all_time=("tds_total_all_time_num", "sum"),
+            rebate_discount_all_time=("rebate_discount_all_time_num", "sum"),
+            writeoff_all_time=("writeoff_total_all_time_num", "sum"),
+            settled_total_all_time=("settled_total_all_time_num", "sum"),
             settled_count=("is_settled", "sum"),
             settled_corporate_count=("is_settled_corporate", "sum"),
             settled_opening_count=("is_settled_opening", "sum"),
@@ -39863,6 +32263,7 @@ def _corp_recon_subtype_summary_from_rows(rows_df: pd.DataFrame) -> list[dict]:
             overpaid_count=("is_overpaid", "sum"),
             overpaid_corporate_count=("is_overpaid_corporate", "sum"),
             overpaid_opening_count=("is_overpaid_opening", "sum"),
+            closing_qty=("is_closing_qty", "sum"),
             closing_balance=("balance_all_time_num", "sum"),
         )
         .reset_index()
@@ -39881,8 +32282,14 @@ def _corp_recon_subtype_summary_from_rows(rows_df: pd.DataFrame) -> list[dict]:
             {
                 "subtype": str(row.get("subtype") or "").strip(),
                 "bills": int(row.get("bills") or 0),
+                "bill_amount": float(row.get("bill_amount") or 0.0),
                 "corporate_bills": int(row.get("corporate_bills") or 0),
                 "opening_bills": int(row.get("opening_bills") or 0),
+                "receipt_all_time": float(row.get("receipt_all_time") or 0.0),
+                "tds_all_time": float(row.get("tds_all_time") or 0.0),
+                "rebate_discount_all_time": float(row.get("rebate_discount_all_time") or 0.0),
+                "writeoff_all_time": float(row.get("writeoff_all_time") or 0.0),
+                "settled_total_all_time": float(row.get("settled_total_all_time") or 0.0),
                 "settled_count": int(row.get("settled_count") or 0),
                 "settled_corporate_count": int(row.get("settled_corporate_count") or 0),
                 "settled_opening_count": int(row.get("settled_opening_count") or 0),
@@ -39895,6 +32302,7 @@ def _corp_recon_subtype_summary_from_rows(rows_df: pd.DataFrame) -> list[dict]:
                 "overpaid_count": int(row.get("overpaid_count") or 0),
                 "overpaid_corporate_count": int(row.get("overpaid_corporate_count") or 0),
                 "overpaid_opening_count": int(row.get("overpaid_opening_count") or 0),
+                "closing_qty": int(row.get("closing_qty") or 0),
                 "closing_balance": float(row.get("closing_balance") or 0.0),
             }
         )
@@ -40572,6 +32980,7 @@ def _corp_recon_source_label(value) -> str:
     if not code:
         return ""
     mapping = {
+        "BILL_MST_AHL": "Corporate Bill",
         "BILL_MST_POST": "Corporate Bill",
         "OPENING": "Opening Balance",
         "BILL_MST_FALLBACK": "Legacy Bill",
@@ -40745,6 +33154,11 @@ def _corp_recon_build_receipt_lines(
     work["RebateAllocated"] = pd.to_numeric(work["RebateAllocated"], errors="coerce").fillna(0.0).astype(float)
     work["TDSAllocated"] = pd.to_numeric(work["TDSAllocated"], errors="coerce").fillna(0.0).astype(float)
     work["WriteOffAllocated"] = pd.to_numeric(work["WriteOffAllocated"], errors="coerce").fillna(0.0).astype(float)
+    work["NetDueAmtDtl"] = (
+        work["DueAmtDtl"] - work["TDSAllocated"] - work["RebateAllocated"] - work["WriteOffAllocated"]
+    )
+    work["NetDueAmtDtl"] = pd.to_numeric(work["NetDueAmtDtl"], errors="coerce").fillna(0.0).round(2).astype(float)
+    work.loc[work["NetDueAmtDtl"] <= 0, "NetDueAmtDtl"] = 0.0
 
     work = work.sort_values(["ReceiptDateNorm", "ReceiptId", "ReceiptDetailId"], ascending=[False, False, False], na_position="last")
 
@@ -40757,7 +33171,7 @@ def _corp_recon_build_receipt_lines(
             "receipt_date": work["ReceiptDateNorm"].dt.strftime("%Y-%m-%d"),
             "receipt_amount": work["ReceiptAmtDtl"].astype(float),
             "bill_amount": work["BillAmtDtl"].astype(float),
-            "due_amount": work["DueAmtDtl"].astype(float),
+            "due_amount": work["NetDueAmtDtl"].astype(float),
             "tds_amount": work["TDSAllocated"].astype(float),
             "rebate_discount_amount": work["RebateAllocated"].astype(float),
             "writeoff_amount": work["WriteOffAllocated"].astype(float),
@@ -40819,6 +33233,8 @@ def _corp_recon_query(
         if prefer_sql_sp is None
         else bool(prefer_sql_sp)
     )
+    if _is_sharpsight_corp_unit(unit):
+        use_sp_fastpath = False
     if (
         use_sp_fastpath
         and apply_paging
@@ -41268,16 +33684,17 @@ def _corp_recon_query(
         source_key_series = rows_df["BillSourceKey"].fillna("").astype(str).str.strip().str.upper()
         opening_mask = source_key_series == "OPENING"
         non_opening_mask = ~opening_mask
-        receipt_window_num = pd.to_numeric(rows_df.get("receipt_total_window"), errors="coerce").fillna(0.0)
+        settled_window_num = pd.to_numeric(rows_df.get("settled_total_window"), errors="coerce").fillna(0.0)
         balance_all_num = pd.to_numeric(rows_df.get("balance_all_time"), errors="coerce").fillna(0.0)
         tol = float(CORP_RECON_SETTLE_TOLERANCE)
 
-        # Date window applies to bill submit/due dates; receipt activity in window must also be retained.
-        # Non-openings: strict submit date range.
-        # Openings: keep only rows with receipt activity in window or still due.
+        # Date window applies to bill submit/due dates, but settlement activity in the
+        # same receipt window must also keep the bill visible for reconciliation.
+        # Non-openings: bill date in range OR in-window settlement activity.
+        # Openings: in-window settlement activity OR still due.
         keep_mask = (
-            (non_opening_mask & in_bill_window)
-            | (opening_mask & ((receipt_window_num > tol) | (balance_all_num > tol)))
+            (non_opening_mask & (in_bill_window | (settled_window_num > tol)))
+            | (opening_mask & ((settled_window_num > tol) | (balance_all_num > tol)))
         )
         rows_df = rows_df[keep_mask].copy()
 
@@ -41634,6 +34051,15 @@ def _corp_recon_query(
             "available_patient_subtypes": _sanitize_json_payload(available_patient_subtypes),
             "subtype_closing_summary": _sanitize_json_payload(subtype_closing_summary),
             "subtype_closing_scope": "full_filter",
+            "scope_rule": (
+                (
+                    "Includes bills in submit date range plus older bills with settlement activity in the receipt window."
+                    if _is_sharpsight_corp_unit(unit)
+                    else "Includes bills in submit date range plus older bills with settlement activity in the receipt window; openings remain when they have in-window settlement or open balance"
+                )
+                if bill_from is not None or bill_to is not None
+                else None
+            ),
         },
         "kpis": _sanitize_json_payload(kpis),
         "rows": rows_payload,
@@ -42301,9 +34727,202 @@ def api_corporate_updates():
         return jsonify({"status": "error", "message": f"Failed to load corporate updates: {exc}"}), 500
 
 
+@app.route('/api/corporate/payment_modes')
+@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
+def api_corporate_payment_modes():
+    raw_unit = request.args.get("unit")
+    unit, unit_err = _corp_recon_resolve_unit(raw_unit)
+    if unit_err:
+        return unit_err
+
+    try:
+        df = data_fetch.fetch_payment_modes(unit)
+        if df is None:
+            return jsonify({"status": "error", "message": "Failed to load payment modes."}), 500
+        if df.empty:
+            return jsonify({"status": "success", "unit": unit, "data": [], "count": 0})
+
+        work = df.copy()
+        work.columns = [str(c).strip() for c in work.columns]
+        if "PaymentModeId" in work.columns:
+            work["PaymentModeId"] = pd.to_numeric(work["PaymentModeId"], errors="coerce").fillna(0).astype(int)
+        if "PaymentModeName" in work.columns:
+            work["PaymentModeName"] = work["PaymentModeName"].fillna("").astype(str).str.strip()
+        if "Deactive" in work.columns:
+            deactive_norm = work["Deactive"].astype(str).str.strip().str.lower()
+            work = work.loc[~deactive_norm.isin({"1", "true", "yes", "y"})].copy()
+
+        if "PaymentModeId" in work.columns and "PaymentModeName" in work.columns:
+            work = work.loc[work["PaymentModeId"] > 0].copy()
+            work = work.loc[work["PaymentModeName"] != ""].copy()
+            work = work.sort_values(["PaymentModeId", "PaymentModeName"], ascending=[True, True], kind="stable")
+            work = work.drop_duplicates(subset=["PaymentModeId"], keep="first")
+
+        records = _sanitize_json_payload(work.replace({np.nan: None, np.inf: None, -np.inf: None}).to_dict(orient="records"))
+        return jsonify({"status": "success", "unit": unit, "data": records, "count": len(records)})
+    except Exception as exc:
+        return jsonify({"status": "error", "message": f"Failed to load payment modes: {exc}"}), 500
+
+
+@app.route('/api/corporate/receipt', methods=["POST"])
+@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
+def api_corporate_receipt():
+    payload = request.get_json(silent=True) or {}
+    if not _corp_recon_can_take_receipt_session():
+        return jsonify({"status": "error", "message": "You do not have permission to take receipts."}), 403
+    raw_unit = payload.get("unit") or request.args.get("unit")
+    unit, unit_err = _corp_recon_resolve_unit(raw_unit)
+    if unit_err:
+        return unit_err
+    if not _is_sharpsight_corp_unit(unit):
+        return jsonify({"status": "error", "message": "Receipt posting is currently enabled only for SharpSight."}), 400
+
+    bill_id = _corp_recon_parse_int(payload.get("bill_id"), 0, 0, None)
+    if bill_id <= 0:
+        return jsonify({"status": "error", "message": "Invalid bill_id"}), 400
+
+    correction_month = str(payload.get("correction_month") or "").strip()
+    receipt_date_txt = str(payload.get("receipt_date") or "").strip()
+    if receipt_date_txt:
+        receipt_date, err = _corp_recon_parse_date(receipt_date_txt, "receipt_date")
+        if err:
+            return jsonify({"status": "error", "message": err}), 400
+    else:
+        receipt_date = datetime.now(tz=LOCAL_TZ).date()
+    if receipt_date is None:
+        return jsonify({"status": "error", "message": "Provide a valid receipt_date."}), 400
+
+    payment_mode = _corp_recon_parse_int(payload.get("payment_mode"), 5, 1, None)
+    if payment_mode <= 0:
+        payment_mode = 5
+
+    def _required_amount(key: str, label: str) -> float:
+        raw_val = payload.get(key)
+        if raw_val in (None, "", " "):
+            raise ValueError(f"{label} is required.")
+        try:
+            return float(raw_val)
+        except Exception as exc:
+            raise ValueError(f"Invalid {label}.") from exc
+
+    try:
+        bill_amount = float(payload.get("bill_amount")) if payload.get("bill_amount") not in (None, "", " ") else None
+    except Exception:
+        return jsonify({"status": "error", "message": "Invalid bill_amount"}), 400
+
+    try:
+        approved_amount = _required_amount("approved_amount", "Approved Amt")
+        tds_amount = _required_amount("tds_amount", "TDS Amt")
+        received_amount = _required_amount("received_amount", "Received Amt")
+        rebate_amount = _required_amount("rebate_amount", "Rebate")
+    except ValueError as exc:
+        return jsonify({"status": "error", "message": str(exc)}), 400
+
+    if approved_amount < 0 or tds_amount < 0 or received_amount <= 0:
+        return jsonify({"status": "error", "message": "Approved Amt, TDS Amt, and Received Amt must be valid positive values."}), 400
+
+    tol = float(CORP_RECON_SETTLE_TOLERANCE)
+    if bill_amount is not None and bill_amount > 0 and received_amount > bill_amount + tol:
+        return jsonify({"status": "error", "message": "Received Amt cannot be greater than C_amount."}), 400
+    if abs((received_amount + tds_amount) - approved_amount) > tol:
+        return jsonify({"status": "error", "message": "Approved Amt must match Received Amt + TDS Amt."}), 400
+    if bill_amount is not None and bill_amount > 0 and abs((received_amount + tds_amount + rebate_amount) - bill_amount) > tol:
+        return jsonify({"status": "error", "message": "Split mismatch: Received Amt + TDS Amt + Rebate must match C_amount."}), 400
+
+    visit_id = _corp_recon_parse_int(payload.get("visit_id"), 0, 0, None)
+    patient_id = _corp_recon_parse_int(payload.get("patient_id"), 0, 0, None)
+    actor_id = _session_user_id()
+
+    try:
+        result = data_fetch.create_corporate_receipt(
+            unit,
+            bill_id=bill_id,
+            receipt_date=receipt_date.isoformat(),
+            payment_mode=payment_mode,
+            approved_amount=approved_amount,
+            tds_amount=tds_amount,
+            received_amount=received_amount,
+            rebate_amount=rebate_amount,
+            utr_no=str(payload.get("utr_no") or "").strip(),
+            patient_id=patient_id if patient_id > 0 else None,
+            visit_id=visit_id if visit_id > 0 else None,
+            user_id=actor_id,
+        )
+    except Exception as exc:
+        app.logger.exception("Corporate receipt save failed for unit=%s bill_id=%s", unit, bill_id)
+        return jsonify({"status": "error", "message": f"Failed to save receipt: {exc}"}), 500
+    if not isinstance(result, dict) or str(result.get("status") or "").lower() != "success":
+        msg = result.get("message") if isinstance(result, dict) else "Failed to create receipt"
+        return jsonify({"status": "error", "message": msg}), 500
+
+    _corp_recon_cache_invalidate(unit)
+    _corp_recon_result_cache_invalidate(unit)
+
+    result_payload = {
+        "status": "success",
+        "message": f"Receipt {result.get('receipt_no') or result.get('receipt_id')} saved successfully.",
+        "unit": unit,
+        "receipt": _sanitize_json_payload(result),
+        "print_url": url_for("api_corporate_receipt_print", receipt_id=int(result.get("receipt_id") or 0)),
+        "updated_by": session.get("username") or session.get("user") or "Unknown",
+        "updated_at": datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+    }
+    return jsonify(result_payload)
+
+
+@app.route('/api/corporate/receipt/<int:receipt_id>/print')
+@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
+def api_corporate_receipt_print(receipt_id: int):
+    allowed_units = _corp_recon_allowed_units_for_session()
+    if allowed_units and "SHARPSIGHT" not in allowed_units:
+        return "Unit SHARPSIGHT not permitted", 403
+
+    payload = data_fetch.fetch_corporate_receipt_for_print("SHARPSIGHT", receipt_id)
+    if not isinstance(payload, dict):
+        return "Receipt not found", 404
+
+    return render_template(
+        'corporate_receipt_print.html',
+        receipt=payload,
+        unit_key="SHARPSIGHT",
+        unit_label=_unit_display_name("SHARPSIGHT"),
+        printed_by=session.get("username") or session.get("user") or "",
+        printed_at=datetime.now(tz=LOCAL_TZ).strftime("%d-%m-%Y %H:%M:%S"),
+    )
+
+
+@app.route('/api/corporate/receipts/daily_print')
+@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
+def api_corporate_receipts_daily_print():
+    raw_unit = request.args.get("unit")
+    unit, unit_err = _corp_recon_resolve_unit(raw_unit)
+    if unit_err:
+        return unit_err, 403
+    if not _is_sharpsight_corp_unit(unit):
+        return "Daily receipt print is currently enabled only for SharpSight.", 400
+
+    entry_date, err = _corp_recon_parse_date(request.args.get("entry_date"), "entry_date")
+    if err:
+        return err, 400
+
+    payload = data_fetch.fetch_corporate_receipts_day_print(unit, entry_date.isoformat())
+    if not isinstance(payload, dict):
+        return "Unable to build daily receipt print.", 500
+
+    return render_template(
+        'corporate_receipt_day_print.html',
+        payload=payload,
+        unit_key=unit,
+        unit_label=_unit_display_name(unit),
+        printed_by=session.get("username") or session.get("user") or "",
+        printed_at=datetime.now(tz=LOCAL_TZ).strftime("%d-%m-%Y %H:%M:%S"),
+    )
+
+
 def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by: str):
     bill_from = filters.get("bill_from")
     bill_to = filters.get("bill_to")
+    is_sharpsight = _is_sharpsight_corp_unit(unit)
     # Unified date range: submit window and receipt window are always the same.
     receipt_from = bill_from
     receipt_to = bill_to
@@ -42355,7 +34974,16 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
 
     bill_context_source_df = bills_df if not bills_df.empty else rows_df
     bill_context_df = pd.DataFrame(
-        columns=["BillId", "BillSource", "BillSourceKey", "PatientSubType", "PatientSubTypeKey", "ReceiptAgainstSource"]
+        columns=[
+            "BillId",
+            "BillSource",
+            "BillSourceKey",
+            "BillNo",
+            "PatientName",
+            "PatientSubType",
+            "PatientSubTypeKey",
+            "ReceiptAgainstSource",
+        ]
     )
     if isinstance(bill_context_source_df, pd.DataFrame) and not bill_context_source_df.empty:
         bill_context_df = bill_context_source_df.copy()
@@ -42370,6 +34998,14 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
                 bill_context_df.loc[blank_bill_source_mask, "BillSource"] = (
                     bill_context_df.loc[blank_bill_source_mask, "BillSourceKey"].apply(_corp_recon_source_label)
                 )
+        if "BillNo" not in bill_context_df.columns:
+            bill_context_df["BillNo"] = ""
+        else:
+            bill_context_df["BillNo"] = bill_context_df["BillNo"].fillna("").astype(str).str.strip()
+        if "PatientName" not in bill_context_df.columns:
+            bill_context_df["PatientName"] = ""
+        else:
+            bill_context_df["PatientName"] = bill_context_df["PatientName"].fillna("").astype(str).str.strip()
         if "PatientSubType" not in bill_context_df.columns:
             bill_context_df["PatientSubType"] = ""
         bill_context_df["PatientSubType"], bill_context_df["PatientSubTypeKey"] = _corp_recon_canonicalize_subtype_series(
@@ -42380,20 +35016,20 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
         source_key_series = bill_context_df["BillSourceKey"].fillna("").astype(str).str.strip().str.upper()
         bill_context_df["ReceiptAgainstSource"] = np.where(source_key_series == "OPENING", "Opening", "Bill")
 
-    detail_bill_ids = set()
-    if not receipts_df.empty and "BillId" in receipts_df.columns:
-        detail_bill_id_series = pd.to_numeric(receipts_df["BillId"], errors="coerce").dropna()
-        detail_bill_ids = {int(v) for v in detail_bill_id_series.tolist()}
+    def _decorate_receipt_details(detail_frame: pd.DataFrame) -> pd.DataFrame:
+        if detail_frame is None or detail_frame.empty:
+            return pd.DataFrame()
 
-    details_df = _corp_recon_build_receipt_lines(receipts_df, detail_bill_ids, receipt_from, receipt_to)
-    if details_df is not None and not details_df.empty:
+        work = detail_frame.copy()
         if not bill_context_df.empty:
-            details_df["bill_id_lookup"] = pd.to_numeric(details_df["bill_id"], errors="coerce").astype("Int64")
-            details_df = details_df.merge(
+            work["bill_id_lookup"] = pd.to_numeric(work["bill_id"], errors="coerce").astype("Int64")
+            work = work.merge(
                 bill_context_df[[
                     "BillId",
                     "BillSource",
                     "BillSourceKey",
+                    "BillNo",
+                    "PatientName",
                     "PatientSubType",
                     "PatientSubTypeKey",
                     "ReceiptAgainstSource",
@@ -42403,29 +35039,158 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
                 right_on="BillId",
             )
         else:
-            details_df["BillSource"] = ""
-            details_df["BillSourceKey"] = ""
-            details_df["PatientSubType"] = ""
-            details_df["PatientSubTypeKey"] = ""
-            details_df["ReceiptAgainstSource"] = "Bill"
+            work["BillSource"] = ""
+            work["BillSourceKey"] = ""
+            work["BillNo"] = ""
+            work["PatientName"] = ""
+            work["PatientSubType"] = ""
+            work["PatientSubTypeKey"] = ""
+            work["ReceiptAgainstSource"] = "Bill"
 
         source_query = str(bill_source or "").strip().lower()
         if source_query:
-            details_df = details_df[
-                details_df["BillSource"].astype(str).str.strip().str.lower() == source_query
+            work = work[
+                work["BillSource"].astype(str).str.strip().str.lower() == source_query
             ].copy()
 
         subtype_query_key = _corp_recon_subtype_key(patient_subtype)
         if subtype_query_key:
-            details_df = details_df[
-                details_df["PatientSubTypeKey"].astype(str).str.strip().str.upper() == subtype_query_key
+            work = work[
+                work["PatientSubTypeKey"].astype(str).str.strip().str.upper() == subtype_query_key
             ].copy()
 
-        # Export receipt sheet rows only for the effective receipt window.
         if receipt_from is not None or receipt_to is not None:
-            details_df = details_df[details_df["in_window"].astype(bool)].copy()
+            work = work[work["in_window"].astype(bool)].copy()
 
-    if rows_df.empty and (details_df is None or details_df.empty):
+        return work
+
+    def _build_receipt_export_df(detail_frame: pd.DataFrame, *, include_bill_context: bool = False) -> pd.DataFrame:
+        base_columns = []
+        if include_bill_context:
+            base_columns.extend(["Bill Source", "Bill No", "Patient Name"])
+        base_columns.extend([
+            "Bill ID",
+            "Receipt Against Source",
+            "Bill Patient SubType",
+            "Receipt Detail ID",
+            "Receipt ID",
+            "Receipt No",
+            "Receipt Date",
+            "Receipt Amount",
+            "Bill Amount (Dtl)",
+            "Net Due Amount (Dtl)",
+            "TDS Amount (Allocated)",
+            "Rebate / Discount (Allocated)",
+            "Write-off Amount (Allocated)",
+            "Cancel Status",
+            "Payment Mode ID",
+            "Payment Mode",
+            "UTR No",
+            "Inserted By ID",
+            "Inserted By",
+            "Visit ID",
+            "Patient ID",
+            "In Receipt Window",
+        ])
+        if detail_frame is None or detail_frame.empty:
+            return pd.DataFrame(columns=base_columns)
+
+        receipt_against_series = (
+            detail_frame["ReceiptAgainstSource"]
+            if "ReceiptAgainstSource" in detail_frame.columns
+            else pd.Series("Bill", index=detail_frame.index)
+        )
+        receipt_against_series = receipt_against_series.fillna("Bill").astype(str).str.strip()
+        receipt_against_series = receipt_against_series.where(receipt_against_series != "", "Bill")
+
+        bill_subtype_series = (
+            detail_frame["PatientSubType"]
+            if "PatientSubType" in detail_frame.columns
+            else pd.Series("", index=detail_frame.index)
+        )
+        bill_subtype_series = bill_subtype_series.fillna("").astype(str).str.strip()
+
+        export_map = {
+            "Bill ID": detail_frame["bill_id"].astype("Int64"),
+            "Receipt Against Source": receipt_against_series,
+            "Bill Patient SubType": bill_subtype_series,
+            "Receipt Detail ID": detail_frame["receipt_detail_id"].astype("Int64"),
+            "Receipt ID": detail_frame["receipt_id"].astype("Int64"),
+            "Receipt No": detail_frame["receipt_no"],
+            "Receipt Date": detail_frame["receipt_date"],
+            "Receipt Amount": detail_frame["receipt_amount"].astype(float),
+            "Bill Amount (Dtl)": detail_frame["bill_amount"].astype(float),
+            "Net Due Amount (Dtl)": detail_frame["due_amount"].astype(float),
+            "TDS Amount (Allocated)": detail_frame["tds_amount"].astype(float),
+            "Rebate / Discount (Allocated)": detail_frame["rebate_discount_amount"].astype(float),
+            "Write-off Amount (Allocated)": detail_frame["writeoff_amount"].astype(float),
+            "Cancel Status": detail_frame["cancel_status"].astype(int),
+            "Payment Mode ID": detail_frame["payment_mode_id"].astype(int),
+            "Payment Mode": detail_frame["payment_mode"],
+            "UTR No": detail_frame["utr_no"],
+            "Inserted By ID": detail_frame["inserted_by_id"].astype("Int64"),
+            "Inserted By": detail_frame["inserted_by"],
+            "Visit ID": detail_frame["visit_id"].astype("Int64"),
+            "Patient ID": detail_frame["patient_id"].astype("Int64"),
+            "In Receipt Window": detail_frame["in_window"].astype(bool),
+        }
+        if include_bill_context:
+            export_map = {
+                "Bill Source": detail_frame.get("BillSource", pd.Series("", index=detail_frame.index)).fillna("").astype(str).str.strip(),
+                "Bill No": detail_frame.get("BillNo", pd.Series("", index=detail_frame.index)).fillna("").astype(str).str.strip(),
+                "Patient Name": detail_frame.get("PatientName", pd.Series("", index=detail_frame.index)).fillna("").astype(str).str.strip(),
+                **export_map,
+            }
+        export_df = pd.DataFrame(export_map).where(pd.notna, None)
+        if "In Receipt Window" in export_df.columns:
+            export_df["In Receipt Window"] = export_df["In Receipt Window"].apply(
+                lambda v: "Yes" if str(v).strip().lower() in {"true", "1", "yes"} else "No"
+            )
+        if "UTR No" in export_df.columns:
+            def _utr_text(v):
+                if v is None:
+                    return ""
+                try:
+                    if pd.isna(v):
+                        return ""
+                except Exception:
+                    pass
+                if isinstance(v, (int, np.integer)):
+                    txt = str(int(v))
+                elif isinstance(v, (float, np.floating)):
+                    fv = float(v)
+                    if not math.isfinite(fv):
+                        return ""
+                    txt = str(int(fv)) if fv.is_integer() else format(fv, "f").rstrip("0").rstrip(".")
+                else:
+                    txt = str(v).strip()
+                return txt.replace(",", "")
+
+            export_df["UTR No"] = export_df["UTR No"].apply(_utr_text)
+        return export_df
+
+    detail_bill_ids = set()
+    if not rows_df.empty and "BillId" in rows_df.columns:
+        detail_bill_id_series = pd.to_numeric(rows_df["BillId"], errors="coerce").dropna()
+        detail_bill_ids = {int(v) for v in detail_bill_id_series.tolist()}
+
+    details_df = _decorate_receipt_details(
+        _corp_recon_build_receipt_lines(receipts_df, detail_bill_ids, receipt_from, receipt_to)
+    )
+
+    receipt_window_bill_ids = set()
+    if bill_id_filter is not None:
+        receipt_window_bill_id_series = pd.to_numeric(pd.Series(list(bill_id_filter)), errors="coerce").dropna()
+        receipt_window_bill_ids = {int(v) for v in receipt_window_bill_id_series.tolist()}
+    elif not receipts_df.empty and "BillId" in receipts_df.columns:
+        receipt_window_bill_id_series = pd.to_numeric(receipts_df["BillId"], errors="coerce").dropna()
+        receipt_window_bill_ids = {int(v) for v in receipt_window_bill_id_series.tolist()}
+
+    receipt_window_all_df = _decorate_receipt_details(
+        _corp_recon_build_receipt_lines(receipts_df, receipt_window_bill_ids, receipt_from, receipt_to)
+    )
+
+    if rows_df.empty and (details_df is None or details_df.empty) and (receipt_window_all_df is None or receipt_window_all_df.empty):
         return None, None, "No data available to export"
 
     export_rows_df = rows_df.copy()
@@ -42506,102 +35271,12 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             "Bill Due Amount Raw": export_rows_df["BillDueAmountRaw"].astype(float),
         }
     ).where(pd.notna, None)
-    if details_df is None:
-        details_df = pd.DataFrame()
-    if details_df.empty:
-        details_export_df = pd.DataFrame(
-            columns=[
-                "Bill ID",
-                "Receipt Against Source",
-                "Bill Patient SubType",
-                "Receipt Detail ID",
-                "Receipt ID",
-                "Receipt No",
-                "Receipt Date",
-                "Receipt Amount",
-                "Bill Amount (Dtl)",
-                "Due Amount (Dtl)",
-                "TDS Amount (Allocated)",
-                "Rebate / Discount (Allocated)",
-                "Write-off Amount (Allocated)",
-                "Cancel Status",
-                "Payment Mode ID",
-                "Payment Mode",
-                "UTR No",
-                "Inserted By ID",
-                "Inserted By",
-                "Visit ID",
-                "Patient ID",
-                "In Receipt Window",
-            ]
-        )
-    else:
-        receipt_against_series = (
-            details_df["ReceiptAgainstSource"]
-            if "ReceiptAgainstSource" in details_df.columns
-            else pd.Series("Bill", index=details_df.index)
-        )
-        receipt_against_series = receipt_against_series.fillna("Bill").astype(str).str.strip()
-        receipt_against_series = receipt_against_series.where(receipt_against_series != "", "Bill")
-
-        bill_subtype_series = (
-            details_df["PatientSubType"]
-            if "PatientSubType" in details_df.columns
-            else pd.Series("", index=details_df.index)
-        )
-        bill_subtype_series = bill_subtype_series.fillna("").astype(str).str.strip()
-
-        details_export_df = pd.DataFrame(
-            {
-                "Bill ID": details_df["bill_id"].astype("Int64"),
-                "Receipt Against Source": receipt_against_series,
-                "Bill Patient SubType": bill_subtype_series,
-                "Receipt Detail ID": details_df["receipt_detail_id"].astype("Int64"),
-                "Receipt ID": details_df["receipt_id"].astype("Int64"),
-                "Receipt No": details_df["receipt_no"],
-                "Receipt Date": details_df["receipt_date"],
-                "Receipt Amount": details_df["receipt_amount"].astype(float),
-                "Bill Amount (Dtl)": details_df["bill_amount"].astype(float),
-                "Due Amount (Dtl)": details_df["due_amount"].astype(float),
-                "TDS Amount (Allocated)": details_df["tds_amount"].astype(float),
-                "Rebate / Discount (Allocated)": details_df["rebate_discount_amount"].astype(float),
-                "Write-off Amount (Allocated)": details_df["writeoff_amount"].astype(float),
-                "Cancel Status": details_df["cancel_status"].astype(int),
-                "Payment Mode ID": details_df["payment_mode_id"].astype(int),
-                "Payment Mode": details_df["payment_mode"],
-                "UTR No": details_df["utr_no"],
-                "Inserted By ID": details_df["inserted_by_id"].astype("Int64"),
-                "Inserted By": details_df["inserted_by"],
-                "Visit ID": details_df["visit_id"].astype("Int64"),
-                "Patient ID": details_df["patient_id"].astype("Int64"),
-                "In Receipt Window": details_df["in_window"].astype(bool),
-            }
-        ).where(pd.notna, None)
-    if "In Receipt Window" in details_export_df.columns:
-        details_export_df["In Receipt Window"] = details_export_df["In Receipt Window"].apply(
-            lambda v: "Yes" if str(v).strip().lower() in {"true", "1", "yes"} else "No"
-        )
-    if "UTR No" in details_export_df.columns:
-        def _utr_text(v):
-            if v is None:
-                return ""
-            try:
-                if pd.isna(v):
-                    return ""
-            except Exception:
-                pass
-            if isinstance(v, (int, np.integer)):
-                txt = str(int(v))
-            elif isinstance(v, (float, np.floating)):
-                fv = float(v)
-                if not math.isfinite(fv):
-                    return ""
-                txt = str(int(fv)) if fv.is_integer() else format(fv, "f").rstrip("0").rstrip(".")
-            else:
-                txt = str(v).strip()
-            return txt.replace(",", "")
-
-        details_export_df["UTR No"] = details_export_df["UTR No"].apply(_utr_text)
+    receipt_all_time_export_df = _build_receipt_export_df(details_df, include_bill_context=True)
+    receipt_window_export_df = _build_receipt_export_df(receipt_window_all_df, include_bill_context=True)
+    if "In Receipt Window" in receipt_window_export_df.columns:
+        receipt_window_export_df = receipt_window_export_df[
+            receipt_window_export_df["In Receipt Window"].fillna("").astype(str).str.strip().str.upper() == "YES"
+        ].copy()
 
     kpis = _corp_recon_kpis_from_rows(rows_df)
     tds_all_time_total = (
@@ -42638,8 +35313,14 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
     closing_export_columns = [
         "Subtype",
         "Bills",
+        "Bill Amount",
         "Corporate Bills",
         "Opening Bills",
+        "Receipt All-time",
+        "TDS All-time",
+        "Rebate/Discount All-time",
+        "Write-off All-time",
+        "Settled All-time",
         "Settled Count",
         "Settled Corporate",
         "Settled Opening",
@@ -42652,6 +35333,7 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
         "Overpaid Count",
         "Overpaid Corporate",
         "Overpaid Opening",
+        "Closing Qty",
         "Closing Balance",
     ]
     if subtype_summary_rows:
@@ -42659,8 +35341,14 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             columns={
                 "subtype": "Subtype",
                 "bills": "Bills",
+                "bill_amount": "Bill Amount",
                 "corporate_bills": "Corporate Bills",
                 "opening_bills": "Opening Bills",
+                "receipt_all_time": "Receipt All-time",
+                "tds_all_time": "TDS All-time",
+                "rebate_discount_all_time": "Rebate/Discount All-time",
+                "writeoff_all_time": "Write-off All-time",
+                "settled_total_all_time": "Settled All-time",
                 "settled_count": "Settled Count",
                 "settled_corporate_count": "Settled Corporate",
                 "settled_opening_count": "Settled Opening",
@@ -42673,6 +35361,7 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
                 "overpaid_count": "Overpaid Count",
                 "overpaid_corporate_count": "Overpaid Corporate",
                 "overpaid_opening_count": "Overpaid Opening",
+                "closing_qty": "Closing Qty",
                 "closing_balance": "Closing Balance",
             }
         )
@@ -42683,8 +35372,14 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
         total_row = {
             "Subtype": "Total (Filter)",
             "Bills": int(pd.to_numeric(closing_export_df["Bills"], errors="coerce").fillna(0).sum()),
+            "Bill Amount": float(pd.to_numeric(closing_export_df["Bill Amount"], errors="coerce").fillna(0).sum()),
             "Corporate Bills": int(pd.to_numeric(closing_export_df["Corporate Bills"], errors="coerce").fillna(0).sum()),
             "Opening Bills": int(pd.to_numeric(closing_export_df["Opening Bills"], errors="coerce").fillna(0).sum()),
+            "Receipt All-time": float(pd.to_numeric(closing_export_df["Receipt All-time"], errors="coerce").fillna(0).sum()),
+            "TDS All-time": float(pd.to_numeric(closing_export_df["TDS All-time"], errors="coerce").fillna(0).sum()),
+            "Rebate/Discount All-time": float(pd.to_numeric(closing_export_df["Rebate/Discount All-time"], errors="coerce").fillna(0).sum()),
+            "Write-off All-time": float(pd.to_numeric(closing_export_df["Write-off All-time"], errors="coerce").fillna(0).sum()),
+            "Settled All-time": float(pd.to_numeric(closing_export_df["Settled All-time"], errors="coerce").fillna(0).sum()),
             "Settled Count": int(pd.to_numeric(closing_export_df["Settled Count"], errors="coerce").fillna(0).sum()),
             "Settled Corporate": int(pd.to_numeric(closing_export_df["Settled Corporate"], errors="coerce").fillna(0).sum()),
             "Settled Opening": int(pd.to_numeric(closing_export_df["Settled Opening"], errors="coerce").fillna(0).sum()),
@@ -42697,6 +35392,7 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             "Overpaid Count": int(pd.to_numeric(closing_export_df["Overpaid Count"], errors="coerce").fillna(0).sum()),
             "Overpaid Corporate": int(pd.to_numeric(closing_export_df["Overpaid Corporate"], errors="coerce").fillna(0).sum()),
             "Overpaid Opening": int(pd.to_numeric(closing_export_df["Overpaid Opening"], errors="coerce").fillna(0).sum()),
+            "Closing Qty": int(pd.to_numeric(closing_export_df["Closing Qty"], errors="coerce").fillna(0).sum()),
             "Closing Balance": float(pd.to_numeric(closing_export_df["Closing Balance"], errors="coerce").fillna(0).sum()),
         }
         closing_export_df = pd.concat([closing_export_df, pd.DataFrame([total_row])], ignore_index=True).where(pd.notna, None)
@@ -42729,6 +35425,26 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
         f"{len(bill_id_filter)} bills (client filtered)"
         if bill_id_filter is not None
         else "Server-filtered rows"
+    )
+    bill_scope_logic_text = (
+        "Bills in submit date range, plus older bills with settlement activity in the same receipt window"
+        if bill_from is not None or bill_to is not None
+        else "All bills in current reconciliation scope"
+    )
+    opening_scope_logic_text = (
+        "Opening rows with settlement activity in the receipt window or remaining balance"
+        if bill_from is not None or bill_to is not None
+        else "All opening rows in current reconciliation scope"
+    )
+    receipt_lines_scope_text = (
+        "Reconciled receipt rows in the selected receipt window for the filtered bill set (matches Receipt In Window KPI)"
+        if receipt_from is not None or receipt_to is not None
+        else "All receipt rows for the filtered bill set"
+    )
+    receipt_window_sheet_scope_text = (
+        "All receipt rows in the selected receipt window across all bills, independent of bill-grid scope"
+        if bill_id_filter is None
+        else "All receipt rows in the selected receipt window for the selected bill set"
     )
     footer_exported_by = str(exported_by or "Unknown").replace("&", "and")
     footer_exported_at = str(exported_at).replace("&", "and")
@@ -43067,6 +35783,7 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             ("Include Cancelled", "Yes" if include_cancelled else "No"),
             ("Client Bill Scope", client_scope_text),
             ("Grid Filtered Rows", grid_total_rows),
+            ("Closing Formula", "Bill Amount - (Receipt All-time + TDS All-time + Rebate/Discount All-time + Write-off All-time)"),
             ("Exported At", exported_at),
         ]
         _render_data_sheet(
@@ -43074,7 +35791,7 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             f"Corporate Receipt Reconciliation - Closing by SubType ({unit})",
             closing_export_df,
             closing_meta_pairs,
-            money_columns={"Closing Balance"},
+            money_columns={"Bill Amount", "Receipt All-time", "TDS All-time", "Rebate/Discount All-time", "Write-off All-time", "Settled All-time", "Closing Balance"},
             int_columns={
                 "Bills",
                 "Corporate Bills",
@@ -43091,6 +35808,7 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
                 "Overpaid Count",
                 "Overpaid Corporate",
                 "Overpaid Opening",
+                "Closing Qty",
             },
             date_columns=set(),
             center_columns=set(),
@@ -43125,57 +35843,59 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
 
         bills_sheet_df = export_rows_df
         openings_sheet_df = export_rows_df.iloc[0:0].copy()
-        if isinstance(rows_df, pd.DataFrame) and not rows_df.empty and len(rows_df) == len(export_rows_df):
-            source_key_series = rows_df.get("BillSourceKey", pd.Series("", index=rows_df.index)).fillna("").astype(str).str.strip().str.upper()
-            opening_mask = source_key_series == "OPENING"
+        if not is_sharpsight:
+            if isinstance(rows_df, pd.DataFrame) and not rows_df.empty and len(rows_df) == len(export_rows_df):
+                source_key_series = rows_df.get("BillSourceKey", pd.Series("", index=rows_df.index)).fillna("").astype(str).str.strip().str.upper()
+                opening_mask = source_key_series == "OPENING"
 
-            submit_date_series = pd.to_datetime(rows_df.get("BillDate"), errors="coerce").dt.date
-            submit_in_range = pd.Series(True, index=rows_df.index)
-            if bill_from is not None:
-                submit_in_range = submit_in_range & (submit_date_series >= bill_from)
-            if bill_to is not None:
-                submit_in_range = submit_in_range & (submit_date_series <= bill_to)
+                submit_date_series = pd.to_datetime(rows_df.get("BillDate"), errors="coerce").dt.date
+                submit_in_range = pd.Series(True, index=rows_df.index)
+                if bill_from is not None:
+                    submit_in_range = submit_in_range & (submit_date_series >= bill_from)
+                if bill_to is not None:
+                    submit_in_range = submit_in_range & (submit_date_series <= bill_to)
 
-            receipt_window_num = pd.to_numeric(rows_df.get("receipt_total_window"), errors="coerce").fillna(0.0)
-            balance_all_num = pd.to_numeric(rows_df.get("balance_all_time"), errors="coerce").fillna(0.0)
-            tol = float(CORP_RECON_SETTLE_TOLERANCE)
+                settled_window_num = pd.to_numeric(rows_df.get("settled_total_window"), errors="coerce").fillna(0.0)
+                balance_all_num = pd.to_numeric(rows_df.get("balance_all_time"), errors="coerce").fillna(0.0)
+                tol = float(CORP_RECON_SETTLE_TOLERANCE)
 
-            non_opening_keep = (~opening_mask) & submit_in_range
-            opening_keep = opening_mask & ((receipt_window_num > tol) | (balance_all_num > tol))
-            bills_sheet_df = export_rows_df.loc[non_opening_keep].copy()
-            openings_sheet_df = export_rows_df.loc[opening_keep].copy()
-        else:
-            source_text = export_rows_df.get("Bill Source", pd.Series("", index=export_rows_df.index)).fillna("").astype(str).str.strip().str.lower()
-            opening_text_mask = source_text.eq("opening balance")
-            bills_sheet_df = export_rows_df.loc[~opening_text_mask].copy()
-            openings_sheet_df = export_rows_df.loc[opening_text_mask].copy()
+                non_opening_keep = (~opening_mask) & (submit_in_range | (settled_window_num > tol))
+                opening_keep = opening_mask & ((settled_window_num > tol) | (balance_all_num > tol))
+                bills_sheet_df = export_rows_df.loc[non_opening_keep].copy()
+                openings_sheet_df = export_rows_df.loc[opening_keep].copy()
+            else:
+                source_text = export_rows_df.get("Bill Source", pd.Series("", index=export_rows_df.index)).fillna("").astype(str).str.strip().str.lower()
+                opening_text_mask = source_text.eq("opening balance")
+                bills_sheet_df = export_rows_df.loc[~opening_text_mask].copy()
+                openings_sheet_df = export_rows_df.loc[opening_text_mask].copy()
         if export_submitted_only and "Bill Status Raw" in bills_sheet_df.columns:
             status_series = bills_sheet_df["Bill Status Raw"].fillna("").astype(str).str.strip().str.upper()
             bills_sheet_df = bills_sheet_df[status_series.isin({"Y", "SUBMITTED"})].copy()
         bills_filtered_rows = int(len(bills_sheet_df))
         openings_filtered_rows = int(len(openings_sheet_df))
 
-        bills_meta_pairs = [
+        bill_detail_meta_pairs = [
             ("Unit", unit),
             ("Submit Date Range", submit_range),
             ("Receipt Date Range", receipt_range),
             ("Source", bill_source or "All"),
             ("Patient SubType", patient_subtype or "All"),
             ("Include Cancelled", "Yes" if include_cancelled else "No"),
-            ("Bills Sheet: Status = Y only", "Yes" if export_submitted_only else "No"),
+            ("Submitted Bills Only", "Yes" if export_submitted_only else "No"),
             ("Search Query", q or "(none)"),
             ("Sort", f"{sort_by or 'balance_all_time'} ({sort_dir})"),
             ("Grid Page", f"{grid_page} / {grid_total_pages}"),
             ("Grid Filtered Rows", bills_filtered_rows),
+            ("Scope Rule", bill_scope_logic_text),
             ("KPI Filter", kpi_filter_label),
             ("Settlement Formula", "Receipt + TDS + Rebate/Discount + Write-off"),
             ("Exported At", exported_at),
         ]
         _render_data_sheet(
-            "Bills",
-            f"Corporate Receipt Reconciliation - Bills ({unit})",
+            "BillWiseSettlementDetails",
+            f"Corporate Receipt Reconciliation - Bill Wise Settlement Details ({unit})",
             bills_sheet_df,
-            bills_meta_pairs,
+            bill_detail_meta_pairs,
             money_columns=bill_money_columns,
             int_columns=bill_int_columns,
             date_columns=bill_date_columns,
@@ -43186,59 +35906,118 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             cancel_column=None,
         )
 
-        openings_meta_pairs = [
-            ("Unit", unit),
-            ("Submit Date Range", submit_range),
-            ("Receipt Date Range", receipt_range),
-            ("Source", bill_source or "All"),
-            ("Patient SubType", patient_subtype or "All"),
-            ("Include Cancelled", "Yes" if include_cancelled else "No"),
-            ("Openings Sheet", "Only Opening Balance rows"),
-            ("Search Query", q or "(none)"),
-            ("Sort", f"{sort_by or 'balance_all_time'} ({sort_dir})"),
-            ("Grid Page", f"{grid_page} / {grid_total_pages}"),
-            ("Grid Filtered Rows", openings_filtered_rows),
-            ("KPI Filter", kpi_filter_label),
-            ("Settlement Formula", "Receipt + TDS + Rebate/Discount + Write-off"),
-            ("Exported At", exported_at),
-        ]
-        _render_data_sheet(
-            "Openings",
-            f"Corporate Receipt Reconciliation - Openings ({unit})",
-            openings_sheet_df,
-            openings_meta_pairs,
-            money_columns=bill_money_columns,
-            int_columns=bill_int_columns,
-            date_columns=bill_date_columns,
-            center_columns=bill_center_columns,
-            wrap_columns=bill_wrap_columns,
-            status_columns=bill_status_columns,
-            yes_no_columns=bill_yes_no_columns,
-            cancel_column=None,
-        )
+        if not is_sharpsight:
+            openings_meta_pairs = [
+                ("Unit", unit),
+                ("Submit Date Range", submit_range),
+                ("Receipt Date Range", receipt_range),
+                ("Source", bill_source or "All"),
+                ("Patient SubType", patient_subtype or "All"),
+                ("Include Cancelled", "Yes" if include_cancelled else "No"),
+                ("Openings Sheet", "Only Opening Balance rows"),
+                ("Search Query", q or "(none)"),
+                ("Sort", f"{sort_by or 'balance_all_time'} ({sort_dir})"),
+                ("Grid Page", f"{grid_page} / {grid_total_pages}"),
+                ("Grid Filtered Rows", openings_filtered_rows),
+                ("Scope Rule", opening_scope_logic_text),
+                ("KPI Filter", kpi_filter_label),
+                ("Settlement Formula", "Receipt + TDS + Rebate/Discount + Write-off"),
+                ("Exported At", exported_at),
+            ]
+            _render_data_sheet(
+                "Openings",
+                f"Corporate Receipt Reconciliation - Openings ({unit})",
+                openings_sheet_df,
+                openings_meta_pairs,
+                money_columns=bill_money_columns,
+                int_columns=bill_int_columns,
+                date_columns=bill_date_columns,
+                center_columns=bill_center_columns,
+                wrap_columns=bill_wrap_columns,
+                status_columns=bill_status_columns,
+                yes_no_columns=bill_yes_no_columns,
+                cancel_column=None,
+            )
+
+        receipt_detail_money_columns = {
+            "Receipt Amount",
+            "Bill Amount (Dtl)",
+            "Net Due Amount (Dtl)",
+            "TDS Amount (Allocated)",
+            "Rebate / Discount (Allocated)",
+            "Write-off Amount (Allocated)",
+        }
+        receipt_detail_int_columns = {
+            "Bill ID",
+            "Receipt Detail ID",
+            "Receipt ID",
+            "Cancel Status",
+            "Payment Mode ID",
+            "Inserted By ID",
+            "Visit ID",
+            "Patient ID",
+        }
+        receipt_detail_date_columns = {"Receipt Date"}
+        receipt_detail_center_columns = {"In Receipt Window", "Cancel Status", "Receipt Against Source"}
+        receipt_detail_wrap_columns = {
+            "Bill Source",
+            "Bill No",
+            "Patient Name",
+            "Payment Mode",
+            "Inserted By",
+            "Bill Patient SubType",
+        }
 
         lines_meta_pairs = [
             ("Unit", unit),
             ("Receipt Date Range", receipt_range),
             ("Include Cancelled", "Yes" if include_cancelled else "No"),
             ("Client Bill Scope", client_scope_text),
-            ("Receipt Lines Scope", "All filtered receipt lines (unpaged)"),
-            ("Receipt Lines Exported", int(len(details_export_df))),
+            ("Receipt All-time Scope", "All receipt rows linked to the exported reconciliation bill set"),
+            ("Receipt Rows Exported", int(len(receipt_all_time_export_df))),
             ("Bill Grid Page (at export)", f"{grid_page} / {grid_total_pages}"),
             ("Bill Grid Filtered Rows", grid_total_rows),
+            ("In Receipt Window Column", "Flags whether the receipt row falls inside the selected receipt range"),
             ("KPI Filter", kpi_filter_label),
             ("Exported At", exported_at),
         ]
         _render_data_sheet(
-            "ReceiptLines",
-            f"Corporate Receipt Reconciliation - Receipt Lines ({unit})",
-            details_export_df,
+            "ReceiptAllTime",
+            f"Corporate Receipt Reconciliation - Receipt All-time ({unit})",
+            receipt_all_time_export_df,
             lines_meta_pairs,
-            money_columns={"Receipt Amount", "Bill Amount (Dtl)", "Due Amount (Dtl)", "TDS Amount (Allocated)", "Rebate / Discount (Allocated)", "Write-off Amount (Allocated)"},
-            int_columns={"Bill ID", "Receipt Detail ID", "Receipt ID", "Cancel Status", "Payment Mode ID", "Inserted By ID", "Visit ID", "Patient ID"},
-            date_columns={"Receipt Date"},
-            center_columns={"In Receipt Window", "Cancel Status", "Receipt Against Source"},
-            wrap_columns={"Payment Mode", "Inserted By", "Bill Patient SubType"},
+            money_columns=receipt_detail_money_columns,
+            int_columns=receipt_detail_int_columns,
+            date_columns=receipt_detail_date_columns,
+            center_columns=receipt_detail_center_columns,
+            wrap_columns=receipt_detail_wrap_columns,
+            status_columns=set(),
+            yes_no_columns={"In Receipt Window"},
+            cancel_column="Cancel Status",
+        )
+
+        receipt_window_meta_pairs = [
+            ("Unit", unit),
+            ("Receipt Date Range", receipt_range),
+            ("Include Cancelled", "Yes" if include_cancelled else "No"),
+            ("Source", bill_source or "All"),
+            ("Patient SubType", patient_subtype or "All"),
+            ("Receipt Window Scope", "Only receipt rows whose receipt date falls inside the selected receipt range"),
+            ("Receipt Rows Exported", int(len(receipt_window_export_df))),
+            ("Client Bill Scope", client_scope_text),
+            ("KPI Tie-out", "Receipt/TDS/Rebate/Write-off rows in the selected receipt window"),
+            ("Exported At", exported_at),
+        ]
+        _render_data_sheet(
+            "ReceiptsInWindow",
+            f"Corporate Receipt Reconciliation - Receipts In Window ({unit})",
+            receipt_window_export_df,
+            receipt_window_meta_pairs,
+            money_columns=receipt_detail_money_columns,
+            int_columns=receipt_detail_int_columns,
+            date_columns=receipt_detail_date_columns,
+            center_columns=receipt_detail_center_columns,
+            wrap_columns=receipt_detail_wrap_columns,
             status_columns=set(),
             yes_no_columns={"In Receipt Window"},
             cancel_column="Cancel Status",
@@ -43390,7 +36169,7 @@ def api_corporate_bill_summary():
     patient_subtype = str(request.args.get("patient_subtype") or "").strip()
     search_query = str(request.args.get("search_query") or "").strip()
 
-    allowed_units = _modification_units(_allowed_units_for_session())
+    allowed_units = _corp_recon_allowed_units_for_session()
     if allowed_units and unit not in allowed_units:
         return jsonify({"status": "error", "message": "Unit not allowed"}), 403
 
@@ -43399,7 +36178,7 @@ def api_corporate_bill_summary():
     except Exception:
         vt_int = 0
 
-    if unit in {"AHL", "ACI"}:
+    if unit in {"AHL", "ACI", "SHARPSIGHT"}:
         from_dt, err = _corp_recon_parse_date(raw_from, "from")
         if err:
             return jsonify({"status": "error", "message": err}), 400
@@ -43791,15 +36570,18 @@ def _build_diagnostics_share_excel(unit: str, from_date: str, to_date: str, doc_
             "bg_color": "#1e3a8a",
             "font_color": "white",
             "border": 1,
+            "text_wrap": True,
         })
         text_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "left"})
         int_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "right", "num_format": "#,##,##0"})
         qty_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "right", "num_format": "#,##,##0.00"})
         money_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "right", "num_format": "#,##,##0.00"})
         pct_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "right", "num_format": "0.00%"})
-        text_col_fmt = workbook.add_format({"font_size": 9, "align": "left"})
-        qty_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "num_format": "#,##,##0.00"})
-        money_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "num_format": "#,##,##0.00"})
+        text_col_fmt = workbook.add_format({"font_size": 9, "align": "left", "valign": "top"})
+        text_wrap_col_fmt = workbook.add_format({"font_size": 9, "align": "left", "valign": "top", "text_wrap": True})
+        int_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "valign": "top", "num_format": "#,##,##0"})
+        qty_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "valign": "top", "num_format": "#,##,##0.00"})
+        money_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "valign": "top", "num_format": "#,##,##0.00"})
         border_only_fmt = workbook.add_format({"border": 1})
 
         exported_at = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
@@ -44466,15 +37248,18 @@ def _build_doct_medicine_excel(unit: str, from_date: str, to_date: str, doc_id: 
             "bg_color": "#1e3a8a",
             "font_color": "white",
             "border": 1,
+            "text_wrap": True,
         })
         text_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "left"})
         int_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "right", "num_format": "#,##,##0"})
         qty_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "right", "num_format": "#,##,##0.00"})
         money_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "right", "num_format": "#,##,##0.00"})
         pct_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "right", "num_format": "0.00%"})
-        text_col_fmt = workbook.add_format({"font_size": 9, "align": "left"})
-        qty_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "num_format": "#,##,##0.00"})
-        money_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "num_format": "#,##,##0.00"})
+        text_col_fmt = workbook.add_format({"font_size": 9, "align": "left", "valign": "top"})
+        text_wrap_col_fmt = workbook.add_format({"font_size": 9, "align": "left", "valign": "top", "text_wrap": True})
+        int_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "valign": "top", "num_format": "#,##,##0"})
+        qty_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "valign": "top", "num_format": "#,##,##0.00"})
+        money_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "valign": "top", "num_format": "#,##,##0.00"})
         border_only_fmt = workbook.add_format({"border": 1})
 
         exported_at = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
@@ -45604,6 +38389,7 @@ BLOODBANK_BILLING_DETAIL_COLUMNS = [
     "VisitDate",
     "DischargeDate",
     "RegNo",
+    "VisitNo",
     "Patient",
     "Service_Name",
     "Rate",
@@ -45649,6 +38435,7 @@ def _build_bloodbank_billing_details_df(df_raw: pd.DataFrame) -> pd.DataFrame:
         "VisitDate": _pick(["VisitDate", "Visit_Date", "Visitdate"]),
         "DischargeDate": _pick(["DischargeDate", "Discharge_Date", "Dischargedate"]),
         "RegNo": _pick(["RegNo", "Registration_No", "RegistrationNo", "Reg_No", "UHID"]),
+        "VisitNo": _pick(["VisitNo", "Visit_No", "VisitID", "VisitId", "Visit_ID"]),
         "Patient": _pick(["Patient", "PatientName", "Patient_Name"]),
         "Service_Name": _pick(["Service_Name", "ServiceName", "Service", "Service Name"]),
         "Rate": _pick(["Rate", "ServiceAmount"]),
@@ -45726,6 +38513,7 @@ def _build_bloodbank_billing_details_df(df_raw: pd.DataFrame) -> pd.DataFrame:
         "RecordSource",
         "OrderStatus",
         "RegNo",
+        "VisitNo",
         "Patient",
         "Service_Name",
         "Sub_Dept",
@@ -45797,6 +38585,24 @@ def _build_bloodbank_billing_details_df(df_raw: pd.DataFrame) -> pd.DataFrame:
     return details[BLOODBANK_BILLING_DETAIL_COLUMNS]
 
 
+def _bloodbank_billing_cancelled_mask(details_df: pd.DataFrame) -> pd.Series:
+    if details_df is None or details_df.empty:
+        return pd.Series(dtype=bool)
+
+    status = details_df.get(
+        "OrderStatus",
+        pd.Series([""] * len(details_df), index=details_df.index),
+    ).astype(str).str.lower()
+    cancelled_flag = pd.to_numeric(
+        details_df.get(
+            "IsOrderCancelled",
+            pd.Series([0] * len(details_df), index=details_df.index),
+        ),
+        errors="coerce",
+    ).fillna(0).astype(int).eq(1)
+    return cancelled_flag | status.str.contains("cancel")
+
+
 def _build_bloodbank_billing_summary_frames(details_df: pd.DataFrame):
     if details_df is None or details_df.empty:
         empty_summary = pd.DataFrame(columns=["Service_Name", "Quantity", "Revenue", "Records"])
@@ -45804,26 +38610,22 @@ def _build_bloodbank_billing_summary_frames(details_df: pd.DataFrame):
 
     work = details_df.copy()
     work["Service_Name"] = work["Service_Name"].replace("", "Unknown").fillna("Unknown")
+    work["Quantity"] = pd.to_numeric(work["Quantity"], errors="coerce").fillna(0.0)
     work["Amount"] = pd.to_numeric(work["Amount"], errors="coerce").fillna(0.0)
 
-    status = work["OrderStatus"].astype(str).str.lower()
-    cancelled_mask = (
-        pd.to_numeric(work["IsOrderCancelled"], errors="coerce").fillna(0).astype(int).eq(1)
-        | status.str.contains("cancel")
-    )
-    rev_work = work.loc[~cancelled_mask].copy()
+    active_work = work.loc[~_bloodbank_billing_cancelled_mask(work)].copy()
 
-    total_quantity = float(work["Quantity"].sum())
-    total_revenue = float(rev_work["Amount"].sum())
+    total_quantity = float(active_work["Quantity"].sum())
+    total_revenue = float(active_work["Amount"].sum())
     total_records = int(len(work))
 
     summary_qty = (
-        work.groupby("Service_Name", dropna=False)
+        active_work.groupby("Service_Name", dropna=False)
         .agg(Quantity=("Quantity", "sum"), Records=("Service_Name", "size"))
         .reset_index()
     )
     summary_rev = (
-        rev_work.groupby("Service_Name", dropna=False)
+        active_work.groupby("Service_Name", dropna=False)
         .agg(Revenue=("Amount", "sum"))
         .reset_index()
     )
@@ -45834,6 +38636,40 @@ def _build_bloodbank_billing_summary_frames(details_df: pd.DataFrame):
     )
 
     return summary, total_quantity, total_revenue, total_records
+
+
+def _build_bloodbank_billing_visit_summary_frame(details_df: pd.DataFrame) -> pd.DataFrame:
+    columns = ["VisitNo", "RegNo", "Patient", "TypeOfVisit", "Quantity", "Revenue", "Records"]
+    if details_df is None or details_df.empty:
+        return pd.DataFrame(columns=columns)
+
+    work = details_df.copy()
+    work = work.loc[~_bloodbank_billing_cancelled_mask(work)].copy()
+    if work.empty:
+        return pd.DataFrame(columns=columns)
+
+    for col in ["VisitNo", "RegNo", "Patient", "TypeOfVisit"]:
+        if col not in work.columns:
+            work[col] = ""
+        work[col] = work[col].astype(str).replace({"nan": "", "None": ""}).str.strip()
+    work["Quantity"] = pd.to_numeric(work["Quantity"], errors="coerce").fillna(0.0)
+    work["Amount"] = pd.to_numeric(work["Amount"], errors="coerce").fillna(0.0)
+
+    visit_summary = (
+        work.groupby(["VisitNo", "RegNo", "Patient", "TypeOfVisit"], dropna=False)
+        .agg(
+            Quantity=("Quantity", "sum"),
+            Revenue=("Amount", "sum"),
+            Records=("Patient", "size"),
+        )
+        .reset_index()
+        .sort_values(
+            ["Revenue", "Quantity", "Patient", "VisitNo"],
+            ascending=[False, False, True, True],
+            kind="stable",
+        )
+    )
+    return visit_summary[columns]
 
 
 def _build_bloodbank_billing_status_totals(details_df: pd.DataFrame) -> dict:
@@ -45910,6 +38746,7 @@ def _apply_bloodbank_details_filter(details_df: pd.DataFrame, search_text: str =
         "OrderDateTime",
         "ShiftedToBillingDate",
         "RegNo",
+        "VisitNo",
         "Patient",
         "Service_Name",
         "Sub_Dept",
@@ -45977,129 +38814,33 @@ def _ensure_bloodbank_order_tracking_table():
     _with_local_db(_setup)
 
 
-def _sync_bloodbank_order_tracking(unit: str, details_df: pd.DataFrame):
-    if details_df is None or details_df.empty:
-        return details_df, {"tracked_rows": 0, "upserts": 0}
-
-    _ensure_bloodbank_order_tracking_table()
-    unit_norm = (unit or "").strip().upper()
-    now_ts = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
-
-    work = details_df.copy()
-    if "TrackingPendingSince" not in work.columns:
-        work["TrackingPendingSince"] = ""
-    if "TrackingShiftedAt" not in work.columns:
-        work["TrackingShiftedAt"] = ""
-    if "TrackingStatus" not in work.columns:
-        work["TrackingStatus"] = ""
-
-    if "OrderDetailId" not in work.columns:
-        return work, {"tracked_rows": 0, "upserts": 0}
-
-    order_ids = pd.to_numeric(work["OrderDetailId"], errors="coerce").fillna(0).astype(int)
-    is_order_row = work["RecordSource"].astype(str).str.upper().eq("ORDER")
-    tracked_idx = work.index[is_order_row & order_ids.gt(0)].tolist()
-    if not tracked_idx:
-        return work, {"tracked_rows": 0, "upserts": 0}
-
-    upserts = 0
-    with sqlite3.connect(_abs_local_db_path()) as conn:
-        for idx in tracked_idx:
-            row = work.loc[idx]
-            order_detail_id = int(pd.to_numeric(row.get("OrderDetailId"), errors="coerce") or 0)
-            if order_detail_id <= 0:
-                continue
-            order_id = int(pd.to_numeric(row.get("OrderId"), errors="coerce") or 0)
-            order_no = str(row.get("OrderNo") or "").strip()
-            order_dt = str(row.get("OrderDateTime") or "").strip()
-            pending_flag = int(pd.to_numeric(row.get("PendingToBilling"), errors="coerce") or 0)
-            shifted_at = str(row.get("ShiftedToBillingDate") or "").strip()
-            shifted_bill_num = int(pd.to_numeric(row.get("ServBillId"), errors="coerce") or 0)
-            shifted_bill_id = str(shifted_bill_num) if shifted_bill_num > 0 else ""
-            status = str(row.get("OrderStatus") or "").strip()
-
-            existing = conn.execute(
+def _load_bloodbank_order_tracking_map(unit_norm: str) -> dict:
+    try:
+        with _connect_local_db() as conn:
+            table_exists = conn.execute(
                 """
-                SELECT first_seen_order_at, first_seen_pending_at, last_seen_pending_at, shifted_at, shifted_bill_id
-                FROM bloodbank_order_tracking
-                WHERE unit = ? AND order_detail_id = ?
-                """,
-                (unit_norm, order_detail_id),
+                SELECT 1
+                FROM sqlite_master
+                WHERE type = 'table' AND name = 'bloodbank_order_tracking'
+                """
             ).fetchone()
-
-            if not existing:
-                conn.execute(
-                    """
-                    INSERT INTO bloodbank_order_tracking
-                    (unit, order_detail_id, order_id, order_no, first_seen_order_at, first_seen_pending_at,
-                     last_seen_pending_at, shifted_at, shifted_bill_id, last_status, updated_at)
-                    VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-                    """,
-                    (
-                        unit_norm,
-                        order_detail_id,
-                        order_id if order_id > 0 else None,
-                        order_no or None,
-                        order_dt or now_ts,
-                        now_ts if pending_flag == 1 else None,
-                        now_ts if pending_flag == 1 else None,
-                        shifted_at or None,
-                        shifted_bill_id or None,
-                        status or None,
-                        now_ts,
-                    ),
-                )
-                upserts += 1
-                continue
-
-            ex_first_order, ex_first_pending, ex_last_pending, ex_shifted_at, ex_shifted_bill = existing
-            first_order = ex_first_order or (order_dt or now_ts)
-            first_pending = ex_first_pending or (now_ts if pending_flag == 1 else None)
-            last_pending = now_ts if pending_flag == 1 else ex_last_pending
-            final_shifted = ex_shifted_at or (shifted_at or None)
-            final_shift_bill = ex_shifted_bill or (shifted_bill_id or None)
-
-            conn.execute(
+            if not table_exists:
+                return {}
+            track_df = pd.read_sql(
                 """
-                UPDATE bloodbank_order_tracking
-                SET order_id = COALESCE(?, order_id),
-                    order_no = COALESCE(NULLIF(?, ''), order_no),
-                    first_seen_order_at = COALESCE(?, first_seen_order_at),
-                    first_seen_pending_at = COALESCE(?, first_seen_pending_at),
-                    last_seen_pending_at = COALESCE(?, last_seen_pending_at),
-                    shifted_at = COALESCE(?, shifted_at),
-                    shifted_bill_id = COALESCE(NULLIF(?, ''), shifted_bill_id),
-                    last_status = COALESCE(NULLIF(?, ''), last_status),
-                    updated_at = ?
-                WHERE unit = ? AND order_detail_id = ?
+                SELECT order_detail_id, first_seen_pending_at, shifted_at, last_status
+                FROM bloodbank_order_tracking
+                WHERE unit = ?
                 """,
-                (
-                    order_id if order_id > 0 else None,
-                    order_no,
-                    first_order,
-                    first_pending,
-                    last_pending,
-                    final_shifted,
-                    final_shift_bill,
-                    status,
-                    now_ts,
-                    unit_norm,
-                    order_detail_id,
-                ),
+                conn,
+                params=[unit_norm],
             )
-            upserts += 1
-
-        conn.commit()
-
-        track_df = pd.read_sql(
-            """
-            SELECT order_detail_id, first_seen_pending_at, shifted_at, last_status
-            FROM bloodbank_order_tracking
-            WHERE unit = ?
-            """,
-            conn,
-            params=[unit_norm],
-        )
+    except sqlite3.OperationalError as exc:
+        if "locked" in str(exc).lower():
+            return {}
+        raise
+    except Exception:
+        return {}
 
     track_map = {}
     if track_df is not None and not track_df.empty:
@@ -46115,6 +38856,12 @@ def _sync_bloodbank_order_tracking(unit: str, details_df: pd.DataFrame):
                 "shifted_at": str(trow.get("shifted_at") or "").strip(),
                 "last_status": str(trow.get("last_status") or "").strip(),
             }
+    return track_map
+
+
+def _apply_bloodbank_order_tracking_map(work: pd.DataFrame, tracked_idx: list, track_map: dict) -> pd.DataFrame:
+    if not track_map:
+        return work
 
     for idx in tracked_idx:
         oid = int(pd.to_numeric(work.at[idx, "OrderDetailId"], errors="coerce") or 0)
@@ -46138,7 +38885,130 @@ def _sync_bloodbank_order_tracking(unit: str, details_df: pd.DataFrame):
                     work.at[idx, "ShiftHistory"] = f"{curr_hist} | {trail_text}"
             else:
                 work.at[idx, "ShiftHistory"] = trail_text
+    return work
 
+
+def _sync_bloodbank_order_tracking(unit: str, details_df: pd.DataFrame, persist: bool = True):
+    if details_df is None or details_df.empty:
+        return details_df, {"tracked_rows": 0, "upserts": 0}
+
+    unit_norm = (unit or "").strip().upper()
+    now_ts = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+    work = details_df.copy()
+    if "TrackingPendingSince" not in work.columns:
+        work["TrackingPendingSince"] = ""
+    if "TrackingShiftedAt" not in work.columns:
+        work["TrackingShiftedAt"] = ""
+    if "TrackingStatus" not in work.columns:
+        work["TrackingStatus"] = ""
+
+    if "OrderDetailId" not in work.columns:
+        return work, {"tracked_rows": 0, "upserts": 0}
+
+    order_ids = pd.to_numeric(work["OrderDetailId"], errors="coerce").fillna(0).astype(int)
+    is_order_row = work["RecordSource"].astype(str).str.upper().eq("ORDER")
+    tracked_idx = work.index[is_order_row & order_ids.gt(0)].tolist()
+    if not tracked_idx:
+        return work, {"tracked_rows": 0, "upserts": 0}
+
+    upserts = 0
+    if persist:
+        try:
+            _ensure_bloodbank_order_tracking_table()
+            with _connect_local_db() as conn:
+                for idx in tracked_idx:
+                    row = work.loc[idx]
+                    order_detail_id = int(pd.to_numeric(row.get("OrderDetailId"), errors="coerce") or 0)
+                    if order_detail_id <= 0:
+                        continue
+                    order_id = int(pd.to_numeric(row.get("OrderId"), errors="coerce") or 0)
+                    order_no = str(row.get("OrderNo") or "").strip()
+                    order_dt = str(row.get("OrderDateTime") or "").strip()
+                    pending_flag = int(pd.to_numeric(row.get("PendingToBilling"), errors="coerce") or 0)
+                    shifted_at = str(row.get("ShiftedToBillingDate") or "").strip()
+                    shifted_bill_num = int(pd.to_numeric(row.get("ServBillId"), errors="coerce") or 0)
+                    shifted_bill_id = str(shifted_bill_num) if shifted_bill_num > 0 else ""
+                    status = str(row.get("OrderStatus") or "").strip()
+
+                    existing = conn.execute(
+                        """
+                        SELECT first_seen_order_at, first_seen_pending_at, last_seen_pending_at, shifted_at, shifted_bill_id
+                        FROM bloodbank_order_tracking
+                        WHERE unit = ? AND order_detail_id = ?
+                        """,
+                        (unit_norm, order_detail_id),
+                    ).fetchone()
+
+                    if not existing:
+                        conn.execute(
+                            """
+                            INSERT INTO bloodbank_order_tracking
+                            (unit, order_detail_id, order_id, order_no, first_seen_order_at, first_seen_pending_at,
+                             last_seen_pending_at, shifted_at, shifted_bill_id, last_status, updated_at)
+                            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                            """,
+                            (
+                                unit_norm,
+                                order_detail_id,
+                                order_id if order_id > 0 else None,
+                                order_no or None,
+                                order_dt or now_ts,
+                                now_ts if pending_flag == 1 else None,
+                                now_ts if pending_flag == 1 else None,
+                                shifted_at or None,
+                                shifted_bill_id or None,
+                                status or None,
+                                now_ts,
+                            ),
+                        )
+                        upserts += 1
+                        continue
+
+                    ex_first_order, ex_first_pending, ex_last_pending, ex_shifted_at, ex_shifted_bill = existing
+                    first_order = ex_first_order or (order_dt or now_ts)
+                    first_pending = ex_first_pending or (now_ts if pending_flag == 1 else None)
+                    last_pending = now_ts if pending_flag == 1 else ex_last_pending
+                    final_shifted = ex_shifted_at or (shifted_at or None)
+                    final_shift_bill = ex_shifted_bill or (shifted_bill_id or None)
+
+                    conn.execute(
+                        """
+                        UPDATE bloodbank_order_tracking
+                        SET order_id = COALESCE(?, order_id),
+                            order_no = COALESCE(NULLIF(?, ''), order_no),
+                            first_seen_order_at = COALESCE(?, first_seen_order_at),
+                            first_seen_pending_at = COALESCE(?, first_seen_pending_at),
+                            last_seen_pending_at = COALESCE(?, last_seen_pending_at),
+                            shifted_at = COALESCE(?, shifted_at),
+                            shifted_bill_id = COALESCE(NULLIF(?, ''), shifted_bill_id),
+                            last_status = COALESCE(NULLIF(?, ''), last_status),
+                            updated_at = ?
+                        WHERE unit = ? AND order_detail_id = ?
+                        """,
+                        (
+                            order_id if order_id > 0 else None,
+                            order_no,
+                            first_order,
+                            first_pending,
+                            last_pending,
+                            final_shifted,
+                            final_shift_bill,
+                            status,
+                            now_ts,
+                            unit_norm,
+                            order_detail_id,
+                        ),
+                    )
+                    upserts += 1
+
+                conn.commit()
+        except sqlite3.OperationalError as exc:
+            if "locked" not in str(exc).lower():
+                raise
+
+    track_map = _load_bloodbank_order_tracking_map(unit_norm)
+    work = _apply_bloodbank_order_tracking_map(work, tracked_idx, track_map)
     return work, {"tracked_rows": len(tracked_idx), "upserts": upserts}
 
 
@@ -46163,10 +39033,12 @@ def api_mis_bloodbank_service_billing():
     details_df = _build_bloodbank_billing_details_df(df_raw)
     details_df, tracker_stats = _sync_bloodbank_order_tracking(target_unit, details_df)
     summary_df, total_quantity, total_revenue, total_records = _build_bloodbank_billing_summary_frames(details_df)
+    visit_summary_df = _build_bloodbank_billing_visit_summary_frame(details_df)
     status_totals = _build_bloodbank_billing_status_totals(details_df)
 
     details_records = details_df.where(pd.notna(details_df), None).to_dict(orient="records")
     summary_records = summary_df.to_dict(orient="records")
+    visit_summary_records = visit_summary_df.to_dict(orient="records")
 
     return jsonify({
         "status": "success",
@@ -46177,6 +39049,7 @@ def api_mis_bloodbank_service_billing():
         "total_revenue": total_revenue,
         "total_records": total_records,
         "service_summary": summary_records,
+        "visit_summary": visit_summary_records,
         "status_totals": status_totals,
         "tracker_stats": tracker_stats,
         "details": details_records,
@@ -46196,11 +39069,12 @@ def _build_bloodbank_billing_excel(
         return None, None, "No data available to export"
 
     details_df = _build_bloodbank_billing_details_df(df_raw)
-    details_df, _ = _sync_bloodbank_order_tracking(unit, details_df)
+    details_df, _ = _sync_bloodbank_order_tracking(unit, details_df, persist=False)
     details_df = _apply_bloodbank_details_filter(details_df, search_text=search_text, open_only=open_only)
     if details_df is None or details_df.empty:
         return None, None, "No data available for selected export filter"
     summary_df, total_quantity, total_revenue, total_records = _build_bloodbank_billing_summary_frames(details_df)
+    visit_summary_df = _build_bloodbank_billing_visit_summary_frame(details_df)
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
@@ -46242,15 +39116,18 @@ def _build_bloodbank_billing_excel(
             "bg_color": "#1e3a8a",
             "font_color": "white",
             "border": 1,
+            "text_wrap": True,
         })
         text_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "left"})
         int_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "right", "num_format": "#,##,##0"})
         qty_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "right", "num_format": "#,##,##0.00"})
         money_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "right", "num_format": "#,##,##0.00"})
         pct_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "right", "num_format": "0.00%"})
-        text_col_fmt = workbook.add_format({"font_size": 9, "align": "left"})
-        qty_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "num_format": "#,##,##0.00"})
-        money_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "num_format": "#,##,##0.00"})
+        text_col_fmt = workbook.add_format({"font_size": 9, "align": "left", "valign": "top"})
+        text_wrap_col_fmt = workbook.add_format({"font_size": 9, "align": "left", "valign": "top", "text_wrap": True})
+        int_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "valign": "top", "num_format": "#,##,##0"})
+        qty_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "valign": "top", "num_format": "#,##,##0.00"})
+        money_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "valign": "top", "num_format": "#,##,##0.00"})
         border_only_fmt = workbook.add_format({"border": 1})
 
         exported_at = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
@@ -46297,6 +39174,54 @@ def _build_bloodbank_billing_excel(
         summary_ws.set_column(3, 3, 12)
         summary_ws.freeze_panes(6, 0)
 
+        visit_summary_df.to_excel(writer, sheet_name="Visit Summary", index=False, startrow=5)
+        visit_ws = writer.sheets["Visit Summary"]
+        visit_last_col = len(visit_summary_df.columns) - 1
+        visit_ws.merge_range(0, 0, 0, visit_last_col, "Blood Bank Billing & Orders - Visit-wise Summary", title_fmt)
+        visit_ws.merge_range(1, 0, 1, visit_last_col, f"Unit: {unit_header}", subtitle_fmt)
+        visit_ws.merge_range(2, 0, 2, visit_last_col, f"Date Range: {from_date} to {to_date}", subtitle_fmt)
+        visit_ws.merge_range(3, 0, 3, visit_last_col, filter_label, meta_fmt)
+        visit_ws.merge_range(4, 0, 4, visit_last_col, f"Exported By: {exported_by} | Exported At: {exported_at}", meta_fmt)
+        visit_ws.set_row(5, 24)
+
+        for col_num, col_name in enumerate(visit_summary_df.columns):
+            visit_ws.write(5, col_num, col_name, header_fmt)
+            width = 14
+            fmt = text_col_fmt
+            if col_name in {"Patient"}:
+                width = 28
+                fmt = text_wrap_col_fmt
+            elif col_name in {"VisitNo", "RegNo"}:
+                width = 18
+            elif col_name in {"TypeOfVisit"}:
+                width = 14
+            elif col_name in {"Quantity"}:
+                width = 12
+                fmt = qty_col_fmt
+            elif col_name in {"Revenue"}:
+                width = 16
+                fmt = money_col_fmt
+            elif col_name in {"Records"}:
+                width = 12
+                fmt = int_col_fmt
+            visit_ws.set_column(col_num, col_num, width, fmt)
+
+        visit_data_start_row = 6
+        visit_data_end_row = 5 + len(visit_summary_df)
+        if len(visit_summary_df) > 0:
+            from xlsxwriter.utility import xl_col_to_name
+            top_row = visit_data_start_row + 1
+            last_col_letter = xl_col_to_name(visit_last_col)
+            criteria = f"=COUNTA($A{top_row}:${last_col_letter}{top_row})>0"
+            visit_ws.conditional_format(
+                visit_data_start_row, 0, visit_data_end_row, visit_last_col,
+                {"type": "formula", "criteria": criteria, "format": border_only_fmt}
+            )
+
+        visit_footer_row = 6 + len(visit_summary_df)
+        visit_ws.merge_range(visit_footer_row, 0, visit_footer_row, visit_last_col, "Copyright: (c) ASARFI HOSPITAL", meta_fmt)
+        visit_ws.freeze_panes(6, 0)
+
         details_df.to_excel(writer, sheet_name="Details", index=False, startrow=5)
         details_ws = writer.sheets["Details"]
         details_last_col = len(details_df.columns) - 1
@@ -46305,6 +39230,7 @@ def _build_bloodbank_billing_excel(
         details_ws.merge_range(2, 0, 2, details_last_col, f"Date Range: {from_date} to {to_date}", subtitle_fmt)
         details_ws.merge_range(3, 0, 3, details_last_col, filter_label, meta_fmt)
         details_ws.merge_range(4, 0, 4, details_last_col, f"Exported By: {exported_by} | Exported At: {exported_at}", meta_fmt)
+        details_ws.set_row(5, 24)
 
         for col_num, col_name in enumerate(details_df.columns):
             details_ws.write(5, col_num, col_name, header_fmt)
@@ -46314,6 +39240,8 @@ def _build_bloodbank_billing_excel(
                 width = 12
             elif col_name in {"OrderDateTime", "ShiftedToBillingDate", "OrderCancelledAt"}:
                 width = 18
+            elif col_name in {"VisitNo", "RegNo"}:
+                width = 16
             elif col_name in {"Quantity"}:
                 width = 10
                 fmt = qty_col_fmt
@@ -46322,8 +39250,13 @@ def _build_bloodbank_billing_excel(
                 fmt = money_col_fmt
             elif col_name in {"Patient", "Service_Name"}:
                 width = 26
+                fmt = text_wrap_col_fmt
             elif col_name in {"ShiftHistory"}:
-                width = 40
+                width = 48
+                fmt = text_wrap_col_fmt
+            elif col_name in {"TrackingPendingSince", "TrackingStatus"}:
+                width = 18
+                fmt = text_wrap_col_fmt
             elif col_name in {"Sub_Dept"}:
                 width = 20
             elif col_name in {"RecordSource", "OrderStatus", "OrderNo", "OrderCreatedBy", "OrderCancelledBy"}:
@@ -46521,11 +39454,12 @@ def _build_bloodbank_billing_pdf_buffer(
         return None
 
     details_df = _build_bloodbank_billing_details_df(df_raw)
-    details_df, _ = _sync_bloodbank_order_tracking(unit, details_df)
+    details_df, _ = _sync_bloodbank_order_tracking(unit, details_df, persist=False)
     details_df = _apply_bloodbank_details_filter(details_df, search_text=search_text, open_only=open_only)
     if details_df is None or details_df.empty:
         return None
     summary_df, total_quantity, total_revenue, total_records = _build_bloodbank_billing_summary_frames(details_df)
+    visit_summary_df = _build_bloodbank_billing_visit_summary_frame(details_df)
 
     def _format_inr(number) -> str:
         try:
@@ -46573,6 +39507,16 @@ def _build_bloodbank_billing_pdf_buffer(
         wordWrap="CJK",
     )
     style_td_right = ParagraphStyle("RptTdRight", parent=styles["Normal"], fontSize=6.5, textColor=colors.black, alignment=TA_RIGHT, leading=8)
+
+    def _section_banner(title_text: str):
+        banner = Table([[Paragraph(title_text, style_title)]], colWidths=[doc.width])
+        banner.setStyle(TableStyle([
+            ("LINEABOVE", (0, 0), (-1, 0), 1.0, colors.HexColor("#1e3a8a")),
+            ("LINEBELOW", (0, 0), (-1, 0), 1.0, colors.HexColor("#1e3a8a")),
+            ("TOPPADDING", (0, 0), (-1, 0), 6),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), 6),
+        ]))
+        return banner
 
     elements = []
     logo_path = os.path.join(app.root_path, "static", "logo", "asarfi.png")
@@ -46625,13 +39569,68 @@ def _build_bloodbank_billing_pdf_buffer(
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
     ]))
     elements.append(service_table)
+
+    if not visit_summary_df.empty:
+        elements.append(PageBreak())
+        elements.append(_section_banner("Blood Bank Billing & Orders - Visit-wise Summary"))
+        elements.append(Paragraph(f"Unit: {unit_header}", style_sub))
+        elements.append(Paragraph(f"Date Range: {from_date} to {to_date}", style_sub))
+        elements.append(Paragraph(filter_label, style_meta))
+        elements.append(Paragraph(f"Exported By: {exported_by} | Exported At: {exported_at}", style_meta))
+        elements.append(Spacer(1, 8))
+
+        visit_rows = [[
+            Paragraph("Visit No", style_th),
+            Paragraph("Reg No", style_th),
+            Paragraph("Patient", style_th),
+            Paragraph("Visit Type", style_th),
+            Paragraph("Quantity", style_th),
+            Paragraph("Revenue (INR)", style_th),
+            Paragraph("Records", style_th),
+        ]]
+        for _, row in visit_summary_df.iterrows():
+            record_count = pd.to_numeric(row.get("Records"), errors="coerce")
+            record_count = int(record_count) if pd.notna(record_count) else 0
+            visit_rows.append([
+                Paragraph(escape(str(row.get("VisitNo") or "")), style_td),
+                Paragraph(escape(str(row.get("RegNo") or "")), style_td),
+                Paragraph(escape(str(row.get("Patient") or "")), style_td_wrap),
+                Paragraph(escape(str(row.get("TypeOfVisit") or "")), style_td),
+                Paragraph(f"{float(row.get('Quantity') or 0):,.2f}", style_td_right),
+                Paragraph(_format_inr(row.get("Revenue") or 0), style_td_right),
+                Paragraph(f"{record_count:,}", style_td_right),
+            ])
+
+        visit_table = Table(
+            visit_rows,
+            colWidths=[26 * mm, 24 * mm, 54 * mm, 22 * mm, 22 * mm, 30 * mm, 18 * mm],
+            repeatRows=1,
+        )
+        visit_table.setStyle(TableStyle([
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e3a8a")),
+            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+            ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
+            ("FONTSIZE", (0, 0), (-1, -1), 6.5),
+            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#1f2937")),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+            ("ALIGN", (4, 1), (6, -1), "RIGHT"),
+        ]))
+        elements.append(visit_table)
+
     elements.append(PageBreak())
+    elements.append(_section_banner("Blood Bank Billing & Orders - Detail Report"))
+    elements.append(Paragraph(f"Unit: {unit_header}", style_sub))
+    elements.append(Paragraph(f"Date Range: {from_date} to {to_date}", style_sub))
+    elements.append(Paragraph(filter_label, style_meta))
+    elements.append(Paragraph(f"Exported By: {exported_by} | Exported At: {exported_at}", style_meta))
+    elements.append(Spacer(1, 8))
 
     detail_headers = [
         Paragraph("Bill Date", style_th),
         Paragraph("Visit Date", style_th),
         Paragraph("Discharge Date", style_th),
         Paragraph("Reg No", style_th),
+        Paragraph("Visit No", style_th),
         Paragraph("Patient", style_th),
         Paragraph("Service", style_th),
         Paragraph("Rate", style_th),
@@ -46648,6 +39647,7 @@ def _build_bloodbank_billing_pdf_buffer(
             Paragraph(escape(str(row.get("VisitDate") or "")), style_td),
             Paragraph(escape(str(row.get("DischargeDate") or "")), style_td),
             Paragraph(escape(str(row.get("RegNo") or "")), style_td),
+            Paragraph(escape(str(row.get("VisitNo") or "")), style_td),
             Paragraph(escape(str(row.get("Patient") or "")), style_td_wrap),
             Paragraph(escape(str(row.get("Service_Name") or "")), style_td_wrap),
             Paragraph(_format_inr(row.get("Rate") or 0), style_td_right),
@@ -46660,7 +39660,7 @@ def _build_bloodbank_billing_pdf_buffer(
 
     detail_tbl = Table(
         detail_rows,
-        colWidths=[16 * mm, 16 * mm, 18 * mm, 18 * mm, 28 * mm, 34 * mm, 16 * mm, 12 * mm, 16 * mm, 22 * mm, 16 * mm, 18 * mm],
+        colWidths=[15 * mm, 15 * mm, 16 * mm, 18 * mm, 20 * mm, 28 * mm, 32 * mm, 14 * mm, 10 * mm, 14 * mm, 20 * mm, 14 * mm, 14 * mm],
         repeatRows=1,
     )
     detail_tbl.setStyle(TableStyle([
@@ -46670,8 +39670,8 @@ def _build_bloodbank_billing_pdf_buffer(
         ("FONTSIZE", (0, 0), (-1, -1), 6.5),
         ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#1f2937")),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("ALIGN", (6, 1), (8, -1), "RIGHT"),
-        ("ALIGN", (10, 1), (10, -1), "RIGHT"),
+        ("ALIGN", (7, 1), (9, -1), "RIGHT"),
+        ("ALIGN", (11, 1), (11, -1), "RIGHT"),
     ]))
     elements.append(detail_tbl)
 
@@ -46746,6 +39746,22 @@ BILLWISE_DOCSHARE_DETAIL_COLUMNS = [
     "VisitDate",
     "DischargeDate",
 ]
+
+BILLWISE_DOCSHARE_PAGE_SIZE_DEFAULT = 20
+BILLWISE_DOCSHARE_PAGE_SIZE_MIN = 1
+BILLWISE_DOCSHARE_PAGE_SIZE_MAX = 200
+
+
+def _billwise_doctorshare_parse_int(raw_value, default: int, minimum: int | None = None, maximum: int | None = None) -> int:
+    try:
+        value = int(float(raw_value))
+    except Exception:
+        value = int(default)
+    if minimum is not None:
+        value = max(minimum, value)
+    if maximum is not None:
+        value = min(maximum, value)
+    return value
 
 
 def _visit_type_label(vtype: int) -> str:
@@ -46833,12 +39849,53 @@ def _build_billwise_doctorshare_summary_frames(details_df: pd.DataFrame):
     return summary, total_quantity, total_revenue, total_records
 
 
+_BILLWISE_DOCSHARE_CACHE = {}
+_BILLWISE_DOCSHARE_CACHE_LOCK = Lock()
+_BILLWISE_DOCSHARE_CACHE_TTL_SECONDS = 300
+
+
+def _billwise_doctorshare_cache_key(unit: str, from_date: str, to_date: str, doc_id: int, vtype: int):
+    return (
+        str(unit or "").strip().upper(),
+        str(from_date or "").strip()[:10],
+        str(to_date or "").strip()[:10],
+        int(doc_id or 0),
+        int(vtype or 0),
+    )
+
+
+def _get_billwise_doctorshare_cached_details_df(unit: str, from_date: str, to_date: str, doc_id: int, vtype: int):
+    cache_key = _billwise_doctorshare_cache_key(unit, from_date, to_date, doc_id, vtype)
+    now_ts = time.time()
+    with _BILLWISE_DOCSHARE_CACHE_LOCK:
+        cached = _BILLWISE_DOCSHARE_CACHE.get(cache_key)
+        if cached and (now_ts - float(cached.get("cached_at") or 0.0)) <= _BILLWISE_DOCSHARE_CACHE_TTL_SECONDS:
+            cached_df = cached.get("details_df")
+            if isinstance(cached_df, pd.DataFrame):
+                return cached_df.copy(deep=True)
+        if cached:
+            _BILLWISE_DOCSHARE_CACHE.pop(cache_key, None)
+
+    df_raw = data_fetch.fetch_billwise_doctorshare(unit, from_date, to_date, doc_id, vtype)
+    if df_raw is None:
+        return None
+    details_df = _build_billwise_doctorshare_details_df(df_raw)
+    with _BILLWISE_DOCSHARE_CACHE_LOCK:
+        _BILLWISE_DOCSHARE_CACHE[cache_key] = {
+            "cached_at": time.time(),
+            "details_df": details_df.copy(deep=True),
+        }
+    return details_df
+
+
 @app.route('/api/mis/billwise_doctorshare')
 @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
 def api_mis_billwise_doctorshare():
     unit = (request.args.get("unit") or "").strip().upper()
     from_date = request.args.get("from") or datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
     to_date = request.args.get("to") or datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
+    search_query = (request.args.get("search") or request.args.get("q") or "").strip()
+    mode = str(request.args.get("mode") or "full").strip().lower()
     doc_id_raw = (
         request.args.get("doc_id")
         or request.args.get("docid")
@@ -46846,6 +39903,19 @@ def api_mis_billwise_doctorshare():
         or request.args.get("doc")
     )
     vtype_raw = request.args.get("vtype")
+    page = _billwise_doctorshare_parse_int(
+        request.args.get("page"),
+        BILLWISE_DOCSHARE_PAGE_SIZE_MIN,
+        BILLWISE_DOCSHARE_PAGE_SIZE_MIN,
+        None,
+    )
+    page_size = _billwise_doctorshare_parse_int(
+        request.args.get("page_size"),
+        BILLWISE_DOCSHARE_PAGE_SIZE_DEFAULT,
+        BILLWISE_DOCSHARE_PAGE_SIZE_MIN,
+        BILLWISE_DOCSHARE_PAGE_SIZE_MAX,
+    )
+    include_summary = str(request.args.get("include_summary") or "1").strip().lower() not in {"0", "false", "no", "off"}
 
     allowed_units = _allowed_units_for_session()
     target_unit = unit or (allowed_units[0] if allowed_units else None)
@@ -46864,15 +39934,44 @@ def api_mis_billwise_doctorshare():
     except Exception:
         return jsonify({"status": "error", "message": "Invalid visit type"}), 400
 
-    df_raw = data_fetch.fetch_billwise_doctorshare(target_unit, from_date, to_date, doc_id, vtype)
-    if df_raw is None:
+    details_df = _get_billwise_doctorshare_cached_details_df(target_unit, from_date, to_date, doc_id, vtype)
+    if details_df is None:
         return jsonify({"status": "error", "message": "Database error"}), 500
 
-    details_df = _build_billwise_doctorshare_details_df(df_raw)
-    summary_df, total_quantity, total_revenue, total_records = _build_billwise_doctorshare_summary_frames(details_df)
+    work_df = details_df.copy()
+    if search_query:
+        search_text = search_query.strip().lower()
+        search_cols = [
+            "BillDate",
+            "BillNo",
+            "Registration_No",
+            "PatientName",
+            "PatientType",
+            "TypeOfVisit",
+            "DoctorName",
+            "SecondaryDoc",
+            "Service_Name",
+            "BillQty",
+            "Rate",
+            "Amount",
+            "VisitDate",
+            "DischargeDate",
+        ]
+        search_frame = work_df[search_cols].fillna("").astype(str)
+        search_index = search_frame.agg(" ".join, axis=1).str.lower()
+        work_df = work_df.loc[search_index.str.contains(search_text, na=False)].reset_index(drop=True)
 
-    details_records = details_df.where(pd.notna(details_df), None).to_dict(orient="records")
-    summary_records = summary_df.to_dict(orient="records")
+    summary_df, total_quantity, total_revenue, filtered_records = _build_billwise_doctorshare_summary_frames(work_df)
+    total_records = int(len(details_df))
+    total_pages = max(1, int((filtered_records + page_size - 1) / page_size)) if filtered_records else 1
+    current_page = max(1, min(int(page), total_pages))
+    start_idx = (current_page - 1) * page_size
+    end_idx = start_idx + page_size
+    page_df = work_df.iloc[start_idx:end_idx].copy()
+    current_page_size = int(page_size)
+    has_next_page = current_page < total_pages
+    details_records = _sanitize_json_payload(page_df.where(pd.notna(page_df), None).to_dict(orient="records"))
+    summary_records = _sanitize_json_payload(summary_df.where(pd.notna(summary_df), None).to_dict(orient="records")) if include_summary else []
 
     doctor_label = "All Doctors" if doc_id == 0 else (_resolve_doctor_name(target_unit, doc_id) or "Unknown")
     visit_label = _visit_type_label(vtype)
@@ -46889,6 +39988,14 @@ def api_mis_billwise_doctorshare():
         "total_quantity": total_quantity,
         "total_revenue": total_revenue,
         "total_records": total_records,
+        "filtered_records": filtered_records,
+        "page": current_page,
+        "page_size": current_page_size,
+        "total_pages": total_pages,
+        "has_next_page": has_next_page,
+        "search_query": search_query,
+        "include_summary": include_summary,
+        "mode": mode,
         "service_summary": summary_records,
         "details": details_records,
     })
@@ -52306,6 +45413,96 @@ def api_mis_admin_balances_export_excel():
     )
 
 
+def _load_ip_advance_provision_report(target_unit: str, filters: dict) -> tuple[pd.DataFrame | None, dict]:
+    df = data_fetch.fetch_ip_advance_provision(
+        target_unit,
+        filters["admission_from"],
+        filters["admission_to"],
+        filters["basis"],
+        discharge_from=filters.get("discharge_from"),
+        discharge_to=filters.get("discharge_to"),
+        as_on_date=filters.get("as_on_date"),
+    )
+    if df is None:
+        return None, ip_advance_provision.build_summary(pd.DataFrame(), filters["basis"], filters["cutoff_date"])
+    df = _clean_df_columns(df)
+    summary = ip_advance_provision.build_summary(df, filters["basis"], filters["cutoff_date"])
+    return df, summary
+
+
+@app.route('/api/mis/ip_advance_provision')
+@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+def api_mis_ip_advance_provision():
+    unit = (request.args.get("unit") or "").strip()
+    allowed_units = _allowed_units_for_session()
+    target_unit = unit or (allowed_units[0] if allowed_units else None)
+    if not target_unit:
+        return jsonify({"status": "error", "message": "No unit available"}), 400
+    if allowed_units and target_unit not in allowed_units:
+        return jsonify({"status": "error", "message": "Unit not allowed"}), 403
+
+    filters, err = ip_advance_provision.normalize_filters(request.args, LOCAL_TZ)
+    if err:
+        return jsonify({"status": "error", "message": err}), 400
+
+    df, summary = _load_ip_advance_provision_report(target_unit, filters)
+    if df is None:
+        return jsonify({"status": "error", "message": "Database error"}), 500
+
+    payload_df = df.copy() if df is not None else pd.DataFrame()
+    for col in payload_df.columns:
+        if pd.api.types.is_datetime64_any_dtype(payload_df[col]):
+            payload_df[col] = pd.to_datetime(payload_df[col], errors="coerce").dt.strftime("%Y-%m-%d %H:%M:%S")
+    payload_df = payload_df.replace({pd.NaT: None, np.nan: None, np.inf: None, -np.inf: None})
+    payload_df = payload_df.where(pd.notna(payload_df), None)
+
+    records = _sanitize_json_payload(payload_df.to_dict(orient="records")) if not payload_df.empty else []
+    return jsonify({
+        "status": "success",
+        "unit": target_unit,
+        "filters": _sanitize_json_payload(filters),
+        "summary": _sanitize_json_payload(summary),
+        "data": records,
+        "count": len(records),
+    })
+
+
+@app.route('/api/mis/ip_advance_provision/export_excel')
+@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+def api_mis_ip_advance_provision_export_excel():
+    unit = (request.args.get("unit") or "").strip()
+    allowed_units = _allowed_units_for_session()
+    target_unit = unit or (allowed_units[0] if allowed_units else None)
+    if not target_unit:
+        return "No unit available", 400
+    if allowed_units and target_unit not in allowed_units:
+        return "Unit not allowed", 403
+
+    filters, err = ip_advance_provision.normalize_filters(request.args, LOCAL_TZ)
+    if err:
+        return err, 400
+
+    df, summary = _load_ip_advance_provision_report(target_unit, filters)
+    if df is None:
+        return "Database error", 500
+    if df.empty:
+        return "No data found for export", 404
+
+    exported_by = session.get("username") or session.get("user") or "Unknown"
+    buffer = ip_advance_provision.build_excel_buffer(target_unit, filters, df, summary, exported_by, LOCAL_TZ)
+    if buffer is None:
+        return "No data found for export", 404
+
+    suffix = filters.get("cutoff_date") or filters.get("admission_to") or datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
+    filename = f"IP_Advance_Provision_{target_unit}_{suffix}.xlsx"
+    return send_file(
+        buffer,
+        as_attachment=True,
+        download_name=filename,
+        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+    )
+
+
 @app.route('/api/mis/ip_ledger_summary')
 @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
 def api_mis_ip_ledger_summary():
@@ -52837,9 +46034,19 @@ def _user_management_error(message: str, status_code: int = 400, **extra):
 @app.route('/api/historical_access/status')
 @login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
 def historical_status():
+    if not HISTORICAL_LOCK_ENABLED:
+        return jsonify({
+            "enabled": False,
+            "allowed": True,
+            "cutoff": None,
+            "session_id": session.get("sid"),
+            "username": session.get("username"),
+            "message": "Historical lock is disabled. No request is required.",
+        })
     cutoff = fiscal_year_start(datetime.now(tz=LOCAL_TZ)).date()
     allowed = (session.get("role") or "").strip() == "IT" or has_historical_grant(session.get("username"), session.get("sid"))
     return jsonify({
+        "enabled": True,
         "allowed": allowed,
         "cutoff": cutoff.isoformat(),
         "session_id": session.get("sid"),
@@ -52850,6 +46057,13 @@ def historical_status():
 @app.route('/api/historical_access/request', methods=['POST'])
 @login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
 def historical_request():
+    if not HISTORICAL_LOCK_ENABLED:
+        return jsonify({
+            "ok": True,
+            "status": "disabled",
+            "message": "Historical lock is disabled. No request is needed.",
+            "cutoff": None,
+        })
     reason = ""
     if request.is_json:
         body = request.get_json(silent=True) or {}
@@ -52888,6 +46102,7 @@ def user_management():
     username = (session.get("username") or "").strip()
     requests = _fetch_user_requests(role, username)
     allowed_units = _allowed_units_for_session()
+    scope_units = _user_management_scope_units_for_session()
     fund_acl = _allowed_fund_firms_for_session()
     firm_choices = _fund_tracker_known_firms() if fund_acl.get("all") else (fund_acl.get("firms") or [])
     can_assign_all_firms = (role_base == "IT") or bool(fund_acl.get("all"))
@@ -52899,10 +46114,10 @@ def user_management():
         grouped_requests.setdefault(uname, []).append(req)
     notifications = _pending_notifications_for_it() if role == "IT" else []
     existing_users = _fetch_hid_users() if role in {"IT", "Management", "Departmental Head"} else []
-    hist_cutoff = fiscal_year_start(datetime.now(tz=LOCAL_TZ)).date()
-    hist_requests = [r for r in requests if (r.get("ActionType") or "").strip().lower() == "historicalaccess"]
+    hist_cutoff = fiscal_year_start(datetime.now(tz=LOCAL_TZ)).date() if HISTORICAL_LOCK_ENABLED else None
+    hist_requests = [r for r in requests if (r.get("ActionType") or "").strip().lower() == "historicalaccess"] if HISTORICAL_LOCK_ENABLED else []
     hist_requests_view = hist_requests if role == "IT" else [r for r in hist_requests if (r.get("RequestedBy") or "").strip().lower() == username.lower()]
-    hist_grant_active = (role == "IT") or has_historical_grant(username, session.get("sid"))
+    hist_grant_active = (not HISTORICAL_LOCK_ENABLED) or (role == "IT") or has_historical_grant(username, session.get("sid"))
     purchasing_departments = _fetch_purchasing_departments() if role == "IT" else []
     purchase_incharges = _fetch_purchase_incharges() if role == "IT" else []
     purchase_approval_recipients = _fetch_purchase_approval_recipients() if role == "IT" else []
@@ -52922,6 +46137,7 @@ def user_management():
         section_choices=_all_section_keys(),
         existing_users=existing_users,
         hist_requests=hist_requests_view,
+        historical_lock_enabled=HISTORICAL_LOCK_ENABLED,
         historical_allowed=hist_grant_active,
         historical_cutoff=hist_cutoff,
         purchasing_departments=purchasing_departments,
@@ -52931,6 +46147,7 @@ def user_management():
         fund_position_recipients=fund_position_recipients,
         it_direct_users=it_direct_users,
         allowed_units=allowed_units,
+        scope_units=scope_units,
         allowed_firms=firm_choices,
     )
 
@@ -52964,6 +46181,21 @@ def user_management_request():
         unit = _normalize_unit_scope_text(session.get("unit_scope") or "")
     if requester_role.startswith("Departmental Head") and not firms:
         firms = _normalize_firm_scope_text(session.get("firm_scope") or "")
+
+    unit, unit_err = _validated_user_scope_units(
+        unit,
+        include_corporate_only=True,
+        field_label="units",
+    )
+    if unit_err:
+        return _user_management_error(unit_err, 403)
+    purchase_unit_scope, purchase_err = _validated_user_scope_units(
+        purchase_unit_scope,
+        include_corporate_only=False,
+        field_label="purchase units",
+    )
+    if purchase_err:
+        return _user_management_error(purchase_err, 403)
 
     if not sections_raw:
         sections_raw = ",".join(_default_sections_for_creator())
@@ -53090,6 +46322,21 @@ def user_management_update_user():
         if _role_rank(req_clean) < _role_rank(role):
             return _user_management_error("You cannot set a role above your own", 403)
 
+    unit, unit_err = _validated_user_scope_units(
+        unit,
+        include_corporate_only=True,
+        field_label="units",
+    )
+    if unit_err:
+        return _user_management_error(unit_err, 403)
+    purchase_unit_scope, purchase_err = _validated_user_scope_units(
+        purchase_unit_scope,
+        include_corporate_only=False,
+        field_label="purchase units",
+    )
+    if purchase_err:
+        return _user_management_error(purchase_err, 403)
+
     acl = _allowed_fund_firms_for_session()
     if req_clean != "IT":
         if acl.get("all"):
@@ -53172,6 +46419,21 @@ def user_management_it_user_update():
     acctid = ROLE_ACCOUNTID.get(role) or None
     if acctid is None:
         return _user_management_error("Invalid role", 400)
+
+    unit, unit_err = _validated_user_scope_units(
+        unit,
+        include_corporate_only=True,
+        field_label="units",
+    )
+    if unit_err:
+        return _user_management_error(unit_err, 403)
+    purchase_unit_scope, purchase_err = _validated_user_scope_units(
+        purchase_unit_scope,
+        include_corporate_only=False,
+        field_label="purchase units",
+    )
+    if purchase_err:
+        return _user_management_error(purchase_err, 403)
 
     is_active_bit = 1 if str(active).lower() in ("1", "true", "yes", "on") else 0
 
@@ -54471,6 +47733,7 @@ def _old_new_normalize_detail_sort_key(raw_value) -> str:
         "Doctor",
         "PatientType",
         "SourceName",
+        "ReferrerDetails",
     }
     key = str(raw_value or "").strip()
     return key if key in allowed else "VisitDate"
@@ -54640,7 +47903,7 @@ def _old_new_normalize_detail_df(df: pd.DataFrame) -> pd.DataFrame:
 
 
 def _old_new_normalize_source_map_df(df: pd.DataFrame) -> pd.DataFrame:
-    cols = ["Visit_ID", "SourceID", "SourceName"]
+    cols = ["Visit_ID", "SourceID", "SourceName", "ReferrerDetails"]
     if df is None or df.empty:
         return pd.DataFrame(columns=cols)
 
@@ -54657,16 +47920,19 @@ def _old_new_normalize_source_map_df(df: pd.DataFrame) -> pd.DataFrame:
     visit_col = _pick(["Visit_ID", "VisitId", "VisitID"])
     sid_col = _pick(["SourceID", "PatientSourceId", "Source_Id"])
     sname_col = _pick(["SourceName", "PatientSource", "Source"])
+    ref_col = _pick(["ReferrerDetails", "ReferrerDetail", "RefName", "ReferralName"])
 
     out = pd.DataFrame({
         "Visit_ID": pd.to_numeric(df[visit_col], errors="coerce") if visit_col else None,
         "SourceID": pd.to_numeric(df[sid_col], errors="coerce") if sid_col else 0,
         "SourceName": df[sname_col] if sname_col else "Unknown",
+        "ReferrerDetails": df[ref_col] if ref_col else "",
     })
     out["Visit_ID"] = pd.to_numeric(out["Visit_ID"], errors="coerce").fillna(0).astype(int)
     out["SourceID"] = pd.to_numeric(out["SourceID"], errors="coerce").fillna(0).astype(int)
     out["SourceName"] = out["SourceName"].astype(str).replace({"nan": "", "None": ""}).str.strip()
     out["SourceName"] = out["SourceName"].replace("", "Unknown")
+    out["ReferrerDetails"] = out["ReferrerDetails"].astype(str).replace({"nan": "", "None": ""}).str.strip()
     out = out.drop_duplicates(subset=["Visit_ID"], keep="last")
     return out[cols]
 
@@ -54904,13 +48170,13 @@ def _build_old_new_patient_visits_payload(
     visit_ids = sorted({int(v) for v in details_df.get("Visit_ID", pd.Series(dtype=int)).tolist() if int(v) > 0})
     _trace("collect_visit_ids", status="ok", visit_ids_count=int(len(visit_ids)))
 
-    source_map_raw = pd.DataFrame(columns=["Visit_ID", "SourceID", "SourceName"])
+    source_map_raw = pd.DataFrame(columns=["Visit_ID", "SourceID", "SourceName", "ReferrerDetails"])
     if visit_ids:
         try:
             source_map_raw = data_fetch.fetch_patient_source_map_for_visits(unit, visit_ids)
         except Exception as exc:
             _trace("source_mapping_fetch", status="warning", message=f"Source mapping fetch failed: {exc}")
-            source_map_raw = pd.DataFrame(columns=["Visit_ID", "SourceID", "SourceName"])
+            source_map_raw = pd.DataFrame(columns=["Visit_ID", "SourceID", "SourceName", "ReferrerDetails"])
     source_map_df = _old_new_normalize_source_map_df(source_map_raw)
     _trace(
         "source_mapping_fetch",
@@ -54921,14 +48187,21 @@ def _build_old_new_patient_visits_payload(
     if details_df.empty:
         details_df["SourceID"] = pd.Series(dtype=int)
         details_df["SourceName"] = pd.Series(dtype=str)
+        details_df["ReferrerDetails"] = pd.Series(dtype=str)
     else:
         details_df = details_df.merge(source_map_df, on="Visit_ID", how="left")
         details_df["SourceID"] = pd.to_numeric(details_df.get("SourceID"), errors="coerce").fillna(0).astype(int)
         details_df["SourceName"] = details_df.get("SourceName", "").astype(str).replace({"nan": "", "None": ""}).str.strip()
         details_df["SourceName"] = details_df["SourceName"].replace("", "Unknown")
+        details_df["ReferrerDetails"] = details_df.get("ReferrerDetails", "").astype(str).replace({"nan": "", "None": ""}).str.strip()
+        details_df["ReferrerDetails"] = np.where(
+            details_df["SourceName"].astype(str).str.strip().str.casefold().str.startswith("other doctor"),
+            details_df["ReferrerDetails"],
+            "",
+        )
 
     details_df = details_df[
-        ["Dept", "SubDept", "Doctor", "VisitDate", "Visit_ID", "PatientName", "RegNo", "PatientType", "SourceID", "SourceName"]
+        ["Dept", "SubDept", "Doctor", "VisitDate", "Visit_ID", "PatientName", "RegNo", "PatientType", "SourceID", "SourceName", "ReferrerDetails"]
     ]
     detail_export_cols = list(details_df.columns)
 
@@ -55227,7 +48500,7 @@ def api_mis_old_new_patient_visits_detail_page():
 
 def _old_new_payload_to_frames(payload: dict):
     summary_cols = ["Dept", "TotalVisits", "NewPatientVisits", "OldPatientVisits", "NewPct", "OldPct"]
-    detail_cols = ["Dept", "SubDept", "Doctor", "VisitDate", "Visit_ID", "PatientName", "RegNo", "PatientType", "SourceID", "SourceName"]
+    detail_cols = ["Dept", "SubDept", "Doctor", "VisitDate", "Visit_ID", "PatientName", "RegNo", "PatientType", "SourceID", "SourceName", "ReferrerDetails"]
     source_summary_cols = ["SourceID", "SourceName", "TotalVisits", "NewVisits", "OldVisits", "VisitSharePct", "OldPct", "UniquePatients", "UniqueDoctors", "UniqueDepartments"]
     source_dept_cols = ["SourceID", "SourceName", "Dept", "TotalVisits", "NewVisits", "OldVisits", "ShareWithinSourcePct", "OldPct"]
     source_doc_cols = ["SourceID", "SourceName", "Dept", "SubDept", "Doctor", "TotalVisits", "NewVisits", "OldVisits", "ShareWithinSourcePct", "OldPct"]
@@ -55295,6 +48568,14 @@ def _build_old_new_patient_visits_excel(
         return None, None, "No data available to export"
 
     summary_df, detail_df, source_summary_df, source_dept_df, source_doc_df, conversion_sections = _old_new_payload_to_frames(payload)
+
+    def _old_new_detail_export_labels(df: pd.DataFrame) -> pd.DataFrame:
+        if df is None:
+            return pd.DataFrame()
+        export_df = df.copy()
+        rename_map = {"ReferrerDetails": "Referrer Details"}
+        present = {src: dst for src, dst in rename_map.items() if src in export_df.columns}
+        return export_df.rename(columns=present) if present else export_df
 
     output = io.BytesIO()
     with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
@@ -55578,12 +48859,12 @@ def _build_old_new_patient_visits_excel(
                 )
 
         _write_data_sheet("Summary_Dept", "Old vs New Visits - Department Summary", summary_df)
-        _write_data_sheet("Details_Visits", "Old vs New Visits - Detail Rows", detail_df)
+        _write_data_sheet("Details_Visits", "Old vs New Visits - Detail Rows", _old_new_detail_export_labels(detail_df))
         for section in conversion_sections:
             _write_data_sheet(
                 str(section.get("sheet_name") or "Details")[:31],
                 str(section.get("title") or "Visit Details"),
-                section.get("df"),
+                _old_new_detail_export_labels(section.get("df")),
             )
         _write_data_sheet("Source_Comparison", "Patient Source Comparison", source_summary_df)
         _write_data_sheet("Source_x_Dept", "Patient Source x Department", source_dept_df)
@@ -55922,9 +49203,9 @@ def _build_old_new_patient_visits_pdf_buffer(
     story.append(Spacer(1, 4))
     detail_table = _table_from_df(
         detail_cap_df,
-        columns=["VisitDate", "Visit_ID", "RegNo", "PatientName", "Dept", "SubDept", "Doctor", "PatientType", "SourceName"],
-        headers=["Visit Date", "Visit ID", "Reg No", "Patient", "Dept", "SubDept", "Doctor", "Type", "Source"],
-        col_widths_mm=[24, 22, 24, 58, 34, 30, 38, 18, 34],
+        columns=["VisitDate", "Visit_ID", "RegNo", "PatientName", "Dept", "SubDept", "Doctor", "PatientType", "SourceName", "ReferrerDetails"],
+        headers=["Visit Date", "Visit ID", "Reg No", "Patient", "Dept", "SubDept", "Doctor", "Type", "Source", "Referrer Details"],
+        col_widths_mm=[22, 20, 24, 48, 28, 24, 30, 16, 28, 35],
         numeric_cols={1},
     )
     story.append(detail_table)
@@ -55946,9 +49227,9 @@ def _build_old_new_patient_visits_pdf_buffer(
             story.append(Spacer(1, 4))
             story.append(_table_from_df(
                 sec_cap_df,
-                columns=["VisitDate", "Visit_ID", "RegNo", "PatientName", "Dept", "SubDept", "Doctor", "PatientType", "SourceName"],
-                headers=["Visit Date", "Visit ID", "Reg No", "Patient", "Dept", "SubDept", "Doctor", "Type", "Source"],
-                col_widths_mm=[24, 22, 24, 58, 34, 30, 38, 18, 34],
+                columns=["VisitDate", "Visit_ID", "RegNo", "PatientName", "Dept", "SubDept", "Doctor", "PatientType", "SourceName", "ReferrerDetails"],
+                headers=["Visit Date", "Visit ID", "Reg No", "Patient", "Dept", "SubDept", "Doctor", "Type", "Source", "Referrer Details"],
+                col_widths_mm=[22, 20, 24, 48, 28, 24, 30, 16, 28, 35],
                 numeric_cols={1},
             ))
             if section_idx < len(conversion_sections) - 1:
@@ -57229,6 +50510,64 @@ def _build_margin_period_qty_lookup(
     return by_item_id, by_name_key
 
 
+def _enrich_product_margin_df_with_period_qty_fast(
+    unit: str,
+    from_date: str,
+    to_date: str,
+    df: pd.DataFrame,
+) -> pd.DataFrame:
+    if df is None or df.empty or "_source" not in df.columns:
+        return df
+
+    out = df.copy()
+    out["PeriodPurchaseQty"] = 0.0
+    out["PeriodClosingQty"] = 0.0
+    out["__margin_period_lookup_hit"] = False
+
+    cols = {str(c).strip().lower(): c for c in out.columns}
+    id_col = cols.get("itemlookupid") or cols.get("id") or cols.get("itemid") or cols.get("item_id")
+    if not id_col:
+        return out
+
+    source_values = set(out["_source"].astype(str).str.strip().str.lower().tolist())
+    source_keys = [src for src in ("sale", "issue") if src in source_values]
+    for src in source_keys:
+        store_id = _margin_statement_store_id_for_source(src)
+        if not store_id:
+            continue
+        source_mask = out["_source"].astype(str).str.strip().str.lower() == src
+        source_ids = pd.to_numeric(out.loc[source_mask, id_col], errors="coerce").fillna(0).astype(int)
+        item_ids = sorted({int(v) for v in source_ids.tolist() if int(v) > 0})
+        if not item_ids:
+            continue
+        lookup_df = data_fetch.fetch_pharmacy_margin_period_qty_lookup(
+            unit,
+            from_date,
+            to_date,
+            store_id,
+            item_ids,
+        )
+        if lookup_df is None or lookup_df.empty:
+            continue
+        lookup_df = _clean_df_columns(lookup_df)
+        purchase_map = {}
+        closing_map = {}
+        found_ids = set()
+        for _, row in lookup_df.iterrows():
+            item_id = _safe_int(row.get("ItemID"), 0)
+            if item_id <= 0:
+                continue
+            purchase_map[item_id] = _safe_float(row.get("PurchaseQty"))
+            closing_map[item_id] = _safe_float(row.get("ClosingQty"))
+            found_ids.add(item_id)
+
+        out.loc[source_mask, "PeriodPurchaseQty"] = source_ids.map(lambda x: purchase_map.get(int(x), 0.0)).astype(float)
+        out.loc[source_mask, "PeriodClosingQty"] = source_ids.map(lambda x: closing_map.get(int(x), 0.0)).astype(float)
+        out.loc[source_mask, "__margin_period_lookup_hit"] = source_ids.map(lambda x: int(x) in found_ids)
+
+    return out
+
+
 def _enrich_product_margin_df_with_period_qty(
     unit: str,
     from_date: str,
@@ -57238,8 +50577,27 @@ def _enrich_product_margin_df_with_period_qty(
     if df is None or df.empty or "_source" not in df.columns:
         return df
 
+    fast_df = _enrich_product_margin_df_with_period_qty_fast(unit, from_date, to_date, df)
+    if fast_df is not None and not fast_df.empty:
+        cols = {str(c).strip().lower(): c for c in fast_df.columns}
+        id_col = cols.get("itemlookupid") or cols.get("id") or cols.get("itemid") or cols.get("item_id")
+        if id_col:
+            source_series = fast_df["_source"].astype(str).str.strip().str.lower()
+            item_ids = pd.to_numeric(fast_df[id_col], errors="coerce").fillna(0).astype(int)
+            if not ((source_series.isin(["sale", "issue"])) & (item_ids > 0)).any():
+                fast_df = None
+            else:
+                missing_mask = (
+                    source_series.isin(["sale", "issue"])
+                    & (item_ids > 0)
+                    & (~fast_df["__margin_period_lookup_hit"].astype(bool))
+                )
+                if not missing_mask.any():
+                    fast_df = fast_df.drop(columns=["__margin_period_lookup_hit"], errors="ignore")
+                    return fast_df
+
     cols = {str(c).strip().lower(): c for c in df.columns}
-    id_col = cols.get("id") or cols.get("itemid") or cols.get("item_id")
+    id_col = cols.get("itemlookupid") or cols.get("id") or cols.get("itemid") or cols.get("item_id")
     name_col = cols.get("name") or cols.get("itemname")
 
     out = df.copy()
@@ -57513,7 +50871,7 @@ def _get_product_margin_df(
     if source_key in {"sale", "issue", "both"} and "_source" in df.columns:
         cols = {str(c).strip().lower(): c for c in df.columns}
         if not df.empty:
-            id_col = cols.get("id") or cols.get("itemid") or cols.get("item_id")
+            id_col = cols.get("itemlookupid") or cols.get("id") or cols.get("itemid") or cols.get("item_id")
             name_col = cols.get("name") or cols.get("itemname")
             manuf_col = cols.get("mn") or cols.get("manufacturer") or cols.get("manufacturername")
             med_id_col = cols.get("medicinetypeid")
@@ -57651,55 +51009,94 @@ def api_mis_pharmacy_product_margin():
         page_size = 20
     page_size = min(max(page_size, 1), 200)
 
-    df = _get_product_margin_df(unit, from_date, to_date, medicine_type_id, manufacturer_id, source_raw)
-    if df is None:
-        return jsonify({"status": "error", "message": "Failed to fetch product margin data"}), 500
-    if df.empty:
+    page_df = None
+    total_count = 0
+    total_pages = 1
+    needs_period_qty_enrichment = False
+
+    paged_result = data_fetch.fetch_pharmacy_product_margin_page(
+        unit,
+        from_date,
+        to_date,
+        medicine_type_id,
+        manufacturer_id,
+        source_raw,
+        page=page,
+        page_size=page_size,
+        search_query=search,
+    )
+    if paged_result is not None:
+        page_meta = paged_result.get("meta") or {}
+        page_df = paged_result.get("df")
+        page = max(1, _safe_int(page_meta.get("page"), page))
+        page_size = min(max(_safe_int(page_meta.get("page_size"), page_size), 1), 200)
+        total_count = max(0, _safe_int(page_meta.get("total_rows"), 0))
+        total_pages = max(1, _safe_int(page_meta.get("total_pages"), 1))
+        needs_period_qty_enrichment = True
+    else:
+        df = _get_product_margin_df(unit, from_date, to_date, medicine_type_id, manufacturer_id, source_raw)
+        if df is None:
+            return jsonify({"status": "error", "message": "Failed to fetch product margin data"}), 500
+        if df.empty:
+            return jsonify({
+                "status": "success",
+                "unit": unit,
+                "rows": [],
+                "page": 1,
+                "page_size": page_size,
+                "total_pages": 1,
+                "total_count": 0,
+            })
+
+        if search:
+            q = _norm_key(search)
+            cols = {str(c).strip().lower(): c for c in df.columns}
+            name_col = cols.get("name") or cols.get("itemname")
+            manuf_col = cols.get("mn") or cols.get("manufacturer") or cols.get("manufacturername")
+            med_col = cols.get("medicinetypedesc") or cols.get("medicinetypedescription")
+            source_col = cols.get("_source") or cols.get("__source") or cols.get("source")
+
+            mask = pd.Series(False, index=df.index)
+            if name_col:
+                mask |= df[name_col].astype(str).str.strip().str.lower().str.contains(q, na=False)
+            if manuf_col:
+                mask |= df[manuf_col].astype(str).str.strip().str.lower().str.contains(q, na=False)
+            if med_col:
+                mask |= df[med_col].astype(str).str.strip().str.lower().str.contains(q, na=False)
+            if source_col:
+                mask |= df[source_col].astype(str).str.strip().str.lower().str.contains(q, na=False)
+            df = df[mask]
+
+        total_count = len(df)
+        if total_count == 0:
+            return jsonify({
+                "status": "success",
+                "unit": unit,
+                "rows": [],
+                "page": 1,
+                "page_size": page_size,
+                "total_pages": 1,
+                "total_count": 0,
+            })
+        total_pages = max(1, math.ceil(total_count / page_size)) if page_size else 1
+        page = min(page, total_pages)
+        start = (page - 1) * page_size
+        end = start + page_size
+        page_df = df.iloc[start:end]
+
+    if page_df is None or page_df.empty or total_count == 0:
         return jsonify({
             "status": "success",
             "unit": unit,
             "rows": [],
-            "page": 1,
+            "page": 1 if total_count == 0 else page,
             "page_size": page_size,
-            "total_pages": 1,
-            "total_count": 0,
+            "total_pages": 1 if total_count == 0 else total_pages,
+            "total_count": total_count,
         })
 
-    if search:
-        q = _norm_key(search)
-        cols = {str(c).strip().lower(): c for c in df.columns}
-        name_col = cols.get("name") or cols.get("itemname")
-        manuf_col = cols.get("mn") or cols.get("manufacturer") or cols.get("manufacturername")
-        med_col = cols.get("medicinetypedesc") or cols.get("medicinetypedescription")
-        source_col = cols.get("_source") or cols.get("__source") or cols.get("source")
-
-        mask = pd.Series(False, index=df.index)
-        if name_col:
-            mask |= df[name_col].astype(str).str.strip().str.lower().str.contains(q, na=False)
-        if manuf_col:
-            mask |= df[manuf_col].astype(str).str.strip().str.lower().str.contains(q, na=False)
-        if med_col:
-            mask |= df[med_col].astype(str).str.strip().str.lower().str.contains(q, na=False)
-        if source_col:
-            mask |= df[source_col].astype(str).str.strip().str.lower().str.contains(q, na=False)
-        df = df[mask]
-
-    total_count = len(df)
-    if total_count == 0:
-        return jsonify({
-            "status": "success",
-            "unit": unit,
-            "rows": [],
-            "page": 1,
-            "page_size": page_size,
-            "total_pages": 1,
-            "total_count": 0,
-        })
-    total_pages = max(1, math.ceil(total_count / page_size)) if page_size else 1
-    page = min(page, total_pages)
-    start = (page - 1) * page_size
-    end = start + page_size
-    page_df = df.iloc[start:end]
+    if needs_period_qty_enrichment:
+        page_df = _enrich_product_margin_df_with_period_qty(unit, from_date, to_date, page_df)
     page_rows = _build_margin_rows_from_df(unit, page_df, None, bool(manufacturer_id))
 
     if page_rows:
@@ -57954,6 +51351,38 @@ def api_mis_pharmacy_product_margin_indent_draft():
     })
 
 
+def _get_product_margin_df_for_export(
+    unit: str,
+    from_date: str,
+    to_date: str,
+    medicine_type_id: int,
+    manufacturer_id: int,
+    source: str,
+    search: str = "",
+):
+    paged_result = data_fetch.fetch_pharmacy_product_margin_page(
+        unit,
+        from_date,
+        to_date,
+        medicine_type_id,
+        manufacturer_id,
+        source,
+        page=1,
+        page_size=100000,
+        search_query=search,
+    )
+    if paged_result is not None:
+        page_meta = paged_result.get("meta") or {}
+        page_df = paged_result.get("df")
+        total_rows = max(0, _safe_int(page_meta.get("total_rows"), 0))
+        returned_rows = 0 if page_df is None else len(page_df.index)
+        if total_rows == 0:
+            return pd.DataFrame()
+        if page_df is not None and returned_rows == total_rows:
+            return _enrich_product_margin_df_with_period_qty(unit, from_date, to_date, page_df)
+    return _get_product_margin_df(unit, from_date, to_date, medicine_type_id, manufacturer_id, source)
+
+
 @app.route('/api/mis/pharmacy/product_margin/export_excel')
 @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
 def api_mis_pharmacy_product_margin_export_excel():
@@ -57987,7 +51416,15 @@ def api_mis_pharmacy_product_margin_export_excel():
     except Exception:
         manufacturer_id = 0
 
-    df = _get_product_margin_df(unit, from_date, to_date, medicine_type_id, manufacturer_id, source_raw)
+    df = _get_product_margin_df_for_export(
+        unit,
+        from_date,
+        to_date,
+        medicine_type_id,
+        manufacturer_id,
+        source_raw,
+        search,
+    )
     if df is None:
         return "Failed to load product margin data", 500
     rows = _build_margin_rows_from_df(unit, df, None, bool(manufacturer_id))
@@ -58074,7 +51511,15 @@ def api_mis_pharmacy_product_margin_export_pdf():
     except Exception:
         manufacturer_id = 0
 
-    df = _get_product_margin_df(unit, from_date, to_date, medicine_type_id, manufacturer_id, source_raw)
+    df = _get_product_margin_df_for_export(
+        unit,
+        from_date,
+        to_date,
+        medicine_type_id,
+        manufacturer_id,
+        source_raw,
+        search,
+    )
     if df is None:
         return "Failed to load product margin data", 500
     rows = _build_margin_rows_from_df(unit, df, None, bool(manufacturer_id))
@@ -61720,618 +55165,8 @@ def api_mis_store_current_stock_export_pdf():
 # ============================================================
 # Real-time Occupancy Data API
 # ============================================================
-@app.route('/get_occupancy_data')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def get_occupancy_data():
-    try:
-        today = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-
-        allowed_units = _allowed_units_for_session()
-        if not allowed_units:
-            return jsonify({"status": "error", "message": "No unit access assigned"}), 403
-
-        db_cfgs = getattr(config, "DB_CONFIGS", {}) or {}
-        if db_cfgs:
-            db_cfgs = {u: cfg for u, cfg in db_cfgs.items() if u.upper() in allowed_units}
-        if not db_cfgs:
-            chosen_cfg = _pick_db_cfg_for_proc()
-            if not chosen_cfg:
-                return jsonify({"status": "error", "message": "No suitable DB config found"}), 500
-            db_cfgs = {"_FALLBACK_": chosen_cfg}
-
-        overall = {}
-        errors = []
-
-        for unit_name, cfg in db_cfgs.items():
-            try:
-                conn_str = _build_conn_str_from_dbconfig(cfg)
-                with pyodbc.connect(conn_str) as conn:
-                    try:
-                        df = pd.read_sql(
-                            "EXEC dbo.usp_RptIPDPatient_Occupancy @FromDate=?, @ToDate=?",
-                            conn,
-                            params=(today, today)
-                        )
-                    except Exception:
-                        df = pd.read_sql("EXEC dbo.usp_RptIPDPatient_Occupancy", conn)
-
-                if df is None or df.empty:
-                    continue
-
-                df = df.where(pd.notna(df), None)
-
-                ward_col = next((c for c in ["Ward_Name", "WardName", "Ward", "WardDesc", "WardDescription"] if c in df.columns), None)
-                bed_label_col = next((c for c in ["Bed_Name", "BedName", "Bed", "BedNo", "Bed_No"] if c in df.columns), None)
-                status_col = next((c for c in ["Status", "PatientStatus", "ClinicalStatus", "DischargeStatus", "CurrentStatus", "CaseStatus"] if c in df.columns), None)
-
-                if "Bed_ID" not in df.columns:
-                    errors.append(f"{unit_name}: result missing Bed_ID")
-                    continue
-                if not ward_col:
-                    ward_col = "Ward"
-                    df[ward_col] = "Unknown Ward"
-
-                import math
-                def _sv(v):
-                    try:
-                        if v is None or (isinstance(v, float) and math.isnan(v)) or pd.isna(v):
-                            return None
-                    except Exception:
-                        pass
-                    if isinstance(v, str):
-                        s = v.strip()
-                        if s == "" or s.lower() in ("nan", "none", "null"):
-                            return None
-                        return s
-                    return v
-
-                def _get(row, *keys):
-                    for k in keys:
-                        if k and k in row:
-                            val = _sv(row.get(k))
-                            if val is not None:
-                                return val
-                    return None
-
-                def _has_patient(row):
-                    return any([
-                        _get(row, "Patient") is not None,
-                        _get(row, "Patient_Name") is not None,
-                        _get(row, "Regno") is not None,
-                        _get(row, "Visit_ID") is not None
-                    ])
-
-                def _row_color(row):
-                    st = (_get(row, status_col) or "").lower()
-                    if "clinic" in st and "disch" in st:
-                        return "yellow"
-                    if "occup" in st:
-                        return "green"
-                    if "vac" in st:
-                        return "blue"
-                    return "green" if _has_patient(row) else "blue"
-
-                df["_PrefWard"] = unit_name.upper() + " | " + df[ward_col].astype(str)
-
-                dict_rows = df.to_dict(orient="records")
-                for ward_name, g_idx in df.groupby("_PrefWard", sort=True).groups.items():
-                    rows = [dict_rows[i] for i in g_idx]
-                    bedlist = []
-                    for r in rows:
-                        status_text = (_get(r, status_col) or "").lower()
-                        color = _row_color(r)
-                        is_vacant = ("vac" in status_text) or (color == "blue")
-                        bed = {
-                            "Bed_ID": _sv(_get(r, "Bed_ID")),
-                            "Bed_Label": _sv(_get(r, bed_label_col, "Bed_Name", "BedName", "Bed", "BedNo", "Bed_No", "Bed_ID")),
-                            "Color": color,
-                            "Patient_ID": _sv(_get(r, "Regno")),
-                            "Patient_Name": _sv(_get(r, "Patient", "Patient_Name")),
-                            "IPD_No": _sv(_get(r, "Visit_ID")),
-                            "Room": _sv(_get(r, "Room", "Room_Name", "RoomName")),
-                        }
-                        if is_vacant:
-                            bed["Patient_ID"] = None
-                            bed["Patient_Name"] = None
-                            bed["IPD_No"] = None
-                        bedlist.append(bed)
-
-                    overall.setdefault(ward_name, []).extend(bedlist)
-
-            except Exception as ex:
-                errors.append(f"{unit_name}: {ex}")
-
-        if not overall:
-            msg = " ; ".join(errors) if errors else "No data returned from any DB"
-            print(f"Occupancy fetch error: {msg}")
-            return jsonify({"status": "error", "message": msg}), 500
-
-        legend = {"green": "Occupied", "yellow": "Clinically Discharged", "blue": "Vacant"}
-
-        # Persist today's snapshot (idempotent per-day per-unit)
-        try:
-            _save_occupancy_snapshot(overall)
-        except Exception as _e:
-            print(f"Snapshot save skipped: {_e}")
-
-        return jsonify({"status": "success", "legend": legend, "data": overall})
-
-    except Exception as e:
-        print(f"Occupancy fetch error: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
+# Occupancy Export Helpers
 # ============================================================
-# Occupancy trend API (today vs D-1, W-1, M-1)
-# ============================================================
-@app.route('/occupancy_trend')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def occupancy_trend():
-    requested_unit = (request.args.get("unit") or "").strip().upper() or None
-
-    allowed_units = _allowed_units_for_session()
-    if not allowed_units:
-        return jsonify({"status": "error", "message": "No unit access assigned"}), 403
-
-    if requested_unit:
-        if requested_unit not in allowed_units:
-            return jsonify({"status": "error", "message": f"Unit {requested_unit} not permitted for your role"}), 403
-        unit = requested_unit
-    else:
-        if len(allowed_units) == 1:
-            unit = allowed_units[0]
-        else:
-            unit = None
-
-    today_dt = datetime.now(tz=LOCAL_TZ)
-    fmt = "%Y-%m-%d"
-    today = today_dt.strftime(fmt)
-    d1    = (today_dt - timedelta(days=1)).strftime(fmt)
-    w1    = (today_dt - timedelta(days=7)).strftime(fmt)
-    m1    = (today_dt - timedelta(days=30)).strftime(fmt)
-
-    curr = _fetch_snapshot(today, unit)
-    if not curr:
-        return jsonify({
-            "status": "error",
-            "message": "No snapshot for today yet. Open the Occupancy dashboard once today to record it."
-        }), 404
-
-    resp = {
-        "status": "success",
-        "unit": unit or "ALL",
-        "today": today,
-        "metrics": {
-            "occupied": curr["occupied"],
-            "clinically_discharged": curr["clinically_discharged"],
-            "vacant": curr["vacant"],
-            "total_beds": curr["total_beds"],
-            "occupancy_rate_pct": round(curr["occupancy_rate"] * 100.0, 2)
-        },
-        "comparisons": {}
-    }
-
-    for label, date_str in (("d1", d1), ("w1", w1), ("m1", m1)):
-        prev = _fetch_snapshot(date_str, unit)
-        if prev:
-            resp["comparisons"][label] = {
-                "date": date_str,
-                "delta_pct_occupied": _pct_change(curr["occupied"], prev["occupied"]),
-                "delta_pct_rate": _pct_change(curr["occupancy_rate"], prev["occupancy_rate"])
-            }
-        else:
-            resp["comparisons"][label] = {
-                "date": date_str,
-                "delta_pct_occupied": None,
-                "delta_pct_rate": None,
-                "note": "no snapshot for that date"
-            }
-
-    return jsonify(resp)
-
-
-# ============================================================
-# Historical Snapshot APIs (PatientSubType + Ward breakdown)
-# ============================================================
-
-@app.route('/api/occupancy_snapshot_dates')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_occupancy_snapshot_dates():
-    """Get list of available snapshot dates"""
-    try:
-        _ensure_snapshot_detail_table()
-        
-        with sqlite3.connect(_abs_local_db_path()) as conn:
-            rows = conn.execute("""
-                SELECT DISTINCT snapshot_date 
-                FROM occupancy_snapshot_detail 
-                ORDER BY snapshot_date DESC
-                LIMIT 90
-            """).fetchall()
-        
-        dates = [row[0] for row in rows]
-        return jsonify({"status": "success", "dates": dates})
-        
-    except Exception as e:
-        print(f"Error fetching snapshot dates: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@app.route('/api/occupancy_snapshot_average')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_occupancy_snapshot_average():
-    """Average occupancy percentage between two dates (summary table)."""
-    from_date = (request.args.get("from") or "").strip()
-    to_date = (request.args.get("to") or "").strip()
-    unit = (request.args.get("unit") or "").strip().upper()
-
-    if not from_date or not to_date:
-        return jsonify({"status": "error", "message": "from/to dates are required"}), 400
-
-    try:
-        from_dt = datetime.strptime(from_date, "%Y-%m-%d").date()
-        to_dt = datetime.strptime(to_date, "%Y-%m-%d").date()
-    except ValueError:
-        return jsonify({"status": "error", "message": "Invalid date format (expected YYYY-MM-DD)"}), 400
-
-    if from_dt > to_dt:
-        return jsonify({"status": "error", "message": "from date cannot be after to date"}), 400
-
-    allowed_units = _allowed_units_for_session()
-    if not allowed_units:
-        return jsonify({"status": "error", "message": "No unit access"}), 403
-
-    if unit and unit != "ALL":
-        if unit not in allowed_units:
-            return jsonify({"status": "error", "message": "Unit not allowed"}), 403
-        units_to_use = [unit]
-    else:
-        units_to_use = allowed_units
-
-    _ensure_local_store()
-    with sqlite3.connect(_abs_local_db_path()) as conn:
-        placeholders = ",".join("?" * len(units_to_use))
-        query = f"""
-            SELECT snapshot_date, unit, occupied, clinically_discharged, total_beds, occupancy_rate
-            FROM occupancy_snapshot
-            WHERE snapshot_date BETWEEN ? AND ?
-              AND unit IN ({placeholders})
-        """
-        rows = conn.execute(query, [from_date, to_date] + units_to_use).fetchall()
-
-    if not rows:
-        return jsonify({
-            "status": "success",
-            "from": from_date,
-            "to": to_date,
-            "unit": unit or "ALL",
-            "rows": 0,
-            "days": 0,
-            "simple_avg_pct": 0.0,
-            "weighted_avg_pct": 0.0,
-            "message": "No snapshot data for this range"
-        })
-
-    total_occ = 0
-    total_beds = 0
-    rate_sum = 0.0
-    for snapshot_date, _unit, occ, disch, beds, rate in rows:
-        total_occ += int(occ or 0) + int(disch or 0)
-        total_beds += int(beds or 0)
-        rate_sum += float(rate or 0)
-
-    days = len({r[0] for r in rows})
-    simple_avg = (rate_sum / len(rows)) * 100.0 if rows else 0.0
-    weighted_avg = (total_occ / total_beds) * 100.0 if total_beds else 0.0
-
-    return jsonify({
-        "status": "success",
-        "from": from_date,
-        "to": to_date,
-        "unit": unit or "ALL",
-        "rows": len(rows),
-        "days": days,
-        "simple_avg_pct": round(simple_avg, 2),
-        "weighted_avg_pct": round(weighted_avg, 2)
-    })
-
-
-@app.route('/_test_snapshot')
-@login_required(allowed_roles={"IT", "Management"})
-def _test_snapshot():
-    """Manually trigger snapshot for testing - IT/Management only"""
-    try:
-        # Ensure table exists with correct schema (including ward column)
-        _ensure_snapshot_detail_table()
-        
-        # Capture snapshot with Ward + PatientSubType breakdown
-        _save_occupancy_snapshot_with_subtype()
-        
-        # Verify what was saved
-        with sqlite3.connect(_abs_local_db_path()) as conn:
-            # Count total records
-            count = conn.execute("SELECT COUNT(*) FROM occupancy_snapshot_detail").fetchone()[0]
-            
-            # Get distinct dates
-            dates = conn.execute("""
-                SELECT DISTINCT snapshot_date 
-                FROM occupancy_snapshot_detail 
-                ORDER BY snapshot_date DESC
-            """).fetchall()
-            
-            # Get sample data to verify structure
-            sample = conn.execute("""
-                SELECT unit, ward, patient_subtype, occupied, 
-                       clinically_discharged, vacant, total_beds, 
-                       snapshot_time
-                FROM occupancy_snapshot_detail 
-                LIMIT 5
-            """).fetchall()
-        
-        # Format sample data for display
-        sample_data = []
-        for row in sample:
-            unit, ward, subtype, occ, disch, vac, total, snap_time = row
-            sample_data.append({
-                "unit": unit,
-                "ward": ward,
-                "patient_subtype": subtype,
-                "occupied": occ,
-                "clinically_discharged": disch,
-                "vacant": vac,
-                "total_beds": total,
-                "snapshot_time": snap_time
-            })
-        
-        return jsonify({
-            "status": "success", 
-            "message": "Snapshot captured successfully!",
-            "total_records": count,
-            "dates": [d[0] for d in dates],
-            "sample_data": sample_data,
-            "note": "Data now includes Ward + Patient Sub-Type breakdown"
-        })
-        
-    except Exception as e:
-        import traceback
-        return jsonify({
-            "status": "error", 
-            "message": str(e),
-            "traceback": traceback.format_exc()
-        }), 500
-
-# ============================================================
-# Historical Snapshot APIs (PatientSubType breakdown)
-# ============================================================
-
-@app.route('/api/occupancy_snapshot_data')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_occupancy_snapshot_data():
-    """Get snapshot data for a specific date"""
-    try:
-        date = request.args.get('date')
-        if not date:
-            return jsonify({"status": "error", "message": "Date parameter required"}), 400
-        
-        _ensure_snapshot_detail_table()
-        
-        allowed_units = _allowed_units_for_session()
-        if not allowed_units:
-            return jsonify({"status": "error", "message": "No unit access"}), 403
-
-        cache_key = (date, ",".join(sorted(allowed_units)))
-        cached = _export_cache_get_bytes("occ_snap_xlsx", cache_key)
-        if cached:
-            return send_file(
-                io.BytesIO(cached),
-                as_attachment=True,
-                download_name=f"Occupancy_Snapshot_{date}.xlsx",
-                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-
-        cache_key = (date, ",".join(sorted(allowed_units)))
-        cached = _export_cache_get_bytes("occ_snap_xlsx", cache_key)
-        if cached:
-            return send_file(
-                io.BytesIO(cached),
-                as_attachment=True,
-                download_name=f"Occupancy_Snapshot_{date}.xlsx",
-                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        
-        with sqlite3.connect(_abs_local_db_path()) as conn:
-            placeholders = ','.join('?' * len(allowed_units))
-            query = f"""
-                SELECT unit, ward, patient_subtype, occupied, clinically_discharged,
-                       vacant, total_beds, occupancy_rate, snapshot_time
-                FROM occupancy_snapshot_detail
-                WHERE snapshot_date = ? AND unit IN ({placeholders})
-                ORDER BY unit, ward, patient_subtype
-            """
-            rows = conn.execute(query, [date] + allowed_units).fetchall()
-        
-        if not rows:
-            return jsonify({
-                "status": "success",
-                "date": date,
-                "data": {},
-                "message": "No data for this date"
-            })
-        
-        # Group by unit
-        data = {}
-        for row in rows:
-            unit, ward, subtype, occ, disch, vac, total, rate, snap_time = row
-            if unit not in data:
-                data[unit] = []
-            data[unit].append({
-                "Ward": ward,
-                "PatientSubType": subtype,
-                "Occupied": occ,
-                "ClinicallyDischarged": disch,
-                "Vacant": vac,
-                "TotalBeds": total,
-                # "OccupancyRate": round(rate * 100, 2),
-                "SnapshotTime": snap_time
-            })
-        
-        return jsonify({
-            "status": "success",
-            "date": date,
-            "data": data
-        })
-        
-    except Exception as e:
-        print(f"Error fetching snapshot data: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-@app.route('/api/export_occupancy_snapshot')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_export_occupancy_snapshot():
-    """Export snapshot data to Excel"""
-    try:
-        date = request.args.get('date')
-        if not date:
-            return jsonify({"status": "error", "message": "Date parameter required"}), 400
-        
-        _ensure_snapshot_detail_table()
-        
-        allowed_units = _allowed_units_for_session()
-        if not allowed_units:
-            return jsonify({"status": "error", "message": "No unit access"}), 403
-
-        cache_key = (date, ",".join(sorted(allowed_units)))
-        cached = _export_cache_get_bytes("occ_snap_xlsx", cache_key)
-        if cached:
-            return send_file(
-                io.BytesIO(cached),
-                as_attachment=True,
-                download_name=f"Occupancy_Snapshot_{date}.xlsx",
-                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
-            )
-        
-        with sqlite3.connect(_abs_local_db_path()) as conn:
-            placeholders = ','.join('?' * len(allowed_units))
-            query = f"""
-                SELECT unit, ward, patient_subtype, occupied, clinically_discharged,
-                       vacant, total_beds, occupancy_rate, snapshot_time
-                FROM occupancy_snapshot_detail
-                WHERE snapshot_date = ? AND unit IN ({placeholders})
-                ORDER BY unit, ward, patient_subtype
-            """
-            rows = conn.execute(query, [date] + allowed_units).fetchall()
-            doc_query = f"""
-                SELECT unit, doctor, occupied
-                FROM occupancy_snapshot_doctor
-                WHERE snapshot_date = ? AND unit IN ({placeholders})
-                ORDER BY unit, occupied DESC, doctor
-            """
-            doc_rows = conn.execute(doc_query, [date] + allowed_units).fetchall()
-        
-        if not rows:
-            return jsonify({"status": "error", "message": "No data for this date"}), 404
-        
-        # Prepare data for Excel - FIXED to match frontend
-        export_data = []
-        for row in rows:
-            unit, ward, subtype, occ, disch, vac, total, rate, snap_time = row
-            total_active = occ + disch
-            export_data.append({
-                'Unit': unit,
-                'Ward': ward,
-                'Patient Sub-Type': subtype,
-                'Occupied': occ,
-                'Clinically Discharged': disch,
-                'Total Active (Beds Used)': total_active,
-                'Snapshot Time': snap_time
-            })
-        
-        df = pd.DataFrame(export_data)
-        doctor_export = [
-            {
-                "Unit": (unit or "").upper(),
-                "Doctor": doctor or "Unknown Doctor",
-                "Occupied Patients": int(occupied or 0)
-            }
-            for unit, doctor, occupied in doc_rows
-        ]
-        doctor_df = pd.DataFrame(doctor_export)
-        
-        # Create Excel file
-        export_dir = os.path.join("data", "exports")
-        os.makedirs(export_dir, exist_ok=True)
-        file_name = f"Occupancy_Snapshot_{date}.xlsx"
-        file_path = os.path.join(export_dir, file_name)
-        
-        with pd.ExcelWriter(file_path, engine="xlsxwriter") as writer:
-            wb = writer.book
-            
-            # Format definitions
-            header_fmt = wb.add_format({
-                "bold": True, "bg_color": "#1e3a8a",
-                "font_color": "white", "align": "center",
-                "valign": "vcenter", "border": 1
-            })
-            
-            # Write data
-            df.to_excel(writer, index=False, sheet_name="Ward Summary")
-            ws = writer.sheets["Ward Summary"]
-            
-            # Apply header formatting
-            for col_num, value in enumerate(df.columns.values):
-                ws.write(0, col_num, value, header_fmt)
-            
-            # Auto-fit columns
-            for i, col in enumerate(df.columns):
-                col_len = df[col].astype(str).apply(len).max() if not df.empty else 0
-                max_len = max(col_len, len(col)) + 2
-                ws.set_column(i, i, max_len)
-            
-            ws.freeze_panes(1, 0)
-
-            if doctor_df.empty:
-                doctor_df = pd.DataFrame(columns=["Unit", "Doctor", "Occupied Patients"])
-            doctor_df.to_excel(writer, index=False, sheet_name="Doctor Summary")
-            ws_doc = writer.sheets["Doctor Summary"]
-            for col_num, value in enumerate(doctor_df.columns.values):
-                ws_doc.write(0, col_num, value, header_fmt)
-            for i, col in enumerate(doctor_df.columns):
-                max_len = max(doctor_df[col].astype(str).apply(len).max() if not doctor_df.empty else 0, len(col)) + 2
-                ws_doc.set_column(i, i, max_len)
-            ws_doc.freeze_panes(1, 0)
-        
-        try:
-            with open(file_path, "rb") as f:
-                _export_cache_put_bytes("occ_snap_xlsx", f.read(), cache_key)
-        except Exception:
-            pass
-        return send_file(file_path, as_attachment=True)
-        
-    except Exception as e:
-        print(f"Error exporting snapshot: {e}")
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@app.route('/_clear_snapshots')
-@login_required(allowed_roles={"IT"})
-def _clear_snapshots():
-    """Clear all snapshot data - IT only"""
-    try:
-        with sqlite3.connect(_abs_local_db_path()) as conn:
-            conn.execute("DELETE FROM occupancy_snapshot_detail")
-            conn.commit()
-        
-        return jsonify({
-            "status": "success",
-            "message": "All snapshots cleared"
-        })
-    except Exception as e:
-        import traceback
-        return jsonify({
-            "status": "error",
-            "message": str(e),
-            "traceback": traceback.format_exc()
-        }), 500
-    
 
 def _build_occupancy_pdf(rows, title_text: str, subtitle_text: str, doctor_summary=None):
     from reportlab.lib import colors
@@ -62702,83 +55537,6 @@ def _build_occupancy_snapshot_pdf_buffer(date: str, allowed_units: list[str]):
         pass
     return buffer
 
-@app.route('/api/export_occupancy_snapshot_pdf')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def export_occupancy_snapshot_pdf():
-    """Export occupancy snapshot as PDF with ward-level summary"""
-    from datetime import datetime
-
-    date = request.args.get('date')
-    if not date:
-        return jsonify({'status': 'error', 'message': 'Date parameter required'}), 400
-
-    try:
-        allowed_units = _allowed_units_for_session()
-        if not allowed_units:
-            return jsonify({'status': 'error', 'message': 'No unit access'}), 403
-
-        buffer = _build_occupancy_snapshot_pdf_buffer(date, allowed_units)
-        if buffer is None:
-            return jsonify({'status': 'error', 'message': 'No data found for this date'}), 404
-        return send_file(
-            buffer,
-            mimetype='application/pdf',
-            as_attachment=True,
-            download_name=f'Occupancy_Snapshot_{date}.pdf'
-        )
-
-    except Exception as e:
-        print(f"PDF export error: {e}")
-        import traceback
-        traceback.print_exc()
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-
-
-
-
-@app.route('/api/export_occupancy_average_pdf')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def export_occupancy_average_pdf():
-    """Export average occupancy between two dates as PDF."""
-    from_date = (request.args.get("from") or "").strip()
-    to_date = (request.args.get("to") or "").strip()
-    unit = (request.args.get("unit") or "").strip().upper()
-
-    if not from_date or not to_date:
-        return jsonify({'status': 'error', 'message': 'from/to dates are required'}), 400
-
-    try:
-        from_dt = datetime.strptime(from_date, "%Y-%m-%d").date()
-        to_dt = datetime.strptime(to_date, "%Y-%m-%d").date()
-    except ValueError:
-        return jsonify({'status': 'error', 'message': 'Invalid date format (expected YYYY-MM-DD)'}), 400
-
-    if from_dt > to_dt:
-        return jsonify({'status': 'error', 'message': 'from date cannot be after to date'}), 400
-
-    allowed_units = _allowed_units_for_session()
-    if not allowed_units:
-        return jsonify({'status': 'error', 'message': 'No unit access'}), 403
-
-    if unit and unit != "ALL":
-        if unit not in allowed_units:
-            return jsonify({'status': 'error', 'message': 'Unit not allowed'}), 403
-        units_to_use = [unit]
-    else:
-        units_to_use = allowed_units
-    buffer = _build_occupancy_average_pdf_buffer(from_date, to_date, units_to_use)
-    if buffer is None:
-        return jsonify({'status': 'error', 'message': 'No snapshot data for this range'}), 404
-
-    return send_file(
-        buffer,
-        mimetype='application/pdf',
-        as_attachment=True,
-        download_name=f'Average_Occupancy_{from_date}_to_{to_date}.pdf'
-    )
-
-
 def _build_occupancy_average_pdf_buffer(from_date: str, to_date: str, units_to_use: list[str]):
     if not from_date or not to_date or not units_to_use:
         return None
@@ -62958,33 +55716,6 @@ def _collect_current_occupancy_rows(allowed_units: list[str]):
 
 
 
-@app.route('/api/export_current_occupancy_pdf')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def export_current_occupancy_pdf():
-    """Export current live occupancy summary to PDF."""
-    from datetime import datetime
-
-    allowed_units = _allowed_units_for_session()
-    if not allowed_units:
-        return jsonify({'status': 'error', 'message': 'No unit access'}), 403
-
-    try:
-        buffer = _build_current_occupancy_pdf_buffer(allowed_units)
-        if buffer is None:
-            return jsonify({'status': 'error', 'message': 'No occupancy data available'}), 404
-        today = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-        return send_file(
-            buffer,
-            mimetype='application/pdf',
-            as_attachment=True,
-            download_name=f'Current_Occupancy_{today}.pdf'
-        )
-
-    except Exception as e:
-        print(f"Current occupancy PDF error: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-
-
 def _build_current_occupancy_pdf_buffer(allowed_units: list[str]):
     if not allowed_units:
         return None
@@ -63010,102 +55741,6 @@ def _build_current_occupancy_pdf_buffer(allowed_units: list[str]):
 
 
 
-@app.route('/api/export_current_occupancy_excel')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def export_current_occupancy_excel():
-    """Export current occupancy summary to Excel (ward + doctor wise)."""
-    from datetime import datetime
-
-    allowed_units = _allowed_units_for_session()
-    if not allowed_units:
-        return jsonify({'status': 'error', 'message': 'No unit access'}), 403
-
-    cache_key = ",".join(sorted(allowed_units))
-    cached = _export_cache_get_bytes("current_occ_xlsx", cache_key)
-    if cached:
-        stamp = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d_%H%M")
-        return send_file(
-            io.BytesIO(cached),
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            as_attachment=True,
-            download_name=f"Current_Occupancy_{stamp}.xlsx"
-        )
-
-    try:
-        rows_for_excel, doctor_summary = _collect_current_occupancy_rows(allowed_units)
-        if not rows_for_excel:
-            return jsonify({'status': 'error', 'message': 'No occupancy data available'}), 404
-
-        ward_rows = [{
-            "Unit": unit,
-            "Ward": ward,
-            "Patient Sub-Type": subtype,
-            "Occupied": occ,
-            "Clinically Discharged": disch,
-            "Vacant": vac,
-            "Total Beds": total
-        } for unit, ward, subtype, occ, disch, vac, total in rows_for_excel]
-
-        doctor_rows = []
-        for unit, docs in (doctor_summary or {}).items():
-            for doctor_name, count in docs:
-                doctor_rows.append({
-                    "Unit": unit,
-                    "Doctor": doctor_name,
-                    "Occupied Patients": count
-                })
-
-        if not doctor_rows:
-            doctor_rows = []
-
-        ward_df = pd.DataFrame(ward_rows)
-        doctor_df = pd.DataFrame(doctor_rows)
-
-        buffer = io.BytesIO()
-        with pd.ExcelWriter(buffer, engine="xlsxwriter") as writer:
-            wb = writer.book
-            header_fmt = wb.add_format({
-                "bold": True, "bg_color": "#1e3a8a",
-                "font_color": "white", "align": "center",
-                "valign": "vcenter", "border": 1
-            })
-
-            ward_sheet = "Ward Summary"
-            ward_df.to_excel(writer, index=False, sheet_name=ward_sheet)
-            ws = writer.sheets[ward_sheet]
-            for col_num, value in enumerate(ward_df.columns):
-                ws.write(0, col_num, value, header_fmt)
-            for i, col in enumerate(ward_df.columns):
-                col_len = ward_df[col].astype(str).apply(len).max() if not ward_df.empty else 0
-                ws.set_column(i, i, max(col_len, len(col)) + 2)
-            ws.freeze_panes(1, 0)
-
-            doctor_sheet = "Doctor Summary"
-            if doctor_df.empty:
-                doctor_df = pd.DataFrame(columns=["Unit", "Doctor", "Occupied Patients"])
-            doctor_df.to_excel(writer, index=False, sheet_name=doctor_sheet)
-            ws_doc = writer.sheets[doctor_sheet]
-            for col_num, value in enumerate(doctor_df.columns):
-                ws_doc.write(0, col_num, value, header_fmt)
-            for i, col in enumerate(doctor_df.columns):
-                col_len = doctor_df[col].astype(str).apply(len).max() if not doctor_df.empty else 0
-                ws_doc.set_column(i, i, max(col_len, len(col)) + 2)
-            ws_doc.freeze_panes(1, 0)
-
-        buffer.seek(0)
-        stamp = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d_%H%M")
-        _export_cache_put_bytes("current_occ_xlsx", buffer.getvalue(), cache_key)
-        return send_file(
-            buffer,
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            as_attachment=True,
-            download_name=f"Current_Occupancy_{stamp}.xlsx"
-        )
-
-    except Exception as e:
-        print(f"Current occupancy Excel error: {e}")
-        return jsonify({'status': 'error', 'message': str(e)}), 500
-    
 # ============================================================
 # Background revenue warmer + midnight snapshot threads
 # ============================================================
@@ -63286,9 +55921,17 @@ def api_volume_tracker():
 
     # Optional single-unit filter for IT/Management; DH already limited to one in allowed_units
     units_to_use = [req_unit] if (req_unit and req_unit in allowed_units) else allowed_units
+    force_live = bool(refresh_flag and len(units_to_use) == 1)
+    live_cache_name = None
+    live_cache_parts = ()
+    if force_live:
+        live_cache_name = "volume_tracker_live"
+        live_cache_parts = (f, t, units_to_use, int(bool(kpi_only)))
+        cached_payload = _live_response_cache_get(live_cache_name, *live_cache_parts)
+        if cached_payload is not None:
+            return jsonify(cached_payload)
 
     try:
-        force_live = bool(refresh_flag and len(units_to_use) == 1)
         details_df = _get_or_fetch_volume_details(units_to_use, f, t, force_live=force_live)
         hcv_doctor_df = _get_or_fetch_volume_hcv_doctor_details(units_to_use, f, t)
         hcv_doctor_kpi = _build_volume_hcv_doctor_kpi_payload(hcv_doctor_df)
@@ -63301,7 +55944,7 @@ def api_volume_tracker():
 
         if kpi_only:
             details_json = json.loads(details_df.to_json(orient="records"))
-            return jsonify({
+            response_payload = {
                 "status": "success",
                 "kpi_only": True,
                 "meta": {"total": int(len(details_df))},
@@ -63312,7 +55955,12 @@ def api_volume_tracker():
                 "end": t,
                 "units": allowed_units,
                 "unit_used": units_to_use
-            })
+            }
+            return _jsonify_cached_payload(
+                response_payload,
+                cache_name=live_cache_name,
+                cache_parts=live_cache_parts,
+            )
 
         payload = make_volume_payload(details_df)
         payload["discharge_kpi"] = discharge_kpi
@@ -63322,7 +55970,11 @@ def api_volume_tracker():
         payload["end"] = t
         payload["units"] = allowed_units  # for selector population on UI
         payload["unit_used"] = units_to_use
-        return jsonify(payload)
+        return _jsonify_cached_payload(
+            payload,
+            cache_name=live_cache_name,
+            cache_parts=live_cache_parts,
+        )
     except Exception as e:
         print(f"/api/volume_tracker error: {e}")
         return jsonify({"status":"error","message":"Failed to build volume payload"}), 500
@@ -63373,7 +56025,18 @@ def api_volume_export():
                     # fall back to the original even if empty
                     pass
 
-        xlsx_bytes = build_volume_excel(details_df, from_date=f, to_date=t)  # updated writer below
+        discharge_kpi = data_fetch.get_volume_discharge_kpi(
+            units_to_use,
+            f,
+            t,
+            include_full_rows=True,
+        )
+        xlsx_bytes = build_volume_excel(
+            details_df,
+            from_date=f,
+            to_date=t,
+            discharge_kpi=discharge_kpi,
+        )
         fname = f"Volume_Tracker_{('_'+req_unit) if (req_unit and req_unit in allowed_units) else '_ALL'}_{f}_to_{t}.xlsx"
         return send_file(
             io.BytesIO(xlsx_bytes),
@@ -64587,24 +57250,37 @@ def api_business_insights():
     else:
         units_to_use = allowed_units
 
-    # *** NEW: warm other ranges (today, 7d, 30d, FY) in parallel ***
-    _warm_other_bi_ranges(rng, units_to_use, today)
-
     # >>> TODAY REFRESH ADD-ONLY: for BI 'today' + refresh, fetch live and update sqlite cache
     use_live = (rng == 'today' and refresh_flag)
+    live_cache_name = None
+    live_cache_parts = ()
+    if use_live:
+        live_cache_name = "business_insights_live"
+        live_cache_parts = (rng, from_date, to_date, units_to_use)
+        cached_payload = _live_response_cache_get(live_cache_name, *live_cache_parts)
+        if cached_payload is not None:
+            return jsonify(cached_payload)
+
+    # *** NEW: warm other ranges (today, 7d, 30d, FY) in parallel ***
+    _warm_other_bi_ranges(rng, units_to_use, today)
 
     # Main fetch: parallel per-unit for the requested range
     all_dfs = _fetch_units_parallel(units_to_use, from_date, to_date, use_live=use_live)
 
     if not all_dfs:
-        return jsonify({
+        response_payload = {
             'status': 'success', 'range': rng,
             'start': from_date, 'end': to_date,
             'rows': [], 'overall': {
                 'total_daily_avg': 0.0, 'cash_daily_avg': 0.0, 'cashless_daily_avg': 0.0,
                 'avg_per_patient': 0.0, 'cash_avg_per_patient': 0.0, 'cashless_avg_per_patient': 0.0
             }
-        })
+        }
+        return _jsonify_cached_payload(
+            response_payload,
+            cache_name=live_cache_name,
+            cache_parts=live_cache_parts,
+        )
 
     df_all = pd.concat(all_dfs, ignore_index=True, copy=False)
 
@@ -64618,14 +57294,19 @@ def api_business_insights():
     #     print(f"[WARN] BillDescription column not found in business_insights. Using all rows.")
 
     if df_all.empty:
-        return jsonify({
+        response_payload = {
             'status': 'success', 'range': rng,
             'start': from_date, 'end': to_date,
             'rows': [], 'overall': {
                 'total_daily_avg': 0.0, 'cash_daily_avg': 0.0, 'cashless_daily_avg': 0.0,
                 'avg_per_patient': 0.0, 'cash_avg_per_patient': 0.0, 'cashless_avg_per_patient': 0.0
             }
-        })
+        }
+        return _jsonify_cached_payload(
+            response_payload,
+            cache_name=live_cache_name,
+            cache_parts=live_cache_parts,
+        )
 
     date_candidates = [
         "BillDate","Bill_Date","BillingDate","Billing_Date",
@@ -64767,7 +57448,7 @@ def api_business_insights():
     cashless_total_bills = float(sum(x['DailyAvgBills'] * ndays for x in rows if x['PayCategory']=='Cashless'))
     cashless_avg_per_patient = (cashless_total_amt / cashless_total_bills) if total_bills > 0 else 0.0
 
-    return jsonify({
+    response_payload = {
         'status': 'success',
         'range': rng,
         'start': from_date,
@@ -64782,7 +57463,12 @@ def api_business_insights():
             'cash_avg_per_patient': round(cash_avg_per_patient, 2),
             'cashless_avg_per_patient': round(cashless_avg_per_patient, 2)
         }
-    })
+    }
+    return _jsonify_cached_payload(
+        response_payload,
+        cache_name=live_cache_name,
+        cache_parts=live_cache_parts,
+    )
 
 @app.route('/session_remaining')
 def session_remaining():
@@ -65191,7 +57877,7 @@ def api_corporate_export_excel():
     search_query = (request.args.get("search_query") or "").strip().lower()
 
     # Check Access
-    allowed_units = _allowed_units_for_session()
+    allowed_units = _corp_recon_allowed_units_for_session()
     if allowed_units and unit not in allowed_units:
         return "Access denied for this unit", 403
 
@@ -65200,7 +57886,7 @@ def api_corporate_export_excel():
     except:
         vt_int = 0
 
-    if unit in {"AHL", "ACI"}:
+    if unit in {"AHL", "ACI", "SHARPSIGHT"}:
         from_dt, err = _corp_recon_parse_date(request.args.get("from_date"), "from_date")
         if err:
             return err, 400
@@ -65729,6 +58415,196 @@ def mis_store():
 
 
 
+
+
+def _register_occupancy_route_module():
+    register_occupancy_routes(
+        app,
+        login_required=login_required,
+        allowed_units_for_session=_allowed_units_for_session,
+        pick_db_cfg_for_proc=_pick_db_cfg_for_proc,
+        build_conn_str_from_dbconfig=_build_conn_str_from_dbconfig,
+        save_occupancy_snapshot=_save_occupancy_snapshot,
+        fetch_snapshot=_fetch_snapshot,
+        pct_change=_pct_change,
+        ensure_snapshot_detail_table=_ensure_snapshot_detail_table,
+        abs_local_db_path=_abs_local_db_path,
+        ensure_local_store=_ensure_local_store,
+        export_cache_get_bytes=_export_cache_get_bytes,
+        export_cache_put_bytes=_export_cache_put_bytes,
+        save_occupancy_snapshot_with_subtype=_save_occupancy_snapshot_with_subtype,
+        build_occupancy_snapshot_pdf_buffer=_build_occupancy_snapshot_pdf_buffer,
+        build_occupancy_average_pdf_buffer=_build_occupancy_average_pdf_buffer,
+        collect_current_occupancy_rows=_collect_current_occupancy_rows,
+        build_current_occupancy_pdf_buffer=_build_current_occupancy_pdf_buffer,
+        local_tz=LOCAL_TZ,
+    )
+
+
+def _register_patient_journey_route_module():
+    register_patient_journey_routes(
+        app,
+        login_required=login_required,
+        allowed_units_for_session=_allowed_units_for_session,
+        modification_units=_modification_units,
+        sanitize_json_payload=_sanitize_json_payload,
+        coerce_int=_coerce_int,
+    )
+
+
+def _register_purchase_route_modules():
+    register_purchase_master_routes(
+        app,
+        login_required=login_required,
+        allowed_purchase_units_for_session=_allowed_purchase_units_for_session,
+        role_base=_role_base,
+        can_use_def_po_print_format=_can_use_def_po_print_format,
+        get_purchase_unit=_get_purchase_unit,
+        build_purchase_department_payload=_build_purchase_department_payload,
+        clean_df_columns=_clean_df_columns,
+        normalize_purchase_unit_text=_normalize_purchase_unit_text,
+        sanitize_json_payload=_sanitize_json_payload,
+        purchase_dept_master_permissions=_purchase_dept_master_permissions,
+        safe_int=_safe_int,
+        upsert_purchasing_department=_upsert_purchasing_department,
+        build_purchase_department_master_rows=_build_purchase_department_master_rows,
+        set_purchasing_department_active=_set_purchasing_department_active,
+        delete_purchasing_department=_delete_purchasing_department,
+        purchase_unit_master_permissions=_purchase_unit_master_permissions,
+        purchase_normalize_email=_purchase_normalize_email,
+        purchase_is_valid_email=_purchase_is_valid_email,
+        build_master_list=_build_master_list,
+        row_value=_row_value,
+        build_supplier_params=_build_supplier_params,
+        build_manufacturer_params=_build_manufacturer_params,
+        load_item_master_lists=_load_item_master_lists,
+        build_item_master_params=_build_item_master_params,
+        build_item_update_params=_build_item_update_params,
+        build_purchase_unit_master_rows=_build_purchase_unit_master_rows,
+        mirror_new_supplier_master_to_family=_mirror_new_supplier_master_to_family,
+        build_replication_message=_build_replication_message,
+        unit_allows_zero_rate_mrp=_unit_allows_zero_rate_mrp,
+        ensure_purchase_unit_master_entry=_ensure_purchase_unit_master_entry,
+        mirror_new_item_master_to_family=_mirror_new_item_master_to_family,
+        item_master_descriptive_name_max=ITEM_MASTER_DESCRIPTIVE_NAME_MAX,
+        local_tz=LOCAL_TZ,
+        safe_float=_safe_float,
+        audit_log_event=_audit_log_event,
+    )
+
+    register_purchase_pm_indent_routes(
+        app,
+        login_required=login_required,
+        get_purchase_unit=_get_purchase_unit,
+        clean_df_columns=_clean_df_columns,
+        sanitize_json_payload=_sanitize_json_payload,
+        safe_float=_safe_float,
+        safe_int=_safe_int,
+        row_value=_row_value,
+        audit_log_event=_audit_log_event,
+        local_tz=LOCAL_TZ,
+    )
+
+    register_purchase_po_routes(
+        app,
+        login_required=login_required,
+        allowed_purchase_units_for_session=_allowed_purchase_units_for_session,
+        get_purchase_unit=_get_purchase_unit,
+        clean_df_columns=_clean_df_columns,
+        sanitize_json_payload=_sanitize_json_payload,
+        safe_float=_safe_float,
+        safe_int=_safe_int,
+        get_login_db_connection=_get_login_db_connection,
+        audit_log_event=_audit_log_event,
+        saved_po_print_format=_saved_po_print_format,
+        resolve_purchasing_department_name=_resolve_purchasing_department_name,
+        fetch_latest_purchase_otp_request=_fetch_latest_purchase_otp_request,
+        fetch_purchase_approval_meta=_fetch_purchase_approval_meta,
+        ensure_purchase_po_valuation_table=_ensure_purchase_po_valuation_table,
+        export_cache_get_bytes=_export_cache_get_bytes,
+        export_cache_put_bytes=_export_cache_put_bytes,
+        excel_job_get=_excel_job_get,
+        excel_job_update=_excel_job_update,
+        create_purchase_otp_request=_create_purchase_otp_request,
+        validate_purchase_otp=_validate_purchase_otp,
+        insert_purchase_otp_request=_insert_purchase_otp_request,
+        mark_purchase_otp_used=_mark_purchase_otp_used,
+        mark_central_otp_used=_mark_central_otp_used,
+        fetch_purchase_otp_request_by_id=_fetch_purchase_otp_request_by_id,
+        send_purchase_po_approval_email=_send_purchase_po_approval_email,
+        build_po_pdf_buffer=_build_po_pdf_buffer,
+        resolve_po_print_format_for_persistence=_resolve_po_print_format_for_persistence,
+        resolve_po_print_format_for_render=_resolve_po_print_format_for_render,
+        purchase_normalize_email=_purchase_normalize_email,
+        purchase_is_valid_email=_purchase_is_valid_email,
+        send_graph_mail_with_attachment=_send_graph_mail_with_attachment,
+        build_po_supplier_dispatch_email_body=_build_po_supplier_dispatch_email_body,
+        normalize_po_header_for_audit=_normalize_po_header_for_audit,
+        diff_simple_fields=_diff_simple_fields,
+        diff_po_items=_diff_po_items,
+        ensure_item_masters_for_po=_ensure_item_masters_for_po,
+        sync_purchase_po_valuation_rows=_sync_purchase_po_valuation_rows,
+        po_val_should_sync=_po_val_should_sync,
+        po_val_sync_key=_po_val_sync_key,
+        po_val_sync_cache_put=_po_val_sync_cache_put,
+        fetch_purchasing_departments=_fetch_purchasing_departments,
+        format_indian_currency=_format_indian_currency,
+        is_truthy=_is_truthy,
+        otp_po_request_type=OTP_PO_REQUEST_TYPE,
+        po_valuation_start_date=PO_VALUATION_START_DATE,
+        export_executor=EXPORT_EXECUTOR,
+        po_val_sync_cache=PO_VAL_SYNC_CACHE,
+        po_val_sync_lock=PO_VAL_SYNC_LOCK,
+        local_tz=LOCAL_TZ,
+    )
+
+
+    register_purchase_work_order_routes(
+        app,
+        login_required=login_required,
+        get_work_order_unit=_get_work_order_unit,
+        ensure_work_order_schema=_ensure_work_order_schema,
+        build_purchase_department_payload=_build_purchase_department_payload,
+        clean_df_columns=_clean_df_columns,
+        normalize_purchase_unit_text=_normalize_purchase_unit_text,
+        sanitize_json_payload=_sanitize_json_payload,
+        safe_float=_safe_float,
+        safe_int=_safe_int,
+        audit_log_event=_audit_log_event,
+        build_work_order_fallback_item=_build_work_order_fallback_item,
+        build_work_order_header_payload=_build_work_order_header_payload,
+        build_work_order_pdf_buffer=_build_work_order_pdf_buffer,
+        build_work_order_supplier_dispatch_email_body=_build_work_order_supplier_dispatch_email_body,
+        create_work_order_otp_request=_create_work_order_otp_request,
+        fallback_work_order_summary_from_header=_fallback_work_order_summary_from_header,
+        fetch_latest_purchase_otp_request=_fetch_latest_purchase_otp_request,
+        fetch_purchase_approval_meta=_fetch_purchase_approval_meta,
+        fetch_purchase_otp_request_by_id=_fetch_purchase_otp_request_by_id,
+        format_indian_currency=_format_indian_currency,
+        insert_purchase_otp_request=_insert_purchase_otp_request,
+        is_truthy=_is_truthy,
+        mark_central_otp_used=_mark_central_otp_used,
+        mark_purchase_otp_used=_mark_purchase_otp_used,
+        normalize_work_order_body_html=_normalize_work_order_body_html,
+        normalize_work_order_header_for_audit=_normalize_work_order_header_for_audit,
+        normalize_work_order_items=_normalize_work_order_items,
+        purchase_is_valid_email=_purchase_is_valid_email,
+        purchase_normalize_email=_purchase_normalize_email,
+        resolve_po_print_format_for_render=_resolve_po_print_format_for_render,
+        resolve_purchasing_department_name=_resolve_purchasing_department_name,
+        resolve_work_order_totals=_resolve_work_order_totals,
+        send_graph_mail_with_attachment=_send_graph_mail_with_attachment,
+        send_purchase_work_order_approval_email=_send_purchase_work_order_approval_email,
+        summarize_work_order_totals=_summarize_work_order_totals,
+        validate_purchase_otp=_validate_purchase_otp,
+        work_order_body_to_plain_text=_work_order_body_to_plain_text,
+        otp_work_order_request_type=OTP_WORK_ORDER_REQUEST_TYPE,
+        local_tz=LOCAL_TZ,
+    )
+
+_register_occupancy_route_module()
+_register_patient_journey_route_module()
+_register_purchase_route_modules()
 # ============================================================
 # Launch App
 # ============================================================

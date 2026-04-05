@@ -223,6 +223,187 @@
   .balances-table th.amount-header, .balances-table td.amount-cell { text-align:right; font-family:"Courier New", monospace; font-weight:600; }
   .balances-table tr.totals-row th { background:#e2e8f0; color:#0f172a; font-weight:800; }
   .ip-ledger-total { background:#fef9c3; font-weight:700; }
+  .ip-advance-wrap{
+    max-height:68vh;
+    overflow:auto;
+    border-radius:18px;
+    border:1px solid #dbe7f6;
+    background:
+      linear-gradient(180deg, rgba(255,255,255,.98), rgba(248,251,255,.96));
+    box-shadow: inset 0 1px 0 rgba(255,255,255,.75);
+  }
+  .ip-advance-table{
+    min-width:1360px;
+    table-layout:fixed;
+    background:transparent;
+  }
+  .ip-advance-table thead th{
+    position:sticky;
+    top:0;
+    z-index:3;
+    padding:14px 16px;
+    border-bottom:1px solid #d7e3f4;
+    background:linear-gradient(180deg, #f4f7ff, #eaf0ff);
+    color:#1e3a8a;
+    font-size:12px;
+    font-weight:800;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+    white-space:normal;
+  }
+  .ip-advance-table tbody tr{
+    transition:background-color .18s ease, box-shadow .18s ease;
+  }
+  .ip-advance-table tbody tr:hover{
+    background:#edf5ff !important;
+  }
+  .ip-advance-table td{
+    padding:14px 16px;
+    border-bottom:1px solid #e2e8f0;
+    vertical-align:top;
+    background:transparent;
+  }
+  .ip-advance-table tr.ip-advance-row--aftercutoff{
+    background:#f0fdf4;
+  }
+  .ip-advance-table tr.ip-advance-row--open{
+    background:#fffbeb;
+  }
+  .ip-advance-table tr.ip-advance-row--neutral{
+    background:#ffffff;
+  }
+  .ip-advance-table tr.ip-advance-row--aftercutoff td:first-child{
+    border-left:4px solid #22c55e;
+  }
+  .ip-advance-table tr.ip-advance-row--open td:first-child{
+    border-left:4px solid #f59e0b;
+  }
+  .ip-advance-table tr.ip-advance-row--neutral td:first-child{
+    border-left:4px solid #cbd5e1;
+  }
+  .ip-advance-table th.col-visit{ width:180px; }
+  .ip-advance-table th.col-patient{ width:210px; }
+  .ip-advance-table th.col-stay{ width:190px; }
+  .ip-advance-table th.col-location{ width:220px; }
+  .ip-advance-table th.col-category{ width:220px; }
+  .ip-advance-table th.col-receipt{ width:180px; }
+  .ip-advance-table th.col-amount{ width:150px; }
+  .ip-advance-table th.col-billing{ width:220px; }
+  .ip-adv-stack{
+    display:flex;
+    flex-direction:column;
+    gap:4px;
+    min-width:0;
+  }
+  .ip-adv-primary{
+    color:#0f172a;
+    font-size:14px;
+    font-weight:700;
+    line-height:1.35;
+    word-break:break-word;
+  }
+  .ip-adv-secondary{
+    color:#475569;
+    font-size:12px;
+    line-height:1.4;
+    word-break:break-word;
+  }
+  .ip-adv-meta{
+    color:#94a3b8;
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:.03em;
+    text-transform:uppercase;
+  }
+  .ip-adv-code{
+    font-family:"Courier New", monospace;
+    font-weight:700;
+    letter-spacing:.02em;
+  }
+  .ip-adv-inline{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    align-items:center;
+  }
+  .ip-adv-badge{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    width:max-content;
+    max-width:100%;
+    padding:4px 10px;
+    border-radius:999px;
+    border:1px solid transparent;
+    font-size:11px;
+    font-weight:800;
+    line-height:1.2;
+  }
+  .ip-adv-badge--open{
+    background:#fffbeb;
+    border-color:#fde68a;
+    color:#92400e;
+  }
+  .ip-adv-badge--discharged{
+    background:#eff6ff;
+    border-color:#bfdbfe;
+    color:#1d4ed8;
+  }
+  .ip-adv-badge--unbilled{
+    background:#eef2ff;
+    border-color:#c7d2fe;
+    color:#4338ca;
+  }
+  .ip-adv-badge--aftercutoff{
+    background:#ecfdf3;
+    border-color:#86efac;
+    color:#166534;
+  }
+  .ip-adv-badge--billed{
+    background:#f8fafc;
+    border-color:#cbd5e1;
+    color:#334155;
+  }
+  .ip-adv-pay{
+    display:inline-flex;
+    align-items:center;
+    width:max-content;
+    padding:3px 8px;
+    border-radius:999px;
+    background:#f8fafc;
+    border:1px solid #dbe4f0;
+    color:#334155;
+    font-size:11px;
+    font-weight:700;
+  }
+  .ip-adv-amount{
+    color:#0f172a;
+    font-family:"Courier New", monospace;
+    font-size:18px;
+    font-weight:800;
+    letter-spacing:.01em;
+    text-align:right;
+  }
+  .ip-adv-amount-sub{
+    color:#64748b;
+    font-size:11px;
+    font-weight:700;
+    text-align:right;
+    text-transform:uppercase;
+    letter-spacing:.04em;
+  }
+  .ip-adv-num{
+    text-align:right;
+  }
+  @media (max-width: 1024px){
+    .ip-advance-table{
+      min-width:1200px;
+    }
+    .ip-advance-table thead th,
+    .ip-advance-table td{
+      padding:12px 13px;
+    }
+  }
 
   /* History Groups */
   .hist-group { border:1px solid #e5e7eb; border-radius:12px; margin-bottom:12px; overflow:hidden; background:#fff; box-shadow:0 6px 14px rgba(0,0,0,.06); }
@@ -322,7 +503,7 @@
   .diag-table tr.bb-row-cancelled{ background:#fff9f9; }
   .diag-table tr.bb-row-billing{ background:#fafbff; }
   .bb-recon-table{
-    min-width:2200px;
+    min-width:2330px;
     table-layout:fixed;
   }
   .bb-table-wrap{
@@ -351,6 +532,7 @@
   .bb-recon-table th.col-status{ width:128px; }
   .bb-recon-table th.col-timeline{ width:200px; }
   .bb-recon-table th.col-reg{ width:140px; }
+  .bb-recon-table th.col-visitno{ width:130px; }
   .bb-recon-table th.col-patient{ width:185px; }
   .bb-recon-table th.col-service{ width:195px; }
   .bb-recon-table th.col-qty{ width:70px; }
@@ -579,6 +761,11 @@
   <div class="view-card" data-view="ip_ledger_summary">
     <h3><span class="view-icon">IS</span>Summarized IP Ledger</h3>
     <p>Visit-wise billing vs receipts summary.</p>
+  </div>
+
+  <div class="view-card" data-view="ip_advance_provision">
+    <h3><span class="view-icon">AP</span>IP Advance Provision</h3>
+    <p>Advance receipts still pending final hospital billing as of a cutoff date.</p>
   </div>
 
   <div class="view-card" data-view="due">
@@ -1038,7 +1225,7 @@
       </div>
       <div class="collapsible-body collapsed" id="bbDetailBody">
         <div class="detail-controls">
-          <input type="text" id="bbSearch" placeholder="Search patient, service, reg no, order no, status, shifted history">
+          <input type="text" id="bbSearch" placeholder="Search patient, service, reg no, visit no, order no, status, shifted history">
           <label class="bb-discrepancy-toggle" title="Show only pending or cancelled rows">
             <input type="checkbox" id="bbOpenOnly">
             <span>Open discrepancies only</span>
@@ -1059,6 +1246,7 @@
                 <th class="col-status">Status</th>
                 <th class="col-timeline">Bill / Order Date</th>
                 <th class="col-reg">Reg No</th>
+                <th class="col-visitno">Visit No</th>
                 <th class="col-patient">Patient</th>
                 <th class="col-service">Service</th>
                 <th class="num col-qty">Qty</th>
@@ -1073,7 +1261,7 @@
               </tr>
             </thead>
             <tbody id="bbTableBody">
-              <tr><td colspan="15" style="text-align:center; color:#94a3b8; padding:30px;">Load data to view details.</td></tr>
+              <tr><td colspan="16" style="text-align:center; color:#94a3b8; padding:30px;">Load data to view details.</td></tr>
             </tbody>
           </table>
         </div>
@@ -1337,6 +1525,71 @@
     <div class="status" id="ipLedgerStatus" style="margin-top:12px;"></div>
     <div class="table-wrap" id="ipLedgerTable"></div>
     <div class="status" id="ipLedgerPager" style="margin-top:8px; text-align:right;"></div>
+  </section>
+
+  <section id="ipAdvanceProvisionView" class="view-panel" style="display:none;">
+    <div class="controls" id="ipAdvanceFilters">
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <label>Admission From</label>
+        <input type="date" id="ipAdvanceAdmissionFrom">
+      </div>
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <label>Admission To</label>
+        <input type="date" id="ipAdvanceAdmissionTo">
+      </div>
+      <div style="display:flex; flex-direction:column; gap:6px; min-width:180px;">
+        <label>Basis</label>
+        <select id="ipAdvanceBasis">
+          <option value="discharge">Discharge Window</option>
+          <option value="as_on">As On Date</option>
+        </select>
+      </div>
+      <div id="ipAdvanceDischargeRange" style="display:flex; gap:10px; flex-wrap:wrap;">
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <label>Discharge From</label>
+          <input type="date" id="ipAdvanceDischargeFrom">
+        </div>
+        <div style="display:flex; flex-direction:column; gap:6px;">
+          <label>Discharge To</label>
+          <input type="date" id="ipAdvanceDischargeTo">
+        </div>
+      </div>
+      <div id="ipAdvanceAsOnWrap" style="display:none; flex-direction:column; gap:6px;">
+        <label>As On Date</label>
+        <input type="date" id="ipAdvanceAsOnDate">
+      </div>
+      <div style="display:flex; flex-direction:column; gap:6px;">
+        <label>Unit</label>
+        <select id="ipAdvanceUnit">
+          {% for u in allowed_units %}
+            <option value="{{ u }}">{{ u }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div style="display:flex; flex-direction:column; gap:6px; min-width:240px;">
+        <label>Search</label>
+        <input type="text" id="ipAdvanceSearch" placeholder="Search visit, patient, reg no, bill status, doctor">
+      </div>
+      <div>
+        <button id="ipAdvanceLoad">Load Provision</button>
+        <button id="ipAdvanceExportXlsx" style="margin-left:8px;">Export XLSX</button>
+      </div>
+    </div>
+    <div class="cards-grid" style="margin-top:20px;">
+      <section class="card card--actionable">
+        <div class="card-head">
+          <h2>IP Advance Provision</h2>
+          <p>Visit-wise advance receipts still pending final hospital billing as on the provision cutoff.</p>
+        </div>
+        <div class="status" id="ipAdvanceExplain" style="margin-bottom:14px; color:#475569;"></div>
+        <div class="kpi-grid" id="ipAdvanceKpi">
+          <div class="kpi-empty">Load filters to view advance provisions.</div>
+        </div>
+      </section>
+    </div>
+    <div class="status" id="ipAdvanceStatus" style="margin-top:12px;"></div>
+    <div class="table-wrap" id="ipAdvanceTable"></div>
+    <div class="status" id="ipAdvancePager" style="margin-top:8px; text-align:right;"></div>
   </section>
 
   <section id="dueView" class="view-panel" style="display:none;">
@@ -1747,6 +2000,28 @@
       const compSearchEl = document.getElementById('compSearch');
       const compPager = document.getElementById('compPager');
       const today = new Date().toISOString().slice(0,10);
+      const formatInputDateLocal = (value)=>{
+        const dt = value instanceof Date ? value : new Date(value);
+        if(!dt || isNaN(dt)) return '';
+        const year = dt.getFullYear();
+        const month = String(dt.getMonth() + 1).padStart(2, '0');
+        const day = String(dt.getDate()).padStart(2, '0');
+        return `${year}-${month}-${day}`;
+      };
+      const getIpAdvanceDefaultFilters = ()=>{
+        const now = new Date();
+        const currentMonthStart = new Date(now.getFullYear(), now.getMonth(), 1);
+        const previousMonthEnd = new Date(now.getFullYear(), now.getMonth(), 0);
+        const previousMonthStart = new Date(previousMonthEnd.getFullYear(), previousMonthEnd.getMonth(), 1);
+        return {
+          basis: 'discharge',
+          admission_from: formatInputDateLocal(previousMonthStart),
+          admission_to: formatInputDateLocal(previousMonthEnd),
+          discharge_from: formatInputDateLocal(currentMonthStart),
+          discharge_to: formatInputDateLocal(now),
+          as_on_date: formatInputDateLocal(now)
+        };
+      };
       const fabToggle = document.getElementById('fabToggle');
       const fabMenu = document.getElementById('fabMenu');
       // const fabTimer = document.getElementById('fabTimer');
@@ -1915,6 +2190,25 @@
       const ipLedgerStatus = document.getElementById('ipLedgerStatus');
       const ipLedgerPager = document.getElementById('ipLedgerPager');
       const ipLedgerFiltersWrap = document.getElementById('ipLedgerFilters');
+      const ipAdvanceView = document.getElementById('ipAdvanceProvisionView');
+      const ipAdvanceAdmissionFromEl = document.getElementById('ipAdvanceAdmissionFrom');
+      const ipAdvanceAdmissionToEl = document.getElementById('ipAdvanceAdmissionTo');
+      const ipAdvanceBasisSel = document.getElementById('ipAdvanceBasis');
+      const ipAdvanceDischargeFromEl = document.getElementById('ipAdvanceDischargeFrom');
+      const ipAdvanceDischargeToEl = document.getElementById('ipAdvanceDischargeTo');
+      const ipAdvanceAsOnDateEl = document.getElementById('ipAdvanceAsOnDate');
+      const ipAdvanceDischargeRangeEl = document.getElementById('ipAdvanceDischargeRange');
+      const ipAdvanceAsOnWrapEl = document.getElementById('ipAdvanceAsOnWrap');
+      const ipAdvanceUnitSel = document.getElementById('ipAdvanceUnit');
+      const ipAdvanceSearchEl = document.getElementById('ipAdvanceSearch');
+      const ipAdvanceLoadBtn = document.getElementById('ipAdvanceLoad');
+      const ipAdvanceExportXlsxBtn = document.getElementById('ipAdvanceExportXlsx');
+      const ipAdvanceKpi = document.getElementById('ipAdvanceKpi');
+      const ipAdvanceExplain = document.getElementById('ipAdvanceExplain');
+      const ipAdvanceStatus = document.getElementById('ipAdvanceStatus');
+      const ipAdvanceTable = document.getElementById('ipAdvanceTable');
+      const ipAdvancePager = document.getElementById('ipAdvancePager');
+      const ipAdvanceFiltersWrap = document.getElementById('ipAdvanceFilters');
       let collData = [];
       let collFiltered = [];
       let collPage = 1;
@@ -1952,9 +2246,15 @@
       let bbPage = 1;
       const bbPageSize = 20;
       let billShareRows = [];
-      let billShareFiltered = [];
       let billSharePage = 1;
       const billSharePageSize = 20;
+      let billShareTotalRecords = null;
+      let billShareFilteredRecords = null;
+      let billShareTotalPages = null;
+      let billShareHasNextPage = false;
+      let billShareSummaryLoaded = false;
+      let billShareSummaryKey = '';
+      let billShareRequestSeq = 0;
       let billShareDoctors = [];
       let billShareDoctorIndex = new Map();
       let ipPkgData = [];
@@ -2809,11 +3109,11 @@
 
       const renderBbKpis = (summaryRows = [], totalQty = 0, totalRevenue = 0, statusTotals = {}) => {
         if (!bbKpis) return;
-        if (!summaryRows.length) {
+        const rowCount = Number(statusTotals.row_count || 0);
+        if (!rowCount) {
           bbKpis.innerHTML = '<div class="kpi-empty">No blood bank data for current filter.</div>';
           return;
         }
-        const rowCount = Number(statusTotals.row_count || 0);
         const pendingCount = Number(statusTotals.pending_count || 0);
         const shiftedCount = Number(statusTotals.shifted_count || 0);
         const cancelledCount = Number(statusTotals.cancelled_count || 0);
@@ -2893,8 +3193,11 @@
           const qty = parseNumber(row.Quantity);
           const amt = parseNumber(row.Amount);
           const key = getBbStatusKey(row);
-          totalQty += qty;
-          if (key !== 'cancelled') totalRevenue += amt;
+          const includeFinancials = key !== 'cancelled';
+          if (includeFinancials) {
+            totalQty += qty;
+            totalRevenue += amt;
+          }
 
           const source = cleanText(row.RecordSource).toUpperCase();
           if (source === 'ORDER') orderCount += 1;
@@ -2904,12 +3207,14 @@
           else if (key === 'shifted') shiftedCount += 1;
           else if (key === 'cancelled') cancelledCount += 1;
 
-          const service = cleanText(row.Service_Name || row.Service || 'Unknown') || 'Unknown';
-          const prev = serviceMap.get(service) || { Service_Name: service, Quantity: 0, Revenue: 0, Records: 0 };
-          prev.Quantity += qty;
-          if (key !== 'cancelled') prev.Revenue += amt;
-          prev.Records += 1;
-          serviceMap.set(service, prev);
+          if (includeFinancials) {
+            const service = cleanText(row.Service_Name || row.Service || 'Unknown') || 'Unknown';
+            const prev = serviceMap.get(service) || { Service_Name: service, Quantity: 0, Revenue: 0, Records: 0 };
+            prev.Quantity += qty;
+            prev.Revenue += amt;
+            prev.Records += 1;
+            serviceMap.set(service, prev);
+          }
         });
 
         const summaryRows = Array.from(serviceMap.values()).sort((a, b) => {
@@ -2942,6 +3247,7 @@
           row.OrderDateTime,
           row.ShiftedToBillingDate,
           row.RegNo,
+          row.VisitNo,
           row.Patient,
           row.Service_Name,
           row.Sub_Dept,
@@ -3006,7 +3312,7 @@
 
       const bbJoinParts = (parts = []) => parts.map((p) => cleanText(p)).filter(Boolean).join(' | ');
 
-      const BB_COLSPAN = 15;
+      const BB_COLSPAN = 16;
       const renderBbPage = () => {
         if (!bbTableBody) return;
         const total = bbFiltered.length;
@@ -3063,6 +3369,7 @@
             <td><span class="${statusBadgeClass}">${escapeHtml(getBbStatusLabel(row))}</span></td>
             <td class="bb-cell-timeline" title="${escapeHtml(timelineText)}"><div class="bb-compact">${escapeHtml(timelineText || '--')}</div></td>
             <td>${escapeHtml(row.RegNo || '')}</td>
+            <td>${escapeHtml(row.VisitNo || '')}</td>
             <td class="bb-cell-patient" title="${escapeHtml(row.Patient || '')}"><div class="bb-compact">${escapeHtml(row.Patient || '--')}</div></td>
             <td class="bb-cell-service" title="${escapeHtml(row.Service_Name || '')}"><div class="bb-compact">${escapeHtml(row.Service_Name || '--')}</div></td>
             <td class="num">${Number(row.Quantity || 0).toLocaleString('en-IN')}</td>
@@ -3243,7 +3550,8 @@
 
       const renderBillShareKpis = (summaryRows = [], totalQty = 0, totalRevenue = 0) => {
         if (!billShareKpis) return;
-        if (!summaryRows.length) {
+        const hasTotals = Number(totalQty || 0) > 0 || Number(totalRevenue || 0) > 0;
+        if (!summaryRows.length && !hasTotals) {
           billShareKpis.innerHTML = '<div class="kpi-empty">No doctor share data for this range.</div>';
           return;
         }
@@ -3359,20 +3667,37 @@
 
       const renderBillSharePage = () => {
         if (!billShareTableBody) return;
-        const total = billShareFiltered.length;
-        if (!total) {
-          billShareTableBody.innerHTML = '<tr><td colspan="14" style="text-align:center; color:#94a3b8; padding:30px;">No doctor share records.</td></tr>';
-          if (billShareMeta) billShareMeta.textContent = '0 records';
-          if (billSharePageInfo) billSharePageInfo.textContent = '';
-          if (billSharePrev) billSharePrev.disabled = true;
-          if (billShareNext) billShareNext.disabled = true;
+        const pageRows = Array.isArray(billShareRows) ? billShareRows : [];
+        const totalRecordsKnown = billShareTotalRecords !== null && billShareTotalRecords !== undefined;
+        const filteredRecordsKnown = billShareFilteredRecords !== null && billShareFilteredRecords !== undefined;
+        const totalPagesKnown = billShareTotalPages !== null && billShareTotalPages !== undefined;
+        const totalRecords = totalRecordsKnown ? Math.max(0, Number(billShareTotalRecords || 0)) : null;
+        const filteredRecords = filteredRecordsKnown ? Math.max(0, Number(billShareFilteredRecords || 0)) : null;
+        const totalPages = totalPagesKnown ? Math.max(1, Number(billShareTotalPages || 1)) : null;
+        const searchQuery = (billShareSearchEl?.value || '').trim();
+        if (!pageRows.length) {
+          const emptyMessage = filteredRecordsKnown && filteredRecords
+            ? 'No doctor share records on this page.'
+            : 'No doctor share records.';
+          billShareTableBody.innerHTML = `<tr><td colspan="14" style="text-align:center; color:#94a3b8; padding:30px;">${emptyMessage}</td></tr>`;
+          if (billShareMeta) {
+            if (searchQuery && filteredRecordsKnown && totalRecordsKnown) {
+              billShareMeta.textContent = `${filteredRecords.toLocaleString('en-IN')} matching of ${totalRecords.toLocaleString('en-IN')} records`;
+            } else if (totalRecordsKnown) {
+              billShareMeta.textContent = `${totalRecords.toLocaleString('en-IN')} records`;
+            } else {
+              billShareMeta.textContent = 'Totals loading...';
+            }
+          }
+          if (billSharePageInfo) {
+            billSharePageInfo.textContent = filteredRecordsKnown && filteredRecords
+              ? (totalPagesKnown ? `Page ${billSharePage} / ${totalPages}` : `Page ${billSharePage}`)
+              : '';
+          }
+          if (billSharePrev) billSharePrev.disabled = billSharePage <= 1;
+          if (billShareNext) billShareNext.disabled = totalPagesKnown ? billSharePage >= totalPages : !billShareHasNextPage;
           return;
         }
-        const totalPages = Math.max(1, Math.ceil(total / billSharePageSize));
-        billSharePage = Math.min(Math.max(billSharePage, 1), totalPages);
-        const start = (billSharePage - 1) * billSharePageSize;
-        const end = Math.min(start + billSharePageSize, total);
-        const pageRows = billShareFiltered.slice(start, end);
         billShareTableBody.innerHTML = pageRows.map((row) => `
           <tr>
             <td>${escapeHtml(row.BillDate || '')}</td>
@@ -3391,57 +3716,102 @@
             <td>${escapeHtml(row.DischargeDate || '')}</td>
           </tr>
         `).join('');
-        if (billShareMeta) billShareMeta.textContent = `${total.toLocaleString('en-IN')} records`;
-        if (billSharePageInfo) billSharePageInfo.textContent = `Page ${billSharePage} / ${totalPages}`;
+        if (billShareMeta) {
+          if (searchQuery && filteredRecordsKnown && totalRecordsKnown) {
+            billShareMeta.textContent = `${filteredRecords.toLocaleString('en-IN')} matching of ${totalRecords.toLocaleString('en-IN')} records`;
+          } else if (totalRecordsKnown) {
+            billShareMeta.textContent = `${totalRecords.toLocaleString('en-IN')} records`;
+          } else {
+            billShareMeta.textContent = `${pageRows.length.toLocaleString('en-IN')} rows on this page • totals loading...`;
+          }
+        }
+        if (billSharePageInfo) billSharePageInfo.textContent = totalPagesKnown ? `Page ${billSharePage} / ${totalPages}` : `Page ${billSharePage}`;
         if (billSharePrev) billSharePrev.disabled = billSharePage <= 1;
-        if (billShareNext) billShareNext.disabled = billSharePage >= totalPages;
+        if (billShareNext) billShareNext.disabled = totalPagesKnown ? billSharePage >= totalPages : !billShareHasNextPage;
       };
 
       const applyBillShareFilter = () => {
-        const q = (billShareSearchEl?.value || '').trim().toLowerCase();
-        if (!q) {
-          billShareFiltered = billShareRows.slice();
-        } else {
-          billShareFiltered = billShareRows.filter((row) => row.__search.includes(q));
-        }
-        billSharePage = 1;
-        renderBillSharePage();
+        loadBillwiseDoctorShare({ page: 1, includeSummary: true });
       };
 
-      const loadBillwiseDoctorShare = async () => {
+      const loadBillwiseDoctorShare = async ({ page = 1, includeSummary = true } = {}) => {
         const unit = billShareUnitSel?.value || unitSel?.value || '';
         const from = billShareFromEl?.value || today;
         const to = billShareToEl?.value || today;
         const docId = (billShareDocIdEl?.value || '').trim() || syncBillShareDoctorIdFromName();
         const vtype = (billShareVisitTypeSel?.value || '0').trim();
+        const requestedPage = Math.max(1, Number(page || 1));
+        const searchQuery = (billShareSearchEl?.value || '').trim();
+        const scopeKey = [unit, from, to, docId, vtype, searchQuery.toLowerCase()].join('|');
+        const requestSeq = ++billShareRequestSeq;
         if (!unit || !from || !to || !docId) {
           setBillShareAlert('Select unit, date range, and doctor before loading.', 'warn');
           return;
         }
         setBillShareAlert('Loading doctor share... Please wait.', 'loading');
-        if (billShareKpis) billShareKpis.innerHTML = '<div class="kpi-empty">Loading doctor share KPIs...</div>';
-        if (billShareTableBody) billShareTableBody.innerHTML = '<tr><td colspan="14" style="text-align:center; color:#94a3b8; padding:30px;">Loading doctor share...</td></tr>';
+        if (billSharePrev) billSharePrev.disabled = true;
+        if (billShareNext) billShareNext.disabled = true;
+        if (includeSummary && billShareKpis) {
+          billShareKpis.innerHTML = '<div class="kpi-empty">Loading doctor share KPIs...</div>';
+        }
+        if (includeSummary) {
+          billShareSummaryLoaded = false;
+          billShareSummaryKey = '';
+          billShareTotalRecords = null;
+          billShareFilteredRecords = null;
+          billShareTotalPages = null;
+          billShareHasNextPage = false;
+        }
+        if (includeSummary && billShareTableBody) {
+          billShareTableBody.innerHTML = '<tr><td colspan="14" style="text-align:center; color:#94a3b8; padding:30px;">Loading doctor share...</td></tr>';
+        }
         try {
-          const url = `/api/mis/billwise_doctorshare?unit=${encodeURIComponent(unit)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&doc_id=${encodeURIComponent(docId)}&vtype=${encodeURIComponent(vtype)}`;
+          const url = `/api/mis/billwise_doctorshare?unit=${encodeURIComponent(unit)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&doc_id=${encodeURIComponent(docId)}&vtype=${encodeURIComponent(vtype)}&page=${encodeURIComponent(requestedPage)}&page_size=${encodeURIComponent(billSharePageSize)}&search=${encodeURIComponent(searchQuery)}&include_summary=${includeSummary ? '1' : '0'}&mode=full`;
           const res = await fetch(url);
           const data = await res.json();
+          if (requestSeq !== billShareRequestSeq) return;
           if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to load data');
-          billShareRows = (data.details || []).map((row) => ({
-            ...row,
-            __search: buildBillShareSearchIndex(row)
-          }));
-          billShareFiltered = billShareRows.slice();
-          billSharePage = 1;
-          renderBillShareKpis(data.service_summary || [], data.total_quantity || 0, data.total_revenue || 0);
+          billShareRows = Array.isArray(data.details) ? data.details : [];
+          billSharePage = Math.max(1, Number(data.page || requestedPage || 1));
+          billShareHasNextPage = !!data.has_next_page;
+          billShareTotalPages = data.total_pages !== null && data.total_pages !== undefined
+            ? Math.max(1, Number(data.total_pages || 1))
+            : 1;
+          billShareTotalRecords = data.total_records !== null && data.total_records !== undefined
+            ? Math.max(0, Number(data.total_records || 0))
+            : 0;
+          billShareFilteredRecords = data.filtered_records !== null && data.filtered_records !== undefined
+            ? Math.max(0, Number(data.filtered_records ?? data.total_records ?? 0))
+            : billShareTotalRecords;
+          if (includeSummary) {
+            renderBillShareKpis(data.service_summary || [], data.total_quantity || 0, data.total_revenue || 0);
+            billShareSummaryLoaded = true;
+            billShareSummaryKey = scopeKey;
+          }
           renderBillSharePage();
-          setBillShareAlert(`Loaded ${billShareRows.length} records for ${unit}.`, 'success');
+          const filteredCount = Math.max(0, Number(billShareFilteredRecords ?? billShareTotalRecords ?? 0));
+          const totalCount = Math.max(0, Number(billShareTotalRecords ?? 0));
+          const pageText = `Page ${billSharePage} of ${billShareTotalPages}.`;
+          const scopeText = searchQuery
+            ? `${filteredCount.toLocaleString('en-IN')} matching of ${totalCount.toLocaleString('en-IN')} records`
+            : `${totalCount.toLocaleString('en-IN')} records for ${unit}`;
+          setBillShareAlert(`Loaded ${scopeText} ${pageText}`, 'success');
         } catch (err) {
+          if (requestSeq !== billShareRequestSeq) return;
           setBillShareAlert(err.message || 'Failed to load data.', 'error');
-          billShareRows = [];
-          billShareFiltered = [];
-          billSharePage = 1;
-          renderBillShareKpis([], 0, 0);
-          renderBillSharePage();
+          if (includeSummary) {
+            billShareRows = [];
+            billSharePage = 1;
+            billShareTotalPages = null;
+            billShareTotalRecords = null;
+            billShareFilteredRecords = null;
+            billShareHasNextPage = false;
+            billShareSummaryLoaded = false;
+            renderBillShareKpis([], 0, 0);
+            renderBillSharePage();
+          } else {
+            renderBillSharePage();
+          }
         }
       };
 
@@ -5178,7 +5548,7 @@
         renderDueTrackView(dueFiltered);
       }
       function setActiveView(mode){
-        if(mode !== 'ipd' && mode !== 'due' && mode !== 'collections' && mode !== 'refund_tracker' && mode !== 'payment_mode_updates' && mode !== 'compliance' && mode !== 'service_ledger' && mode !== 'diagnostics_share' && mode !== 'doctor_medicine' && mode !== 'doctorwise_dpv' && mode !== 'bloodbank_billing' && mode !== 'billwise_doctorshare' && mode !== 'phc_ledger' && mode !== 'ip_package_ledger' && mode !== 'balances' && mode !== 'ip_ledger_summary' && mode !== 'ip_consumables'){
+        if(mode !== 'ipd' && mode !== 'due' && mode !== 'collections' && mode !== 'refund_tracker' && mode !== 'payment_mode_updates' && mode !== 'compliance' && mode !== 'service_ledger' && mode !== 'diagnostics_share' && mode !== 'doctor_medicine' && mode !== 'doctorwise_dpv' && mode !== 'bloodbank_billing' && mode !== 'billwise_doctorshare' && mode !== 'phc_ledger' && mode !== 'ip_package_ledger' && mode !== 'balances' && mode !== 'ip_ledger_summary' && mode !== 'ip_advance_provision' && mode !== 'ip_consumables'){
           activeView = null;
           viewCards.forEach(card=> card.classList.remove('active'));
           if(ipdView) ipdView.style.display = 'none';
@@ -5198,6 +5568,7 @@
           if(ipPkgView) ipPkgView.style.display = 'none';
           if(balView) balView.style.display = 'none';
           if(ipLedgerView) ipLedgerView.style.display = 'none';
+          if(ipAdvanceView) ipAdvanceView.style.display = 'none';
           if(ipConsFiltersWrap) ipConsFiltersWrap.classList.remove('is-visible');
           if(diagFiltersWrap) diagFiltersWrap.classList.remove('is-visible');
           if(docMedFiltersWrap) docMedFiltersWrap.classList.remove('is-visible');
@@ -5207,6 +5578,7 @@
           if(refundFiltersWrap) refundFiltersWrap.classList.remove('is-visible');
           if(pmuFiltersWrap) pmuFiltersWrap.classList.remove('is-visible');
           if(ipPkgFiltersWrap) ipPkgFiltersWrap.classList.remove('is-visible');
+          if(ipAdvanceFiltersWrap) ipAdvanceFiltersWrap.classList.remove('is-visible');
           return;
         }
         activeView = mode;
@@ -5231,6 +5603,7 @@
         if(ipPkgView) ipPkgView.style.display = mode === 'ip_package_ledger' ? 'block' : 'none';
         if(balView) balView.style.display = mode === 'balances' ? 'block' : 'none';
         if(ipLedgerView) ipLedgerView.style.display = mode === 'ip_ledger_summary' ? 'block' : 'none';
+        if(ipAdvanceView) ipAdvanceView.style.display = mode === 'ip_advance_provision' ? 'block' : 'none';
         if(slFiltersWrap && mode === 'service_ledger') slFiltersWrap.classList.add('is-visible');
         if(diagFiltersWrap){
           if(mode === 'diagnostics_share') {
@@ -5292,6 +5665,14 @@
           if(mode === 'ip_ledger_summary') ipLedgerFiltersWrap.classList.add('is-visible');
           else ipLedgerFiltersWrap.classList.remove('is-visible');
         }
+        if(ipAdvanceFiltersWrap){
+          if(mode === 'ip_advance_provision') {
+            ipAdvanceFiltersWrap.classList.add('is-visible');
+            updateIpAdvanceBasisUi();
+          } else {
+            ipAdvanceFiltersWrap.classList.remove('is-visible');
+          }
+        }
         if(dueFiltersWrap){
           if(mode === 'due') dueFiltersWrap.classList.add('is-visible');
           else dueFiltersWrap.classList.remove('is-visible');
@@ -5335,6 +5716,7 @@
         if(mode === 'ip_package_ledger') return ipPkgView;
         if(mode === 'balances') return balView;
         if(mode === 'ip_ledger_summary') return ipLedgerView;
+        if(mode === 'ip_advance_provision') return ipAdvanceView;
         if(mode === 'ip_consumables') return ipConsView;
         if(mode === 'service_ledger') return slView;
         if(mode === 'compliance') return document.getElementById('complianceView');
@@ -5780,6 +6162,14 @@
       if(balToEl) balToEl.value = today;
       if(ipLedgerFromEl) ipLedgerFromEl.value = today;
       if(ipLedgerToEl) ipLedgerToEl.value = today;
+      const ipAdvanceDefaults = getIpAdvanceDefaultFilters();
+      if(ipAdvanceAdmissionFromEl) ipAdvanceAdmissionFromEl.value = ipAdvanceDefaults.admission_from;
+      if(ipAdvanceAdmissionToEl) ipAdvanceAdmissionToEl.value = ipAdvanceDefaults.admission_to;
+      if(ipAdvanceBasisSel) ipAdvanceBasisSel.value = ipAdvanceDefaults.basis;
+      if(ipAdvanceDischargeFromEl) ipAdvanceDischargeFromEl.value = ipAdvanceDefaults.discharge_from;
+      if(ipAdvanceDischargeToEl) ipAdvanceDischargeToEl.value = ipAdvanceDefaults.discharge_to;
+      if(ipAdvanceAsOnDateEl) ipAdvanceAsOnDateEl.value = ipAdvanceDefaults.as_on_date;
+      if(typeof updateIpAdvanceBasisUi === 'function') updateIpAdvanceBasisUi();
 
       // --- Filter Helper for WYSIWYG ---
       function getFilteredData() {
@@ -5823,6 +6213,11 @@
       let ipLedgerFiltered = [];
       let ipLedgerPage = 1;
       const ipLedgerPageSize = 20;
+      let ipAdvanceData = [];
+      let ipAdvanceFiltered = [];
+      let ipAdvanceSummary = {};
+      let ipAdvancePage = 1;
+      const ipAdvancePageSize = 20;
       updateKpis([]);
       const revealFilters = ()=>{
         if(filtersVisible || !controlsWrap) return;
@@ -7273,6 +7668,309 @@
         }
       }
 
+      function updateIpAdvanceBasisUi(){
+        const basis = (ipAdvanceBasisSel?.value || 'discharge').toLowerCase();
+        if(ipAdvanceDischargeRangeEl){
+          ipAdvanceDischargeRangeEl.style.display = basis === 'discharge' ? 'flex' : 'none';
+        }
+        if(ipAdvanceAsOnWrapEl){
+          ipAdvanceAsOnWrapEl.style.display = basis === 'as_on' ? 'flex' : 'none';
+        }
+        if(ipAdvanceDischargeFromEl) ipAdvanceDischargeFromEl.disabled = basis !== 'discharge';
+        if(ipAdvanceDischargeToEl) ipAdvanceDischargeToEl.disabled = basis !== 'discharge';
+        if(ipAdvanceAsOnDateEl) ipAdvanceAsOnDateEl.disabled = basis !== 'as_on';
+        if(ipAdvanceExplain){
+          ipAdvanceExplain.textContent = basis === 'discharge'
+            ? 'Discharge Window mode now shows overall standing advances as on Admission To: visits discharged after the cutoff or still pending are included, and the selected discharge window is used to highlight which ones were discharged inside that window.'
+            : 'As On Date mode: visits are selected by Admission range, and receipts plus bill status are measured as on the selected As On Date.';
+        }
+      }
+
+      function buildIpAdvanceQueryParams(){
+        const unit = (ipAdvanceUnitSel?.value || unitSel?.value || '').trim();
+        const basis = (ipAdvanceBasisSel?.value || 'discharge').trim().toLowerCase() === 'as_on' ? 'as_on' : 'discharge';
+        const params = new URLSearchParams();
+        params.set('unit', unit);
+        params.set('admission_from', ipAdvanceAdmissionFromEl?.value || '');
+        params.set('admission_to', ipAdvanceAdmissionToEl?.value || '');
+        params.set('basis', basis);
+        if(basis === 'discharge'){
+          params.set('discharge_from', ipAdvanceDischargeFromEl?.value || '');
+          params.set('discharge_to', ipAdvanceDischargeToEl?.value || '');
+        }else{
+          params.set('as_on_date', ipAdvanceAsOnDateEl?.value || '');
+        }
+        return { unit, basis, params };
+      }
+
+      function renderIpAdvanceKpis(){
+        if(!ipAdvanceKpi) return;
+        if(!ipAdvanceSummary || Object.keys(ipAdvanceSummary).length === 0){
+          ipAdvanceKpi.innerHTML = '<div class="kpi-empty">Load filters to view advance provisions.</div>';
+          return;
+        }
+        ipAdvanceKpi.innerHTML = [
+          renderMetricKpi('Visits', ipAdvanceSummary.visit_count || 0, 'qty'),
+          renderMetricKpi('Receipts', ipAdvanceSummary.receipt_count || 0, 'qty'),
+          renderKpiBox('Total Advance', parseNumber(ipAdvanceSummary.total_advance_amount)),
+          renderKpiBox('Average / Visit', parseNumber(ipAdvanceSummary.average_advance_per_visit)),
+          renderMetricKpi('Discharged In Window', ipAdvanceSummary.discharged_in_window_visits || 0, 'qty'),
+          renderMetricKpi('Discharged Later', ipAdvanceSummary.discharged_after_window_visits || 0, 'qty'),
+          renderMetricKpi('Still Pending', ipAdvanceSummary.pending_discharge_visits || 0, 'qty'),
+          renderMetricKpi('Billed After Cutoff', ipAdvanceSummary.billed_after_cutoff_visits || 0, 'qty'),
+          renderMetricKpi('Still Unbilled', ipAdvanceSummary.still_unbilled_visits || 0, 'qty')
+        ].join('');
+      }
+
+      function getIpAdvanceBillBadgeClass(status){
+        if(status === 'Billed After Cutoff') return 'ip-adv-badge ip-adv-badge--aftercutoff';
+        if(status === 'Unbilled') return 'ip-adv-badge ip-adv-badge--unbilled';
+        return 'ip-adv-badge ip-adv-badge--billed';
+      }
+
+      function getIpAdvanceVisitBadgeClass(status){
+        if(status === 'Open') return 'ip-adv-badge ip-adv-badge--open';
+        return 'ip-adv-badge ip-adv-badge--discharged';
+      }
+
+      function getIpAdvanceDischargeBucketBadgeClass(bucket){
+        if(bucket === 'Still Admitted / Not Yet Discharged') return 'ip-adv-badge ip-adv-badge--open';
+        if(bucket === 'Discharged In Window') return 'ip-adv-badge ip-adv-badge--discharged';
+        if(bucket === 'Discharged After Window') return 'ip-adv-badge ip-adv-badge--aftercutoff';
+        return 'ip-adv-badge ip-adv-badge--billed';
+      }
+
+      function renderIpAdvanceTable(){
+        if(!ipAdvanceTable) return;
+        const rows = ipAdvanceFiltered || [];
+        const totalRows = rows.length;
+        if(!totalRows){
+          ipAdvanceTable.innerHTML = '<div class="kpi-empty">No matching advance provision rows.</div>';
+          if(ipAdvancePager) ipAdvancePager.textContent = '';
+          return;
+        }
+
+        const totalPages = Math.max(1, Math.ceil(totalRows / ipAdvancePageSize));
+        if(ipAdvancePage > totalPages) ipAdvancePage = totalPages;
+        if(ipAdvancePage < 1) ipAdvancePage = 1;
+
+        const startIdx = (ipAdvancePage - 1) * ipAdvancePageSize;
+        const pageRows = rows.slice(startIdx, startIdx + ipAdvancePageSize);
+        const bodyHtml = pageRows.map((row) => {
+          const billStatus = cleanText(row.BillStatusAsOnCutoff);
+          const visitStatus = cleanText(row.VisitStatusAsOnCutoff);
+          const rowClass = billStatus === 'Billed After Cutoff'
+            ? 'ip-advance-row--aftercutoff'
+            : (visitStatus === 'Open' ? 'ip-advance-row--open' : 'ip-advance-row--neutral');
+          const stayDays = calcStayDays(row);
+          const visitNo = cleanText(row.VisitNo);
+          const admissionNo = cleanText(row.AdmissionNo);
+          const visitId = cleanText(row.Visit_ID);
+          const patientName = cleanText(row.PatientName) || '-';
+          const regNo = cleanText(row.RegNo) || '-';
+          const doctor = cleanText(row.DoctorInCharge) || 'Doctor not mapped';
+          const ward = cleanText(row.WardName) || 'Ward not mapped';
+          const patientType = cleanText(row.PatientType) || 'Patient type not mapped';
+          const patientSubType = cleanText(row.PatientSubType) || 'Subtype not mapped';
+          const payCategory = cleanText(row.PayCategory) || 'Pay category not mapped';
+          const dischargeBucket = cleanText(row.DischargeBucket) || 'Standing As On Cutoff';
+          const receiptCount = Number(parseNumber(row.ReceiptCount)).toLocaleString('en-IN');
+          const firstReceipt = fmtDateCell(row.FirstReceiptDate) || '-';
+          const lastReceipt = fmtDateCell(row.LastReceiptDate) || '-';
+          const advanceAmount = formatINR(parseNumber(row.AdvanceAmount));
+          const finalBillDate = fmtDateCell(row.FinalBillDate) || 'Not billed by cutoff';
+          const finalBillNo = cleanText(row.FinalBillNo) || 'Not available';
+          const staySummary = cleanText(fmtDateCell(row.AdmissionDate)) && cleanText(fmtDateCell(row.DischargeDate))
+            ? `${fmtDateCell(row.AdmissionDate)} to ${fmtDateCell(row.DischargeDate)}`
+            : `${fmtDateCell(row.AdmissionDate) || '-'} to ${fmtDateCell(row.DischargeDate) || '-'}`;
+          return `
+            <tr class="${rowClass}">
+              <td>
+                <div class="ip-adv-stack">
+                  <div class="ip-adv-primary ip-adv-code" title="${escapeHtml(visitNo)}">${escapeHtml(visitNo || '-')}</div>
+                  <div class="ip-adv-secondary ip-adv-code" title="${escapeHtml(admissionNo)}">Adm: ${escapeHtml(admissionNo || '-')}</div>
+                  <div class="ip-adv-meta">Visit ID ${escapeHtml(visitId || '-')}</div>
+                </div>
+              </td>
+              <td>
+                <div class="ip-adv-stack">
+                  <div class="ip-adv-primary" title="${escapeHtml(patientName)}">${escapeHtml(patientName)}</div>
+                  <div class="ip-adv-secondary ip-adv-code">Reg No: ${escapeHtml(regNo)}</div>
+                </div>
+              </td>
+              <td>
+                <div class="ip-adv-stack">
+                  <div class="ip-adv-primary">${escapeHtml(staySummary)}</div>
+                  <div class="ip-adv-inline">
+                    <span class="${getIpAdvanceVisitBadgeClass(visitStatus)}">${escapeHtml(visitStatus || 'Unknown')}</span>
+                    <span class="${getIpAdvanceDischargeBucketBadgeClass(dischargeBucket)}">${escapeHtml(dischargeBucket)}</span>
+                    ${stayDays !== null ? `<span class="ip-adv-meta">${escapeHtml(String(stayDays))} day${stayDays === 1 ? '' : 's'}</span>` : ''}
+                  </div>
+                </div>
+              </td>
+              <td>
+                <div class="ip-adv-stack">
+                  <div class="ip-adv-primary" title="${escapeHtml(ward)}">${escapeHtml(ward)}</div>
+                  <div class="ip-adv-secondary" title="${escapeHtml(doctor)}">Dr. ${escapeHtml(doctor)}</div>
+                </div>
+              </td>
+              <td>
+                <div class="ip-adv-stack">
+                  <div class="ip-adv-primary" title="${escapeHtml(patientType)}">${escapeHtml(patientType)}</div>
+                  <div class="ip-adv-secondary" title="${escapeHtml(patientSubType)}">${escapeHtml(patientSubType)}</div>
+                  <span class="ip-adv-pay">${escapeHtml(payCategory)}</span>
+                </div>
+              </td>
+              <td>
+                <div class="ip-adv-stack ip-adv-num">
+                  <div class="ip-adv-primary ip-adv-code">${receiptCount} receipt${receiptCount === '1' ? '' : 's'}</div>
+                  <div class="ip-adv-secondary">First: ${escapeHtml(firstReceipt)}</div>
+                  <div class="ip-adv-secondary">Last: ${escapeHtml(lastReceipt)}</div>
+                </div>
+              </td>
+              <td class="ip-adv-num">
+                <div class="ip-adv-stack">
+                  <div class="ip-adv-amount">${advanceAmount}</div>
+                  <div class="ip-adv-amount-sub">Advance As On Cutoff</div>
+                </div>
+              </td>
+              <td>
+                <div class="ip-adv-stack">
+                  <span class="${getIpAdvanceBillBadgeClass(billStatus)}">${escapeHtml(billStatus || 'Unknown')}</span>
+                  <div class="ip-adv-secondary">Bill Date: ${escapeHtml(finalBillDate)}</div>
+                  <div class="ip-adv-secondary ip-adv-code">Bill No: ${escapeHtml(finalBillNo)}</div>
+                </div>
+              </td>
+            </tr>
+          `;
+        }).join('');
+
+        ipAdvanceTable.innerHTML = `
+          <div class="table-wrap-inner ip-advance-wrap">
+            <table class="ip-advance-table">
+              <thead>
+                <tr>
+                  <th class="col-visit">Visit</th>
+                  <th class="col-patient">Patient</th>
+                  <th class="col-stay">Stay Window</th>
+                  <th class="col-location">Ward / Doctor</th>
+                  <th class="col-category">Category</th>
+                  <th class="col-receipt">Receipt Trail</th>
+                  <th class="col-amount amount-cell">Advance Amount</th>
+                  <th class="col-billing">Billing Position</th>
+                </tr>
+              </thead>
+              <tbody>${bodyHtml}</tbody>
+            </table>
+          </div>
+        `;
+
+        if(ipAdvancePager){
+          ipAdvancePager.innerHTML = `
+            <div style="display:flex; justify-content:space-between; align-items:center;">
+              <div>Showing ${pageRows.length ? startIdx + 1 : 0}-${Math.min(startIdx + pageRows.length, totalRows)} of ${totalRows}</div>
+              <div style="display:flex; gap:8px; align-items:center;">
+                <button id="ipAdvancePrev" ${ipAdvancePage<=1?'disabled':''}>Prev</button>
+                <span>Page ${ipAdvancePage} / ${totalPages}</span>
+                <button id="ipAdvanceNext" ${ipAdvancePage>=totalPages?'disabled':''}>Next</button>
+              </div>
+            </div>
+          `;
+          document.getElementById('ipAdvancePrev')?.addEventListener('click', ()=>{ if(ipAdvancePage > 1){ ipAdvancePage -= 1; renderIpAdvanceTable(); } });
+          document.getElementById('ipAdvanceNext')?.addEventListener('click', ()=>{ if(ipAdvancePage < totalPages){ ipAdvancePage += 1; renderIpAdvanceTable(); } });
+        }
+      }
+
+      function applyIpAdvanceSearch(){
+        const q = (ipAdvanceSearchEl?.value || '').trim().toLowerCase();
+        if(!q){
+          ipAdvanceFiltered = [...ipAdvanceData];
+        } else {
+          ipAdvanceFiltered = ipAdvanceData.filter((row) => {
+            return Object.values(row || {}).some((val) => {
+              if(val === null || val === undefined) return false;
+              return String(val).toLowerCase().includes(q);
+            });
+          });
+        }
+        ipAdvancePage = 1;
+        if(ipAdvanceStatus){
+          const basisLabel = cleanText(ipAdvanceSummary?.basis || '').toLowerCase() === 'as_on' ? 'As On Date' : 'Discharge Window';
+          const cutoffText = cleanText(ipAdvanceSummary?.cutoff_date);
+          if(ipAdvanceData.length){
+            ipAdvanceStatus.textContent = `Showing ${ipAdvanceFiltered.length} of ${ipAdvanceData.length} visits for ${basisLabel}${cutoffText ? ` (Cutoff: ${cutoffText})` : ''}`;
+          } else {
+            ipAdvanceStatus.textContent = 'No provision rows found for the selected filters.';
+          }
+        }
+        renderIpAdvanceTable();
+      }
+
+      async function loadIpAdvanceProvision(){
+        updateIpAdvanceBasisUi();
+        const { unit, basis, params } = buildIpAdvanceQueryParams();
+        const admissionFrom = ipAdvanceAdmissionFromEl?.value || '';
+        const admissionTo = ipAdvanceAdmissionToEl?.value || '';
+        const dischargeFrom = ipAdvanceDischargeFromEl?.value || '';
+        const dischargeTo = ipAdvanceDischargeToEl?.value || '';
+        const asOnDate = ipAdvanceAsOnDateEl?.value || '';
+
+        if(!unit){
+          if(ipAdvanceStatus) ipAdvanceStatus.textContent = 'Select a unit to load.';
+          return;
+        }
+        if(!admissionFrom || !admissionTo){
+          if(ipAdvanceStatus) ipAdvanceStatus.textContent = 'Select admission from/to dates.';
+          return;
+        }
+        if(admissionFrom > admissionTo){
+          if(ipAdvanceStatus) ipAdvanceStatus.textContent = 'Admission From cannot be after Admission To.';
+          return;
+        }
+        if(basis === 'discharge'){
+          if(!dischargeFrom || !dischargeTo){
+            if(ipAdvanceStatus) ipAdvanceStatus.textContent = 'Select discharge from/to dates.';
+            return;
+          }
+          if(dischargeFrom > dischargeTo){
+            if(ipAdvanceStatus) ipAdvanceStatus.textContent = 'Discharge From cannot be after Discharge To.';
+            return;
+          }
+        } else if(!asOnDate){
+          if(ipAdvanceStatus) ipAdvanceStatus.textContent = 'Select an as on date.';
+          return;
+        }
+
+        if(ipAdvanceStatus) ipAdvanceStatus.textContent = 'Loading IP advance provisions...';
+        if(ipAdvanceTable) ipAdvanceTable.innerHTML = loadingHtml;
+        if(ipAdvancePager) ipAdvancePager.textContent = '';
+        if(ipAdvanceKpi) ipAdvanceKpi.innerHTML = '<div class="kpi-empty">Computing provision summary...</div>';
+
+        try{
+          const res = await fetch(`/api/mis/ip_advance_provision?${params.toString()}`);
+          const data = await res.json();
+          if(!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to load IP advance provision');
+
+          ipAdvanceData = data.data || [];
+          ipAdvanceSummary = data.summary || {};
+          renderIpAdvanceKpis();
+
+          if(!ipAdvanceData.length){
+            if(ipAdvanceStatus) ipAdvanceStatus.textContent = 'No provision rows found for the selected filters.';
+            if(ipAdvanceTable) ipAdvanceTable.innerHTML = '<div class="kpi-empty">No advance provision rows found.</div>';
+            if(ipAdvancePager) ipAdvancePager.textContent = '';
+            return;
+          }
+
+          applyIpAdvanceSearch();
+        } catch(err){
+          if(ipAdvanceStatus) ipAdvanceStatus.textContent = `Error: ${err.message}`;
+          if(ipAdvanceKpi) ipAdvanceKpi.innerHTML = '<div class="kpi-empty">Unable to load provision summary.</div>';
+          if(ipAdvanceTable) ipAdvanceTable.innerHTML = `<div class="kpi-empty">${escapeHtml(err.message)}</div>`;
+          if(ipAdvancePager) ipAdvancePager.textContent = '';
+        }
+      }
+
       function applyCompFilter() {
         const q = (compSearchEl && compSearchEl.value) ? compSearchEl.value.trim().toLowerCase() : '';
 
@@ -7536,19 +8234,20 @@
         return `${m}:${sec}`;
       }
       function updateTimerDisplay(){ if(fabTimer) fabTimer.textContent = fmtSecs(remainingSec); }
-      async function refreshSessionTimer(){
+      function refreshSessionTimer(){
         try{
-          const res = await fetch('/session_remaining');
-          const data = await res.json();
-          if(res.ok && typeof data.remaining_seconds !== 'undefined'){
-            remainingSec = Math.max(0, Math.floor(data.remaining_seconds));
+          const next = typeof window.__getSessionRemainingSeconds === 'function'
+            ? window.__getSessionRemainingSeconds()
+            : null;
+          if (Number.isFinite(next)) {
+            remainingSec = Math.max(0, Math.floor(next));
             updateTimerDisplay();
           }
         }catch(e){}
       }
       setInterval(()=>{ if(remainingSec>0){ remainingSec -= 1; updateTimerDisplay(); } }, 1000);
-      setInterval(refreshSessionTimer, 20000);
       refreshSessionTimer();
+      window.addEventListener('sessionRemainingUpdated', refreshSessionTimer);
       window.addEventListener('sessionRefreshed', () => {
         refreshSessionTimer();
       });
@@ -7556,7 +8255,7 @@
         card.addEventListener('click', ()=>{
           const mode = card.dataset.view;
           // Check if the mode is valid, otherwise default to 'ipd'
-          if (['due', 'collections', 'refund_tracker', 'payment_mode_updates', 'compliance', 'service_ledger', 'diagnostics_share', 'doctor_medicine', 'doctorwise_dpv', 'bloodbank_billing', 'billwise_doctorshare', 'phc_ledger', 'ip_package_ledger', 'balances', 'ip_ledger_summary', 'ip_consumables'].includes(mode)) {
+          if (['due', 'collections', 'refund_tracker', 'payment_mode_updates', 'compliance', 'service_ledger', 'diagnostics_share', 'doctor_medicine', 'doctorwise_dpv', 'bloodbank_billing', 'billwise_doctorshare', 'phc_ledger', 'ip_package_ledger', 'balances', 'ip_ledger_summary', 'ip_advance_provision', 'ip_consumables'].includes(mode)) {
             setActiveView(mode);
             scrollToViewPanel(mode);
           } else {
@@ -7682,7 +8381,7 @@
       });
       bbExportXlsxBtn?.addEventListener('click', queueBloodbankExcel);
       bbExportPdfBtn?.addEventListener('click', exportBloodbankPdf);
-      billShareLoadBtn?.addEventListener('click', loadBillwiseDoctorShare);
+      billShareLoadBtn?.addEventListener('click', () => loadBillwiseDoctorShare({ page: 1, includeSummary: true }));
       billShareUnitSel?.addEventListener('change', () => {
         if (billShareDoctorNameEl) billShareDoctorNameEl.value = '';
         if (billShareDocIdEl) billShareDocIdEl.value = '';
@@ -7707,9 +8406,19 @@
           selectBillShareDoctor({ id, name });
         }
       });
-      billShareSearchEl?.addEventListener('input', debounce(applyBillShareFilter, 250));
-      billSharePrev?.addEventListener('click', () => { billSharePage -= 1; renderBillSharePage(); });
-      billShareNext?.addEventListener('click', () => { billSharePage += 1; renderBillSharePage(); });
+      billShareSearchEl?.addEventListener('input', debounce(applyBillShareFilter, 350));
+      billSharePrev?.addEventListener('click', () => {
+        if (billSharePage <= 1) return;
+        loadBillwiseDoctorShare({ page: billSharePage - 1, includeSummary: false });
+      });
+      billShareNext?.addEventListener('click', () => {
+        if (billShareTotalPages !== null && billShareTotalPages !== undefined) {
+          if (billSharePage >= billShareTotalPages) return;
+        } else if (!billShareHasNextPage) {
+          return;
+        }
+        loadBillwiseDoctorShare({ page: billSharePage + 1, includeSummary: false });
+      });
       billShareCollapseBtn?.addEventListener('click', () => {
         if (!billShareDetailBody) return;
         billShareDetailBody.classList.toggle('collapsed');
@@ -7757,6 +8466,44 @@
           return;
         }
         const url = `/api/mis/ip_ledger_summary/export_excel?unit=${encodeURIComponent(unit)}&from=${from}&to=${to}`;
+        window.open(url, '_blank');
+      });
+      ipAdvanceBasisSel?.addEventListener('change', updateIpAdvanceBasisUi);
+      ipAdvanceLoadBtn?.addEventListener('click', loadIpAdvanceProvision);
+      ipAdvanceSearchEl?.addEventListener('input', applyIpAdvanceSearch);
+      ipAdvanceExportXlsxBtn?.addEventListener('click', () => {
+        const { unit, basis, params } = buildIpAdvanceQueryParams();
+        const admissionFrom = ipAdvanceAdmissionFromEl?.value || '';
+        const admissionTo = ipAdvanceAdmissionToEl?.value || '';
+        const dischargeFrom = ipAdvanceDischargeFromEl?.value || '';
+        const dischargeTo = ipAdvanceDischargeToEl?.value || '';
+        const asOnDate = ipAdvanceAsOnDateEl?.value || '';
+        if(!unit){
+          alert('Select a unit to export.');
+          return;
+        }
+        if(!admissionFrom || !admissionTo){
+          alert('Select admission from/to dates.');
+          return;
+        }
+        if(admissionFrom > admissionTo){
+          alert('Admission From cannot be after Admission To.');
+          return;
+        }
+        if(basis === 'discharge'){
+          if(!dischargeFrom || !dischargeTo){
+            alert('Select discharge from/to dates.');
+            return;
+          }
+          if(dischargeFrom > dischargeTo){
+            alert('Discharge From cannot be after Discharge To.');
+            return;
+          }
+        } else if(!asOnDate){
+          alert('Select an as on date.');
+          return;
+        }
+        const url = `/api/mis/ip_advance_provision/export_excel?${params.toString()}`;
         window.open(url, '_blank');
       });
       dueLoadBtn?.addEventListener('click', ()=>{

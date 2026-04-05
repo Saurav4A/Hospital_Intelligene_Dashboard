@@ -1,0 +1,471 @@
+{% extends "layout.html" %}
+{% block content %}
+<style>
+  .top-actions{position:fixed;top:20px;right:20px;z-index:99;display:flex;align-items:flex-end;gap:12px;pointer-events:none}
+  .top-actions .fab-user{position:relative;display:flex;align-items:center;gap:12px;pointer-events:auto}
+  .notification-badge{position:absolute;top:-6px;right:-6px;background:#ef4444;color:#fff;border-radius:50%;width:22px;height:22px;display:grid;place-items:center;font-size:12px;font-weight:700;border:2px solid #f4f7fb;animation:pulse 2s infinite;pointer-events:none}
+  .fab-btn{width:58px;height:58px;border-radius:50%;background:linear-gradient(135deg,#1e40af,#3b82f6);color:#fff;display:grid;place-items:center;box-shadow:0 8px 20px rgba(37,99,235,.3);border:none;cursor:pointer;transition:transform .18s ease}
+  .fab-btn:hover{transform:scale(1.06)}
+  .fab-menu{position:absolute;top:60px;right:0;background:rgba(255,255,255,.98);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.08);border:1px solid rgba(0,0,0,.06);backdrop-filter:blur(8px);padding:10px;display:none;min-width:280px;max-width:320px;pointer-events:auto}
+  .fab-menu.open{display:block}
+  .fab-menu a{display:block;padding:10px 12px;border-radius:10px;color:#0f172a;font-weight:600;text-decoration:none;font-size:14px}
+  .fab-menu a:hover,#notificationsToggle:hover{background:#eef2ff;color:#1e40af}
+  .mark-read-btn{background:#e0e7ff;border:1px solid #c7d2fe;color:#1e40af;border-radius:6px;cursor:pointer}
+  .notification-item{padding:12px;margin:4px 8px;border-radius:8px;border:1px solid #e5e7eb;background:#fff;cursor:pointer;transition:background .2s}
+  .notification-item:hover{background:#f9fafb}
+  .notification-item.unread{background:#eff6ff;border-color:#bfdbfe}
+  .notification-item-header{display:flex;justify-content:space-between;align-items:flex-start;margin-bottom:6px}
+  .notification-title{font-weight:700;color:#1e40af;font-size:13px;margin:0}
+  .notification-date{font-size:10px;color:#9ca3af;white-space:nowrap}
+  .notification-message{font-size:12px;color:#4b5563;margin:4px 0 0;line-height:1.4}
+  @keyframes pulse{0%,100%{transform:scale(1)}50%{transform:scale(1.1)}}
+  .page-wrap{width:min(96%,1520px);display:flex;flex-direction:column;gap:16px}
+  .hero{background:linear-gradient(120deg,#1e3a8a,#2563eb 48%,#38bdf8);color:#fff;border-radius:22px;padding:24px 28px;box-shadow:0 18px 40px rgba(30,58,138,.22);display:grid;grid-template-columns:auto 1fr auto;gap:16px;align-items:center}
+  .hero-icon{width:68px;height:68px;border-radius:20px;background:rgba(255,255,255,.16);display:grid;place-items:center}
+  .hero h2{margin:0;font-size:28px;font-weight:800}
+  .hero p{margin:8px 0 0;font-size:14px;line-height:1.55;color:rgba(255,255,255,.92);max-width:920px}
+  .hero-actions{display:flex;flex-wrap:wrap;gap:10px;justify-content:flex-end}
+  .pill,.back-link{display:inline-flex;align-items:center;gap:8px;padding:10px 14px;border-radius:999px;text-decoration:none;font-size:13px;font-weight:700}
+  .pill{background:rgba(255,255,255,.14);color:#fff}
+  .back-link{background:#fff;color:#1e3a8a;box-shadow:0 10px 24px rgba(15,23,42,.12)}
+  .panel{background:rgba(255,255,255,.96);border-radius:20px;border:1px solid #dbe7f3;box-shadow:0 12px 28px rgba(15,23,42,.08);padding:18px}
+  .toolbar{display:grid;grid-template-columns:170px minmax(260px,1fr) auto auto;gap:12px;align-items:end}
+  .field{display:flex;flex-direction:column;gap:6px}
+  .field label{font-size:12px;font-weight:700;color:#475569}
+  .field input,.field select{width:100%;border-radius:12px;border:1px solid #cbd5e1;background:#fff;color:#0f172a;padding:12px 14px;font-size:14px}
+  .btn,.btn-ghost{border:none;border-radius:12px;padding:12px 16px;font-weight:700;font-size:14px;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;text-decoration:none}
+  .btn{background:linear-gradient(90deg,#2563eb,#1e40af);color:#fff;box-shadow:0 10px 20px rgba(37,99,235,.2)}
+  .btn-ghost{background:#eef4fb;color:#1e3a8a}
+  .btn:disabled,.btn-ghost:disabled{opacity:.55;cursor:not-allowed;box-shadow:none}
+  .status-line{position:sticky;top:10px;z-index:12;display:flex;justify-content:space-between;gap:12px;align-items:center;margin-top:14px;padding:11px 14px;border-radius:14px;background:rgba(248,250,252,.98);border:1px solid #dbe7f3;color:#475569;font-size:13px;backdrop-filter:blur(12px)}
+  .status-main{font-weight:700;color:#0f172a}
+  .status-sub{color:#64748b}
+  .section-head{display:flex;justify-content:space-between;align-items:flex-start;gap:12px;margin-bottom:12px}
+  .section-head h3{margin:0;font-size:18px;color:#0f172a}
+  .section-head p{margin:5px 0 0;font-size:13px;color:#64748b}
+  .table-wrap{border:1px solid #dbe7f3;border-radius:16px;overflow:auto;background:#fff}
+  .journey-table{width:100%;min-width:1460px;border-collapse:collapse}
+  .journey-table th,.journey-table td{padding:11px 10px;border-bottom:1px solid #edf2f7;vertical-align:top;font-size:13px}
+  .journey-table th{position:sticky;top:0;z-index:1;background:#f8fafc;color:#475569;text-align:left;font-size:12px}
+  .journey-table tr:hover td{background:#f8fbff}
+  .journey-table tr.row-match td{background:#fff8e8!important}
+  .journey-table tr.row-match td:first-child{box-shadow:inset 4px 0 0 #f59e0b}
+  .journey-table tr.row-dim{opacity:.5}
+  .expand-cell{width:48px}
+  .expand-btn{width:32px;height:32px;border-radius:10px;border:1px solid #cbd5e1;background:#fff;color:#1e3a8a;cursor:pointer;font-size:16px;font-weight:700}
+  .badge,.mini-pill{display:inline-flex;align-items:center;gap:6px;border-radius:999px;padding:4px 9px;font-size:11px;font-weight:800;line-height:1}
+  .color-indigo{background:#eef2ff;color:#4338ca}.color-cyan{background:#ecfeff;color:#0369a1}.color-emerald{background:#ecfdf5;color:#047857}.color-amber{background:#fff7ed;color:#c2410c}.color-slate{background:#f1f5f9;color:#475569}
+  .cell-title{font-weight:800;color:#0f172a;margin-bottom:5px}.cell-sub{color:#64748b;line-height:1.45}
+  .detail-row td{background:#f8fbff;padding:16px}
+  .detail-panels{display:grid;grid-template-columns:repeat(2,minmax(280px,1fr));gap:14px}
+  .detail-panel{background:#fff;border:1px solid #dbe7f3;border-radius:16px;padding:14px}.detail-panel.wide{grid-column:1/-1}
+  .detail-panel h4{margin:0 0 10px;font-size:15px;color:#0f172a}
+  .kv-grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(160px,1fr));gap:10px}
+  .kv-item{background:#f8fafc;border-radius:12px;padding:10px 12px;border:1px solid #e2e8f0}
+  .kv-label{font-size:11px;font-weight:700;color:#64748b;text-transform:uppercase;letter-spacing:.04em}
+  .kv-value{margin-top:5px;color:#0f172a;font-size:13px;line-height:1.45;font-weight:700}
+  .mini-table{width:100%;border-collapse:collapse}.mini-table th,.mini-table td{padding:8px 7px;border-bottom:1px solid #edf2f7;text-align:left;font-size:12px;vertical-align:top}.mini-table th{color:#64748b;font-size:11px;text-transform:uppercase;letter-spacing:.04em}
+  .empty{padding:14px;border-radius:12px;background:#f8fafc;color:#64748b;font-size:13px;border:1px dashed #cbd5e1}
+  .summary-wrap{display:flex;flex-direction:column;gap:14px}.summary-header{display:flex;justify-content:space-between;align-items:flex-start;gap:14px}
+  .summary-title h3{margin:0;font-size:22px}.summary-title p{margin:0;color:#64748b;font-size:13px}
+  .summary-grid{display:grid;gap:14px}
+  .summary-group{position:relative;overflow:hidden;background:linear-gradient(180deg,#fff,#f8fbff);border:1px solid var(--group-border,#dbe7f3);border-radius:20px;padding:16px;box-shadow:0 12px 24px rgba(15,23,42,.05);display:flex;flex-direction:column;gap:14px}
+  .summary-group::before{content:'';position:absolute;left:0;right:0;top:0;height:4px;background:var(--group-accent,#94a3b8)}
+  .summary-group__head{display:flex;flex-direction:column;gap:6px;padding-bottom:4px}
+  .summary-group__eyebrow{align-self:flex-start;display:inline-flex;align-items:center;gap:8px;padding:5px 10px;border-radius:999px;background:var(--group-chip-bg,#f1f5f9);color:var(--group-chip-fg,#475569);font-size:11px;font-weight:800;letter-spacing:.04em;text-transform:uppercase}
+  .summary-group__title{font-size:17px;font-weight:800;color:#0f172a}
+  .summary-group__description{font-size:12px;line-height:1.45;color:#64748b;max-width:62ch}
+  .summary-group__grid{display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px}
+  .summary-group--snapshot{--group-accent:#2563eb;--group-border:#bfdbfe;--group-chip-bg:#eff6ff;--group-chip-fg:#1d4ed8}
+  .summary-group--hospital{--group-accent:#4f46e5;--group-border:#c7d2fe;--group-chip-bg:#eef2ff;--group-chip-fg:#4338ca}
+  .summary-group--pharmacy{--group-accent:#0d9488;--group-border:#99f6e4;--group-chip-bg:#ecfeff;--group-chip-fg:#0f766e}
+  .summary-group--adjustment{--group-accent:#d97706;--group-border:#fde68a;--group-chip-bg:#fff7ed;--group-chip-fg:#b45309}
+  .summary-group--wide{grid-column:1/-1}
+  .summary-item{position:relative;overflow:hidden;background:var(--summary-bg,linear-gradient(180deg,#fff,#f8fbff));border:1px solid var(--summary-border,#dbe7f3);border-radius:16px;padding:14px 14px 14px 18px;box-shadow:inset 0 1px 0 rgba(255,255,255,.65);text-align:left}
+  .summary-item::before{content:'';position:absolute;left:0;top:0;bottom:0;width:6px;background:var(--summary-accent,#94a3b8)}
+  .summary-item .label{font-size:12px;color:var(--summary-label,#64748b);font-weight:700}.summary-item .value{margin-top:8px;font-size:20px;font-weight:800;color:var(--summary-value,#0f172a)}.summary-item .sub{margin-top:4px;color:var(--summary-sub,#64748b);font-size:12px}
+  .summary-item__hint{margin-top:8px;font-size:11px;font-weight:700;color:var(--summary-label,#64748b);opacity:.88}
+  .summary-item--button{width:100%;appearance:none;cursor:pointer;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease}
+  .summary-item--button:hover{transform:translateY(-1px);box-shadow:0 12px 24px rgba(15,23,42,.08),inset 0 1px 0 rgba(255,255,255,.65)}
+  .summary-item.is-active{border-color:var(--summary-accent,#2563eb);box-shadow:0 0 0 2px rgba(37,99,235,.14),inset 0 1px 0 rgba(255,255,255,.65)}
+  .summary-item.is-active .sub,.summary-item.is-active .summary-item__hint{font-weight:800}
+  .summary-item--slate{--summary-bg:linear-gradient(180deg,#fff,#f8fafc);--summary-border:#dbe7f3;--summary-accent:#94a3b8;--summary-label:#475569;--summary-sub:#64748b}
+  .summary-item--blue{--summary-bg:linear-gradient(180deg,#f8fbff,#eef6ff);--summary-border:#bfdbfe;--summary-accent:#2563eb;--summary-label:#1d4ed8;--summary-sub:#3b82f6}
+  .summary-item--indigo{--summary-bg:linear-gradient(180deg,#f8faff,#eef2ff);--summary-border:#c7d2fe;--summary-accent:#4f46e5;--summary-label:#4338ca;--summary-sub:#6366f1}
+  .summary-item--cyan{--summary-bg:linear-gradient(180deg,#f4feff,#ecfeff);--summary-border:#a5f3fc;--summary-accent:#0891b2;--summary-label:#0e7490;--summary-sub:#0891b2}
+  .summary-item--teal{--summary-bg:linear-gradient(180deg,#f0fdfa,#ecfeff);--summary-border:#99f6e4;--summary-accent:#0f766e;--summary-label:#0f766e;--summary-sub:#0d9488}
+  .summary-item--emerald{--summary-bg:linear-gradient(180deg,#f7fff9,#ecfdf5);--summary-border:#a7f3d0;--summary-accent:#059669;--summary-label:#047857;--summary-sub:#059669}
+  .summary-item--amber{--summary-bg:linear-gradient(180deg,#fffdf7,#fffbeb);--summary-border:#fde68a;--summary-accent:#d97706;--summary-label:#b45309;--summary-sub:#d97706}
+  .summary-item--safe{--summary-bg:linear-gradient(180deg,#f7fff9,#ecfdf5);--summary-border:#86efac;--summary-accent:#16a34a;--summary-label:#15803d;--summary-sub:#16a34a}
+  .summary-item--danger{--summary-bg:linear-gradient(180deg,#fff8f8,#fef2f2);--summary-border:#fca5a5;--summary-accent:#dc2626;--summary-label:#b91c1c;--summary-sub:#dc2626}
+  .journey-controls{display:flex;justify-content:space-between;align-items:center;gap:12px;flex-wrap:wrap}.controls-group{display:flex;align-items:center;gap:10px;flex-wrap:wrap}
+  .mobile-list{display:none;gap:12px;flex-direction:column}.mobile-card{border:1px solid #dbe7f3;border-radius:18px;background:#fff;overflow:hidden}.mobile-card.is-match{border-color:#f59e0b;box-shadow:0 0 0 2px rgba(245,158,11,.16),0 12px 26px rgba(245,158,11,.12)}.mobile-card.is-dim{opacity:.55}.mobile-head{padding:14px;border-bottom:1px solid #edf2f7;display:flex;justify-content:space-between;gap:12px}.mobile-body{padding:14px;display:grid;gap:10px}.mobile-grid{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:10px}.mobile-detail{padding:0 14px 14px}
+  .hidden{display:none!important}
+  #pcjJourneySection{scroll-margin-top:96px}
+  .toast-viewport{position:fixed;top:84px;right:16px;width:min(380px,calc(100vw - 24px));display:flex;flex-direction:column;gap:10px;z-index:1800;pointer-events:none}
+  .toast{pointer-events:auto;display:flex;align-items:flex-start;gap:10px;border:1px solid #d9e2ef;border-left:4px solid #1d4ed8;border-radius:12px;background:#fff;padding:12px 12px 12px 14px;box-shadow:0 12px 26px rgba(15,23,42,.14);transform:translateX(calc(100% + 20px));opacity:0;transition:transform .24s ease,opacity .24s ease}
+  .toast.show{transform:translateX(0);opacity:1}.toast.hiding{transform:translateX(calc(100% + 20px));opacity:0}.toast--success{border-left-color:#16a34a;background:#f6fff9}.toast--warn{border-left-color:#d97706;background:#fffaf2}.toast--error{border-left-color:#dc2626;background:#fff8f8}.toast--loading{border-left-color:#1d4ed8;background:#f8fbff}
+  .toast__body{flex:1;min-width:0;display:flex;align-items:flex-start;gap:10px}.toast__spinner{width:14px;height:14px;border:2px solid rgba(29,78,216,.24);border-top-color:#1d4ed8;border-radius:50%;animation:spin .8s linear infinite;margin-top:2px;flex:0 0 auto}.toast__message{font-size:13px;font-weight:700;line-height:1.35;color:#0f172a;word-break:break-word}.toast__close{border:none;background:transparent;color:#64748b;font-size:18px;line-height:1;padding:0 2px;margin-top:-1px;cursor:pointer}
+  @keyframes spin{to{transform:rotate(360deg)}}
+  @media (min-width:1200px){.summary-grid{grid-template-columns:repeat(3,minmax(0,1fr))}}
+  @media (min-width:721px) and (max-width:1199px){.summary-grid{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media (max-width:1120px){.toolbar{grid-template-columns:repeat(2,minmax(0,1fr))}}
+  @media (max-width:960px){.hero{grid-template-columns:1fr}.hero-actions{justify-content:flex-start}.desktop-only{display:none}.mobile-list{display:flex}.detail-panels{grid-template-columns:1fr}}
+  @media (max-width:720px){.panel{border-radius:16px;padding:14px}.toolbar,.status-line,.summary-header,.journey-controls,.section-head{display:flex;flex-direction:column;align-items:stretch}.summary-group{padding:14px}.summary-group__grid,.mobile-grid{grid-template-columns:1fr}.toast-viewport{top:72px;left:12px;right:12px;width:auto}}
+</style>
+
+<div class="top-actions">
+  <div class="fab-user">
+    <button class="fab-btn" id="fabToggle" title="User Menu">
+      <span style="display:grid;gap:4px">
+        <span style="display:block;width:18px;height:2px;background:#fff;border-radius:99px"></span>
+        <span style="display:block;width:18px;height:2px;background:#fff;border-radius:99px"></span>
+        <span style="display:block;width:18px;height:2px;background:#fff;border-radius:99px"></span>
+      </span>
+      <span class="notification-badge" id="notificationBadge" style="display:none;">0</span>
+    </button>
+    <div class="fab-menu" id="fabMenu">
+      <div style="padding:6px 12px;font-weight:700;color:#1e3a8a;">{{ session.get('username') or session.get('user') or 'User' }}</div>
+      <a href="{{ url_for('logout') }}">Logout</a>
+      <a href="{{ url_for('settings') }}">Settings</a>
+      <div style="border-top:1px solid #e5e7eb;margin-top:8px;padding-top:8px;">
+        <button id="notificationsToggle" style="width:100%;text-align:left;padding:10px 12px;border:none;background:none;cursor:pointer;font-weight:600;color:#1e3a8a;border-radius:10px;display:flex;justify-content:space-between;align-items:center;">
+          <span>Notifications</span>
+          <span id="notifArrow" style="transition:transform .3s;">v</span>
+        </button>
+        <div id="notificationSection" style="display:none;max-height:400px;overflow-y:auto;margin-top:4px;">
+          <div style="padding:8px 12px;display:flex;justify-content:space-between;align-items:center;gap:6px;">
+            <span style="font-size:12px;color:#64748b;font-weight:600;">Recent Notifications</span>
+            <div style="display:flex;gap:6px;">
+              <button class="mark-read-btn" id="markAllRead" style="padding:4px 8px;font-size:11px;">Mark all read</button>
+              <button class="mark-read-btn" id="clearAll" style="padding:4px 8px;font-size:11px;background:#fee2e2;color:#b91c1c;">Clear</button>
+            </div>
+          </div>
+          <div id="notificationList"><div style="padding:20px;text-align:center;color:#9ca3af;font-size:13px;">No new notifications</div></div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="page-wrap">
+  <section class="hero">
+    <div class="hero-icon">
+      <svg viewBox="0 0 24 24" width="32" height="32" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <circle cx="6" cy="6" r="2"></circle><circle cx="18" cy="12" r="2"></circle><circle cx="8" cy="18" r="2"></circle><path d="M7.5 7.5l8.8 3.1"></path><path d="M9.2 16.4l7.1-3.2"></path>
+      </svg>
+    </div>
+    <div>
+      <h2>Patient Care Journey</h2>
+      <p>Search by patient ID, registration number, name, or mobile, then open a read-only longitudinal journey across AHL, ACI, and Ballia. The timeline includes both original visits and virtual-visit duplicates, with financial and operational detail loaded only when you expand a row.</p>
+    </div>
+    <div class="hero-actions">
+      <span class="pill">AHL / ACI / BALLIA</span>
+      <a class="back-link" href="{{ url_for('dashboard') }}">Back To Dashboard</a>
+    </div>
+  </section>
+
+  <section class="panel">
+    <div class="toolbar">
+      <div class="field">
+        <label for="pcjUnitSelect">Unit</label>
+        <select id="pcjUnitSelect">
+          {% if allowed_units and allowed_units|length %}
+            {% for unit in allowed_units %}
+              <option value="{{ unit }}">{{ unit }}</option>
+            {% endfor %}
+          {% else %}
+            <option value="">No medical units available</option>
+          {% endif %}
+        </select>
+      </div>
+      <div class="field">
+        <label for="pcjSearchInput">Patient Search</label>
+        <input id="pcjSearchInput" type="text" placeholder="Patient ID / Reg No / Name / Mobile">
+      </div>
+      <button class="btn" id="pcjSearchBtn" type="button">Search</button>
+      <button class="btn-ghost" id="pcjResetBtn" type="button">Reset</button>
+    </div>
+    <div class="status-line">
+      <div>
+        <div class="status-main" id="pcjStatusMain">Ready to search.</div>
+        <div class="status-sub" id="pcjStatusSub">Pick a medical unit, search a patient, then open the journey timeline.</div>
+      </div>
+      <div id="pcjStatusMeta">No patient selected</div>
+    </div>
+  </section>
+
+  <section class="panel" id="pcjResultsSection">
+    <div class="section-head">
+      <div><h3>Patient Search Results</h3><p>Use the disambiguation grid to choose the exact patient before loading the care journey.</p></div>
+      <div id="pcjResultCount" class="pill color-slate">0 matches</div>
+    </div>
+    <div class="table-wrap">
+      <table class="journey-table" style="min-width:920px;">
+        <thead><tr><th>Action</th><th>Reg No</th><th>Patient Name</th><th>Registration Date</th><th>Gender</th><th>Age</th><th>Mobile</th></tr></thead>
+        <tbody id="pcjResultsBody"><tr><td colspan="7" class="empty">Search patients to begin.</td></tr></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="panel hidden" id="pcjJourneySection">
+    <div class="summary-wrap">
+      <div class="summary-header">
+        <div class="summary-title"><h3 id="pcjPatientTitle">Patient Journey</h3><p id="pcjPatientMeta">Newest-first timeline with lazy-loaded detail panels.</p></div>
+        <button class="btn-ghost" id="pcjClearPatientBtn" type="button">Clear Patient</button>
+      </div>
+      <div class="summary-grid" id="pcjSummaryGrid"></div>
+      <div class="journey-controls">
+        <div class="controls-group">
+          <div class="field" style="gap:4px;">
+            <label for="pcjPageSize">Rows Per Page</label>
+            <select id="pcjPageSize"><option value="20">20</option><option value="50">50</option><option value="100">100</option></select>
+          </div>
+        </div>
+        <div class="controls-group">
+          <button class="btn-ghost" id="pcjPrevPageBtn" type="button">Previous</button>
+          <span id="pcjPageInfo" class="pill color-slate">Page 0 of 0</span>
+          <button class="btn-ghost" id="pcjNextPageBtn" type="button">Next</button>
+        </div>
+      </div>
+      <div class="table-wrap desktop-only">
+        <table class="journey-table">
+          <thead><tr><th class="expand-cell">+</th><th>Visit Class</th><th>Visit Keys</th><th>Dates</th><th>Patient Context</th><th>Duplicate Links</th><th>Ward / Room / Bed</th><th>Users</th><th>Hospital Bills</th><th>Receipts</th><th>Pharmacy / Corp</th></tr></thead>
+          <tbody id="pcjTimelineBody"><tr><td colspan="11" class="empty">Select a patient to load the journey.</td></tr></tbody>
+        </table>
+      </div>
+      <div class="mobile-list" id="pcjMobileList"></div>
+    </div>
+  </section>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const pcjState = { unit:'', searchResults:[], selectedPatient:null, rows:[], patientSummary:null, page:1, pageSize:20, totalRows:0, totalPages:0, detailCache:new Map(), openRows:new Set(), activeKpi:'' };
+  const pcjEls = {
+    unit: document.getElementById('pcjUnitSelect'),
+    searchInput: document.getElementById('pcjSearchInput'),
+    searchBtn: document.getElementById('pcjSearchBtn'),
+    resetBtn: document.getElementById('pcjResetBtn'),
+    statusMain: document.getElementById('pcjStatusMain'),
+    statusSub: document.getElementById('pcjStatusSub'),
+    statusMeta: document.getElementById('pcjStatusMeta'),
+    resultCount: document.getElementById('pcjResultCount'),
+    resultsBody: document.getElementById('pcjResultsBody'),
+    journeySection: document.getElementById('pcjJourneySection'),
+    patientTitle: document.getElementById('pcjPatientTitle'),
+    patientMeta: document.getElementById('pcjPatientMeta'),
+    summaryGrid: document.getElementById('pcjSummaryGrid'),
+    pageSize: document.getElementById('pcjPageSize'),
+    prevBtn: document.getElementById('pcjPrevPageBtn'),
+    nextBtn: document.getElementById('pcjNextPageBtn'),
+    pageInfo: document.getElementById('pcjPageInfo'),
+    timelineBody: document.getElementById('pcjTimelineBody'),
+    mobileList: document.getElementById('pcjMobileList'),
+    clearPatientBtn: document.getElementById('pcjClearPatientBtn'),
+  };
+  const PCJ_CHANNELS = { search:'search', journey:'journey', page:'page', detail:'detail', general:'general' };
+  const pcjToastState = { viewport:null, sequence:0, loadingToastByChannel:new Map(), timers:new Map() };
+  const pcjPaymentModeCache = {};
+  const pcjPrewarmState = { done:new Set(), inflight:new Map() };
+  let pcjPaymentModeMap = new Map();
+
+  function escapeHtml(v){return String(v ?? '').replace(/&/g,'&amp;').replace(/</g,'&lt;').replace(/>/g,'&gt;').replace(/"/g,'&quot;').replace(/'/g,'&#39;');}
+  function asText(v,f='-'){const t=String(v ?? '').trim(); return t || f;}
+  function formatMoney(v){const n=Number(v || 0); return Number.isFinite(n) ? n.toLocaleString('en-IN',{minimumFractionDigits:2,maximumFractionDigits:2}) : '-';}
+  function formatDateTime(v){const t=String(v || '').trim(); if(!t) return '-'; const d=new Date((t.includes('T')?t:t.replace(' ','T'))); return Number.isFinite(d.valueOf()) ? d.toLocaleString('en-IN',{year:'numeric',month:'short',day:'2-digit',hour:'2-digit',minute:'2-digit'}) : t;}
+  function formatDateOnly(v){const t=String(v || '').trim(); if(!t) return '-'; const d=new Date((t.includes('T')?t:t.replace(' ','T'))); return Number.isFinite(d.valueOf()) ? d.toLocaleDateString('en-IN',{year:'numeric',month:'short',day:'2-digit'}) : t.slice(0,10);}
+  function formatGender(v){const key=String(v ?? '').trim().toLowerCase(); if(['1','male','m'].includes(key)) return 'Male'; if(['2','female','f'].includes(key)) return 'Female'; return asText(v);}
+  function isOutPatientVisit(row){const code=String(row?.VisitTypeCode || row?.VisitTypeLabel || row?.TypeOfVisit || '').trim().toUpperCase(); return ['OPD','DPV','HCV'].includes(code);}
+  function leadUserLabel(row){return isOutPatientVisit(row) ? 'Opened' : 'Admitted';}
+  function regNoForPatient(patient){return asText(patient?.Registration_No || patient?.RegistrationNo || patient?.RegNo,'-');}
+  function renderPaymentModes(modes){pcjPaymentModeMap=new Map(); (Array.isArray(modes)?modes:[]).forEach((mode)=>{const id=mode.PaymentModeId ?? mode.paymentmodeid ?? mode.PModeId ?? mode.pmodeid ?? mode.ModeId ?? mode.id; const name=mode.PaymentModeName ?? mode.paymentmodename ?? mode.PModeName ?? mode.pmodename ?? mode.PaymentMode ?? mode.name ?? ''; if(id===undefined || id===null) return; pcjPaymentModeMap.set(String(id), String(name || id));});}
+  function formatPaymentMode(v){const key=String(v ?? '').trim(); return pcjPaymentModeMap.get(key) || asText(v);}
+  function formatReceiptType(v){const key=String(v ?? '').trim().toUpperCase(); if(key==='P') return 'Hospital'; if(['PH','PI'].includes(key)) return 'Pharmacy'; return asText(v);}
+  async function loadPaymentModes(unit, {silent=false}={}){const unitKey=String(unit || '').trim().toUpperCase(); if(!unitKey) return false; if(pcjPaymentModeCache[unitKey]){renderPaymentModes(pcjPaymentModeCache[unitKey]); return true;} try{const res=await fetch(`/api/modifications/payment_modes?unit=${encodeURIComponent(unitKey)}`); const data=await res.json().catch(()=>({})); if(!res.ok || data.status!=='success') throw new Error(data.message || 'Failed to load payment modes'); const rows=Array.isArray(data.data) ? data.data : []; pcjPaymentModeCache[unitKey]=rows; renderPaymentModes(rows); return true;}catch(err){if(!silent) setChannelAlert(`Payment mode load error: ${err.message || 'Unknown error'}`,'warn',PCJ_CHANNELS.general); return false;}}
+  function prewarmJourneyContext(unit){const unitKey=String(unit || '').trim().toUpperCase(); if(!unitKey) return Promise.resolve(false); if(pcjPrewarmState.done.has(unitKey)) return Promise.resolve(true); if(pcjPrewarmState.inflight.has(unitKey)) return pcjPrewarmState.inflight.get(unitKey); const request=fetch(`/api/patient-care-journey/prewarm?unit=${encodeURIComponent(unitKey)}`,{cache:'no-store'}).then((res)=>res.json().catch(()=>({})).then((data)=>({ok:res.ok,data}))).then(({ok,data})=>{if(ok && data.status==='success'){pcjPrewarmState.done.add(unitKey); return true;} return false;}).catch(()=>false).finally(()=>pcjPrewarmState.inflight.delete(unitKey)); pcjPrewarmState.inflight.set(unitKey,request); return request;}
+  function getRowKey(row){return String(row?.JourneyKey || `${row?.JourneyRowType || 'visit'}::${row?.JourneyVisitId || 0}::${row?.SourceVisitId || 0}`);}
+  function normalizeAlertType(type){const k=String(type || '').trim().toLowerCase(); return ['success','error','warn','loading'].includes(k) ? k : 'warn';}
+  function ensureToastViewport(){if(pcjToastState.viewport && document.body.contains(pcjToastState.viewport)) return pcjToastState.viewport; const el=document.createElement('div'); el.id='pcjToastViewport'; el.className='toast-viewport'; el.setAttribute('aria-live','polite'); document.body.appendChild(el); pcjToastState.viewport=el; return el;}
+  function removeToast(id, immediate=false){if(!id) return; const timeout=pcjToastState.timers.get(id); if(timeout){clearTimeout(timeout); pcjToastState.timers.delete(id);} for(const [channel, loadingId] of pcjToastState.loadingToastByChannel.entries()){if(loadingId===id) pcjToastState.loadingToastByChannel.delete(channel);} const viewport=pcjToastState.viewport; const toast=viewport?.querySelector(`[data-toast-id="${id}"]`); if(!toast) return; if(immediate){toast.remove(); return;} toast.classList.remove('show'); toast.classList.add('hiding'); setTimeout(()=>toast.remove(),240);}
+  function clearToasts(channel='', includeLoading=true){const viewport=pcjToastState.viewport; if(!viewport) return; const channelKey=String(channel || '').trim().toLowerCase(); Array.from(viewport.querySelectorAll('.toast')).forEach((toast)=>{const toastId=String(toast.dataset.toastId || ''); const toastChannel=String(toast.dataset.channel || '').trim().toLowerCase(); if(!toastId) return; if(channelKey && toastChannel!==channelKey) return; if(!includeLoading && pcjToastState.loadingToastByChannel.get(toastChannel)===toastId) return; removeToast(toastId,true);});}
+  function setChannelAlert(message, type, channel=PCJ_CHANNELS.general){const text=String(message || '').trim(); const channelKey=String(channel || PCJ_CHANNELS.general).trim().toLowerCase() || PCJ_CHANNELS.general; if(!text){clearToasts(channelKey,true); return;} const alertType=normalizeAlertType(type); const viewport=ensureToastViewport(); const activeLoadingId=pcjToastState.loadingToastByChannel.get(channelKey) || ''; if(alertType==='loading' && activeLoadingId){const existing=viewport.querySelector(`[data-toast-id="${activeLoadingId}"]`); if(existing){const msg=existing.querySelector('.toast__message'); if(msg) msg.textContent=text; return;} pcjToastState.loadingToastByChannel.delete(channelKey);} const toastId=`pcj-toast-${++pcjToastState.sequence}`; const toast=document.createElement('div'); toast.className=`toast toast--${alertType}`; toast.dataset.toastId=toastId; toast.dataset.channel=channelKey; const body=document.createElement('div'); body.className='toast__body'; if(alertType==='loading'){const spinner=document.createElement('span'); spinner.className='toast__spinner'; spinner.setAttribute('aria-hidden','true'); body.appendChild(spinner);} const msg=document.createElement('span'); msg.className='toast__message'; msg.textContent=text; body.appendChild(msg); const closeBtn=document.createElement('button'); closeBtn.type='button'; closeBtn.className='toast__close'; closeBtn.setAttribute('aria-label','Dismiss'); closeBtn.textContent='x'; closeBtn.addEventListener('click',()=>removeToast(toastId)); toast.appendChild(body); toast.appendChild(closeBtn); viewport.appendChild(toast); requestAnimationFrame(()=>toast.classList.add('show')); if(alertType==='loading'){pcjToastState.loadingToastByChannel.set(channelKey,toastId); return;} const dismissMs=alertType==='error' ? 7600 : alertType==='warn' ? 5600 : 4200; const timer=setTimeout(()=>removeToast(toastId),dismissMs); pcjToastState.timers.set(toastId,timer);}
+  function clearChannelLoading(channel=PCJ_CHANNELS.general){const channelKey=String(channel || PCJ_CHANNELS.general).trim().toLowerCase() || PCJ_CHANNELS.general; const loadingId=pcjToastState.loadingToastByChannel.get(channelKey); if(loadingId) removeToast(loadingId);}
+  function setStatus(mainText, subText='', metaText=''){if(pcjEls.statusMain) pcjEls.statusMain.textContent=mainText || ''; if(pcjEls.statusSub) pcjEls.statusSub.textContent=subText || ''; if(pcjEls.statusMeta) pcjEls.statusMeta.textContent=metaText || '';}
+  function fetchJson(url, options={}){return fetch(url, options).then(async(response)=>{const payload=await response.json().catch(()=>({})); if(!response.ok || payload.status==='error') throw new Error(payload.message || 'Request failed'); return payload;});}
+  function scrollToJourneySection(){const section=pcjEls.journeySection; if(!section) return; const prefersReducedMotion=window.matchMedia && window.matchMedia('(prefers-reduced-motion: reduce)').matches; requestAnimationFrame(()=>section.scrollIntoView({behavior:prefersReducedMotion ? 'auto' : 'smooth', block:'start'}));}
+  function toNumber(v){const n=Number(v || 0); return Number.isFinite(n) ? n : 0;}
+  function momentKey(v){const t=String(v || '').trim(); if(!t) return ''; const d=new Date((t.includes('T')?t:t.replace(' ','T'))); return Number.isFinite(d.valueOf()) ? String(d.valueOf()) : t;}
+  function currentStatusMetaText(){const regNo=regNoForPatient(pcjState.selectedPatient || pcjState.patientSummary || {}); const unit=String(pcjState.unit || pcjEls.unit?.value || '').trim(); const parts=[]; if(regNo && regNo!=='-') parts.push(`Reg No ${regNo}`); if(unit) parts.push(unit); return parts.join(' | ') || 'No patient selected';}
+  function buildSummaryGroups(){
+    const s=pcjState.patientSummary || {};
+    const duplicateTone=toNumber(s.DuplicateVisitCount) > 0 ? 'amber' : 'slate';
+    const hospitalDueTone=toNumber(s.ActiveDueSnapshot) > 0 ? 'danger' : 'safe';
+    const pharmacyDueTone=toNumber(s.TotalPharmacyDueAmount) > 0 ? 'danger' : 'safe';
+    const unitKey=String(pcjState.unit || '').trim().toUpperCase();
+    const groups=[
+      {
+        key:'snapshot',
+        theme:'snapshot',
+        layout:'wide',
+        eyebrow:'Patient Snapshot',
+        title:'Identity & Journey Window',
+        description:'Core patient, visit, and duplicate markers that frame the journey before the financial totals below.',
+        items:[
+          {key:'reg_no',label:'Reg No',value:asText(s.RegistrationNo),sub:'',tone:'slate'},
+          {key:'first_visit',label:'First Visit',value:formatDateOnly(s.FirstVisitDate),sub:'',tone:'blue'},
+          {key:'last_visit',label:'Last Visit',value:formatDateOnly(s.LastVisitDate),sub:'',tone:'indigo'},
+          {key:'visit_count',label:'Visit Count',value:asText(s.VisitCount,'0'),sub:'',tone:'cyan'},
+          {key:'duplicate_visits',label:'Duplicate Visits',value:asText(s.DuplicateVisitCount,'0'),sub:'',tone:duplicateTone}
+        ]
+      },
+      {
+        key:'hospital_financials',
+        theme:'hospital',
+        eyebrow:'Hospital Financials',
+        title:'Hospital Billing & Collections',
+        description:'Deduplicated hospital net billing, open due, and collected receipt totals.',
+        items:[
+          {key:'hospital_billed',label:'Hospital Billed',value:formatMoney(s.TotalHospitalBilledAmount),sub:'Deduplicated hospital net amount',tone:'indigo'},
+          {key:'hospital_due',label:'Hospital Due',value:formatMoney(s.ActiveDueSnapshot),sub:'Current deduplicated hospital due',tone:hospitalDueTone},
+          {key:'hospital_receipts',label:'Hospital Receipts',value:formatMoney(s.TotalHospitalReceipts),sub:'Deduplicated hospital receipts',tone:'emerald'}
+        ]
+      },
+      {
+        key:'pharmacy_financials',
+        theme:'pharmacy',
+        eyebrow:'Pharmacy Financials',
+        title:'Pharmacy Billing & Collections',
+        description:'Deduplicated pharmacy billing, current due, and pharmacy receipt totals.',
+        items:[
+          {key:'pharmacy_billed',label:'Pharmacy Billed',value:formatMoney(s.TotalPharmacyBilledAmount),sub:'Deduplicated pharmacy net amount',tone:'teal'},
+          {key:'pharmacy_due',label:'Pharmacy Due',value:formatMoney(s.TotalPharmacyDueAmount),sub:'Current deduplicated pharmacy due',tone:pharmacyDueTone},
+          {key:'pharmacy_receipts',label:'Pharmacy Receipts',value:formatMoney(s.TotalPharmacyReceipts),sub:'Deduplicated pharmacy receipts',tone:'teal'}
+        ]
+      },
+      {
+        key:'adjustments',
+        theme:'adjustment',
+        eyebrow:'Adjustments & Conversions',
+        title:'Special Receipt Buckets',
+        description:'Receipt subsets already included in totals, separated here so users can identify adjustments and conversion activity quickly.',
+        items:[
+          {key:'debit_voucher',label:'Debit Voucher',value:formatMoney(s.TotalDebitVoucherReceipts),sub:'Included within existing receipt totals',tone:'amber'},
+          {key:'non_cash_cashless',label:'Non-Cash -> Cashless',value:formatMoney(s.TotalNonCashCashlessReceipts),sub:'Included within existing receipt totals',tone:'cyan'}
+        ]
+      }
+    ];
+    if(unitKey==='ACI' || toNumber(s.TotalMGBuyApprovalReceipts) > 0){
+      groups[3].items.push({key:'mgbuy_approval',label:'MGBUY Approval',value:formatMoney(s.TotalMGBuyApprovalReceipts),sub:'Included within existing receipt totals',tone:'indigo'});
+    }
+    return groups.filter((group)=>Array.isArray(group.items) && group.items.length);
+  }
+  function buildSummaryItems(){return buildSummaryGroups().flatMap((group)=>group.items);}
+  function matchesActiveKpi(row, key){const s=pcjState.patientSummary || {}; const rowMoment=momentKey(row?.JourneyDateTime || row?.VisitDate || row?.DischargeDate); switch(String(key || '').trim()){case 'reg_no': return true; case 'first_visit': return !!rowMoment && rowMoment===momentKey(s.FirstVisitDate); case 'last_visit': return !!rowMoment && rowMoment===momentKey(s.LastVisitDate); case 'visit_count': return String(row?.JourneyRowType || '').trim().toLowerCase()==='visit'; case 'duplicate_visits': return String(row?.JourneyRowType || '').trim().toLowerCase()==='virtual_visit'; case 'hospital_billed': return toNumber(row?.HospitalBillCount) > 0 || toNumber(row?.HospitalNetAmount) > 0 || toNumber(row?.HospitalGrossAmount) > 0; case 'hospital_due': return toNumber(row?.HospitalDueAmount) > 0; case 'pharmacy_billed': return toNumber(row?.PharmacyBillCount) > 0 || toNumber(row?.PharmacyNetAmount) > 0; case 'pharmacy_due': return toNumber(row?.PharmacyDueAmount) > 0; case 'hospital_receipts': return toNumber(row?.HospitalReceiptCount) > 0 || toNumber(row?.HospitalReceiptAmount) > 0; case 'pharmacy_receipts': return toNumber(row?.PharmacyReceiptCount) > 0 || toNumber(row?.PharmacyReceiptAmount) > 0; case 'debit_voucher': return toNumber(row?.DebitVoucherReceiptCount) > 0 || toNumber(row?.DebitVoucherReceiptAmount) > 0; case 'non_cash_cashless': return toNumber(row?.NonCashCashlessReceiptCount) > 0 || toNumber(row?.NonCashCashlessReceiptAmount) > 0; case 'mgbuy_approval': return toNumber(row?.MGBuyApprovalReceiptCount) > 0 || toNumber(row?.MGBuyApprovalReceiptAmount) > 0; default: return false;}}
+  function getActiveKpiMatchInfo(rowsInput){const rows=Array.isArray(rowsInput) ? rowsInput : (Array.isArray(pcjState.rows) ? pcjState.rows : []); const activeKey=String(pcjState.activeKpi || '').trim(); const activeItem=buildSummaryItems().find((item)=>item.key===activeKey) || null; const matchKeys=new Set(); if(!activeItem) return {activeKey:'',activeItem:null,matchKeys,count:0,hasMatches:false}; rows.forEach((row)=>{if(matchesActiveKpi(row,activeKey)) matchKeys.add(getRowKey(row));}); return {activeKey,activeItem,matchKeys,count:matchKeys.size,hasMatches:matchKeys.size>0};}
+  function syncActiveKpiStatus(notify=false){const matchInfo=getActiveKpiMatchInfo(); if(!matchInfo.activeItem) return; if(matchInfo.hasMatches){setStatus(`Highlighting ${matchInfo.activeItem.label}.`,`${matchInfo.count} journey row(s) on this page match this KPI. Click the active card again to clear.`,currentStatusMetaText()); if(notify) setChannelAlert(`Highlighting ${matchInfo.count} matching row(s).`,'success',PCJ_CHANNELS.general); return;} setStatus(`${matchInfo.activeItem.label} selected.`,`No matching row is visible on this page right now. Move through pages or click the active card again to clear.`,currentStatusMetaText()); if(notify) setChannelAlert(`${matchInfo.activeItem.label} has no matching rows on this page.`,'warn',PCJ_CHANNELS.general);}
+  function toggleKpiHighlight(key){const nextKey=String(key || '').trim(); if(!nextKey) return; pcjState.activeKpi=pcjState.activeKpi===nextKey ? '' : nextKey; renderJourney(); if(!pcjState.activeKpi){setStatus('Highlight cleared.','Showing all loaded journey rows on this page again.',currentStatusMetaText()); setChannelAlert('Journey highlight cleared.','success',PCJ_CHANNELS.general); return;} syncActiveKpiStatus(true);}
+
+  function renderResults(){
+    const rows=Array.isArray(pcjState.searchResults) ? pcjState.searchResults : [];
+    if(pcjEls.resultCount) pcjEls.resultCount.textContent=`${rows.length} ${rows.length===1 ? 'match' : 'matches'}`;
+    if(!pcjEls.resultsBody) return;
+    if(!rows.length){pcjEls.resultsBody.innerHTML='<tr><td colspan="7" class="empty">No patients found for this search.</td></tr>'; return;}
+    pcjEls.resultsBody.innerHTML=rows.map((row, idx)=>`
+      <tr>
+        <td><button class="btn-ghost" type="button" data-pcj-select="${idx}">Open Journey</button></td>
+        <td>${escapeHtml(asText(row.Registration_No || row.RegistrationNo,''))}</td>
+        <td>${escapeHtml(asText(row.PatientName || row.Patient,''))}</td>
+        <td>${escapeHtml(formatDateTime(row.Registration_Date))}</td>
+        <td>${escapeHtml(formatGender(row.Gender))}</td>
+        <td>${escapeHtml(asText(row.Age))}</td>
+        <td>${escapeHtml(asText(row.Mobile))}</td>
+      </tr>
+    `).join('');
+  }
+
+  function renderSummary(){
+    const s=pcjState.patientSummary || {};
+    const patientName=asText(s.PatientName,'Selected Patient');
+    const groups=buildSummaryGroups();
+    if(pcjEls.patientTitle) pcjEls.patientTitle.textContent=patientName;
+    if(pcjEls.patientMeta) pcjEls.patientMeta.textContent=`Reg No: ${asText(s.RegistrationNo)} | ${pcjState.totalRows || 0} journey row(s)`;
+    if(!pcjEls.summaryGrid) return;
+    pcjEls.summaryGrid.innerHTML=groups.map((group)=>{
+      const themeClass=group.theme ? ` summary-group--${escapeHtml(group.theme)}` : '';
+      const layoutClass=group.layout==='wide' ? ' summary-group--wide' : '';
+      const cards=group.items.map((item)=>{
+        const active=pcjState.activeKpi===item.key;
+        return `<button type="button" class="summary-item summary-item--${escapeHtml(item.tone || 'slate')} summary-item--button${active ? ' is-active' : ''}" data-pcj-kpi="${escapeHtml(item.key)}" aria-pressed="${active ? 'true' : 'false'}"><div class="label">${escapeHtml(item.label)}</div><div class="value">${escapeHtml(item.value)}</div><div class="sub">${escapeHtml(item.sub || '')}</div><div class="summary-item__hint">${active ? 'Click again to clear highlight' : 'Click to highlight matching visits'}</div></button>`;
+      }).join('');
+      return `<section class="summary-group${themeClass}${layoutClass}" data-summary-group="${escapeHtml(group.key)}"><div class="summary-group__head"><div class="summary-group__eyebrow">${escapeHtml(group.eyebrow || '')}</div><div class="summary-group__title">${escapeHtml(group.title || '')}</div><div class="summary-group__description">${escapeHtml(group.description || '')}</div></div><div class="summary-group__grid">${cards}</div></section>`;
+    }).join('');
+  }
+
+  function renderKeyValueGrid(obj, keys){
+    const items=keys.filter((entry)=>entry && entry.key).map((entry)=>{const value=obj?.[entry.key]; const text=entry.formatter ? entry.formatter(value,obj) : asText(value); const label=typeof entry.label === 'function' ? entry.label(obj) : entry.label; return `<div class="kv-item"><div class="kv-label">${escapeHtml(label)}</div><div class="kv-value">${escapeHtml(text)}</div></div>`;}).join('');
+    return items ? `<div class="kv-grid">${items}</div>` : '<div class="empty">No detail available.</div>';
+  }
+
+  function renderMiniTable(records, columns, emptyText){
+    const rows=Array.isArray(records) ? records : [];
+    if(!rows.length) return `<div class="empty">${escapeHtml(emptyText || 'No records found.')}</div>`;
+    const head=columns.map((col)=>`<th>${escapeHtml(col.label)}</th>`).join('');
+    const body=rows.map((row)=>`<tr>${columns.map((col)=>{const raw=row?.[col.key]; const text=col.formatter ? col.formatter(raw,row) : asText(raw); return `<td>${escapeHtml(text)}</td>`;}).join('')}</tr>`).join('');
+    return `<table class="mini-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+  }
+  function renderDetailPanels(detail){
+    const visitDetails=detail?.visit_details || {}, duplicateLinks=detail?.duplicate_links || {};
+    return `<div class="detail-panels">
+      <div class="detail-panel"><h4>Visit Details</h4>${renderKeyValueGrid(visitDetails,[{key:'JourneyRowType',label:'Row Type',formatter:(v)=>v==='virtual_visit'?'Virtual Visit':'Visit'},{key:'VisitTypeLabel',label:'Visit Type'},{key:'VisitNo',label:'Visit No'},{key:'JourneyVisitId',label:'Visit ID'},{key:'AdmissionNo',label:'Admission No'},{key:'VisitDate',label:'Visit Date',formatter:formatDateTime},{key:'DischargeDate',label:'Discharge Date',formatter:formatDateTime},{key:'PatientTypeName',label:'Patient Type'},{key:'PatientSubTypeName',label:'Patient Sub Type'},{key:'PayTypeLabel',label:'Pay Type'},{key:'WardName',label:'Ward'},{key:'RoomName',label:'Room'},{key:'BedName',label:'Bed'},{key:'AdmittedByName',label:(row)=>`${leadUserLabel(row)} By`},{key:'DuplicateInsertedByName',label:'Inserted By'},{key:'DuplicateUpdatedByName',label:'Updated By'},{key:'DuplicateVisitStatus',label:'Duplicate Status'},{key:'BillSubmitStatus',label:'Bill Submit Status'},{key:'Tag',label:'Tag'}])}</div>
+      <div class="detail-panel"><h4>Duplicate / Virtual Visit Links</h4>${renderKeyValueGrid(duplicateLinks,[{key:'journey_row_type',label:'Journey Row Type',formatter:(v)=>v==='virtual_visit'?'Virtual Visit':'Visit'},{key:'source_visit_id',label:'Source Visit ID'},{key:'source_visit_no',label:'Source Visit No'},{key:'source_admission_no',label:'Source Admission No'},{key:'linked_duplicate_visit_id',label:'Linked Duplicate Visit ID'}])}</div>
+      <div class="detail-panel wide"><h4>Hospital Bills</h4>${renderMiniTable(detail?.hospital_bills || [],[{key:'BillNo',label:'Bill No'},{key:'BillDate',label:'Bill Date',formatter:formatDateTime},{key:'GrossAmount',label:'Gross',formatter:formatMoney},{key:'DiscountAmount',label:'Discount',formatter:formatMoney},{key:'NetAmount',label:'Net',formatter:formatMoney},{key:'DueAmount',label:'Due',formatter:formatMoney},{key:'CancelStatus',label:'Cancelled'},{key:'UpdatedByName',label:'Updated By'},{key:'CanceledByName',label:'Cancelled By'}],'No hospital bills found for this journey row.')}</div>
+      <div class="detail-panel wide"><h4>Receipts</h4>${renderMiniTable(detail?.receipts || [],[{key:'ReceiptNo',label:'Receipt No'},{key:'ReceiptDate',label:'Receipt Date',formatter:formatDateTime},{key:'ReceiptType',label:'Receipt Type',formatter:formatReceiptType},{key:'Amount',label:'Amount',formatter:formatMoney},{key:'PaymentMode',label:'Payment Mode',formatter:formatPaymentMode},{key:'CancelStatus',label:'Cancelled'},{key:'InsertedByName',label:'Inserted By'},{key:'UpdatedByName',label:'Updated By'},{key:'CanceledByName',label:'Cancelled By'}],'No receipts found for this journey row.')}</div>
+      <div class="detail-panel wide"><h4>Pharmacy Bills / Returns</h4>${renderMiniTable(detail?.pharmacy_bills || [],[{key:'BillNo',label:'Bill No'},{key:'SaleDate',label:'Sale Date',formatter:formatDateTime},{key:'LineCount',label:'Lines'},{key:'TotalQty',label:'Qty'},{key:'ItemAmount',label:'Item Amount',formatter:formatMoney},{key:'BillNetAmount',label:'Bill Net',formatter:formatMoney},{key:'BillDueAmount',label:'Due',formatter:formatMoney},{key:'PharmacyByName',label:'By User'},{key:'CancelStatus',label:'Cancelled'}],'No pharmacy bills found for this journey row.')}<div style="height:10px;"></div>${renderMiniTable(detail?.pharmacy_returns || [],[{key:'ReturnCode',label:'Return Code'},{key:'ReturnDate',label:'Return Date',formatter:formatDateTime},{key:'LineCount',label:'Lines'},{key:'TotalReturnQty',label:'Qty'},{key:'TotalReturnAmt',label:'Return Amount',formatter:formatMoney},{key:'ReturnByName',label:'By User'},{key:'CancelStatus',label:'Cancelled'}],'No pharmacy returns found for this journey row.')}</div>
+      <div class="detail-panel"><h4>Cancellations & Audit Trail</h4>${renderMiniTable(detail?.cancellations_audit || [],[{key:'ItemType',label:'Type'},{key:'ReferenceNo',label:'Reference'},{key:'ReferenceDate',label:'Date',formatter:formatDateTime},{key:'Amount',label:'Amount',formatter:formatMoney},{key:'CancelledByName',label:'Cancelled By'},{key:'CancelledOn',label:'Cancelled On',formatter:formatDateTime}],'No cancellations found for this journey row.')}</div>
+      <div class="detail-panel"><h4>Related Duplicate Rows & Corp Bills</h4>${renderMiniTable(duplicateLinks.related_duplicates || [],[{key:'DuplicateVisitId',label:'Duplicate Visit ID'},{key:'SourceVisitId',label:'Source Visit ID'},{key:'VisitDate',label:'Visit Date',formatter:formatDateTime},{key:'VisitTypeLabel',label:'Type'},{key:'DuplicateVisitStatus',label:'Status'},{key:'InsertedByName',label:'Inserted By'}],'No related duplicate rows found.')}<div style="height:10px;"></div>${renderMiniTable(duplicateLinks.corp_bills || [],[{key:'CorpBillNo',label:'Corp Bill No'},{key:'Status',label:'Status'},{key:'CAmount',label:'Amount',formatter:formatMoney},{key:'dueAmount',label:'Due',formatter:formatMoney},{key:'SubmitDate',label:'Submitted',formatter:formatDateTime},{key:'DuplicateVisitId',label:'Duplicate Visit ID'}],'No corp bills linked to this row.')}</div>
+    </div>`;
+  }
+  function updatePager(){const p=Number(pcjState.page || 1), totalPages=Number(pcjState.totalPages || 0), totalRows=Number(pcjState.totalRows || 0); if(pcjEls.pageInfo) pcjEls.pageInfo.textContent=totalPages ? `Page ${p} of ${totalPages} | ${totalRows} rows` : 'Page 0 of 0'; if(pcjEls.prevBtn) pcjEls.prevBtn.disabled=p<=1; if(pcjEls.nextBtn) pcjEls.nextBtn.disabled=!totalPages || p>=totalPages;}
+  function renderDesktopRows(){const rows=Array.isArray(pcjState.rows) ? pcjState.rows : []; if(!pcjEls.timelineBody) return; if(!rows.length){pcjEls.timelineBody.innerHTML='<tr><td colspan="11" class="empty">No journey rows found for this patient.</td></tr>'; return;} const matchInfo=getActiveKpiMatchInfo(rows), hasMatchFocus=!!matchInfo.activeItem && matchInfo.hasMatches; pcjEls.timelineBody.innerHTML=rows.map((row)=>{const key=getRowKey(row), open=pcjState.openRows.has(key), detail=pcjState.detailCache.get(key), colorClass=`color-${row.ColorToken || 'slate'}`, isMatch=matchInfo.matchKeys.has(key), rowClass=hasMatchFocus ? (isMatch ? 'row-match' : 'row-dim') : ''; return `<tr class="${rowClass}"><td class="expand-cell"><button class="expand-btn" type="button" data-pcj-toggle="${escapeHtml(key)}">${open?'-':'+'}</button></td><td><div class="cell-title"><span class="badge ${colorClass}">${escapeHtml(row.RowTypeLabel || '-')}</span></div><div class="cell-sub"><span class="mini-pill ${colorClass}">${escapeHtml(row.VisitTypeLabel || row.VisitTypeCode || 'Other')}</span></div></td><td><div class="cell-title">Visit No ${escapeHtml(asText(row.VisitNo))}</div><div class="cell-sub">Visit ID ${escapeHtml(asText(row.JourneyVisitId))}</div><div class="cell-sub">Reg No ${escapeHtml(asText(row.RegNo))}</div></td><td><div class="cell-title">${escapeHtml(formatDateTime(row.VisitDate))}</div><div class="cell-sub">Discharge ${escapeHtml(formatDateTime(row.DischargeDate))}</div></td><td><div class="cell-title">${escapeHtml(asText(row.PatientTypeName))}</div><div class="cell-sub">${escapeHtml(asText(row.PatientSubTypeName))}</div><div class="cell-sub">${escapeHtml(asText(row.PayTypeLabel))}</div></td><td><div class="cell-title">Source ${escapeHtml(asText(row.SourceVisitId))}</div><div class="cell-sub">Linked Duplicate ${escapeHtml(asText(row.LinkedDuplicateVisitId))}</div><div class="cell-sub">${row.HasDuplicateLink ? 'Duplicate link present' : 'No duplicate link'}</div></td><td><div class="cell-title">${escapeHtml(asText(row.WardName))}</div><div class="cell-sub">${escapeHtml(asText(row.RoomName))}</div><div class="cell-sub">${escapeHtml(asText(row.BedName))}</div></td><td><div class="cell-title">${escapeHtml(leadUserLabel(row))} ${escapeHtml(asText(row.AdmittedByName))}</div><div class="cell-sub">Billed ${escapeHtml(asText(row.BilledByName))}</div><div class="cell-sub">Receipt ${escapeHtml(asText(row.ReceiptByName))}</div></td><td><div class="cell-title">${escapeHtml(asText(row.HospitalBillCount,'0'))} bill(s)</div><div class="cell-sub">Gross ${escapeHtml(formatMoney(row.HospitalGrossAmount))}</div><div class="cell-sub">Net ${escapeHtml(formatMoney(row.HospitalNetAmount))}</div><div class="cell-sub">Due ${escapeHtml(formatMoney(row.HospitalDueAmount))} | Cancel ${escapeHtml(asText(row.HospitalBillCancellationCount,'0'))}</div></td><td><div class="cell-title">Hospital ${escapeHtml(asText(row.HospitalReceiptCount,'0'))} receipt(s)</div><div class="cell-sub">Amount ${escapeHtml(formatMoney(row.HospitalReceiptAmount))} | Cancel ${escapeHtml(asText(row.HospitalReceiptCancellationCount,'0'))}</div><div class="cell-sub">Pharmacy ${escapeHtml(asText(row.PharmacyReceiptCount,'0'))} receipt(s)</div><div class="cell-sub">Amount ${escapeHtml(formatMoney(row.PharmacyReceiptAmount))} | Cancel ${escapeHtml(asText(row.PharmacyReceiptCancellationCount,'0'))}</div><div class="cell-sub">Latest ${escapeHtml(asText(row.LatestReceiptNo))} / ${escapeHtml(formatDateOnly(row.LatestReceiptDate))}</div></td><td><div class="cell-title">${escapeHtml(asText(row.PharmacyBillCount,'0'))} pharmacy bill(s)</div><div class="cell-sub">Amount ${escapeHtml(formatMoney(row.PharmacyNetAmount))}</div><div class="cell-sub">Due ${escapeHtml(formatMoney(row.PharmacyDueAmount))} | Cancel ${escapeHtml(asText(row.PharmacyCancellationCount,'0'))}</div><div class="cell-sub">Corp ${escapeHtml(asText(row.CorpBillStatus))} / ${escapeHtml(asText(row.CorpBillNo))}</div></td></tr>${open ? `<tr class="detail-row ${rowClass}"><td colspan="11">${detail ? renderDetailPanels(detail) : '<div class="empty">Loading visit detail...</div>'}</td></tr>` : ''}`;}).join('');}
+  function renderMobileRows(){const rows=Array.isArray(pcjState.rows) ? pcjState.rows : []; if(!pcjEls.mobileList) return; if(!rows.length){pcjEls.mobileList.innerHTML='<div class="empty">No journey rows found for this patient.</div>'; return;} const matchInfo=getActiveKpiMatchInfo(rows), hasMatchFocus=!!matchInfo.activeItem && matchInfo.hasMatches; pcjEls.mobileList.innerHTML=rows.map((row)=>{const key=getRowKey(row), open=pcjState.openRows.has(key), detail=pcjState.detailCache.get(key), isMatch=matchInfo.matchKeys.has(key), cardClass=hasMatchFocus ? (isMatch ? ' is-match' : ' is-dim') : ''; return `<div class="mobile-card${cardClass}"><div class="mobile-head"><div><div class="cell-title">${escapeHtml(row.RowTypeLabel || '-')} | ${escapeHtml(row.VisitTypeLabel || row.VisitTypeCode || 'Other')}</div><div class="cell-sub">Visit ID ${escapeHtml(asText(row.JourneyVisitId))} | Visit No ${escapeHtml(asText(row.VisitNo))}</div><div class="cell-sub">${escapeHtml(formatDateTime(row.VisitDate))}</div></div><button class="expand-btn" type="button" data-pcj-toggle="${escapeHtml(key)}">${open?'-':'+'}</button></div><div class="mobile-body"><div class="mobile-grid"><div class="kv-item"><div class="kv-label">Reg No</div><div class="kv-value">${escapeHtml(asText(row.RegNo))}</div></div><div class="kv-item"><div class="kv-label">Pay Type</div><div class="kv-value">${escapeHtml(asText(row.PayTypeLabel))}</div></div><div class="kv-item"><div class="kv-label">Duplicate Link</div><div class="kv-value">${row.HasDuplicateLink ? 'Present' : 'None'}</div></div><div class="kv-item"><div class="kv-label">Hospital Net</div><div class="kv-value">${escapeHtml(formatMoney(row.HospitalNetAmount))}</div></div><div class="kv-item"><div class="kv-label">Hospital Receipt</div><div class="kv-value">${escapeHtml(formatMoney(row.HospitalReceiptAmount))}</div></div><div class="kv-item"><div class="kv-label">Pharmacy Receipt</div><div class="kv-value">${escapeHtml(formatMoney(row.PharmacyReceiptAmount))}</div></div><div class="kv-item"><div class="kv-label">Pharmacy Bill</div><div class="kv-value">${escapeHtml(formatMoney(row.PharmacyNetAmount))}</div></div><div class="kv-item"><div class="kv-label">Pharmacy Due</div><div class="kv-value">${escapeHtml(formatMoney(row.PharmacyDueAmount))}</div></div></div></div>${open ? `<div class="mobile-detail">${detail ? renderDetailPanels(detail) : '<div class="empty">Loading visit detail...</div>'}</div>` : ''}</div>`;}).join('');}
+  function renderJourney(){renderSummary(); renderDesktopRows(); renderMobileRows(); updatePager(); if(pcjEls.pageSize) pcjEls.pageSize.value=String(pcjState.pageSize || 20); pcjEls.journeySection?.classList.remove('hidden');}
+  function resetJourneyState(clearSelection=true){pcjState.rows=[]; pcjState.patientSummary=null; pcjState.page=1; pcjState.totalRows=0; pcjState.totalPages=0; pcjState.detailCache=new Map(); pcjState.openRows=new Set(); if(clearSelection){pcjState.selectedPatient=null; pcjState.activeKpi=''; pcjEls.journeySection?.classList.add('hidden');} renderDesktopRows(); renderMobileRows(); updatePager();}
+  function resetSearchResults(message='Search patients to begin.'){pcjState.searchResults=[]; if(pcjEls.resultCount) pcjEls.resultCount.textContent='0 matches'; if(pcjEls.resultsBody) pcjEls.resultsBody.innerHTML=`<tr><td colspan="7" class="empty">${escapeHtml(message)}</td></tr>`;}
+  async function searchPatients(){const unit=String(pcjEls.unit?.value || '').trim(), query=String(pcjEls.searchInput?.value || '').trim(); if(!unit){setChannelAlert('Select a unit before searching patients.','warn',PCJ_CHANNELS.search); return;} if(!query){setChannelAlert('Enter a patient search value.','warn',PCJ_CHANNELS.search); return;} if(query.length<2 && !/^\d+$/.test(query)){setChannelAlert('Enter at least 2 characters or a numeric ID.','warn',PCJ_CHANNELS.search); return;} prewarmJourneyContext(unit); resetJourneyState(true); resetSearchResults('Searching patients...'); setChannelAlert('Searching patients...','loading',PCJ_CHANNELS.search); setStatus('Searching patients...','Matching against Patient ID, Reg No, Name, and Mobile.',`Unit ${unit}`); try{const payload=await fetchJson(`/api/patient-care-journey/patients_search?unit=${encodeURIComponent(unit)}&q=${encodeURIComponent(query)}&limit=300`); pcjState.unit=payload.unit || unit; pcjState.searchResults=Array.isArray(payload.data) ? payload.data : []; renderResults(); clearChannelLoading(PCJ_CHANNELS.search); if(pcjState.unit) prewarmJourneyContext(pcjState.unit); if(!pcjState.searchResults.length){setChannelAlert('No patients matched this search.','warn',PCJ_CHANNELS.search); setStatus('No matching patients found.','Try another identifier or broaden the search.',`Unit ${pcjState.unit}`); return;} setChannelAlert(`Found ${pcjState.searchResults.length} patient match(es).`,'success',PCJ_CHANNELS.search); setStatus(`Loaded ${pcjState.searchResults.length} patient match(es).`,'Select the exact patient row to open the care journey.',`Unit ${pcjState.unit}`);}catch(error){clearChannelLoading(PCJ_CHANNELS.search); resetSearchResults('Search patients to begin.'); setChannelAlert(error.message || 'Patient search failed.','error',PCJ_CHANNELS.search); setStatus('Patient search failed.',error.message || 'Unknown error.',unit || 'No unit');}}
+  async function loadJourneyPage(page, mode='journey'){const unit=String(pcjState.unit || pcjEls.unit?.value || '').trim(); const patient=pcjState.selectedPatient || {}; const patientId=patient.PatientId || patient.patientId; const regNo=regNoForPatient(patient); if(!unit || !patientId) return; const channel=mode==='page' ? PCJ_CHANNELS.page : PCJ_CHANNELS.journey; setChannelAlert(mode==='page' ? 'Loading next page...' : 'Loading patient journey...','loading',channel); setStatus(mode==='page' ? 'Loading next page...' : 'Loading patient journey...','Fetching paged journey rows and patient summary.',`${regNo === '-' ? 'Reg No -' : `Reg No ${regNo}`} | ${unit}`); try{const [payload]=await Promise.all([fetchJson(`/api/patient-care-journey/page?unit=${encodeURIComponent(unit)}&patient_id=${encodeURIComponent(patientId)}&page=${encodeURIComponent(page)}&page_size=${encodeURIComponent(pcjState.pageSize)}`),loadPaymentModes(unit,{silent:true})]); pcjState.rows=Array.isArray(payload.rows) ? payload.rows : []; pcjState.patientSummary=payload.patient_summary || {}; pcjState.page=Number(payload.page || 1); pcjState.pageSize=Number(payload.page_size || pcjState.pageSize || 20); pcjState.totalRows=Number(payload.total_rows || 0); pcjState.totalPages=Number(payload.total_pages || 0); renderJourney(); if(mode==='journey') scrollToJourneySection(); clearChannelLoading(channel); if(!pcjState.rows.length){setChannelAlert('This patient has no journey rows.','warn',channel); setStatus('No journey rows found.','The patient record is available, but no visits or duplicates were returned.',regNo === '-' ? 'No patient selected' : `Reg No ${regNo}`);}else{setChannelAlert(`Loaded page ${pcjState.page} of ${Math.max(pcjState.totalPages,1)}.`,'success',channel); setStatus('Patient journey loaded.',`Showing ${pcjState.rows.length} row(s) on page ${pcjState.page}. Expand any row for detail.`,`${regNo === '-' ? 'Reg No -' : `Reg No ${regNo}`} | ${unit}`); if(pcjState.activeKpi) syncActiveKpiStatus(false);}}catch(error){clearChannelLoading(channel); setChannelAlert(error.message || 'Failed to load patient journey.','error',channel); setStatus('Journey load failed.',error.message || 'Unknown error.',regNo === '-' ? 'No patient selected' : `Reg No ${regNo}`);}}
+  function selectPatient(index){const row=(pcjState.searchResults || [])[index]; if(!row) return; pcjState.selectedPatient=row; pcjState.unit=String(pcjEls.unit?.value || pcjState.unit || '').trim(); pcjState.detailCache=new Map(); pcjState.openRows=new Set(); pcjState.activeKpi=''; pcjState.page=1; loadJourneyPage(1,'journey');}
+  async function toggleRow(key){const row=(pcjState.rows || []).find((entry)=>getRowKey(entry)===key); if(!row) return; if(pcjState.openRows.has(key)){pcjState.openRows.delete(key); renderJourney(); return;} pcjState.openRows.add(key); renderJourney(); if(pcjState.detailCache.has(key)) return; setChannelAlert('Loading expanded visit details...','loading',PCJ_CHANNELS.detail); try{const payload=await fetchJson(`/api/patient-care-journey/detail?unit=${encodeURIComponent(pcjState.unit)}&patient_id=${encodeURIComponent(row.PatientId)}&journey_row_type=${encodeURIComponent(row.JourneyRowType)}&visit_id=${encodeURIComponent(row.JourneyVisitId)}&source_visit_id=${encodeURIComponent(row.SourceVisitId || '')}`); pcjState.detailCache.set(key,payload.detail || {}); clearChannelLoading(PCJ_CHANNELS.detail); setChannelAlert('Visit detail loaded.','success',PCJ_CHANNELS.detail); renderJourney();}catch(error){pcjState.openRows.delete(key); clearChannelLoading(PCJ_CHANNELS.detail); setChannelAlert(error.message || 'Failed to load visit detail.','error',PCJ_CHANNELS.detail); renderJourney();}}
+  function handlePrevPage(){if(pcjState.page<=1){setChannelAlert('You are already on the first page.','warn',PCJ_CHANNELS.page); return;} loadJourneyPage(pcjState.page-1,'page');}
+  function handleNextPage(){if(!pcjState.totalPages || pcjState.page>=pcjState.totalPages){setChannelAlert('You have reached the end of the journey pages.','warn',PCJ_CHANNELS.page); return;} loadJourneyPage(pcjState.page+1,'page');}
+  function resetAll(){resetSearchResults('Search patients to begin.'); resetJourneyState(true); if(pcjEls.searchInput) pcjEls.searchInput.value=''; clearToasts('',true); setStatus('Ready to search.','Pick a medical unit, search a patient, then open the journey timeline.','No patient selected');}
+  function handleUnitChange(){pcjState.unit=String(pcjEls.unit?.value || '').trim(); pcjPaymentModeMap=new Map(); resetSearchResults('Search patients to begin.'); resetJourneyState(true); clearToasts('',true); if(pcjState.unit){loadPaymentModes(pcjState.unit,{silent:true}); prewarmJourneyContext(pcjState.unit);} setStatus('Unit changed.','Search again to load patients for the selected medical unit.',pcjState.unit ? `Unit ${pcjState.unit}` : 'No patient selected');}
+
+  pcjEls.searchBtn?.addEventListener('click',searchPatients); pcjEls.resetBtn?.addEventListener('click',resetAll); pcjEls.prevBtn?.addEventListener('click',handlePrevPage); pcjEls.nextBtn?.addEventListener('click',handleNextPage); pcjEls.clearPatientBtn?.addEventListener('click',()=>{resetJourneyState(true); setStatus('Patient selection cleared.','Search again or choose another result from the current list.','No patient selected');}); pcjEls.unit?.addEventListener('change',handleUnitChange);
+  pcjEls.pageSize?.addEventListener('change',()=>{const nextSize=Number(pcjEls.pageSize.value || 20); pcjState.pageSize=[20,50,100].includes(nextSize) ? nextSize : 20; if(pcjState.selectedPatient) loadJourneyPage(1,'page');});
+  pcjEls.searchInput?.addEventListener('keydown',(event)=>{if(event.key==='Enter'){event.preventDefault(); searchPatients();}});
+  pcjEls.summaryGrid?.addEventListener('click',(event)=>{const button=event.target.closest('[data-pcj-kpi]'); if(!button) return; const key=String(button.dataset.pcjKpi || '').trim(); if(key) toggleKpiHighlight(key);});
+  pcjEls.resultsBody?.addEventListener('click',(event)=>{const button=event.target.closest('[data-pcj-select]'); if(!button) return; const idx=Number(button.dataset.pcjSelect || -1); if(Number.isInteger(idx) && idx>=0) selectPatient(idx);});
+  document.addEventListener('click',(event)=>{const button=event.target.closest('[data-pcj-toggle]'); if(button){const key=String(button.dataset.pcjToggle || '').trim(); if(key) toggleRow(key);}});
+
+  const fabToggle=document.getElementById('fabToggle'), fabMenu=document.getElementById('fabMenu'), notificationsToggle=document.getElementById('notificationsToggle'), notificationSection=document.getElementById('notificationSection'), notifArrow=document.getElementById('notifArrow'), notificationList=document.getElementById('notificationList'), notificationBadge=document.getElementById('notificationBadge'), markAllReadBtn=document.getElementById('markAllRead'), clearAllBtn=document.getElementById('clearAll');
+  const NOTIFICATION_BADGE_POLL_MS = 30000;
+  const NOTIFICATION_PANEL_POLL_MS = 60000;
+  let notificationPanelPoller = null;
+  function isNotificationPanelOpen(){return notificationSection?.style.display==='block';}
+  function stopNotificationPanelPolling(){if(notificationPanelPoller){clearInterval(notificationPanelPoller); notificationPanelPoller=null;}}
+  function startNotificationPanelPolling(){stopNotificationPanelPolling(); notificationPanelPoller=setInterval(()=>{if(!document.hidden && isNotificationPanelOpen()) loadNotifications();}, NOTIFICATION_PANEL_POLL_MS);}
+  fabToggle?.addEventListener('click',()=>fabMenu?.classList.toggle('open'));
+  notificationsToggle?.addEventListener('click',(e)=>{e.stopPropagation(); const willOpen=!isNotificationPanelOpen(); if(notificationSection) notificationSection.style.display=willOpen ? 'block' : 'none'; if(notifArrow) notifArrow.style.transform=willOpen ? 'rotate(180deg)' : 'rotate(0deg)'; if(willOpen){loadNotifications(); startNotificationPanelPolling();} else {stopNotificationPanelPolling();}});
+  document.addEventListener('click',(e)=>{if(!e.target.closest('.fab-user')){fabMenu?.classList.remove('open'); if(notificationSection) notificationSection.style.display='none'; if(notifArrow) notifArrow.style.transform='rotate(0deg)'; stopNotificationPanelPolling();}});
+  async function loadNotifications(){try{const response=await fetch('/api/notifications',{cache:'no-store'}); const data=await response.json(); const unread=Array.isArray(data.notifications)?data.notifications.filter((n)=>!n.read).length:Number(data.unreadCount || 0); if(data.notifications && data.notifications.length>0){notificationList.innerHTML=data.notifications.map((notif)=>`<div class="notification-item ${notif.read ? '' : 'unread'}" data-id="${notif.id}" data-link="${notif.link || ''}"><div class="notification-item-header"><h4 class="notification-title">${escapeHtml(notif.title)}</h4><span class="notification-date">${escapeHtml(notif.date)}</span></div><p class="notification-message">${escapeHtml(notif.message)}</p></div>`).join(''); document.querySelectorAll('.notification-item').forEach((item)=>{item.addEventListener('click',function(){const notifId=this.dataset.id, link=this.dataset.link; if(this.classList.contains('unread')){markAsRead(notifId); this.classList.remove('unread'); updateBadge();} if(link && link.trim()!=='') window.location.href=link;});});} else if(notificationList){notificationList.innerHTML='<div style="padding:20px;text-align:center;color:#9ca3af;font-size:13px;">No new notifications</div>';} updateBadge(unread);}catch(error){console.error('Error loading notifications:',error);}}
+  function updateBadge(count){const unreadCount=count!==undefined ? count : document.querySelectorAll('.notification-item.unread').length; if(!notificationBadge) return; if(unreadCount>0){notificationBadge.textContent=unreadCount>9?'9+':unreadCount; notificationBadge.style.display='grid';} else {notificationBadge.style.display='none';}}
+  async function markAsRead(notificationId){try{await fetch(`/api/notifications/${notificationId}/read`,{method:'POST'});}catch(error){console.error('Error marking notification as read:',error);}}
+  markAllReadBtn?.addEventListener('click',async(e)=>{e.stopPropagation(); try{await fetch('/api/notifications/mark-all-read',{method:'POST'}); document.querySelectorAll('.notification-item').forEach((item)=>item.classList.remove('unread')); updateBadge(0);}catch(error){console.error('Error marking all as read:',error);}});
+  clearAllBtn?.addEventListener('click',async(e)=>{e.stopPropagation(); try{await fetch('/api/notifications/clear',{method:'POST'}); if(notificationList) notificationList.innerHTML='<div style="padding:20px;text-align:center;color:#9ca3af;font-size:13px;">No new notifications</div>'; updateBadge(0);}catch(error){console.error('Error clearing notifications:',error);}});
+  async function pollUnreadCount(){try{const res=await fetch('/api/notifications/unread_count',{cache:'no-store'}); const data=await res.json(); updateBadge(Number(data.unread || 0));}catch(e){}}
+  setInterval(pollUnreadCount,NOTIFICATION_BADGE_POLL_MS); pollUnreadCount(); window.addEventListener('focus',()=>{if(isNotificationPanelOpen()) loadNotifications(); else pollUnreadCount();}); document.addEventListener('visibilitychange',()=>{if(document.visibilityState==='visible'){if(isNotificationPanelOpen()) loadNotifications(); else pollUnreadCount();}});
+  (function init(){pcjState.unit=String(pcjEls.unit?.value || '').trim(); if(pcjEls.pageSize) pcjEls.pageSize.value=String(pcjState.pageSize); resetSearchResults('Search patients to begin.'); updatePager(); if(pcjState.unit){loadPaymentModes(pcjState.unit,{silent:true}); prewarmJourneyContext(pcjState.unit);} if(!pcjState.unit){setStatus('No medical units available.','This page is limited to AHL, ACI, and BALLIA access.','Access required'); pcjEls.searchBtn?.setAttribute('disabled','disabled');}})();
+</script>
+{% endblock %}

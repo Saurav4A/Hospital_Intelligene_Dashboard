@@ -125,6 +125,218 @@ def _corp_bill_summary_parse_date_or_none(raw_value):
         return None
 
 
+def _is_sharpsight_unit(unit: str) -> bool:
+    return str(unit or "").strip().upper() == "SHARPSIGHT"
+
+
+SHARPSIGHT_RECEIPT_SOURCE_COL_CANDIDATES = [
+    "BillSourceKey",
+    "ReceiptBillSource",
+    "BillSource",
+]
+SHARPSIGHT_RECEIPT_SOURCE_OPENING = "OPENING"
+SHARPSIGHT_RECEIPT_SOURCE_AHL = "BILL_MST_AHL"
+SHARPSIGHT_RECEIPT_SOURCE_UNKNOWN = "UNKNOWN"
+
+
+def _table_columns_map_conn(conn, table_name: str) -> dict:
+    if not conn or not table_name:
+        return {}
+    parts = [p.strip() for p in str(table_name).split(".") if str(p or "").strip()]
+    if len(parts) == 1:
+        schema_name, bare_name = "dbo", parts[0]
+    else:
+        schema_name, bare_name = parts[-2], parts[-1]
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            """
+            SELECT COLUMN_NAME
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = ? AND TABLE_NAME = ?
+            ORDER BY ORDINAL_POSITION
+            """,
+            (schema_name, bare_name),
+        )
+        rows = cur.fetchall()
+    except Exception:
+        return {}
+    return {
+        str(getattr(row, "COLUMN_NAME", row[0]) or "").strip().lower(): str(getattr(row, "COLUMN_NAME", row[0]) or "").strip()
+        for row in rows
+        if str(getattr(row, "COLUMN_NAME", row[0]) or "").strip()
+    }
+
+
+def _pick_table_col_conn(conn, table_name: str, candidates: list[str]) -> str | None:
+    cols_map = _table_columns_map_conn(conn, table_name)
+    for cand in candidates or []:
+        key = str(cand or "").strip().lower()
+        if key and key in cols_map:
+            return cols_map[key]
+    return None
+
+
+def _ensure_sharpsight_receipt_source_column_conn(conn) -> dict:
+    result = {"column": None, "added": False}
+    if not conn:
+        return result
+
+    existing = _pick_table_col_conn(conn, "dbo.Corp_Receipt_Dtl", SHARPSIGHT_RECEIPT_SOURCE_COL_CANDIDATES)
+    if existing:
+        result["column"] = existing
+        return result
+
+    cur = conn.cursor()
+    try:
+        cur.execute("ALTER TABLE dbo.Corp_Receipt_Dtl ADD [BillSourceKey] NVARCHAR(40) NULL")
+        try:
+            conn.commit()
+        except Exception:
+            pass
+        result["column"] = "BillSourceKey"
+        result["added"] = True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        existing = _pick_table_col_conn(conn, "dbo.Corp_Receipt_Dtl", SHARPSIGHT_RECEIPT_SOURCE_COL_CANDIDATES)
+        if existing:
+            result["column"] = existing
+    return result
+
+
+def _backfill_sharpsight_receipt_source_conn(conn, source_col: str | None = None) -> dict:
+    result = {
+        "column": None,
+        "opening_overlap_marked": 0,
+        "ahl_overlap_marked": 0,
+        "opening_only_marked": 0,
+        "ahl_only_marked": 0,
+        "unknown_marked": 0,
+    }
+    if not conn:
+        return result
+
+    source_name = str(source_col or "").strip() or (_ensure_sharpsight_receipt_source_column_conn(conn).get("column") or "")
+    if not source_name:
+        return result
+    result["column"] = source_name
+
+    blank_expr = f"ISNULL(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(40), d.[{source_name}]))), ''), '') = ''"
+    receipt_dt_expr = "COALESCE(d.ReceiptDate, m.Receipt_Date)"
+    bill_dt_expr = "COALESCE(b.Submit_Date, b.CBill_Date, b.accUpdatedDate, b.visitDate, b.Updated_On)"
+
+    statements = [
+        (
+            "opening_overlap_marked",
+            f"""
+            UPDATE d
+            SET [{source_name}] = ?
+            FROM dbo.Corp_Receipt_Dtl d
+            LEFT JOIN dbo.Corp_Receipt_Mst m WITH (NOLOCK)
+                ON m.Receipt_ID = d.receiptId
+            INNER JOIN dbo.CorpOpening o WITH (NOLOCK)
+                ON o.OPId = d.billId
+            INNER JOIN dbo.Corp_Bill_Mst_AHL b WITH (NOLOCK)
+                ON b.CBill_ID = d.billId
+            WHERE {blank_expr}
+              AND (
+                    {receipt_dt_expr} IS NULL
+                    OR {bill_dt_expr} IS NULL
+                    OR CAST({receipt_dt_expr} AS DATETIME) < CAST({bill_dt_expr} AS DATETIME)
+                  )
+            """,
+            [SHARPSIGHT_RECEIPT_SOURCE_OPENING],
+        ),
+        (
+            "ahl_overlap_marked",
+            f"""
+            UPDATE d
+            SET [{source_name}] = ?
+            FROM dbo.Corp_Receipt_Dtl d
+            LEFT JOIN dbo.Corp_Receipt_Mst m WITH (NOLOCK)
+                ON m.Receipt_ID = d.receiptId
+            INNER JOIN dbo.CorpOpening o WITH (NOLOCK)
+                ON o.OPId = d.billId
+            INNER JOIN dbo.Corp_Bill_Mst_AHL b WITH (NOLOCK)
+                ON b.CBill_ID = d.billId
+            WHERE {blank_expr}
+              AND {receipt_dt_expr} IS NOT NULL
+              AND {bill_dt_expr} IS NOT NULL
+              AND CAST({receipt_dt_expr} AS DATETIME) >= CAST({bill_dt_expr} AS DATETIME)
+            """,
+            [SHARPSIGHT_RECEIPT_SOURCE_AHL],
+        ),
+        (
+            "opening_only_marked",
+            f"""
+            UPDATE d
+            SET [{source_name}] = ?
+            FROM dbo.Corp_Receipt_Dtl d
+            INNER JOIN dbo.CorpOpening o WITH (NOLOCK)
+                ON o.OPId = d.billId
+            LEFT JOIN dbo.Corp_Bill_Mst_AHL b WITH (NOLOCK)
+                ON b.CBill_ID = d.billId
+            WHERE {blank_expr}
+              AND b.CBill_ID IS NULL
+            """,
+            [SHARPSIGHT_RECEIPT_SOURCE_OPENING],
+        ),
+        (
+            "ahl_only_marked",
+            f"""
+            UPDATE d
+            SET [{source_name}] = ?
+            FROM dbo.Corp_Receipt_Dtl d
+            INNER JOIN dbo.Corp_Bill_Mst_AHL b WITH (NOLOCK)
+                ON b.CBill_ID = d.billId
+            LEFT JOIN dbo.CorpOpening o WITH (NOLOCK)
+                ON o.OPId = d.billId
+            WHERE {blank_expr}
+              AND o.OPId IS NULL
+            """,
+            [SHARPSIGHT_RECEIPT_SOURCE_AHL],
+        ),
+        (
+            "unknown_marked",
+            f"""
+            UPDATE d
+            SET [{source_name}] = ?
+            FROM dbo.Corp_Receipt_Dtl d
+            LEFT JOIN dbo.CorpOpening o WITH (NOLOCK)
+                ON o.OPId = d.billId
+            LEFT JOIN dbo.Corp_Bill_Mst_AHL b WITH (NOLOCK)
+                ON b.CBill_ID = d.billId
+            WHERE {blank_expr}
+              AND o.OPId IS NULL
+              AND b.CBill_ID IS NULL
+            """,
+            [SHARPSIGHT_RECEIPT_SOURCE_UNKNOWN],
+        ),
+    ]
+
+    cur = conn.cursor()
+    try:
+        for key, sql, params in statements:
+            cur.execute(sql, params)
+            try:
+                result[key] = int(cur.rowcount or 0)
+            except Exception:
+                result[key] = 0
+        try:
+            conn.commit()
+        except Exception:
+            pass
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    return result
+
+
 def _corp_bill_summary_dict_rows_from_cursor(cursor):
     if not cursor or not cursor.description:
         return []
@@ -555,6 +767,323 @@ def _fetch_corporate_bill_summary_page_sql(
         return {"status": "error", "message": f"Failed to fetch corporate bill summary page: {e}"}
 
 
+def _fetch_sharpsight_corporate_bill_summary_page_sql(
+    conn,
+    *,
+    from_date: str | None,
+    to_date: str | None,
+    visit_type: int,
+    status_filter: str,
+    patient_subtype: str,
+    search_query: str,
+    page: int,
+    page_size: int,
+):
+    if not conn:
+        return {"status": "error", "message": "Database connection unavailable"}
+
+    started = time.perf_counter()
+    try:
+        sql = """
+        SET NOCOUNT ON;
+        DECLARE @FromDate DATE = ?;
+        DECLARE @ToDate DATE = ?;
+        DECLARE @VisitType INT = ?;
+        DECLARE @StatusFilter NVARCHAR(20) = ?;
+        DECLARE @PatientSubtype NVARCHAR(200) = ?;
+        DECLARE @SearchQuery NVARCHAR(200) = ?;
+        DECLARE @Page INT = ?;
+        DECLARE @PageSize INT = ?;
+
+        IF @Page < 1 SET @Page = 1;
+        IF @PageSize < 1 SET @PageSize = 25;
+
+        DECLARE @StatusNorm NVARCHAR(20) = LOWER(LTRIM(RTRIM(ISNULL(@StatusFilter, N'all'))));
+        DECLARE @SubtypeNorm NVARCHAR(200) = LOWER(LTRIM(RTRIM(ISNULL(@PatientSubtype, N''))));
+        DECLARE @SearchLower NVARCHAR(200) = LOWER(LTRIM(RTRIM(ISNULL(@SearchQuery, N''))));
+        DECLARE @SearchLike NVARCHAR(220) = N'%' + @SearchLower + N'%';
+
+        ;WITH base AS (
+            SELECT
+                CAST(ISNULL(b.CBill_ID, 0) AS INT) AS CBill_ID,
+                CAST(NULLIF(COALESCE(v.Visit_ID, b.Visit_ID), 0) AS INT) AS Visit_ID,
+                CAST(NULLIF(COALESCE(v.PatientID, b.PatientID), 0) AS INT) AS PatientID,
+                CAST(ISNULL(b.Bill_ID, 0) AS INT) AS Bill_ID,
+                CAST(COALESCE(b.Old_Bill_Date, b.CBill_Date, b.visitDate, v.VisitDate) AS DATETIME) AS BillDate,
+                CAST(b.CBill_Date AS DATETIME) AS CBill_Date,
+                CAST(b.Submit_Date AS DATETIME) AS Submit_Date,
+                CAST(ISNULL(b.CAmount, 0) AS FLOAT) AS CAmount,
+                CAST(ISNULL(NULLIF(b.Due_Amt, 0), ISNULL(NULLIF(b.dueAmount, 0), ISNULL(b.CAmount, 0))) AS FLOAT) AS DueAmount,
+                CAST(
+                    CASE
+                        WHEN ISNULL(b.Old_Bill_Amt, 0) <> 0 THEN ISNULL(b.Old_Bill_Amt, 0)
+                        ELSE ISNULL(b.CAmount, 0)
+                    END
+                AS FLOAT) AS Old_Bill_Amt,
+                CAST(COALESCE(b.Old_Bill_Date, b.CBill_Date, b.visitDate, v.VisitDate) AS DATETIME) AS Old_Bill_Date,
+                LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(100), b.Status), N''))) AS StatusRaw,
+                CASE
+                    WHEN UPPER(LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(100), b.Status), N'')))) IN (N'Y', N'1', N'TRUE', N'YES', N'FINAL', N'FINAL SUBMITTED')
+                         OR UPPER(LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(100), b.Status), N'')))) LIKE N'%FINAL%'
+                        THEN 1
+                    ELSE 0
+                END AS IsFinalStatus,
+                ISNULL(
+                    NULLIF(CONVERT(NVARCHAR(80), b.CBill_NO), N''),
+                    ISNULL(NULLIF(CONVERT(NVARCHAR(80), b.Bill_No), N''), CONVERT(NVARCHAR(80), b.CBill_ID))
+                ) AS BillNo,
+                CAST(ISNULL(v.VisitTypeID, 0) AS INT) AS VisitTypeID,
+                ISNULL(CONVERT(NVARCHAR(120), v.TypeOfVisit), N'') AS TypeOfVisit,
+                CAST(COALESCE(b.visitDate, v.VisitDate) AS DATETIME) AS VisitDate,
+                CAST(COALESCE(b.dischargeDate, v.DischargeDate) AS DATETIME) AS DischargeDate,
+                CAST(NULLIF(COALESCE(v.PatientID, b.PatientID), 0) AS INT) AS VisitPatientID,
+                CAST(NULLIF(COALESCE(v.PatientType_ID, b.PatientTypeId), 0) AS INT) AS VisitPatientTypeID,
+                CAST(NULLIF(COALESCE(v.PatientSubType_ID, b.PatientTypeIdSrNo), 0) AS INT) AS VisitPatientSubTypeID,
+                CAST(NULLIF(v.DocInCharge, 0) AS INT) AS DocInChargeID,
+                CAST(NULLIF(v.DepartmentID, 0) AS INT) AS DepartmentID,
+                CAST(ISNULL(v.DischargeType, 0) AS INT) AS DischargeTypeID,
+                CAST(0 AS INT) AS CancelStatusNorm,
+                CASE
+                    WHEN ISNULL(v.VisitTypeID, 0) = 1
+                         OR UPPER(ISNULL(v.TypeOfVisit, N'')) LIKE N'%IPD%'
+                         OR UPPER(ISNULL(b.CBill_NO, N'')) LIKE N'%IPD%'
+                         OR UPPER(ISNULL(b.Bill_No, N'')) LIKE N'%IPD%'
+                        THEN 1
+                    ELSE 0
+                END AS IsIPDLike,
+                CASE
+                    WHEN ISNULL(v.VisitTypeID, 0) = 2
+                         OR UPPER(ISNULL(v.TypeOfVisit, N'')) LIKE N'%OPD%'
+                         OR UPPER(ISNULL(b.CBill_NO, N'')) LIKE N'%OPD%'
+                         OR UPPER(ISNULL(b.Bill_No, N'')) LIKE N'%OPD%'
+                        THEN 1
+                    ELSE 0
+                END AS IsOPDLike,
+                CASE
+                    WHEN ISNULL(v.VisitTypeID, 0) = 3
+                         OR UPPER(ISNULL(v.TypeOfVisit, N'')) LIKE N'%DPV%'
+                         OR UPPER(ISNULL(v.TypeOfVisit, N'')) LIKE N'%DAY%'
+                         OR UPPER(ISNULL(b.CBill_NO, N'')) LIKE N'%DPV%'
+                         OR UPPER(ISNULL(b.Bill_No, N'')) LIKE N'%DPV%'
+                        THEN 1
+                    ELSE 0
+                END AS IsDPVLike,
+                CASE
+                    WHEN COALESCE(v.PatientID, b.PatientID) IS NULL THEN ISNULL(NULLIF(CONVERT(NVARCHAR(80), b.regSrNo), N''), N'')
+                    ELSE ISNULL(dbo.fn_regno(COALESCE(v.PatientID, b.PatientID)), N'')
+                END AS Registration_No,
+                CASE
+                    WHEN COALESCE(v.PatientSubType_ID, b.PatientTypeIdSrNo) IS NULL THEN N''
+                    ELSE ISNULL(dbo.fn_patsub_type(COALESCE(v.PatientSubType_ID, b.PatientTypeIdSrNo)), N'')
+                END AS PatientSubTypeName,
+                ISNULL(CONVERT(NVARCHAR(120), b.Doc_nm), N'') AS DocNameRaw
+            FROM dbo.Corp_Bill_Mst_AHL b WITH (NOLOCK)
+            LEFT JOIN dbo.Visit v WITH (NOLOCK)
+                ON v.Visit_ID = b.Visit_ID
+        )
+        SELECT
+            b.CBill_ID,
+            b.Visit_ID,
+            b.PatientID,
+            b.Bill_ID,
+            b.BillDate,
+            b.CBill_Date,
+            b.Submit_Date,
+            b.CAmount,
+            b.DueAmount,
+            b.Old_Bill_Amt,
+            b.Old_Bill_Date,
+            b.StatusRaw,
+            b.IsFinalStatus,
+            b.BillNo,
+            b.VisitTypeID,
+            b.TypeOfVisit,
+            b.VisitDate,
+            b.DischargeDate,
+            b.VisitPatientID,
+            b.VisitPatientTypeID,
+            b.VisitPatientSubTypeID,
+            b.DocInChargeID,
+            b.DepartmentID,
+            b.Registration_No,
+            b.PatientSubTypeName,
+            b.DocNameRaw
+        INTO #corp_bill_filtered
+        FROM base b
+        WHERE
+            b.BillDate IS NOT NULL
+            AND (@FromDate IS NULL OR CAST(b.BillDate AS DATE) >= @FromDate)
+            AND (@ToDate IS NULL OR CAST(b.BillDate AS DATE) <= @ToDate)
+            AND (
+                (@VisitType = 0 AND (
+                    (ISNULL(b.IsIPDLike, 0) = 1 AND (ISNULL(b.DischargeTypeID, 0) = 2 OR b.DischargeDate IS NOT NULL) AND ISNULL(b.CancelStatusNorm, 0) = 0)
+                    OR (ISNULL(b.IsOPDLike, 0) = 1 AND ISNULL(b.CancelStatusNorm, 0) = 0)
+                    OR (ISNULL(b.IsDPVLike, 0) = 1)
+                ))
+                OR (@VisitType = 1 AND ISNULL(b.IsIPDLike, 0) = 1 AND (ISNULL(b.DischargeTypeID, 0) = 2 OR b.DischargeDate IS NOT NULL) AND ISNULL(b.CancelStatusNorm, 0) = 0)
+                OR (@VisitType = 2 AND ISNULL(b.IsOPDLike, 0) = 1 AND ISNULL(b.CancelStatusNorm, 0) = 0)
+                OR (@VisitType = 3 AND ISNULL(b.IsDPVLike, 0) = 1)
+            )
+            AND (
+                @StatusNorm = N'all'
+                OR (@StatusNorm = N'final' AND ISNULL(b.IsFinalStatus, 0) = 1)
+                OR (@StatusNorm = N'nonfinal' AND ISNULL(b.IsFinalStatus, 0) = 0)
+            )
+            AND (
+                @SubtypeNorm = N''
+                OR LOWER(ISNULL(b.PatientSubTypeName, N'')) = @SubtypeNorm
+            )
+            AND (
+                @SearchLower = N''
+                OR LOWER(ISNULL(b.BillNo, N'')) LIKE @SearchLike
+                OR LOWER(ISNULL(b.Registration_No, N'')) LIKE @SearchLike
+                OR LOWER(ISNULL(b.TypeOfVisit, N'')) LIKE @SearchLike
+                OR LOWER(ISNULL(b.PatientSubTypeName, N'')) LIKE @SearchLike
+                OR LOWER(ISNULL(b.DocNameRaw, N'')) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(10), CAST(b.BillDate AS DATE), 23)) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(10), CAST(b.BillDate AS DATE), 105)) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(10), CAST(b.BillDate AS DATE), 103)) LIKE @SearchLike
+                OR LOWER(REPLACE(CONVERT(NVARCHAR(11), CAST(b.BillDate AS DATE), 106), N' ', N'-')) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(19), CAST(b.BillDate AS DATETIME), 120)) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(40), ISNULL(b.Bill_ID, 0))) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(40), ISNULL(b.CBill_ID, 0))) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(40), ISNULL(b.Visit_ID, 0))) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(40), ISNULL(b.PatientID, 0))) LIKE @SearchLike
+                OR LOWER(
+                    CASE
+                        WHEN COALESCE(b.VisitPatientID, b.PatientID) IS NULL THEN N''
+                        ELSE ISNULL(dbo.fn_patientfullname(COALESCE(b.VisitPatientID, b.PatientID)), N'')
+                    END
+                ) LIKE @SearchLike
+            );
+
+        SELECT COUNT(1) AS total_rows FROM #corp_bill_filtered;
+
+        ;WITH numbered AS (
+            SELECT
+                f.*,
+                ROW_NUMBER() OVER (ORDER BY f.BillDate DESC, f.CBill_ID DESC, f.Bill_ID DESC) AS rn
+            FROM #corp_bill_filtered f
+        )
+        SELECT
+            n.CBill_ID,
+            n.Visit_ID,
+            n.PatientID,
+            ISNULL(NULLIF(n.Registration_No, N''), N'Unknown') AS Registration_No,
+            ISNULL(NULLIF(n.BillNo, N''), CONVERT(NVARCHAR(80), ISNULL(NULLIF(n.Bill_ID, 0), n.CBill_ID))) AS BillNo,
+            CAST(ISNULL(n.CAmount, 0) AS FLOAT) AS CAmount,
+            CAST(ISNULL(n.DueAmount, 0) AS FLOAT) AS DueAmount,
+            CAST(ISNULL(n.Old_Bill_Amt, 0) AS FLOAT) AS Old_Bill_Amt,
+            n.Old_Bill_Date,
+            CASE
+                WHEN ISNULL(n.IsFinalStatus, 0) = 1 THEN N'Final Submitted'
+                WHEN UPPER(LTRIM(RTRIM(ISNULL(n.StatusRaw, N'')))) = N'N' THEN N'Submission Pending'
+                WHEN LTRIM(RTRIM(ISNULL(n.StatusRaw, N''))) = N'' THEN N'Not Worked'
+                ELSE N'Submission Pending'
+            END AS [Status],
+            n.BillDate,
+            n.CBill_Date,
+            n.Submit_Date,
+            n.VisitDate,
+            n.DischargeDate,
+            CASE
+                WHEN COALESCE(n.VisitPatientID, n.PatientID) IS NULL THEN N''
+                ELSE ISNULL(dbo.fn_patientfullname(COALESCE(n.VisitPatientID, n.PatientID)), N'')
+            END AS PatientName,
+            ISNULL(n.TypeOfVisit, N'') AS TypeOfVisit,
+            CASE
+                WHEN n.VisitPatientTypeID IS NULL THEN N''
+                ELSE ISNULL(dbo.fn_pat_type(n.VisitPatientTypeID), N'')
+            END AS PatientType,
+            CASE
+                WHEN n.VisitPatientSubTypeID IS NULL THEN N''
+                ELSE ISNULL(n.PatientSubTypeName, N'')
+            END AS PatientSubType,
+            CASE
+                WHEN n.DocInChargeID IS NULL THEN ISNULL(n.DocNameRaw, N'')
+                ELSE ISNULL(dbo.fn_doctorfirstname(n.DocInChargeID), N'')
+            END AS DocInCharge,
+            CASE
+                WHEN n.DepartmentID IS NULL THEN N''
+                ELSE ISNULL(dbo.fn_dept(n.DepartmentID), N'')
+            END AS Dept
+        FROM numbered n
+        WHERE n.rn BETWEEN ((@Page - 1) * @PageSize + 1) AND (@Page * @PageSize)
+        ORDER BY n.rn;
+
+        SELECT DISTINCT
+            LTRIM(RTRIM(ISNULL(PatientSubTypeName, N''))) AS patient_subtype
+        FROM #corp_bill_filtered
+        WHERE LTRIM(RTRIM(ISNULL(PatientSubTypeName, N''))) <> N''
+        ORDER BY patient_subtype;
+        """
+
+        cur = conn.cursor()
+        cur.execute(
+            sql,
+            [
+                from_date,
+                to_date,
+                int(visit_type),
+                str(status_filter or "all"),
+                str(patient_subtype or ""),
+                str(search_query or ""),
+                int(page),
+                int(page_size),
+            ],
+        )
+
+        total_rows = 0
+        page_rows = []
+        available_subtypes = []
+        set_index = 0
+        while True:
+            if cur.description:
+                rows = _corp_bill_summary_dict_rows_from_cursor(cur)
+                if set_index == 0:
+                    if rows:
+                        total_rows = _corp_bill_summary_parse_int(rows[0].get("total_rows"), 0, 0, None)
+                elif set_index == 1:
+                    page_rows = rows
+                elif set_index == 2:
+                    for rec in rows:
+                        val = str(rec.get("patient_subtype") or "").strip()
+                        if val:
+                            available_subtypes.append(val)
+                set_index += 1
+            if not cur.nextset():
+                break
+
+        if available_subtypes:
+            dedup = []
+            seen = set()
+            for val in available_subtypes:
+                key = val.lower()
+                if key in seen:
+                    continue
+                seen.add(key)
+                dedup.append(val)
+            available_subtypes = dedup
+
+        total_pages = max(1, (int(total_rows) + int(page_size) - 1) // int(page_size)) if int(page_size) > 0 else 1
+        db_ms = round((time.perf_counter() - started) * 1000.0, 1)
+        return {
+            "status": "success",
+            "rows": page_rows,
+            "meta": {
+                "page": int(page),
+                "page_size": int(page_size),
+                "total_rows": int(total_rows),
+                "total_pages": int(total_pages),
+                "query_engine": "python_sql",
+                "available_patient_subtypes": available_subtypes,
+                "timings": {"db_ms": float(db_ms), "total_ms": float(db_ms)},
+            },
+        }
+    except Exception as e:
+        return {"status": "error", "message": f"Failed to fetch SharpSight corporate bill summary page: {e}"}
+
+
 def fetch_corporate_bill_summary_page(
     unit: str,
     from_date: str | None = None,
@@ -568,7 +1097,7 @@ def fetch_corporate_bill_summary_page(
     prefer_sp: bool = True,
 ):
     unit_key = str(unit or "").strip().upper()
-    if unit_key not in {"AHL", "ACI"}:
+    if unit_key not in {"AHL", "ACI", "SHARPSIGHT"}:
         return {"status": "error", "message": "Unit not supported for paged corporate bill summary"}
 
     vt = _corp_bill_summary_parse_int(visit_type, 0, 0, 3)
@@ -584,6 +1113,19 @@ def fetch_corporate_bill_summary_page(
     if not conn:
         return {"status": "error", "message": f"Could not connect to {unit_key} for corporate bill summary"}
     try:
+        if _is_sharpsight_unit(unit_key):
+            return _fetch_sharpsight_corporate_bill_summary_page_sql(
+                conn,
+                from_date=from_iso,
+                to_date=to_iso,
+                visit_type=vt,
+                status_filter=sf,
+                patient_subtype=subtype,
+                search_query=q,
+                page=pg,
+                page_size=pg_size,
+            )
+
         if bool(prefer_sp):
             sp_payload = _fetch_corporate_bill_summary_page_sp(
                 conn,
@@ -628,7 +1170,7 @@ def fetch_corporate_bill_summary_rows_for_export(
     prefer_sp: bool = True,
 ):
     unit_key = str(unit or "").strip().upper()
-    if unit_key not in {"AHL", "ACI"}:
+    if unit_key not in {"AHL", "ACI", "SHARPSIGHT"}:
         return {"status": "error", "message": "Unit not supported for this export flow"}
 
     all_rows = []
@@ -1217,6 +1759,12 @@ def fetch_corporate_reconciliation_page(
                 overpaid_corporate_val = overpaid_val
                 overpaid_opening_val = 0
             try:
+                closing_qty_val = int((row or {}).get("closing_qty") or 0)
+            except Exception:
+                closing_qty_val = 0
+            if "closing_qty" not in row:
+                closing_qty_val = partial_val + unpaid_val + overpaid_val
+            try:
                 closing_val = float((row or {}).get("closing_balance") or 0.0)
             except Exception:
                 closing_val = 0.0
@@ -1224,8 +1772,14 @@ def fetch_corporate_reconciliation_page(
                 {
                     "subtype": subtype_name,
                     "bills": bills_val,
+                    "bill_amount": float((row or {}).get("bill_amount") or 0.0),
                     "corporate_bills": corporate_val,
                     "opening_bills": opening_val,
+                    "receipt_all_time": float((row or {}).get("receipt_all_time") or 0.0),
+                    "tds_all_time": float((row or {}).get("tds_all_time") or 0.0),
+                    "rebate_discount_all_time": float((row or {}).get("rebate_discount_all_time") or 0.0),
+                    "writeoff_all_time": float((row or {}).get("writeoff_all_time") or 0.0),
+                    "settled_total_all_time": float((row or {}).get("settled_total_all_time") or 0.0),
                     "settled_count": settled_val,
                     "settled_corporate_count": settled_corporate_val,
                     "settled_opening_count": settled_opening_val,
@@ -1238,6 +1792,7 @@ def fetch_corporate_reconciliation_page(
                     "overpaid_count": overpaid_val,
                     "overpaid_corporate_count": overpaid_corporate_val,
                     "overpaid_opening_count": overpaid_opening_val,
+                    "closing_qty": closing_qty_val,
                     "closing_balance": closing_val,
                 }
             )
@@ -1276,6 +1831,373 @@ def fetch_corporate_reconciliation_page(
             pass
 
 
+def _fetch_sharpsight_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-31", bill_ids=None):
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for SharpSight corporate reconciliation")
+        return None
+    try:
+        receipt_source_info = _ensure_sharpsight_receipt_source_column_conn(conn) or {}
+        receipt_source_col = str(receipt_source_info.get("column") or "").strip() or None
+        receipt_source_backfill = _backfill_sharpsight_receipt_source_conn(conn, receipt_source_col) if receipt_source_col else {}
+
+        normalized_bill_ids = []
+        if bill_ids:
+            try:
+                normalized_bill_ids = sorted(
+                    {
+                        int(v)
+                        for v in list(bill_ids)
+                        if str(v).strip().lstrip("-").isdigit() and int(v) > 0
+                    }
+                )
+            except Exception:
+                normalized_bill_ids = []
+
+        def _pick_col(cols_map: dict, candidates: list[str]):
+            for cand in candidates:
+                key = str(cand or "").strip().lower()
+                if key and key in cols_map:
+                    return cols_map[key]
+            return None
+
+        def _first_existing_table(candidates: list[str]):
+            for table_name in candidates:
+                try:
+                    pd.read_sql(f"SELECT TOP 0 * FROM {table_name}", conn)
+                    return table_name
+                except Exception:
+                    continue
+            return None
+
+        def _table_cols_map(table_name: str) -> dict:
+            if not table_name:
+                return {}
+            try:
+                preview_df = pd.read_sql(f"SELECT TOP 0 * FROM {table_name}", conn)
+                return {str(c).strip().lower(): str(c).strip() for c in preview_df.columns}
+            except Exception:
+                return {}
+
+        def _safe_int_expr(raw_expr: str) -> str:
+            expr = str(raw_expr or "").strip()
+            if not expr:
+                return "CAST(NULL AS INT)"
+            txt = f"LTRIM(RTRIM(CONVERT(NVARCHAR(100), {expr})))"
+            return (
+                "CASE "
+                f"WHEN {txt} = '' THEN NULL "
+                f"WHEN {txt} LIKE '%[^0-9]%' THEN NULL "
+                f"ELSE CAST({expr} AS INT) END"
+            )
+
+        dtl_cols_map = _table_cols_map("dbo.Corp_Receipt_Dtl")
+        mst_cols_map = _table_cols_map("dbo.Corp_Receipt_Mst")
+        bill_cols_map = _table_cols_map("dbo.Corp_Bill_Mst_AHL")
+        dtl_receipt_date_col = _pick_col(dtl_cols_map, ["ReceiptDate"])
+        rebate_discount_col = _pick_col(mst_cols_map, ["rebateDiscountAmt", "RebateDiscountAmt"])
+        tds_amt_col = _pick_col(mst_cols_map, ["TDSAmt", "TdsAmt", "tdsAmt", "TDS_AMT"])
+        dtl_inserted_by_col = _pick_col(dtl_cols_map, ["insertedBy", "InsertedBy", "Inserted_By"])
+        bill_updated_by_col = _pick_col(bill_cols_map, ["accUserId", "Updated_By", "UpdatedBy", "updated_by"])
+        bill_updated_on_col = _pick_col(bill_cols_map, ["accUpdatedDate", "Updated_On", "UpdatedOn", "ModifiedOn"])
+
+        has_dtl_receipt_date = bool(dtl_receipt_date_col)
+        has_rebate_discount_amt = bool(rebate_discount_col)
+        has_tds_amt = bool(tds_amt_col)
+        receipt_date_expr = f"d.[{dtl_receipt_date_col}]" if dtl_receipt_date_col else "m.Receipt_Date"
+        rebate_discount_expr = (
+            f"CAST(ISNULL(m.[{rebate_discount_col}], 0) AS FLOAT)"
+            if rebate_discount_col
+            else "CAST(0 AS FLOAT)"
+        )
+        tds_amt_expr = (
+            f"CAST(ISNULL(m.[{tds_amt_col}], 0) AS FLOAT)"
+            if tds_amt_col
+            else "CAST(0 AS FLOAT)"
+        )
+        bill_updated_on_expr = (
+            "CAST(CASE "
+            f"WHEN ISDATE(CONVERT(NVARCHAR(50), b.[{bill_updated_on_col}])) = 1 "
+            f"THEN CONVERT(DATETIME, b.[{bill_updated_on_col}]) "
+            "ELSE NULL END AS DATETIME)"
+            if bill_updated_on_col
+            else "CAST(NULL AS DATETIME)"
+        )
+        bill_updated_by_id_expr = (
+            _safe_int_expr(f"b.[{bill_updated_by_col}]")
+            if bill_updated_by_col
+            else "CAST(NULL AS INT)"
+        )
+        dtl_inserted_by_id_expr = (
+            _safe_int_expr(f"d.[{dtl_inserted_by_col}]")
+            if dtl_inserted_by_col
+            else "CAST(NULL AS INT)"
+        )
+
+        pm_table = _first_existing_table([
+            "dbo.PaymentMode_Mst",
+            "dbo.Paymentmode_mst",
+            "dbo.PaymentModeMst",
+        ])
+        pm_cols = _table_cols_map(pm_table) if pm_table else {}
+        pm_id_col = _pick_col(pm_cols, ["PModeID", "PModeId", "PaymentModeID", "Id"]) if pm_cols else None
+        pm_name_col = _pick_col(pm_cols, ["PModeName", "PaymentMode", "ModeName", "PaymentModeName"]) if pm_cols else None
+        payment_mode_expr = "CONVERT(NVARCHAR(100), m.CPayment_Mode)"
+        payment_mode_join = ""
+        if pm_table and pm_id_col and pm_name_col:
+            payment_mode_join = f"LEFT JOIN {pm_table} pm WITH (NOLOCK) ON pm.[{pm_id_col}] = m.CPayment_Mode"
+            payment_mode_expr = (
+                f"LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(200), pm.[{pm_name_col}]), "
+                f"CONVERT(NVARCHAR(100), m.CPayment_Mode))))"
+            )
+
+        user_table = _first_existing_table([
+            "dbo.User_Mst",
+            "dbo.user_mst",
+            "dbo.UserMst",
+        ])
+        user_cols = _table_cols_map(user_table) if user_table else {}
+        user_id_col = _pick_col(user_cols, ["UserId", "Userid", "User_ID", "Id", "AccountId"]) if user_cols else None
+        user_name_col = _pick_col(user_cols, ["UserName", "User_Name", "Username", "Name", "EmpName"]) if user_cols else None
+
+        bill_user_join = ""
+        bill_updated_by_name_expr = "CAST('' AS NVARCHAR(200))"
+        if user_table and user_id_col and user_name_col and bill_updated_by_col:
+            bill_user_join = f"LEFT JOIN {user_table} u_bill WITH (NOLOCK) ON u_bill.[{user_id_col}] = c.BillUpdatedById"
+            bill_updated_by_name_expr = (
+                "CASE WHEN c.BillUpdatedById IS NULL THEN '' ELSE "
+                f"LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(200), u_bill.[{user_name_col}]), "
+                "CONVERT(NVARCHAR(100), c.BillUpdatedById)))) END"
+            )
+        elif bill_updated_by_col:
+            bill_updated_by_name_expr = (
+                "CASE WHEN c.BillUpdatedById IS NULL THEN '' ELSE "
+                "CONVERT(NVARCHAR(100), c.BillUpdatedById) END"
+            )
+
+        receipt_user_join = ""
+        inserted_by_name_expr = "CAST('' AS NVARCHAR(200))"
+        if user_table and user_id_col and user_name_col and dtl_inserted_by_col:
+            receipt_user_join = (
+                f"LEFT JOIN {user_table} u_dtl WITH (NOLOCK) "
+                f"ON u_dtl.[{user_id_col}] = {dtl_inserted_by_id_expr}"
+            )
+            inserted_by_name_expr = (
+                f"LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(200), u_dtl.[{user_name_col}]), "
+                f"CONVERT(NVARCHAR(100), {dtl_inserted_by_id_expr}))))"
+            )
+        elif dtl_inserted_by_col:
+            inserted_by_name_expr = f"CONVERT(NVARCHAR(100), {dtl_inserted_by_id_expr})"
+
+        bill_scope_clause = ""
+        bill_scope_params = []
+        if normalized_bill_ids:
+            placeholders = ",".join(["?"] * len(normalized_bill_ids))
+            bill_scope_clause = f"WHERE c.BillId IN ({placeholders})"
+            bill_scope_params = list(normalized_bill_ids)
+
+        bills_sql = f"""
+            ;WITH canonical AS (
+                SELECT
+                    CAST(b.CBill_ID AS INT) AS BillId,
+                    CAST('BILL_MST_AHL' AS NVARCHAR(40)) AS BillSource,
+                    CAST(COALESCE(b.Submit_Date, b.Old_Bill_Date, b.CBill_Date, b.visitDate, v.VisitDate) AS DATETIME) AS BillDate,
+                    CAST(ISNULL(b.CAmount, 0) AS FLOAT) AS BillAmount,
+                    CAST(
+                        ISNULL(
+                            NULLIF(CONVERT(NVARCHAR(80), b.CBill_NO), ''),
+                            ISNULL(NULLIF(CONVERT(NVARCHAR(80), b.Bill_No), ''), CONVERT(NVARCHAR(80), b.CBill_ID))
+                        ) AS NVARCHAR(80)
+                    ) AS BillNo,
+                    CAST(NULLIF(COALESCE(v.PatientID, b.PatientID), 0) AS INT) AS PatientId,
+                    CAST(NULLIF(COALESCE(v.PatientType_ID, b.PatientTypeId), 0) AS INT) AS PatientTypeId,
+                    CAST(NULLIF(COALESCE(v.PatientSubType_ID, b.PatientTypeIdSrNo), 0) AS INT) AS PatientSubTypeId,
+                    CAST(NULLIF(COALESCE(v.Visit_ID, b.Visit_ID), 0) AS INT) AS VisitId,
+                    CAST(b.Submit_Date AS DATETIME) AS SubmitDateRaw,
+                    CAST(b.CBill_Date AS DATETIME) AS CBillDateRaw,
+                    CAST(NULL AS DATETIME) AS DueDate,
+                    CAST('' AS NVARCHAR(255)) AS SourcePatientName,
+                    CAST(ISNULL(b.Status, '') AS NVARCHAR(80)) AS BillStatusRaw,
+                    CAST(ISNULL(NULLIF(b.Due_Amt, 0), ISNULL(NULLIF(b.dueAmount, 0), ISNULL(b.CAmount, 0))) AS FLOAT) AS BillDueAmountRaw,
+                    CAST(0 AS INT) AS BillAuditedFlag,
+                    {bill_updated_on_expr} AS BillUpdatedOnRaw,
+                    {bill_updated_by_id_expr} AS BillUpdatedById,
+                    ISNULL(v.TypeOfVisit, '') AS TypeOfVisit,
+                    CAST(COALESCE(b.visitDate, v.VisitDate) AS DATETIME) AS VisitDate,
+                    CAST(COALESCE(b.dischargeDate, v.DischargeDate) AS DATETIME) AS DischargeDate,
+                    CASE
+                        WHEN COALESCE(v.PatientID, b.PatientID) IS NULL THEN ''
+                        ELSE ISNULL(dbo.fn_patientfullname(COALESCE(v.PatientID, b.PatientID)), '')
+                    END AS PatientName,
+                    CASE
+                        WHEN COALESCE(v.PatientType_ID, b.PatientTypeId) IS NULL THEN ''
+                        ELSE ISNULL(dbo.fn_pat_type(COALESCE(v.PatientType_ID, b.PatientTypeId)), '')
+                    END AS PatientType,
+                    CASE
+                        WHEN COALESCE(v.PatientSubType_ID, b.PatientTypeIdSrNo) IS NULL THEN ''
+                        ELSE ISNULL(dbo.fn_patsub_type(COALESCE(v.PatientSubType_ID, b.PatientTypeIdSrNo)), '')
+                    END AS PatientSubType,
+                    CASE
+                        WHEN v.DepartmentID IS NULL THEN ''
+                        ELSE ISNULL(dbo.fn_dept(v.DepartmentID), '')
+                    END AS Dept,
+                    CASE
+                        WHEN v.UnitID IS NULL THEN ''
+                        ELSE ISNULL(dbo.Fn_subDept(v.UnitID), '')
+                    END AS SubDept
+                FROM dbo.Corp_Bill_Mst_AHL b WITH (NOLOCK)
+                LEFT JOIN dbo.Visit v WITH (NOLOCK)
+                    ON v.Visit_ID = b.Visit_ID
+            )
+            SELECT
+                c.BillId,
+                c.BillSource,
+                c.BillDate,
+                c.BillAmount,
+                c.BillNo,
+                c.PatientId,
+                c.VisitId,
+                c.SubmitDateRaw,
+                c.CBillDateRaw,
+                c.DueDate,
+                c.SourcePatientName,
+                c.BillStatusRaw,
+                c.BillDueAmountRaw,
+                c.BillAuditedFlag,
+                c.BillUpdatedOnRaw,
+                c.BillUpdatedById,
+                {bill_updated_by_name_expr} AS BillUpdatedByName,
+                CAST(0 AS FLOAT) AS OpeningReceiptAmt,
+                CAST(0 AS INT) AS OpeningReceiptId,
+                CAST(0 AS FLOAT) AS OpeningWriteOffAmt,
+                c.TypeOfVisit,
+                c.VisitDate,
+                c.DischargeDate,
+                c.PatientName,
+                c.PatientType,
+                c.PatientSubType,
+                c.Dept,
+                c.SubDept
+            FROM canonical c
+            {bill_user_join}
+            {bill_scope_clause}
+        """
+        bills_df = pd.read_sql(bills_sql, conn, params=bill_scope_params or None)
+
+        stored_receipt_source_expr = (
+            f"NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(40), d.[{receipt_source_col}]))), '')"
+            if receipt_source_col
+            else "NULL"
+        )
+        bill_date_expr = "COALESCE(b.Submit_Date, b.CBill_Date, b.accUpdatedDate, b.visitDate, b.Updated_On)"
+        computed_receipt_source_expr = (
+            "CASE "
+            f"WHEN o.OPId IS NOT NULL AND b.CBill_ID IS NOT NULL AND ({receipt_date_expr} IS NULL OR {bill_date_expr} IS NULL OR CAST({receipt_date_expr} AS DATETIME) < CAST({bill_date_expr} AS DATETIME)) THEN N'{SHARPSIGHT_RECEIPT_SOURCE_OPENING}' "
+            f"WHEN b.CBill_ID IS NOT NULL THEN N'{SHARPSIGHT_RECEIPT_SOURCE_AHL}' "
+            f"WHEN o.OPId IS NOT NULL THEN N'{SHARPSIGHT_RECEIPT_SOURCE_OPENING}' "
+            f"ELSE N'{SHARPSIGHT_RECEIPT_SOURCE_UNKNOWN}' END"
+        )
+        receipt_source_expr = f"COALESCE({stored_receipt_source_expr}, {computed_receipt_source_expr})"
+
+        receipt_where_parts = [f"{receipt_source_expr} = N'{SHARPSIGHT_RECEIPT_SOURCE_AHL}'"]
+        receipt_scope_params = []
+        if normalized_bill_ids:
+            placeholders = ",".join(["?"] * len(normalized_bill_ids))
+            receipt_where_parts.append(f"d.billId IN ({placeholders})")
+            receipt_scope_params = list(normalized_bill_ids)
+        receipt_scope_clause = f"WHERE {' AND '.join(receipt_where_parts)}" if receipt_where_parts else ""
+
+        receipts_sql = f"""
+            SELECT
+                CAST(d.recDtlId AS INT) AS ReceiptDetailId,
+                CAST(d.receiptId AS INT) AS ReceiptId,
+                CAST(d.billId AS INT) AS BillId,
+                CAST(ISNULL(d.billAmt, 0) AS FLOAT) AS BillAmtDtl,
+                CAST(ISNULL(d.receiptAmt, 0) AS FLOAT) AS ReceiptAmtDtl,
+                CAST(
+                    CASE
+                        WHEN ABS(ROUND(ISNULL(d.billAmt, 0) - (ISNULL(d.receiptAmt, 0) + ISNULL(m.TDSAmt, 0) + ISNULL(m.rebateDiscountAmt, 0)), 2)) <= 0.01 THEN 0
+                        ELSE ROUND(ISNULL(d.billAmt, 0) - (ISNULL(d.receiptAmt, 0) + ISNULL(m.TDSAmt, 0) + ISNULL(m.rebateDiscountAmt, 0)), 2)
+                    END
+                    AS FLOAT
+                ) AS DueAmtDtl,
+                CAST(NULLIF(d.visitId, 0) AS INT) AS DtlVisitId,
+                CAST(NULLIF(d.PatientId, 0) AS INT) AS DtlPatientId,
+                d.insertedOn AS InsertedOn,
+                {dtl_inserted_by_id_expr} AS InsertedById,
+                {inserted_by_name_expr} AS InsertedByName,
+                {receipt_date_expr} AS ReceiptDate,
+                m.Receipt_Date AS ReceiptDateMst,
+                ISNULL(CONVERT(NVARCHAR(80), m.CReceipt_No), '') AS ReceiptNo,
+                CAST(ISNULL(m.Amount, 0) AS FLOAT) AS ReceiptMstAmount,
+                CAST(ISNULL(m.NetAmt, ISNULL(m.Amount, 0)) AS FLOAT) AS ReceiptNetAmt,
+                CAST(ISNULL(m.GrossAmt, ISNULL(m.Amount, 0)) AS FLOAT) AS ReceiptGrossAmt,
+                {tds_amt_expr} AS TDSAmt,
+                CAST(0 AS FLOAT) AS WriteOffAmt,
+                CAST(ISNULL(m.Cancelstatus, 0) AS INT) AS CancelStatus,
+                ISNULL(CONVERT(NVARCHAR(120), m.UTRNo), '') AS UTRNo,
+                CAST(ISNULL(m.CPayment_Mode, 0) AS INT) AS PaymentModeId,
+                {payment_mode_expr} AS PaymentMode,
+                {rebate_discount_expr} AS RebateDiscountAmt,
+                CAST({receipt_source_expr} AS NVARCHAR(40)) AS ReceiptBillSourceKey,
+                CAST(NULLIF(m.VisitID, 0) AS INT) AS MstVisitId,
+                CAST(NULLIF(m.PatientID, 0) AS INT) AS MstPatientId
+            FROM dbo.Corp_Receipt_Dtl d WITH (NOLOCK)
+            INNER JOIN dbo.Corp_Bill_Mst_AHL b WITH (NOLOCK)
+                ON b.CBill_ID = d.billId
+            LEFT JOIN dbo.CorpOpening o WITH (NOLOCK)
+                ON o.OPId = d.billId
+            LEFT JOIN dbo.Corp_Receipt_Mst m WITH (NOLOCK)
+                ON d.receiptId = m.Receipt_ID
+            {payment_mode_join}
+            {receipt_user_join}
+            {receipt_scope_clause}
+        """
+        if receipt_scope_params:
+            receipts_df = pd.read_sql(receipts_sql, conn, params=receipt_scope_params)
+        else:
+            receipts_df = pd.read_sql(receipts_sql, conn)
+
+        if bills_df is None:
+            bills_df = pd.DataFrame()
+        if receipts_df is None:
+            receipts_df = pd.DataFrame()
+
+        if not bills_df.empty:
+            bills_df.columns = [c.strip() for c in bills_df.columns]
+            bills_df["Unit"] = (unit or "").upper()
+        if not receipts_df.empty:
+            receipts_df.columns = [c.strip() for c in receipts_df.columns]
+            receipts_df["Unit"] = (unit or "").upper()
+
+        return {
+            "bills": bills_df,
+            "receipts": receipts_df,
+            "meta": {
+                "has_dtl_receipt_date": bool(has_dtl_receipt_date),
+                "has_rebate_discount_amt": bool(has_rebate_discount_amt),
+                "has_tds_amt": bool(has_tds_amt),
+                "has_receipt_writeoff_amt": False,
+                "has_opening_writeoff_amt": False,
+                "has_bill_audited_flag": False,
+                "receipt_writeoff_column": None,
+                "opening_writeoff_column": None,
+                "bill_audited_column": None,
+                "receipt_source_column": receipt_source_col,
+                "receipt_source_backfill": receipt_source_backfill,
+                "cutoff_date": cutoff_date,
+            },
+        }
+    except Exception as e:
+        print(f"Error fetching SharpSight reconciliation raw ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def fetch_corporate_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-31", bill_ids=None):
     """
     Fetch canonical corporate bill universe + linked corporate receipt lines.
@@ -1285,6 +2207,9 @@ def fetch_corporate_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-31
       - receipts: one row per receipt detail linked to billId
       - meta: compatibility flags used by callers
     """
+    if _is_sharpsight_unit(unit):
+        return _fetch_sharpsight_reconciliation_raw(unit, cutoff_date, bill_ids)
+
     conn = get_sql_connection(unit)
     if not conn:
         print(f"Could not connect to {unit} for corporate reconciliation")
@@ -1683,7 +2608,13 @@ def fetch_corporate_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-31
                 CAST(d.billId AS INT) AS BillId,
                 CAST(ISNULL(d.billAmt, 0) AS FLOAT) AS BillAmtDtl,
                 CAST(ISNULL(d.receiptAmt, 0) AS FLOAT) AS ReceiptAmtDtl,
-                CAST(ISNULL(d.dueAmt, 0) AS FLOAT) AS DueAmtDtl,
+                CAST(
+                    CASE
+                        WHEN ABS(ROUND(ISNULL(d.billAmt, 0) - (ISNULL(d.receiptAmt, 0) + ISNULL(m.TDSAmt, 0) + ISNULL(m.rebateDiscountAmt, 0)), 2)) <= 0.01 THEN 0
+                        ELSE ROUND(ISNULL(d.billAmt, 0) - (ISNULL(d.receiptAmt, 0) + ISNULL(m.TDSAmt, 0) + ISNULL(m.rebateDiscountAmt, 0)), 2)
+                    END
+                    AS FLOAT
+                ) AS DueAmtDtl,
                 CAST(NULLIF(d.visitId, 0) AS INT) AS DtlVisitId,
                 CAST(NULLIF(d.PatientId, 0) AS INT) AS DtlPatientId,
                 d.insertedOn AS InsertedOn,
@@ -2196,6 +3127,21 @@ def fetch_corporate_updates_raw(unit: str, lookback_hours: int = 24, limit: int 
                 "detail_candidates": ["RefNo", "PatientName", "PatientId", "DueAmount", "ReceiptAmt", "WriteOffAmt", "DueDate", "ReceiptId", "PatientTypeId", "PatientSubTypeId"],
             },
         ]
+        if _is_sharpsight_unit(unit):
+            table_configs = [
+                table_configs[0],
+                table_configs[1],
+                {
+                    "table_key": "corp_bill_mst",
+                    "table_label": "Corp_Bill_Mst_AHL",
+                    "table_name": "dbo.Corp_Bill_Mst_AHL",
+                    "pk_candidates": ["CBill_ID", "CBillId", "BillId", "Id"],
+                    "add_time_candidates": ["Submit_Date", "CBill_Date", "Old_Bill_Date", "visitDate"],
+                    "upd_time_candidates": ["accUpdatedDate", "Updated_On", "ModifiedOn"],
+                    "actor_candidates": ["accUserId", "Updated_By", "UpdatedBy", "InsertedBy"],
+                    "detail_candidates": ["CBill_NO", "Bill_No", "CAmount", "Due_Amt", "Status", "Visit_ID", "PatientID", "approvalAmt"],
+                },
+            ]
 
         event_frames = []
         for cfg in table_configs:
@@ -2394,6 +3340,7 @@ def fetch_corporate_updates_context(
         receipt_ids = _norm_ids(receipt_ids)
         visit_ids = _norm_ids(visit_ids)
         patient_ids = _norm_ids(patient_ids)
+        is_sharpsight = _is_sharpsight_unit(unit)
 
         bill_map = {}
         receipt_map = {}
@@ -2401,34 +3348,61 @@ def fetch_corporate_updates_context(
 
         for chunk in _chunks(bill_ids):
             placeholders = ",".join("?" for _ in chunk)
-            bill_sql = f"""
-                SELECT
-                    CAST(b.CBill_ID AS INT) AS BillId,
-                    CAST(NULLIF(b.Visit_ID, 0) AS INT) AS VisitId,
-                    CAST(NULLIF(b.PatientID, 0) AS INT) AS PatientId,
-                    ISNULL(v.TypeOfVisit, '') AS TypeOfVisit,
-                    v.VisitDate,
-                    v.DischargeDate,
-                    CASE
-                        WHEN v.PatientID IS NOT NULL THEN ISNULL(dbo.fn_patientfullname(v.PatientID), '')
-                        WHEN b.PatientID IS NOT NULL THEN ISNULL(dbo.fn_patientfullname(b.PatientID), '')
-                        ELSE ''
-                    END AS PatientName,
-                    CASE
-                        WHEN v.PatientType_ID IS NOT NULL THEN ISNULL(dbo.fn_pat_type(v.PatientType_ID), '')
-                        WHEN b.PatientTypeId IS NOT NULL THEN ISNULL(dbo.fn_pat_type(b.PatientTypeId), '')
-                        ELSE ''
-                    END AS PatientType,
-                    CASE
-                        WHEN v.PatientSubType_ID IS NOT NULL THEN ISNULL(dbo.fn_patsub_type(v.PatientSubType_ID), '')
-                        WHEN b.PatientTypeIdSrNo IS NOT NULL THEN ISNULL(dbo.fn_patsub_type(b.PatientTypeIdSrNo), '')
-                        ELSE ''
-                    END AS PatientSubType
-                FROM dbo.Corp_Bill_Mst b WITH (NOLOCK)
-                LEFT JOIN dbo.Visit v WITH (NOLOCK)
-                    ON v.Visit_ID = b.Visit_ID
-                WHERE b.CBill_ID IN ({placeholders})
-            """
+            if is_sharpsight:
+                bill_sql = f"""
+                    SELECT
+                        CAST(b.CBill_ID AS INT) AS BillId,
+                        CAST(NULLIF(COALESCE(v.Visit_ID, b.Visit_ID), 0) AS INT) AS VisitId,
+                        CAST(NULLIF(COALESCE(v.PatientID, b.PatientID), 0) AS INT) AS PatientId,
+                        ISNULL(v.TypeOfVisit, '') AS TypeOfVisit,
+                        CAST(COALESCE(b.visitDate, v.VisitDate) AS DATETIME) AS VisitDate,
+                        CAST(COALESCE(b.dischargeDate, v.DischargeDate) AS DATETIME) AS DischargeDate,
+                        CASE
+                            WHEN COALESCE(v.PatientID, b.PatientID) IS NOT NULL THEN ISNULL(dbo.fn_patientfullname(COALESCE(v.PatientID, b.PatientID)), '')
+                            ELSE ''
+                        END AS PatientName,
+                        CASE
+                            WHEN COALESCE(v.PatientType_ID, b.PatientTypeId) IS NOT NULL THEN ISNULL(dbo.fn_pat_type(COALESCE(v.PatientType_ID, b.PatientTypeId)), '')
+                            ELSE ''
+                        END AS PatientType,
+                        CASE
+                            WHEN COALESCE(v.PatientSubType_ID, b.PatientTypeIdSrNo) IS NOT NULL THEN ISNULL(dbo.fn_patsub_type(COALESCE(v.PatientSubType_ID, b.PatientTypeIdSrNo)), '')
+                            ELSE ''
+                        END AS PatientSubType
+                    FROM dbo.Corp_Bill_Mst_AHL b WITH (NOLOCK)
+                    LEFT JOIN dbo.Visit v WITH (NOLOCK)
+                        ON v.Visit_ID = b.Visit_ID
+                    WHERE b.CBill_ID IN ({placeholders})
+                """
+            else:
+                bill_sql = f"""
+                    SELECT
+                        CAST(b.CBill_ID AS INT) AS BillId,
+                        CAST(NULLIF(b.Visit_ID, 0) AS INT) AS VisitId,
+                        CAST(NULLIF(b.PatientID, 0) AS INT) AS PatientId,
+                        ISNULL(v.TypeOfVisit, '') AS TypeOfVisit,
+                        v.VisitDate,
+                        v.DischargeDate,
+                        CASE
+                            WHEN v.PatientID IS NOT NULL THEN ISNULL(dbo.fn_patientfullname(v.PatientID), '')
+                            WHEN b.PatientID IS NOT NULL THEN ISNULL(dbo.fn_patientfullname(b.PatientID), '')
+                            ELSE ''
+                        END AS PatientName,
+                        CASE
+                            WHEN v.PatientType_ID IS NOT NULL THEN ISNULL(dbo.fn_pat_type(v.PatientType_ID), '')
+                            WHEN b.PatientTypeId IS NOT NULL THEN ISNULL(dbo.fn_pat_type(b.PatientTypeId), '')
+                            ELSE ''
+                        END AS PatientType,
+                        CASE
+                            WHEN v.PatientSubType_ID IS NOT NULL THEN ISNULL(dbo.fn_patsub_type(v.PatientSubType_ID), '')
+                            WHEN b.PatientTypeIdSrNo IS NOT NULL THEN ISNULL(dbo.fn_patsub_type(b.PatientTypeIdSrNo), '')
+                            ELSE ''
+                        END AS PatientSubType
+                    FROM dbo.Corp_Bill_Mst b WITH (NOLOCK)
+                    LEFT JOIN dbo.Visit v WITH (NOLOCK)
+                        ON v.Visit_ID = b.Visit_ID
+                    WHERE b.CBill_ID IN ({placeholders})
+                """
             bill_df = pd.read_sql(bill_sql, conn, params=chunk)
             if bill_df is None or bill_df.empty:
                 bill_df = pd.DataFrame()
@@ -2452,6 +3426,8 @@ def fetch_corporate_updates_context(
                         "discharge_date": row["DischargeDate"].strftime("%Y-%m-%d") if pd.notna(row.get("DischargeDate")) else "",
                         "source": "BILL",
                     }
+            if is_sharpsight:
+                continue
 
             opening_sql = f"""
                 SELECT
@@ -2601,6 +3577,573 @@ def fetch_corporate_updates_context(
         }
     except Exception as e:
         print(f"Error fetching corporate updates context ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def create_corporate_receipt(
+    unit: str,
+    *,
+    bill_id: int,
+    receipt_date,
+    payment_mode: int,
+    approved_amount: float,
+    tds_amount: float,
+    received_amount: float,
+    rebate_amount: float,
+    utr_no: str = "",
+    patient_id: int | None = None,
+    visit_id: int | None = None,
+    user_id: int | None = None,
+):
+    unit_key = str(unit or "").strip().upper()
+    if not _is_sharpsight_unit(unit_key):
+        return {"status": "error", "message": "Receipt posting is currently enabled only for SharpSight."}
+
+    conn = get_sql_connection(unit_key)
+    if not conn:
+        return {"status": "error", "message": f"Could not connect to {unit_key}"}
+    receipt_source_info = _ensure_sharpsight_receipt_source_column_conn(conn) or {}
+    receipt_source_col = str(receipt_source_info.get("column") or "").strip() or None
+    if receipt_source_col:
+        _backfill_sharpsight_receipt_source_conn(conn, receipt_source_col)
+
+    try:
+        bill_id_int = int(bill_id)
+    except Exception:
+        bill_id_int = 0
+    if bill_id_int <= 0:
+        return {"status": "error", "message": "Invalid bill id"}
+
+    try:
+        receipt_dt = pd.to_datetime(receipt_date, errors="coerce")
+    except Exception:
+        receipt_dt = pd.NaT
+    if pd.isna(receipt_dt):
+        return {"status": "error", "message": "Invalid receipt date"}
+    receipt_dt_py = receipt_dt.to_pydatetime()
+
+    def _to_float(value):
+        try:
+            return float(value)
+        except Exception:
+            return 0.0
+
+    approved_amt = _to_float(approved_amount)
+    tds_amt = _to_float(tds_amount)
+    received_amt = _to_float(received_amount)
+    rebate_amt = _to_float(rebate_amount)
+    payment_mode_int = int(payment_mode or 0)
+    if payment_mode_int <= 0:
+        payment_mode_int = 5
+
+    bill_df = pd.read_sql(
+        """
+        SELECT TOP 1
+            CAST(b.CBill_ID AS INT) AS BillId,
+            CAST(ISNULL(b.CAmount, 0) AS FLOAT) AS BillAmount,
+            CAST(NULLIF(COALESCE(v.Visit_ID, b.Visit_ID), 0) AS INT) AS VisitId,
+            CAST(NULLIF(COALESCE(v.PatientID, b.PatientID), 0) AS INT) AS PatientId,
+            ISNULL(
+                NULLIF(CONVERT(NVARCHAR(80), b.CBill_NO), ''),
+                ISNULL(NULLIF(CONVERT(NVARCHAR(80), b.Bill_No), ''), CONVERT(NVARCHAR(80), b.CBill_ID))
+            ) AS BillNo
+        FROM dbo.Corp_Bill_Mst_AHL b WITH (NOLOCK)
+        LEFT JOIN dbo.Visit v WITH (NOLOCK)
+            ON v.Visit_ID = b.Visit_ID
+        WHERE b.CBill_ID = ?
+        """,
+        conn,
+        params=[bill_id_int],
+    )
+    if bill_df is None or bill_df.empty:
+        return {"status": "error", "message": f"Bill {bill_id_int} was not found in SharpSight."}
+
+    bill_row = bill_df.iloc[0]
+    bill_amount_val = _to_float(bill_row.get("BillAmount"))
+    if bill_amount_val <= 0:
+        return {"status": "error", "message": "Selected bill has invalid corporate amount."}
+
+    visit_id_val = visit_id if visit_id and int(visit_id) > 0 else bill_row.get("VisitId")
+    patient_id_val = patient_id if patient_id and int(patient_id) > 0 else bill_row.get("PatientId")
+    try:
+        visit_id_val = int(visit_id_val) if pd.notna(visit_id_val) and int(visit_id_val) > 0 else 0
+    except Exception:
+        visit_id_val = 0
+    try:
+        patient_id_val = int(patient_id_val) if pd.notna(patient_id_val) and int(patient_id_val) > 0 else 0
+    except Exception:
+        patient_id_val = 0
+
+    due_amount_val = round(bill_amount_val - (received_amt + tds_amt + rebate_amt), 2)
+    if abs(due_amount_val) <= 0.01:
+        due_amount_val = 0.0
+    try:
+        actor_id = int(user_id) if user_id not in (None, "", " ") else 0
+    except Exception:
+        actor_id = 0
+    if actor_id <= 0:
+        actor_id = 0
+
+    cursor = conn.cursor()
+    cursor.execute(
+        """
+        SET NOCOUNT ON;
+        DECLARE @new_receipt TABLE (ReceiptId INT);
+        INSERT INTO dbo.Corp_Receipt_Mst
+            (CBill_ID, PatientID, Amount, Receipt_Date, CPayment_Mode, Updated_By, Updated_On, VisitID, Cancelstatus, TDSAmt, GrossAmt, NetAmt, UTRNo, rebateDiscountAmt)
+        OUTPUT INSERTED.Receipt_ID INTO @new_receipt(ReceiptId)
+        VALUES
+            (?, ?, ?, ?, ?, ?, GETDATE(), ?, ?, ?, ?, ?, ?, ?);
+        SELECT TOP 1 ReceiptId FROM @new_receipt;
+        """,
+        (
+            0,
+            0,
+            received_amt,
+            receipt_dt_py,
+            payment_mode_int,
+            actor_id,
+            0,
+            0,
+            tds_amt,
+            approved_amt,
+            received_amt,
+            str(utr_no or "").strip(),
+            rebate_amt,
+        ),
+    )
+    while cursor.description is None:
+        if not cursor.nextset():
+            break
+    rec = cursor.fetchone() if cursor.description is not None else None
+    receipt_id = int(rec[0]) if rec and rec[0] is not None else 0
+    if receipt_id <= 0:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"status": "error", "message": "Failed to create receipt master row."}
+
+    receipt_no = f"CR-{receipt_dt_py.year % 100:02d}{receipt_id}"
+    cursor.execute(
+        "UPDATE dbo.Corp_Receipt_Mst SET CReceipt_No = ? WHERE Receipt_ID = ?",
+        (receipt_no, receipt_id),
+    )
+
+    if receipt_source_col:
+        cursor.execute(
+            f"""
+            SET NOCOUNT ON;
+            DECLARE @new_receipt_dtl TABLE (ReceiptDetailId INT);
+            INSERT INTO dbo.Corp_Receipt_Dtl
+                (receiptId, billId, billAmt, receiptAmt, dueAmt, visitId, insertedBy, insertedOn, PatientId, ReceiptDate, [{receipt_source_col}])
+            OUTPUT INSERTED.recDtlId INTO @new_receipt_dtl(ReceiptDetailId)
+            VALUES
+                (?, ?, ?, ?, ?, ?, ?, GETDATE(), ?, ?, ?);
+            SELECT TOP 1 ReceiptDetailId FROM @new_receipt_dtl;
+            """,
+            (
+                receipt_id,
+                bill_id_int,
+                bill_amount_val,
+                received_amt,
+                due_amount_val,
+                visit_id_val,
+                actor_id,
+                patient_id_val,
+                receipt_dt_py,
+                SHARPSIGHT_RECEIPT_SOURCE_AHL,
+            ),
+        )
+    else:
+        cursor.execute(
+            """
+            SET NOCOUNT ON;
+            DECLARE @new_receipt_dtl TABLE (ReceiptDetailId INT);
+            INSERT INTO dbo.Corp_Receipt_Dtl
+                (receiptId, billId, billAmt, receiptAmt, dueAmt, visitId, insertedBy, insertedOn, PatientId, ReceiptDate)
+            OUTPUT INSERTED.recDtlId INTO @new_receipt_dtl(ReceiptDetailId)
+            VALUES
+                (?, ?, ?, ?, ?, ?, ?, GETDATE(), ?, ?);
+            SELECT TOP 1 ReceiptDetailId FROM @new_receipt_dtl;
+            """,
+            (
+                receipt_id,
+                bill_id_int,
+                bill_amount_val,
+                received_amt,
+                due_amount_val,
+                visit_id_val,
+                actor_id,
+                patient_id_val,
+                receipt_dt_py,
+            ),
+        )
+    while cursor.description is None:
+        if not cursor.nextset():
+            break
+    rec_dtl = cursor.fetchone() if cursor.description is not None else None
+    receipt_detail_id = int(rec_dtl[0]) if rec_dtl and rec_dtl[0] is not None else 0
+
+    try:
+        conn.commit()
+    except Exception as exc:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"status": "error", "message": f"Failed to save receipt: {exc}"}
+
+    return {
+        "status": "success",
+        "receipt_id": int(receipt_id),
+        "receipt_detail_id": int(receipt_detail_id),
+        "receipt_no": receipt_no,
+        "bill_id": int(bill_id_int),
+        "bill_no": str(bill_row.get("BillNo") or "").strip(),
+        "bill_amount": float(bill_amount_val),
+        "received_amount": float(received_amt),
+        "approved_amount": float(approved_amt),
+        "tds_amount": float(tds_amt),
+        "rebate_amount": float(rebate_amt),
+        "due_amount": float(due_amount_val),
+        "receipt_date": receipt_dt.strftime("%Y-%m-%d"),
+        "payment_mode": int(payment_mode_int),
+        "patient_id": int(patient_id_val) if patient_id_val > 0 else None,
+        "visit_id": int(visit_id_val) if visit_id_val > 0 else None,
+    }
+
+
+def _resolve_sharpsight_payment_mode_table_conn(conn):
+    for cand in ("dbo.PaymentMode_Mst", "dbo.Paymentmode_mst", "dbo.PaymentModeMst"):
+        try:
+            pd.read_sql(f"SELECT TOP 0 * FROM {cand}", conn)
+            return cand
+        except Exception:
+            continue
+    return None
+
+
+def _sharpsight_receipt_source_expr(receipt_source_col: str | None, alias: str = "d") -> str:
+    col = str(receipt_source_col or "").strip()
+    if col:
+        return f"COALESCE(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(40), {alias}.[{col}]))), ''), N'{SHARPSIGHT_RECEIPT_SOURCE_AHL}')"
+    return f"N'{SHARPSIGHT_RECEIPT_SOURCE_AHL}'"
+
+
+def _clean_receipt_user_label(value) -> str:
+    txt = str(value or "").strip()
+    if txt in {"0", "0.0", "None", "NULL", "null"}:
+        return ""
+    return txt
+
+
+def fetch_corporate_receipt_for_print(unit: str, receipt_id: int):
+    unit_key = str(unit or "").strip().upper()
+    if not _is_sharpsight_unit(unit_key):
+        return None
+
+    conn = get_sql_connection(unit_key)
+    if not conn:
+        return None
+    try:
+        receipt_source_info = _ensure_sharpsight_receipt_source_column_conn(conn) or {}
+        receipt_source_col = str(receipt_source_info.get("column") or "").strip() or None
+        if receipt_source_col:
+            _backfill_sharpsight_receipt_source_conn(conn, receipt_source_col)
+
+        pm_table = _resolve_sharpsight_payment_mode_table_conn(conn)
+        pm_join = ""
+        pm_name_expr = "CONVERT(NVARCHAR(100), m.CPayment_Mode)"
+        if pm_table:
+            pm_join = f"LEFT JOIN {pm_table} pm WITH (NOLOCK) ON pm.PModeId = m.CPayment_Mode"
+            pm_name_expr = "LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(200), pm.PModeName), CONVERT(NVARCHAR(100), m.CPayment_Mode))))"
+        receipt_source_expr = _sharpsight_receipt_source_expr(receipt_source_col, alias="d")
+
+        sql = f"""
+            SELECT TOP 1
+                CAST(m.Receipt_ID AS INT) AS ReceiptId,
+                ISNULL(CONVERT(NVARCHAR(80), m.CReceipt_No), '') AS ReceiptNo,
+                CAST(m.Receipt_Date AS DATETIME) AS ReceiptDate,
+                CAST(ISNULL(m.GrossAmt, ISNULL(m.Amount, 0)) AS FLOAT) AS GrossAmt,
+                CAST(ISNULL(m.TDSAmt, 0) AS FLOAT) AS TDSAmt,
+                CAST(ISNULL(m.NetAmt, ISNULL(m.Amount, 0)) AS FLOAT) AS NetAmt,
+                CAST(ISNULL(m.Amount, 0) AS FLOAT) AS ReceiptAmount,
+                CAST(ISNULL(m.rebateDiscountAmt, 0) AS FLOAT) AS RebateAmt,
+                CAST(ISNULL(m.CPayment_Mode, 0) AS INT) AS PaymentModeId,
+                {pm_name_expr} AS PaymentMode,
+                ISNULL(CONVERT(NVARCHAR(200), m.UTRNo), '') AS UTRNo,
+                CAST(d.recDtlId AS INT) AS ReceiptDetailId,
+                CAST(d.billId AS INT) AS BillId,
+                CAST(ISNULL(d.billAmt, 0) AS FLOAT) AS BillAmt,
+                CAST(ISNULL(d.receiptAmt, 0) AS FLOAT) AS ReceiptAmtDtl,
+                CAST(
+                    CASE
+                        WHEN ABS(ROUND(ISNULL(d.billAmt, 0) - (ISNULL(d.receiptAmt, 0) + ISNULL(m.TDSAmt, 0) + ISNULL(m.rebateDiscountAmt, 0)), 2)) <= 0.01 THEN 0
+                        ELSE ROUND(ISNULL(d.billAmt, 0) - (ISNULL(d.receiptAmt, 0) + ISNULL(m.TDSAmt, 0) + ISNULL(m.rebateDiscountAmt, 0)), 2)
+                    END
+                    AS FLOAT
+                ) AS DueAmtDtl,
+                CAST(NULLIF(d.visitId, 0) AS INT) AS VisitId,
+                CAST(NULLIF(d.PatientId, 0) AS INT) AS PatientId,
+                CAST(d.ReceiptDate AS DATETIME) AS ReceiptDateDtl,
+                CAST(COALESCE(b.visitDate, v.VisitDate) AS DATETIME) AS VisitDate,
+                CAST(COALESCE(b.dischargeDate, v.DischargeDate) AS DATETIME) AS DischargeDate,
+                ISNULL(
+                    NULLIF(CONVERT(NVARCHAR(80), b.CBill_NO), ''),
+                    ISNULL(NULLIF(CONVERT(NVARCHAR(80), b.Bill_No), ''), CONVERT(NVARCHAR(80), b.CBill_ID))
+                ) AS BillNo,
+                CASE
+                    WHEN COALESCE(v.PatientID, b.PatientID, d.PatientId) IS NULL THEN ''
+                    ELSE ISNULL(dbo.fn_patientfullname(COALESCE(v.PatientID, b.PatientID, d.PatientId)), '')
+                END AS PatientName,
+                CASE
+                    WHEN COALESCE(v.PatientID, b.PatientID, d.PatientId) IS NULL THEN ''
+                    ELSE ISNULL(dbo.fn_regno(COALESCE(v.PatientID, b.PatientID, d.PatientId)), '')
+                END AS RegistrationNo,
+                CASE
+                    WHEN COALESCE(v.PatientType_ID, b.PatientTypeId) IS NULL THEN ''
+                    ELSE ISNULL(dbo.fn_pat_type(COALESCE(v.PatientType_ID, b.PatientTypeId)), '')
+                END AS PatientType,
+                CASE
+                    WHEN COALESCE(v.PatientSubType_ID, b.PatientTypeIdSrNo) IS NULL THEN ''
+                    ELSE ISNULL(dbo.fn_patsub_type(COALESCE(v.PatientSubType_ID, b.PatientTypeIdSrNo)), '')
+                END AS PatientSubType,
+                ISNULL(v.TypeOfVisit, '') AS TypeOfVisit,
+                ISNULL(CONVERT(NVARCHAR(200), u_upd.UserName), CONVERT(NVARCHAR(100), m.Updated_By)) AS UpdatedBy,
+                ISNULL(CONVERT(NVARCHAR(200), u_ins.UserName), CONVERT(NVARCHAR(100), d.insertedBy)) AS InsertedBy,
+                CAST(m.Updated_On AS DATETIME) AS UpdatedOn
+            FROM dbo.Corp_Receipt_Mst m WITH (NOLOCK)
+            INNER JOIN dbo.Corp_Receipt_Dtl d WITH (NOLOCK)
+                ON d.receiptId = m.Receipt_ID
+            INNER JOIN dbo.Corp_Bill_Mst_AHL b WITH (NOLOCK)
+                ON b.CBill_ID = d.billId
+            LEFT JOIN dbo.Visit v WITH (NOLOCK)
+                ON v.Visit_ID = COALESCE(NULLIF(d.visitId, 0), NULLIF(b.Visit_ID, 0))
+            LEFT JOIN dbo.User_Mst u_upd WITH (NOLOCK)
+                ON u_upd.UserID = m.Updated_By
+            LEFT JOIN dbo.User_Mst u_ins WITH (NOLOCK)
+                ON u_ins.UserID = d.insertedBy
+            {pm_join}
+            WHERE m.Receipt_ID = ?
+              AND {receipt_source_expr} = N'{SHARPSIGHT_RECEIPT_SOURCE_AHL}'
+            ORDER BY d.recDtlId DESC
+        """
+        df = pd.read_sql(sql, conn, params=[int(receipt_id)])
+        if df is None or df.empty:
+            return None
+        row = df.iloc[0].to_dict()
+
+        def _fmt_dt(value, with_time: bool = False):
+            dt = pd.to_datetime(value, errors="coerce")
+            if pd.isna(dt):
+                return ""
+            return dt.strftime("%Y-%m-%d %H:%M:%S" if with_time else "%Y-%m-%d")
+
+        return {
+            "unit": unit_key,
+            "receipt_id": int(row.get("ReceiptId") or 0),
+            "receipt_detail_id": int(row.get("ReceiptDetailId") or 0),
+            "receipt_no": str(row.get("ReceiptNo") or "").strip(),
+            "receipt_date": _fmt_dt(row.get("ReceiptDate")),
+            "gross_amount": float(row.get("GrossAmt") or 0.0),
+            "tds_amount": float(row.get("TDSAmt") or 0.0),
+            "net_amount": float(row.get("NetAmt") or 0.0),
+            "receipt_amount": float(row.get("ReceiptAmount") or 0.0),
+            "rebate_amount": float(row.get("RebateAmt") or 0.0),
+            "payment_mode_id": int(row.get("PaymentModeId") or 0),
+            "payment_mode": str(row.get("PaymentMode") or "").strip(),
+            "utr_no": str(row.get("UTRNo") or "").strip(),
+            "bill_id": int(row.get("BillId") or 0),
+            "bill_no": str(row.get("BillNo") or "").strip(),
+            "bill_amount": float(row.get("BillAmt") or 0.0),
+            "receipt_amount_dtl": float(row.get("ReceiptAmtDtl") or 0.0),
+            "due_amount": float(row.get("DueAmtDtl") or 0.0),
+            "visit_id": int(row.get("VisitId") or 0) if row.get("VisitId") not in (None, "") else None,
+            "patient_id": int(row.get("PatientId") or 0) if row.get("PatientId") not in (None, "") else None,
+            "patient_name": str(row.get("PatientName") or "").strip(),
+            "registration_no": str(row.get("RegistrationNo") or "").strip(),
+            "patient_type": str(row.get("PatientType") or "").strip(),
+            "patient_subtype": str(row.get("PatientSubType") or "").strip(),
+            "type_of_visit": str(row.get("TypeOfVisit") or "").strip(),
+            "visit_date": _fmt_dt(row.get("VisitDate")),
+            "discharge_date": _fmt_dt(row.get("DischargeDate")),
+            "updated_by": _clean_receipt_user_label(row.get("UpdatedBy")),
+            "inserted_by": _clean_receipt_user_label(row.get("InsertedBy")),
+            "updated_on": _fmt_dt(row.get("UpdatedOn"), with_time=True),
+        }
+    except Exception as e:
+        print(f"Error fetching SharpSight receipt print payload ({unit_key}, {receipt_id}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_corporate_receipts_day_print(unit: str, entry_date):
+    unit_key = str(unit or "").strip().upper()
+    if not _is_sharpsight_unit(unit_key):
+        return None
+
+    conn = get_sql_connection(unit_key)
+    if not conn:
+        return None
+    try:
+        entry_dt = pd.to_datetime(entry_date, errors="coerce")
+        if pd.isna(entry_dt):
+            return None
+
+        receipt_source_info = _ensure_sharpsight_receipt_source_column_conn(conn) or {}
+        receipt_source_col = str(receipt_source_info.get("column") or "").strip() or None
+        if receipt_source_col:
+            _backfill_sharpsight_receipt_source_conn(conn, receipt_source_col)
+
+        pm_table = _resolve_sharpsight_payment_mode_table_conn(conn)
+        pm_join = ""
+        pm_name_expr = "CONVERT(NVARCHAR(100), m.CPayment_Mode)"
+        if pm_table:
+            pm_join = f"LEFT JOIN {pm_table} pm WITH (NOLOCK) ON pm.PModeId = m.CPayment_Mode"
+            pm_name_expr = "LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(200), pm.PModeName), CONVERT(NVARCHAR(100), m.CPayment_Mode))))"
+        receipt_source_expr = _sharpsight_receipt_source_expr(receipt_source_col, alias="d")
+
+        sql = f"""
+            SELECT
+                CAST(m.Receipt_ID AS INT) AS ReceiptId,
+                ISNULL(CONVERT(NVARCHAR(80), m.CReceipt_No), '') AS ReceiptNo,
+                CAST(m.Receipt_Date AS DATETIME) AS ReceiptDate,
+                CAST(COALESCE(d.insertedOn, m.Updated_On, m.Receipt_Date) AS DATETIME) AS EntryDateTime,
+                CAST(ISNULL(m.GrossAmt, ISNULL(m.Amount, 0)) AS FLOAT) AS GrossAmt,
+                CAST(ISNULL(m.TDSAmt, 0) AS FLOAT) AS TDSAmt,
+                CAST(ISNULL(m.NetAmt, ISNULL(m.Amount, 0)) AS FLOAT) AS NetAmt,
+                CAST(ISNULL(m.rebateDiscountAmt, 0) AS FLOAT) AS RebateAmt,
+                CAST(ISNULL(d.billAmt, 0) AS FLOAT) AS BillAmt,
+                CAST(ISNULL(d.receiptAmt, 0) AS FLOAT) AS ReceiptAmtDtl,
+                CAST(
+                    CASE
+                        WHEN ABS(ROUND(ISNULL(d.billAmt, 0) - (ISNULL(d.receiptAmt, 0) + ISNULL(m.TDSAmt, 0) + ISNULL(m.rebateDiscountAmt, 0)), 2)) <= 0.01 THEN 0
+                        ELSE ROUND(ISNULL(d.billAmt, 0) - (ISNULL(d.receiptAmt, 0) + ISNULL(m.TDSAmt, 0) + ISNULL(m.rebateDiscountAmt, 0)), 2)
+                    END
+                    AS FLOAT
+                ) AS DueAmtDtl,
+                CAST(d.billId AS INT) AS BillId,
+                ISNULL(
+                    NULLIF(CONVERT(NVARCHAR(80), b.CBill_NO), ''),
+                    ISNULL(NULLIF(CONVERT(NVARCHAR(80), b.Bill_No), ''), CONVERT(NVARCHAR(80), b.CBill_ID))
+                ) AS BillNo,
+                CAST(NULLIF(d.visitId, 0) AS INT) AS VisitId,
+                CAST(NULLIF(d.PatientId, 0) AS INT) AS PatientId,
+                CASE
+                    WHEN COALESCE(v.PatientID, b.PatientID, d.PatientId) IS NULL THEN ''
+                    ELSE ISNULL(dbo.fn_patientfullname(COALESCE(v.PatientID, b.PatientID, d.PatientId)), '')
+                END AS PatientName,
+                CASE
+                    WHEN COALESCE(v.PatientID, b.PatientID, d.PatientId) IS NULL THEN ''
+                    ELSE ISNULL(dbo.fn_regno(COALESCE(v.PatientID, b.PatientID, d.PatientId)), '')
+                END AS RegistrationNo,
+                ISNULL(v.TypeOfVisit, '') AS TypeOfVisit,
+                {pm_name_expr} AS PaymentMode,
+                ISNULL(CONVERT(NVARCHAR(200), m.UTRNo), '') AS UTRNo,
+                ISNULL(CONVERT(NVARCHAR(200), u_upd.UserName), CONVERT(NVARCHAR(100), m.Updated_By)) AS UpdatedBy,
+                ISNULL(CONVERT(NVARCHAR(200), u_ins.UserName), CONVERT(NVARCHAR(100), d.insertedBy)) AS InsertedBy,
+                CAST(m.Updated_On AS DATETIME) AS UpdatedOn
+            FROM dbo.Corp_Receipt_Mst m WITH (NOLOCK)
+            INNER JOIN dbo.Corp_Receipt_Dtl d WITH (NOLOCK)
+                ON d.receiptId = m.Receipt_ID
+            INNER JOIN dbo.Corp_Bill_Mst_AHL b WITH (NOLOCK)
+                ON b.CBill_ID = d.billId
+            LEFT JOIN dbo.Visit v WITH (NOLOCK)
+                ON v.Visit_ID = COALESCE(NULLIF(d.visitId, 0), NULLIF(b.Visit_ID, 0))
+            LEFT JOIN dbo.User_Mst u_upd WITH (NOLOCK)
+                ON u_upd.UserID = m.Updated_By
+            LEFT JOIN dbo.User_Mst u_ins WITH (NOLOCK)
+                ON u_ins.UserID = d.insertedBy
+            {pm_join}
+            WHERE CAST(COALESCE(d.insertedOn, m.Updated_On, m.Receipt_Date) AS DATE) = ?
+              AND {receipt_source_expr} = N'{SHARPSIGHT_RECEIPT_SOURCE_AHL}'
+            ORDER BY COALESCE(d.insertedOn, m.Updated_On, m.Receipt_Date), m.Receipt_ID, d.recDtlId
+        """
+        df = pd.read_sql(sql, conn, params=[entry_dt.strftime("%Y-%m-%d")])
+        if df is None:
+            return None
+
+        def _fmt_dt(value, with_time: bool = False, long_date: bool = False):
+            dt = pd.to_datetime(value, errors="coerce")
+            if pd.isna(dt):
+                return ""
+            if with_time:
+                return dt.strftime("%d-%m-%Y %H:%M:%S")
+            if long_date:
+                return dt.strftime("%d %b %Y")
+            return dt.strftime("%d-%m-%Y")
+
+        rows = []
+        totals = {
+            "count": 0,
+            "gross_amount": 0.0,
+            "tds_amount": 0.0,
+            "net_amount": 0.0,
+            "rebate_amount": 0.0,
+            "receipt_amount": 0.0,
+            "bill_amount": 0.0,
+            "due_amount": 0.0,
+        }
+        if not df.empty:
+            for _, raw_row in df.iterrows():
+                row = raw_row.to_dict()
+                item = {
+                    "receipt_id": int(row.get("ReceiptId") or 0),
+                    "receipt_no": str(row.get("ReceiptNo") or "").strip(),
+                    "receipt_date": _fmt_dt(row.get("ReceiptDate")),
+                    "entry_datetime": _fmt_dt(row.get("EntryDateTime"), with_time=True),
+                    "gross_amount": float(row.get("GrossAmt") or 0.0),
+                    "tds_amount": float(row.get("TDSAmt") or 0.0),
+                    "net_amount": float(row.get("NetAmt") or 0.0),
+                    "rebate_amount": float(row.get("RebateAmt") or 0.0),
+                    "bill_amount": float(row.get("BillAmt") or 0.0),
+                    "receipt_amount": float(row.get("ReceiptAmtDtl") or 0.0),
+                    "due_amount": float(row.get("DueAmtDtl") or 0.0),
+                    "bill_id": int(row.get("BillId") or 0),
+                    "bill_no": str(row.get("BillNo") or "").strip(),
+                    "visit_id": int(row.get("VisitId") or 0) if row.get("VisitId") not in (None, "") else None,
+                    "patient_id": int(row.get("PatientId") or 0) if row.get("PatientId") not in (None, "") else None,
+                    "patient_name": str(row.get("PatientName") or "").strip(),
+                    "registration_no": str(row.get("RegistrationNo") or "").strip(),
+                    "type_of_visit": str(row.get("TypeOfVisit") or "").strip(),
+                    "payment_mode": str(row.get("PaymentMode") or "").strip(),
+                    "utr_no": str(row.get("UTRNo") or "").strip(),
+                    "updated_by": _clean_receipt_user_label(row.get("UpdatedBy")),
+                    "inserted_by": _clean_receipt_user_label(row.get("InsertedBy")),
+                    "updated_on": _fmt_dt(row.get("UpdatedOn"), with_time=True),
+                }
+                rows.append(item)
+                totals["count"] += 1
+                totals["gross_amount"] += item["gross_amount"]
+                totals["tds_amount"] += item["tds_amount"]
+                totals["net_amount"] += item["net_amount"]
+                totals["rebate_amount"] += item["rebate_amount"]
+                totals["receipt_amount"] += item["receipt_amount"]
+                totals["bill_amount"] += item["bill_amount"]
+                totals["due_amount"] += item["due_amount"]
+
+        for key in ("gross_amount", "tds_amount", "net_amount", "rebate_amount", "receipt_amount", "bill_amount", "due_amount"):
+            totals[key] = float(round(totals[key], 2))
+
+        return {
+            "unit": unit_key,
+            "entry_date": entry_dt.strftime("%Y-%m-%d"),
+            "entry_date_label": _fmt_dt(entry_dt, long_date=True),
+            "rows": rows,
+            "summary": totals,
+        }
+    except Exception as e:
+        print(f"Error fetching SharpSight daily receipt print payload ({unit_key}, {entry_date}): {e}")
         return None
     finally:
         try:
@@ -3746,7 +5289,130 @@ def _build_mrd_summary(df: pd.DataFrame, vt_col: str, from_date: str | None, to_
     ]
     return pd.DataFrame(rows)
 
-def build_volume_excel(details_df: pd.DataFrame, from_date: str | None = None, to_date: str | None = None) -> bytes:
+def _volume_discharge_export_frames(discharge_kpi: dict | None) -> dict[str, pd.DataFrame]:
+    def _int_metric(source: dict, key: str) -> int:
+        try:
+            return int(float(source.get(key) or 0))
+        except Exception:
+            return 0
+
+    def _pct_metric(source: dict, key: str) -> float:
+        try:
+            return round(float(source.get(key) or 0), 2)
+        except Exception:
+            return 0.0
+
+    def _yes_no(value) -> str:
+        return "Yes" if bool(value) else "No"
+
+    empty = {
+        "overall": pd.DataFrame(),
+        "units": pd.DataFrame(),
+        "wards": pd.DataFrame(),
+        "records": pd.DataFrame(),
+    }
+    if not isinstance(discharge_kpi, dict):
+        return empty
+
+    overall = discharge_kpi.get("overall") or {}
+    units = discharge_kpi.get("units") or []
+    all_records = discharge_kpi.get("all_records") or []
+
+    overall_frame = pd.DataFrame(
+        [
+            {
+                "Scope": "Selected Scope",
+                "Total Discharges": _int_metric(overall, "total_discharges"),
+                "Cured Cases": _int_metric(overall, "cured_cases"),
+                "Cured Ratio (%)": _pct_metric(overall, "cured_percent"),
+                "LAMA Cases": _int_metric(overall, "lama_cases"),
+                "LAMA Ratio (%)": _pct_metric(overall, "lama_percent"),
+                "Referred Cases": _int_metric(overall, "referred_cases"),
+                "Referred Ratio (%)": _pct_metric(overall, "referred_percent"),
+                "Mortality Cases": _int_metric(overall, "death_cases"),
+                "Mortality Ratio (%)": _pct_metric(overall, "mortality_ratio"),
+            }
+        ]
+    )
+
+    unit_rows = []
+    ward_rows = []
+    for unit_block in units:
+        if not isinstance(unit_block, dict):
+            continue
+        unit_rows.append(
+            {
+                "Unit": str(unit_block.get("unit") or "UNKNOWN").strip().upper() or "UNKNOWN",
+                "Total Discharges": _int_metric(unit_block, "total_discharges"),
+                "Cured Cases": _int_metric(unit_block, "cured_cases"),
+                "Cured Ratio (%)": _pct_metric(unit_block, "cured_percent"),
+                "LAMA Cases": _int_metric(unit_block, "lama_cases"),
+                "LAMA Ratio (%)": _pct_metric(unit_block, "lama_percent"),
+                "Referred Cases": _int_metric(unit_block, "referred_cases"),
+                "Referred Ratio (%)": _pct_metric(unit_block, "referred_percent"),
+                "Mortality Cases": _int_metric(unit_block, "death_cases"),
+                "Mortality Ratio (%)": _pct_metric(unit_block, "mortality_ratio"),
+            }
+        )
+
+        for ward_block in (unit_block.get("ward_breakdown") or []):
+            if not isinstance(ward_block, dict):
+                continue
+            ward_rows.append(
+                {
+                    "Unit": str(unit_block.get("unit") or "UNKNOWN").strip().upper() or "UNKNOWN",
+                    "Ward": str(ward_block.get("ward") or "Unknown").strip() or "Unknown",
+                    "Total Discharges": _int_metric(ward_block, "total_discharges"),
+                    "Cured Cases": _int_metric(ward_block, "cured_cases"),
+                    "Cured Ratio (%)": _pct_metric(ward_block, "cured_percent"),
+                    "LAMA Cases": _int_metric(ward_block, "lama_cases"),
+                    "LAMA Ratio (%)": _pct_metric(ward_block, "lama_percent"),
+                    "Referred Cases": _int_metric(ward_block, "referred_cases"),
+                    "Referred Ratio (%)": _pct_metric(ward_block, "referred_percent"),
+                    "Mortality Cases": _int_metric(ward_block, "death_cases"),
+                    "Mortality Ratio (%)": _pct_metric(ward_block, "mortality_ratio"),
+                }
+            )
+
+    unit_frame = pd.DataFrame(unit_rows)
+    ward_frame = pd.DataFrame(ward_rows)
+    if not ward_frame.empty:
+        ward_frame = ward_frame.sort_values(["Unit", "Total Discharges", "Ward"], ascending=[True, False, True])
+
+    record_rows = []
+    for row in all_records:
+        if not isinstance(row, dict):
+            continue
+        record_rows.append(
+            {
+                "Unit": str(row.get("unit") or "UNKNOWN").strip().upper() or "UNKNOWN",
+                "Ward": str(row.get("ward") or "Unknown").strip() or "Unknown",
+                "Reg No": str(row.get("regno") or "").strip(),
+                "Patient Name": str(row.get("patient") or "").strip(),
+                "Doctor Incharge": str(row.get("doctor") or "").strip(),
+                "Discharge Type": str(row.get("discharge_type") or "Unknown").strip() or "Unknown",
+                "Discharge Date": str(row.get("discharge_date") or "").strip(),
+                "Cured": _yes_no(row.get("is_cured")),
+                "LAMA": _yes_no(row.get("is_lama")),
+                "Referred": _yes_no(row.get("is_referred")),
+                "Mortality": _yes_no(row.get("is_mortality")),
+            }
+        )
+    record_frame = pd.DataFrame(record_rows)
+
+    return {
+        "overall": overall_frame,
+        "units": unit_frame,
+        "wards": ward_frame,
+        "records": record_frame,
+    }
+
+def build_volume_excel(
+    details_df: pd.DataFrame,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    discharge_kpi: dict | None = None,
+) -> bytes:
     if details_df is None or details_df.empty:
         bio = io.BytesIO()
         with pd.ExcelWriter(bio, engine="xlsxwriter") as w:
@@ -3816,6 +5482,7 @@ def build_volume_excel(details_df: pd.DataFrame, from_date: str | None = None, t
                    .rename(columns={"_PTDisp": "PatientType", "_CorpDisp": "CorpType"}))
 
     mrd_sum = _build_mrd_summary(df, vt_col, from_date, to_date)
+    discharge_frames = _volume_discharge_export_frames(discharge_kpi)
 
     # ---- NEW: Unit-wise Department-wise Visit Type breakdown ----
     unit_dept_visit_sum = (df.groupby(["Unit", "_DeptDisp", "_VisitDisp"], dropna=False)
@@ -3872,6 +5539,9 @@ def build_volume_excel(details_df: pd.DataFrame, from_date: str | None = None, t
 
         row = 0
         row = put_section("Visit-wise", visit_sum.sort_values(["Unit","Count"], ascending=[True,False]), row)
+        row = put_section("IPD Discharge Ratio - Overall", discharge_frames["overall"], row)
+        row = put_section("IPD Discharge Ratio - Unit-wise", discharge_frames["units"], row)
+        row = put_section("IPD Discharge Ratio - Ward-wise", discharge_frames["wards"], row)
         row = put_section("Department-wise", dept_sum.sort_values(["Unit","Count"], ascending=[True,False]), row)
         # NEW SECTION - Unit-wise Department-wise Visit Type
         row = put_section("Unit -> Department -> Visit Type", unit_dept_visit_sum, row)
@@ -3887,6 +5557,15 @@ def build_volume_excel(details_df: pd.DataFrame, from_date: str | None = None, t
             ws2.write(0, c, name, hfmt)
             ws2.set_column(c, c, min(40, max(12, int(details_out.iloc[:, c].astype(str).str.len().quantile(0.85))+2)))
         ws2.freeze_panes(1, 0)
+
+        discharge_records = discharge_frames["records"]
+        if discharge_records is not None and not discharge_records.empty:
+            discharge_records.to_excel(writer, index=False, sheet_name="Discharge Details")
+            ws3 = writer.sheets["Discharge Details"]
+            for c, name in enumerate(discharge_records.columns):
+                ws3.write(0, c, name, hfmt)
+                ws3.set_column(c, c, min(40, max(12, int(discharge_records.iloc[:, c].astype(str).str.len().quantile(0.85))+2)))
+            ws3.freeze_panes(1, 0)
 
         ws.activate()
 
@@ -4166,6 +5845,7 @@ def fetch_old_new_patient_visit_details_page(
         "PatientType",
         "SourceID",
         "SourceName",
+        "ReferrerDetails",
     ]
     page = _corp_bill_summary_parse_int(page, 1, 1, 100000)
     page_size = _corp_bill_summary_parse_int(page_size, 20, 1, 200)
@@ -4208,6 +5888,23 @@ def fetch_old_new_patient_visit_details_page(
 
         occ_id_col = _resolve_column(conn, occ_table, ["Occupation_ID", "OccupationId", "occupation_id"]) if occ_table else None
         occ_name_col = _resolve_column(conn, occ_table, ["Occupation_Name", "OccupationName", "occupation_name"]) if occ_table else None
+        referred_table = _resolve_table_name(conn, ["Referred_Mst", "referred_mst", "ReferredMst"])
+        referred_visit_col = _resolve_column(
+            conn,
+            referred_table,
+            ["visitId", "VisitId", "Visit_ID", "VisitID"],
+        ) if referred_table else None
+        referred_name_col = _resolve_column(
+            conn,
+            referred_table,
+            ["refName", "RefName", "ReferralName"],
+        ) if referred_table else None
+        referred_id_col = _resolve_column(conn, referred_table, ["Id", "ID"]) if referred_table else None
+        referred_inserted_col = _resolve_column(
+            conn,
+            referred_table,
+            ["insertedOn", "InsertedOn", "InsertedON", "Inserted_On"],
+        ) if referred_table else None
 
         if not visit_table or not visit_id_col or not visit_type_col or not visit_date_col:
             return {"status": "error", "message": "Required visit schema for old/new detail paging was not found"}
@@ -4252,6 +5949,7 @@ def fetch_old_new_patient_visit_details_page(
 
         source_id_expr = "CAST(0 AS INT)"
         source_name_expr = "N'Unknown'"
+        referrer_details_expr = "N''"
         if src_col:
             src_text_expr = f"LTRIM(RTRIM(CONVERT(NVARCHAR(100), v.{_q_ident(src_col)})))"
             src_int_expr = (
@@ -4266,6 +5964,28 @@ def fetch_old_new_patient_visit_details_page(
                     f"ON om.{_q_ident(occ_id_col)} = {src_int_expr}"
                 )
                 source_name_expr = f"COALESCE(NULLIF(CONVERT(NVARCHAR(200), om.{_q_ident(occ_name_col)}), N''), N'Unknown')"
+
+        if referred_table and referred_visit_col and referred_name_col:
+            order_parts = []
+            if referred_inserted_col:
+                order_parts.append(f"rm.{_q_ident(referred_inserted_col)} DESC")
+            if referred_id_col:
+                order_parts.append(f"rm.{_q_ident(referred_id_col)} DESC")
+            order_sql = f" ORDER BY {', '.join(order_parts)}" if order_parts else ""
+            joins.append(
+                "OUTER APPLY ("
+                "SELECT TOP 1 "
+                f"LTRIM(RTRIM(CONVERT(NVARCHAR(200), rm.{_q_ident(referred_name_col)}))) AS ReferrerDetails "
+                f"FROM {_table_ref(referred_table)} rm WITH (NOLOCK) "
+                f"WHERE rm.{_q_ident(referred_visit_col)} = v.{_q_ident(visit_id_col)} "
+                f"AND NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), rm.{_q_ident(referred_name_col)}))), N'') IS NOT NULL"
+                f"{order_sql}"
+                ") refdet"
+            )
+            referrer_details_expr = (
+                f"CASE WHEN UPPER(LTRIM(RTRIM({source_name_expr}))) LIKE N'OTHER DOCTOR%' "
+                f"THEN COALESCE(NULLIF(refdet.ReferrerDetails, N''), N'') ELSE N'' END"
+            )
 
         base_params = [int(visit_type_id), from_date, to_date]
         join_sql = "\n            ".join(joins)
@@ -4282,10 +6002,11 @@ def fetch_old_new_patient_visit_details_page(
                 OR ISNULL(Dept, N'') LIKE ?
                 OR ISNULL(SubDept, N'') LIKE ?
                 OR ISNULL(SourceName, N'') LIKE ?
+                OR ISNULL(ReferrerDetails, N'') LIKE ?
                 OR CONVERT(NVARCHAR(50), Visit_ID) LIKE ?
                 OR ISNULL(PatientType, N'') LIKE ?
             """
-            search_params = [like, like, like, like, like, like, like, like]
+            search_params = [like, like, like, like, like, like, like, like, like]
 
         cte_sql = f"""
             WITH detail_base AS (
@@ -4299,7 +6020,8 @@ def fetch_old_new_patient_visit_details_page(
                     LTRIM(RTRIM({reg_no_expr})) AS RegNo,
                     {patient_type_expr} AS PatientType,
                     {source_id_expr} AS SourceID,
-                    COALESCE(NULLIF(LTRIM(RTRIM({source_name_expr})), N''), N'Unknown') AS SourceName
+                    COALESCE(NULLIF(LTRIM(RTRIM({source_name_expr})), N''), N'Unknown') AS SourceName,
+                    COALESCE(NULLIF(LTRIM(RTRIM({referrer_details_expr})), N''), N'') AS ReferrerDetails
                 FROM {_table_ref(visit_table)} v WITH (NOLOCK)
                 {join_sql}
                 WHERE v.{_q_ident(visit_type_col)} = ?
@@ -4333,6 +6055,7 @@ def fetch_old_new_patient_visit_details_page(
             "Doctor": "Doctor",
             "PatientType": "PatientType",
             "SourceName": "SourceName",
+            "ReferrerDetails": "ReferrerDetails",
         }
         sort_expr = sort_map.get(str(sort_key or "").strip(), "VisitDate")
         secondary_order = f", Visit_ID {'ASC' if sort_dir_norm == 'asc' else 'DESC'}" if sort_expr != "Visit_ID" else ""
@@ -4355,7 +6078,8 @@ def fetch_old_new_patient_visit_details_page(
                 RegNo,
                 PatientType,
                 SourceID,
-                SourceName
+                SourceName,
+                ReferrerDetails
             FROM numbered
             WHERE rn BETWEEN ? AND ?
             ORDER BY rn;
@@ -4370,7 +6094,7 @@ def fetch_old_new_patient_visit_details_page(
                     rows_df[col] = 0 if col == "SourceID" or col == "Visit_ID" else ""
             rows_df["Visit_ID"] = pd.to_numeric(rows_df["Visit_ID"], errors="coerce").fillna(0).astype(int)
             rows_df["SourceID"] = pd.to_numeric(rows_df["SourceID"], errors="coerce").fillna(0).astype(int)
-            for col in ["Dept", "SubDept", "Doctor", "VisitDate", "PatientName", "RegNo", "PatientType", "SourceName"]:
+            for col in ["Dept", "SubDept", "Doctor", "VisitDate", "PatientName", "RegNo", "PatientType", "SourceName", "ReferrerDetails"]:
                 rows_df[col] = rows_df[col].astype(str).replace({"nan": "", "None": ""}).str.strip()
                 if col in {"Dept", "SubDept", "Doctor", "SourceName"}:
                     rows_df[col] = rows_df[col].replace("", "Unknown")
@@ -4621,9 +6345,9 @@ def fetch_patient_source_map_for_visits(unit: str, visit_ids: list[int]) -> pd.D
     """
     Visit-level patient source mapping aligned with revenue source logic:
       Visit.PatientSourceId -> Occupation_Mst.Occupation_Name.
-    Returns Visit_ID, SourceID, SourceName.
+    Returns Visit_ID, SourceID, SourceName, ReferrerDetails.
     """
-    out_cols = ["Visit_ID", "SourceID", "SourceName"]
+    out_cols = ["Visit_ID", "SourceID", "SourceName", "ReferrerDetails"]
     if not visit_ids:
         return pd.DataFrame(columns=out_cols)
 
@@ -4657,12 +6381,30 @@ def fetch_patient_source_map_for_visits(unit: str, visit_ids: list[int]) -> pd.D
         occ_table = _resolve_table_name(conn, ["Occupation_Mst", "occupation_mst", "OccupationMst"])
         occ_id_col = _resolve_column(conn, occ_table, ["Occupation_ID", "OccupationId", "occupation_id"]) if occ_table else None
         occ_name_col = _resolve_column(conn, occ_table, ["Occupation_Name", "OccupationName", "occupation_name"]) if occ_table else None
-
+        referred_table = _resolve_table_name(conn, ["Referred_Mst", "referred_mst", "ReferredMst"])
+        referred_visit_col = _resolve_column(
+            conn,
+            referred_table,
+            ["visitId", "VisitId", "Visit_ID", "VisitID"],
+        ) if referred_table else None
+        referred_name_col = _resolve_column(
+            conn,
+            referred_table,
+            ["refName", "RefName", "ReferralName"],
+        ) if referred_table else None
+        referred_id_col = _resolve_column(conn, referred_table, ["Id", "ID"]) if referred_table else None
+        referred_inserted_col = _resolve_column(
+            conn,
+            referred_table,
+            ["insertedOn", "InsertedOn", "InsertedON", "Inserted_On"],
+        ) if referred_table else None
         src_text_expr = "NULL"
         src_int_expr = "NULL"
         src_id_expr = "CAST(0 AS INT)"
         src_name_expr = "N'Unknown'"
         join_sql = ""
+        ref_join_sql = ""
+        ref_details_expr = "N''"
 
         if src_col:
             src_text_expr = f"LTRIM(RTRIM(CONVERT(NVARCHAR(100), v.[{src_col}])))"
@@ -4679,6 +6421,30 @@ def fetch_patient_source_map_for_visits(unit: str, visit_ids: list[int]) -> pd.D
                 )
                 src_name_expr = f"LTRIM(RTRIM(COALESCE(NULLIF(om.[{occ_name_col}], N''), N'Unknown')))"
 
+        if referred_table and referred_visit_col and referred_name_col:
+            order_parts = []
+            if referred_inserted_col:
+                order_parts.append(f"rm.[{referred_inserted_col}] DESC")
+            if referred_id_col:
+                order_parts.append(f"rm.[{referred_id_col}] DESC")
+            order_sql = f" ORDER BY {', '.join(order_parts)}" if order_parts else ""
+            ref_join_sql = (
+                "OUTER APPLY ("
+                "SELECT TOP 1 "
+                f"LTRIM(RTRIM(CONVERT(NVARCHAR(200), rm.[{referred_name_col}]))) AS ReferrerDetails "
+                f"FROM dbo.[{referred_table}] rm WITH (NOLOCK) "
+                f"WHERE rm.[{referred_visit_col}] = v.[{visit_id_col}] "
+                f"AND NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(200), rm.[{referred_name_col}]))), N'') IS NOT NULL"
+                f"{order_sql}"
+                ") refdet"
+            )
+            ref_details_expr = (
+                f"CASE WHEN UPPER(LTRIM(RTRIM({src_name_expr}))) = N'OTHER DOCTOR' "
+                f"THEN COALESCE(NULLIF(refdet.ReferrerDetails, N''), N'') ELSE N'' END"
+            )
+
+        full_join_sql = "\n                ".join([part for part in [join_sql, ref_join_sql] if str(part).strip()])
+
         parts = []
         for i in range(0, len(clean_ids), 900):
             chunk = clean_ids[i:i + 900]
@@ -4687,9 +6453,10 @@ def fetch_patient_source_map_for_visits(unit: str, visit_ids: list[int]) -> pd.D
                 SELECT
                     v.[{visit_id_col}] AS Visit_ID,
                     {src_id_expr} AS SourceID,
-                    {src_name_expr} AS SourceName
+                    {src_name_expr} AS SourceName,
+                    {ref_details_expr} AS ReferrerDetails
                 FROM dbo.[{visit_table}] v WITH (NOLOCK)
-                {join_sql}
+                {full_join_sql}
                 WHERE v.[{visit_id_col}] IN ({placeholders})
             """
             part = pd.read_sql(sql, conn, params=chunk)
@@ -4709,6 +6476,12 @@ def fetch_patient_source_map_for_visits(unit: str, visit_ids: list[int]) -> pd.D
             .str.strip()
             .replace({"": pd.NA, "None": pd.NA, "nan": pd.NA})
             .fillna("Unknown")
+        )
+        out["ReferrerDetails"] = (
+            out.get("ReferrerDetails", "")
+            .astype(str)
+            .str.strip()
+            .replace({"None": "", "nan": ""})
         )
         out = out.drop_duplicates(subset=["Visit_ID"], keep="last")
         return out[out_cols]
@@ -5184,6 +6957,135 @@ def _update_iv_po_mst_special_notes_conn(conn, po_id: int, special_notes: str | 
         cur.execute(
             f"UPDATE dbo.{table_name} SET [{note_col}] = ? WHERE [{id_col}] = ?",
             (note_val, po_id),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def _ensure_iv_po_mst_overall_discount_mode_column_conn(conn) -> bool:
+    """
+    Ensure IVPoMst has OverallDiscountMode column for persisted PO-level discount entry mode.
+    """
+    if not conn:
+        return False
+    table_name = _resolve_table_name(conn, ["IVPoMst", "IvPoMst", "IVPO_MST", "IV_Po_Mst"])
+    if not table_name:
+        return False
+    if _resolve_column(conn, table_name, ["OverallDiscountMode", "POOverallDiscountMode"]):
+        return True
+    try:
+        cur = conn.cursor()
+        cur.execute(f"ALTER TABLE dbo.{table_name} ADD OverallDiscountMode NVARCHAR(20) NULL")
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return bool(_resolve_column(conn, table_name, ["OverallDiscountMode", "POOverallDiscountMode"]))
+
+
+def _update_iv_po_mst_overall_discount_mode_conn(conn, po_id: int, overall_discount_mode: str | None) -> bool:
+    """
+    Persist PO-level overall discount input mode in IVPoMst. Safe no-op if unavailable.
+    """
+    if not conn:
+        return False
+    try:
+        po_id = int(po_id or 0)
+    except Exception:
+        return False
+    if po_id <= 0:
+        return False
+    table_name = _resolve_table_name(conn, ["IVPoMst", "IvPoMst", "IVPO_MST", "IV_Po_Mst"])
+    if not table_name:
+        return False
+    mode_col = _resolve_column(conn, table_name, ["OverallDiscountMode", "POOverallDiscountMode"])
+    if not mode_col and not _ensure_iv_po_mst_overall_discount_mode_column_conn(conn):
+        return False
+    mode_col = _resolve_column(conn, table_name, ["OverallDiscountMode", "POOverallDiscountMode"]) or "OverallDiscountMode"
+    id_col = _resolve_column(conn, table_name, ["ID", "Id"]) or "ID"
+    mode_val = str(overall_discount_mode or "").strip().lower()
+    if mode_val not in {"amount", "percent"}:
+        mode_val = "amount"
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"UPDATE dbo.{table_name} SET [{mode_col}] = ? WHERE [{id_col}] = ?",
+            (mode_val, po_id),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def _ensure_iv_po_mst_overall_discount_value_column_conn(conn) -> bool:
+    """
+    Ensure IVPoMst has OverallDiscountValue column for persisted PO-level discount entry value.
+    """
+    if not conn:
+        return False
+    table_name = _resolve_table_name(conn, ["IVPoMst", "IvPoMst", "IVPO_MST", "IV_Po_Mst"])
+    if not table_name:
+        return False
+    if _resolve_column(conn, table_name, ["OverallDiscountValue", "POOverallDiscountValue"]):
+        return True
+    try:
+        cur = conn.cursor()
+        cur.execute(f"ALTER TABLE dbo.{table_name} ADD OverallDiscountValue DECIMAL(18,4) NULL")
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return bool(_resolve_column(conn, table_name, ["OverallDiscountValue", "POOverallDiscountValue"]))
+
+
+def _update_iv_po_mst_overall_discount_value_conn(conn, po_id: int, overall_discount_value) -> bool:
+    """
+    Persist PO-level overall discount input value in IVPoMst. Safe no-op if unavailable.
+    """
+    if not conn:
+        return False
+    try:
+        po_id = int(po_id or 0)
+    except Exception:
+        return False
+    if po_id <= 0:
+        return False
+    table_name = _resolve_table_name(conn, ["IVPoMst", "IvPoMst", "IVPO_MST", "IV_Po_Mst"])
+    if not table_name:
+        return False
+    value_col = _resolve_column(conn, table_name, ["OverallDiscountValue", "POOverallDiscountValue"])
+    if not value_col and not _ensure_iv_po_mst_overall_discount_value_column_conn(conn):
+        return False
+    value_col = _resolve_column(conn, table_name, ["OverallDiscountValue", "POOverallDiscountValue"]) or "OverallDiscountValue"
+    id_col = _resolve_column(conn, table_name, ["ID", "Id"]) or "ID"
+    try:
+        value_val = float(overall_discount_value or 0)
+    except Exception:
+        value_val = 0.0
+    if value_val < 0:
+        value_val = 0.0
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"UPDATE dbo.{table_name} SET [{value_col}] = ? WHERE [{id_col}] = ?",
+            (value_val, po_id),
         )
         conn.commit()
         return True
@@ -6564,6 +8466,8 @@ def fetch_purchase_po_header(
         custom2_col = pick_col(["Custom2"])
         purchasing_dept_col = pick_col(["PurchasingDeptId", "PurchasingDeptID", "PurchaseDeptId", "PurchaseDeptID"])
         special_notes_col = pick_col(["SpecialNotes", "SpecialNote"])
+        overall_discount_mode_col = pick_col(["OverallDiscountMode", "POOverallDiscountMode"])
+        overall_discount_value_col = pick_col(["OverallDiscountValue", "POOverallDiscountValue"])
         po_print_format_col = pick_col(["POPrintFormat", "PrintFormat", "PurchaseOrderPrintFormat"])
         work_order_body_html_col = pick_col(["WorkOrderBodyHtml", "WorkOrderBodyHTML", "WOBodyHtml"])
         senior_approval_authority_col = pick_col(["SeniorApprovalAuthorityName", "SeniorApprovalAuthority"])
@@ -6593,6 +8497,16 @@ def fetch_purchase_po_header(
             f"mst.[{special_notes_col}] AS SpecialNotes"
             if special_notes_col
             else "CAST(NULL AS NVARCHAR(1000)) AS SpecialNotes"
+        )
+        overall_discount_mode_select = (
+            f"mst.[{overall_discount_mode_col}] AS OverallDiscountMode"
+            if overall_discount_mode_col
+            else "CAST(NULL AS NVARCHAR(20)) AS OverallDiscountMode"
+        )
+        overall_discount_value_select = (
+            f"mst.[{overall_discount_value_col}] AS OverallDiscountValue"
+            if overall_discount_value_col
+            else "CAST(NULL AS DECIMAL(18,4)) AS OverallDiscountValue"
         )
         po_print_format_select = (
             f"mst.[{po_print_format_col}] AS POPrintFormat"
@@ -6663,6 +8577,8 @@ def fetch_purchase_po_header(
                 mst.CreditDays,
                 mst.Notes,
                 {special_notes_select},
+                {overall_discount_mode_select},
+                {overall_discount_value_select},
                 {po_print_format_select},
                 {work_order_body_html_select},
                 {senior_approval_authority_select},
@@ -6724,8 +8640,10 @@ def fetch_purchase_po_header(
                 approver_designation_select=approver_designation_select,
                 approver_phone_select=approver_phone_select,
                 approver_signature_select=approver_signature_select,
-                special_notes_select=special_notes_select,
-                po_print_format_select=po_print_format_select,
+            special_notes_select=special_notes_select,
+            overall_discount_mode_select=overall_discount_mode_select,
+            overall_discount_value_select=overall_discount_value_select,
+            po_print_format_select=po_print_format_select,
                 work_order_body_html_select=work_order_body_html_select,
                 senior_approval_authority_select=senior_approval_authority_select,
                 senior_approval_designation_select=senior_approval_designation_select,
@@ -6832,6 +8750,13 @@ def fetch_purchase_po_items(unit: str, po_id: int, document_type: str | None = "
                     ORDER BY {order_expr}
                 ) AS manu
                 """
+        dtl_table_name = _resolve_table_name(conn, ["IVPoDtl", "IvPoDtl", "IVPO_DTL", "IV_Po_Dtl"]) or "IVPoDtl"
+        unit_discount_col = _resolve_column(conn, dtl_table_name, ["UnitDiscount", "Unit_Discount"])
+        unit_discount_select = (
+            f"dtl.[{unit_discount_col}] AS UnitDiscount,"
+            if unit_discount_col
+            else "CAST(0 AS DECIMAL(18,2)) AS UnitDiscount,"
+        )
         mst_table_name = _resolve_table_name(conn, ["IVPoMst", "IvPoMst", "IVPO_MST", "IV_Po_Mst"]) or "IVPoMst"
         mst_doc_type_col = _resolve_column(conn, mst_table_name, ["DocumentType", "DocType", "Document_Type"])
         requested_doc_type = str(document_type or "PO").strip().upper() or "PO"
@@ -6864,6 +8789,7 @@ def fetch_purchase_po_items(unit: str, po_id: int, document_type: str | None = "
                 dtl.Excisetax,
                 dtl.ExciseTaxamt,
                 dtl.NetAmount,
+                {unit_discount_select}
                 dtl.Custom1,
                 dtl.Custom2,
                 itm.Name AS ItemName,
@@ -6872,7 +8798,7 @@ def fetch_purchase_po_items(unit: str, po_id: int, document_type: str | None = "
                 {technical_specs_select},
                 un.Name AS UnitName,
                 loc.Name AS StoreName
-            FROM dbo.IVPoDtl AS dtl
+            FROM dbo.[{dtl_table_name}] AS dtl
             INNER JOIN dbo.[{mst_table_name}] AS mst
                 ON dtl.POID = mst.ID
             LEFT JOIN dbo.IVItem AS itm
@@ -7399,6 +9325,10 @@ def update_iv_po_mst(unit: str, params: dict):
         conn.commit()
         _update_iv_po_mst_purchasing_dept_conn(conn, params.get("pId"), params.get("PurchasingDeptId"))
         _update_iv_po_mst_special_notes_conn(conn, params.get("pId"), params.get("pSpecialNotes"))
+        if "OverallDiscountMode" in params:
+            _update_iv_po_mst_overall_discount_mode_conn(conn, params.get("pId"), params.get("OverallDiscountMode"))
+        if "OverallDiscountValue" in params:
+            _update_iv_po_mst_overall_discount_value_conn(conn, params.get("pId"), params.get("OverallDiscountValue"))
         if "POPrintFormat" in params:
             _update_iv_po_mst_print_format_conn(conn, params.get("pId"), params.get("POPrintFormat"))
         if "WorkOrderBodyHtml" in params:
@@ -9536,16 +11466,41 @@ def fetch_item_manufacturer_links(unit: str, item_id: int):
         print(f"Could not connect to {unit} for item manufacturer links")
         return None
     try:
-        sql = """
+        link_table = _resolve_table_name(conn, ["IVItemManuLink", "IvItemManuLink", "IVITEMMANULINK"]) or "IVItemManuLink"
+        item_col = _resolve_column(conn, link_table, ["ItemID", "ItemId"]) or "ItemID"
+        manu_col = _resolve_column(conn, link_table, ["ManufacturerID", "ManuID", "ID", "Id"]) or "ID"
+        link_id_col = _resolve_column(conn, link_table, ["LinkId", "LinkID", "Link_Id"])
+        unlink_id_col = _resolve_column(conn, link_table, ["UnlinkId", "UnLinkId", "UnlinkID"])
+
+        manu_table = _resolve_table_name(conn, ["IVMANUFACTURER", "IVManufacturer", "IVMANUFACTURERMASTER"]) or "IVMANUFACTURER"
+        manu_table_id_col = _resolve_column(conn, manu_table, ["ID", "Id", "ManufacturerID"]) or "ID"
+        manu_name_col = _resolve_column(conn, manu_table, ["Name", "ManufacturerName"]) or "Name"
+        manu_code_col = _resolve_column(conn, manu_table, ["Code", "ManufacturerCode"]) or "Code"
+
+        select_link_col = f"MIN(CAST(L.[{link_id_col}] AS BIGINT)) AS LinkId" if link_id_col else "CAST(NULL AS BIGINT) AS LinkId"
+        where_clauses = [f"L.[{item_col}] = ?"]
+        if unlink_id_col:
+            where_clauses.append(f"ISNULL(L.[{unlink_id_col}], 0) = 0")
+
+        sql = f"""
         SELECT
-            L.LinkId,
-            L.ItemID,
-            L.ID AS ManufacturerID,
-            M.Name AS ManufacturerName,
-            M.Code AS ManufacturerCode
-        FROM dbo.IVItemManuLink L
-        LEFT JOIN dbo.IVMANUFACTURER M ON L.ID = M.ID
-        WHERE L.ItemID = ?
+            {select_link_col},
+            L.[{item_col}] AS ItemID,
+            L.[{manu_col}] AS ManufacturerID,
+            MAX(LTRIM(RTRIM(COALESCE(M.[{manu_name_col}], '')))) AS ManufacturerName,
+            MAX(LTRIM(RTRIM(COALESCE(M.[{manu_code_col}], '')))) AS ManufacturerCode,
+            COUNT_BIG(1) AS MappingCount
+        FROM dbo.[{link_table}] L
+        LEFT JOIN dbo.[{manu_table}] M
+            ON L.[{manu_col}] = M.[{manu_table_id_col}]
+        WHERE {" AND ".join(where_clauses)}
+        GROUP BY
+            L.[{item_col}],
+            L.[{manu_col}]
+        ORDER BY
+            MAX(LTRIM(RTRIM(COALESCE(M.[{manu_name_col}], '')))),
+            MAX(LTRIM(RTRIM(COALESCE(M.[{manu_code_col}], '')))),
+            L.[{manu_col}]
         """
         df = pd.read_sql(sql, conn, params=[int(item_id)])
         if df is None or df.empty:
@@ -9578,6 +11533,8 @@ def add_item_manufacturer_link(
     conn = get_sql_connection(unit)
     if not conn:
         return {"error": f"Could not connect to {unit}"}
+    cursor = None
+    lock_resource = None
     try:
         user_token_str = str(user_token or "").strip()
         try:
@@ -9586,50 +11543,120 @@ def add_item_manufacturer_link(
             user_id_val = 1
         if not user_token_str:
             user_token_str = str(user_id_val)
+
+        link_table = _resolve_table_name(conn, ["IVItemManuLink", "IvItemManuLink", "IVITEMMANULINK"]) or "IVItemManuLink"
+        item_col = _resolve_column(conn, link_table, ["ItemID", "ItemId"]) or "ItemID"
+        manu_col = _resolve_column(conn, link_table, ["ManufacturerID", "ManuID", "ID", "Id"]) or "ID"
+        link_id_col = _resolve_column(conn, link_table, ["LinkId", "LinkID", "Link_Id"])
+        unlink_id_col = _resolve_column(conn, link_table, ["UnlinkId", "UnLinkId", "UnlinkID"])
+
+        meta_df = pd.read_sql(
+            """
+            SELECT
+                c.name AS ColumnName,
+                CAST(c.is_nullable AS INT) AS IsNullable,
+                CAST(c.is_identity AS INT) AS IsIdentity,
+                CASE WHEN c.default_object_id = 0 THEN 0 ELSE 1 END AS HasDefault
+            FROM sys.columns c
+            WHERE c.object_id = OBJECT_ID(?)
+            """,
+            conn,
+            params=[f"dbo.{link_table}"],
+        )
+        col_meta = {}
+        if meta_df is not None and not meta_df.empty:
+            for _, rec in meta_df.iterrows():
+                col_name = str(rec.get("ColumnName") or "").strip()
+                if not col_name:
+                    continue
+                col_meta[col_name.lower()] = {
+                    "name": col_name,
+                    "nullable": bool(rec.get("IsNullable")),
+                    "identity": bool(rec.get("IsIdentity")),
+                    "default": bool(rec.get("HasDefault")),
+                }
+
         cursor = conn.cursor()
+        existing_select = f"[{link_id_col}]" if link_id_col else "1"
+        existing_where = f"[{item_col}] = ? AND [{manu_col}] = ?"
+        if unlink_id_col:
+            existing_where += f" AND ISNULL([{unlink_id_col}], 0) = 0"
         cursor.execute(
-            "SELECT LinkId FROM dbo.IVItemManuLink WHERE ItemID = ? AND ID = ?",
+            f"SELECT TOP 1 {existing_select} FROM dbo.[{link_table}] WHERE {existing_where}",
             int(item_id),
             int(manufacturer_id),
         )
         row = cursor.fetchone()
         if row and row[0] is not None:
             return {"link_id": row[0], "created": False}
-        cursor.execute(
-            """
-            INSERT INTO dbo.IVItemManuLink (
-                ItemID, ID, EnteredOn, EnteredBy,
-                UpdatedBy, UpdatedON, UpdatedMacName,
-                UpdatedMacID, UpdatedIPAddress,
-                InsertedByUserID, InsertedON,
-                InsertedMacName, InsertedMacID, InsertedIPAddress
-            )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
-            """,
-            (
-                int(item_id),
-                int(manufacturer_id),
-                now_str,
-                user_id_val,
-                user_id_val,
-                now_str,
-                mac_name,
-                mac_id,
-                remote_addr,
-                user_token_str,
-                now_str,
-                mac_name,
-                mac_id,
-                remote_addr,
-            ),
+
+        insert_values_by_col = {
+            item_col.lower(): int(item_id),
+            manu_col.lower(): int(manufacturer_id),
+            "enteredon": now_str,
+            "enteredby": user_id_val,
+            "updatedby": user_id_val,
+            "updatedon": now_str,
+            "updatedmacname": mac_name,
+            "updatedmacid": mac_id,
+            "updatedipaddress": remote_addr,
+            "insertedbyuserid": user_token_str,
+            "insertedon": now_str,
+            "insertedmacname": mac_name,
+            "insertedmacid": mac_id,
+            "insertedipaddress": remote_addr,
+        }
+        if unlink_id_col:
+            insert_values_by_col[unlink_id_col.lower()] = 0
+
+        generated_link_id = None
+        if link_id_col:
+            link_meta = col_meta.get(link_id_col.lower(), {})
+            if not link_meta.get("identity") and not link_meta.get("default"):
+                lock_resource = f"IVITEMMANULINK_LINKID_{(unit or '').strip().upper()}"
+                lock_result = _get_app_lock(cursor, lock_resource, 10000)
+                if lock_result.get("error"):
+                    return lock_result
+                cursor.execute(
+                    f"SELECT ISNULL(MAX(CAST([{link_id_col}] AS INT)), 0) + 1 FROM dbo.[{link_table}] WITH (UPDLOCK, HOLDLOCK)"
+                )
+                next_row = cursor.fetchone()
+                generated_link_id = int(next_row[0]) if next_row and next_row[0] is not None else 1
+                insert_values_by_col[link_id_col.lower()] = generated_link_id
+
+        insert_columns = []
+        insert_column_keys = set()
+        insert_params = []
+        for col_name, meta in col_meta.items():
+            value_supplied = col_name in insert_values_by_col
+            value = insert_values_by_col.get(col_name)
+            if value_supplied and (value is not None or (not meta.get("nullable") and not meta.get("default"))):
+                insert_columns.append(meta.get("name") or col_name)
+                insert_column_keys.add(col_name)
+                insert_params.append(value)
+            elif value_supplied and col_name in {item_col.lower(), manu_col.lower(), unlink_id_col.lower() if unlink_id_col else ""}:
+                insert_columns.append(meta.get("name") or col_name)
+                insert_column_keys.add(col_name)
+                insert_params.append(value)
+
+        if item_col.lower() not in insert_column_keys or manu_col.lower() not in insert_column_keys:
+            return {"error": f"Failed to resolve IVItemManuLink columns for {unit}"}
+
+        insert_sql = (
+            f"INSERT INTO dbo.[{link_table}] ("
+            + ", ".join(f"[{col}]" for col in insert_columns)
+            + ") VALUES ("
+            + ", ".join("?" for _ in insert_columns)
+            + ")"
         )
-        cursor.execute("SELECT SCOPE_IDENTITY()")
+        cursor.execute(insert_sql, insert_params)
+        cursor.execute("SELECT CAST(SCOPE_IDENTITY() AS INT)")
         new_row = cursor.fetchone()
         try:
             conn.commit()
         except Exception:
             pass
-        link_id = None
+        link_id = generated_link_id
         if new_row and new_row[0] is not None:
             try:
                 link_id = int(new_row[0])
@@ -9643,6 +11670,164 @@ def add_item_manufacturer_link(
             pass
         return {"error": str(e)}
     finally:
+        try:
+            if lock_resource and cursor is not None:
+                _release_app_lock(cursor, lock_resource)
+        except Exception:
+            pass
+        try:
+            if cursor is not None:
+                cursor.close()
+        except Exception:
+            pass
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def delete_item_manufacturer_link(
+    unit: str,
+    item_id: int,
+    manufacturer_id: int | None,
+    user_token: str,
+    now_str: str,
+    remote_addr: str | None = None,
+    mac_name: str | None = None,
+    mac_id: str | None = None,
+    link_id: int | None = None,
+):
+    """
+    Remove an item-manufacturer mapping. If duplicate rows exist for the same
+    item/manufacturer pair, remove the full mapping so the UI does not keep
+    showing the manufacturer as linked.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        return {"error": f"Could not connect to {unit}"}
+    cursor = None
+    try:
+        user_token_str = str(user_token or "").strip()
+        try:
+            user_id_val = int(user_token_str)
+        except Exception:
+            user_id_val = 1
+        if not user_token_str:
+            user_token_str = str(user_id_val)
+
+        link_table = _resolve_table_name(conn, ["IVItemManuLink", "IvItemManuLink", "IVITEMMANULINK"]) or "IVItemManuLink"
+        item_col = _resolve_column(conn, link_table, ["ItemID", "ItemId"]) or "ItemID"
+        manu_col = _resolve_column(conn, link_table, ["ManufacturerID", "ManuID", "ID", "Id"]) or "ID"
+        link_id_col = _resolve_column(conn, link_table, ["LinkId", "LinkID", "Link_Id"])
+        unlink_id_col = _resolve_column(conn, link_table, ["UnlinkId", "UnLinkId", "UnlinkID"])
+
+        meta_df = pd.read_sql(
+            """
+            SELECT
+                c.name AS ColumnName,
+                CAST(c.is_nullable AS INT) AS IsNullable,
+                CAST(c.is_identity AS INT) AS IsIdentity,
+                CASE WHEN c.default_object_id = 0 THEN 0 ELSE 1 END AS HasDefault
+            FROM sys.columns c
+            WHERE c.object_id = OBJECT_ID(?)
+            """,
+            conn,
+            params=[f"dbo.{link_table}"],
+        )
+        col_meta = {}
+        if meta_df is not None and not meta_df.empty:
+            for _, rec in meta_df.iterrows():
+                col_name = str(rec.get("ColumnName") or "").strip()
+                if not col_name:
+                    continue
+                col_meta[col_name.lower()] = {
+                    "name": col_name,
+                    "nullable": bool(rec.get("IsNullable")),
+                    "identity": bool(rec.get("IsIdentity")),
+                    "default": bool(rec.get("HasDefault")),
+                }
+
+        cursor = conn.cursor()
+        active_filter = f" AND ISNULL([{unlink_id_col}], 0) = 0" if unlink_id_col else ""
+        if not manufacturer_id and link_id and link_id_col:
+            cursor.execute(
+                f"""
+                SELECT TOP 1 [{manu_col}]
+                FROM dbo.[{link_table}]
+                WHERE [{item_col}] = ? AND [{link_id_col}] = ?{active_filter}
+                """,
+                int(item_id),
+                int(link_id),
+            )
+            row = cursor.fetchone()
+            if row and row[0] is not None:
+                try:
+                    manufacturer_id = int(row[0])
+                except Exception:
+                    manufacturer_id = row[0]
+
+        if not manufacturer_id:
+            return {"error": "Manufacturer ID is required"}
+
+        where_sql = f"[{item_col}] = ? AND [{manu_col}] = ?{active_filter}"
+        params = [int(item_id), int(manufacturer_id)]
+        cursor.execute(
+            f"SELECT COUNT(1) FROM dbo.[{link_table}] WHERE {where_sql}",
+            params,
+        )
+        count_row = cursor.fetchone()
+        deleted_count = int(count_row[0]) if count_row and count_row[0] is not None else 0
+        if deleted_count <= 0:
+            return {"deleted_count": 0, "manufacturer_id": manufacturer_id, "soft_deleted": bool(unlink_id_col)}
+
+        if unlink_id_col:
+            set_clauses = [f"[{unlink_id_col}] = ?"]
+            update_params = [1]
+            update_values_by_col = {
+                "updatedby": user_id_val,
+                "updatedon": now_str,
+                "updatedmacname": mac_name,
+                "updatedmacid": mac_id,
+                "updatedipaddress": remote_addr,
+            }
+            for key, value in update_values_by_col.items():
+                meta = col_meta.get(key)
+                if not meta:
+                    continue
+                set_clauses.append(f"[{meta.get('name') or key}] = ?")
+                update_params.append(value)
+            update_params.extend(params)
+            cursor.execute(
+                f"UPDATE dbo.[{link_table}] SET {', '.join(set_clauses)} WHERE {where_sql}",
+                update_params,
+            )
+        else:
+            cursor.execute(
+                f"DELETE FROM dbo.[{link_table}] WHERE {where_sql}",
+                params,
+            )
+
+        try:
+            conn.commit()
+        except Exception:
+            pass
+        return {
+            "deleted_count": deleted_count,
+            "manufacturer_id": manufacturer_id,
+            "soft_deleted": bool(unlink_id_col),
+        }
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"error": str(e)}
+    finally:
+        try:
+            if cursor is not None:
+                cursor.close()
+        except Exception:
+            pass
         try:
             conn.close()
         except Exception:
@@ -10834,6 +13019,10 @@ def add_iv_po_mst_with_autonumber(unit: str, params: dict, lock_timeout_ms: int 
             final_po_no = str(saved_po_no or po_no or "").strip()
             _update_iv_po_mst_purchasing_dept_conn(conn, int(po_id), params.get("PurchasingDeptId"))
             _update_iv_po_mst_special_notes_conn(conn, int(po_id), params.get("pSpecialNotes"))
+            if "OverallDiscountMode" in params:
+                _update_iv_po_mst_overall_discount_mode_conn(conn, int(po_id), params.get("OverallDiscountMode"))
+            if "OverallDiscountValue" in params:
+                _update_iv_po_mst_overall_discount_value_conn(conn, int(po_id), params.get("OverallDiscountValue"))
             if "POPrintFormat" in params:
                 _update_iv_po_mst_print_format_conn(conn, int(po_id), params.get("POPrintFormat"))
             if "WorkOrderBodyHtml" in params:
@@ -11193,6 +13382,576 @@ def fetch_pharmacy_issue_margin(unit: str, from_date: str, to_date: str, manufac
             pass
 
 
+def _pharmacy_margin_parse_int(raw_value, default: int, minimum: int | None = None, maximum: int | None = None) -> int:
+    try:
+        value = int(float(raw_value))
+    except Exception:
+        value = int(default)
+    if minimum is not None:
+        value = max(minimum, value)
+    if maximum is not None:
+        value = min(maximum, value)
+    return value
+
+
+def fetch_pharmacy_product_margin_page(
+    unit: str,
+    from_date: str,
+    to_date: str,
+    medicine_type_id: int,
+    manufacturer_id: int,
+    source: str = "sale",
+    page: int = 1,
+    page_size: int = 20,
+    search_query: str = "",
+):
+    """
+    Fetch just one page of pharmacy margin rows directly from SQL so the app
+    doesn't have to materialize the full month in Python before slicing.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Pharmacy margin page: could not connect to {unit}")
+        return None
+    try:
+        page = _pharmacy_margin_parse_int(page, 1, 1, None)
+        page_size = _pharmacy_margin_parse_int(page_size, 20, 1, 100000)
+        medicine_type_id = _pharmacy_margin_parse_int(medicine_type_id, 0, 0, None)
+        manufacturer_id = _pharmacy_margin_parse_int(manufacturer_id, 0, 0, None)
+        source_key = str(source or "sale").strip().lower()
+        if source_key not in {"sale", "issue", "both"}:
+            source_key = "sale"
+        search_text = str(search_query or "").strip().lower()
+
+        sql = """
+        SET NOCOUNT ON;
+        SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+        DECLARE @FromDate DATE = ?;
+        DECLARE @ToDate DATE = ?;
+        DECLARE @MedicineTypeId INT = ?;
+        DECLARE @ManufacturerId INT = ?;
+        DECLARE @Source NVARCHAR(10) = LOWER(LTRIM(RTRIM(ISNULL(?, N'sale'))));
+        DECLARE @SearchQuery NVARCHAR(200) = LOWER(LTRIM(RTRIM(ISNULL(?, N''))));
+        DECLARE @Page INT = ?;
+        DECLARE @PageSize INT = ?;
+
+        IF @FromDate IS NULL OR @ToDate IS NULL
+        BEGIN
+            SELECT TOP 0
+                CAST(N'' AS NVARCHAR(10)) AS _source,
+                CAST(NULL AS INT) AS ID,
+                CAST(NULL AS INT) AS ItemLookupID,
+                CAST(NULL AS NVARCHAR(100)) AS Name,
+                CAST(NULL AS VARCHAR(150)) AS mn,
+                CAST(NULL AS INT) AS ManufacturerId,
+                CAST(NULL AS INT) AS MedicineTypeId,
+                CAST(NULL AS NVARCHAR(50)) AS MedicineTypeDesc,
+                CAST(NULL AS FLOAT) AS Rate,
+                CAST(NULL AS FLOAT) AS MRP,
+                CAST(NULL AS FLOAT) AS Expr1,
+                CAST(NULL AS FLOAT) AS qty,
+                CAST(NULL AS FLOAT) AS itemsale,
+                CAST(NULL AS FLOAT) AS Cur_Qty;
+
+            SELECT
+                CAST(1 AS INT) AS page,
+                CAST(ISNULL(@PageSize, 20) AS INT) AS page_size,
+                CAST(0 AS INT) AS total_rows,
+                CAST(1 AS INT) AS total_pages,
+                CAST(N'sql_inline' AS NVARCHAR(30)) AS query_engine;
+            RETURN;
+        END;
+
+        IF @FromDate > @ToDate
+        BEGIN
+            DECLARE @SwapDate DATE = @FromDate;
+            SET @FromDate = @ToDate;
+            SET @ToDate = @SwapDate;
+        END;
+
+        IF @Source NOT IN (N'sale', N'issue', N'both')
+            SET @Source = N'sale';
+
+        SET @Page = CASE WHEN ISNULL(@Page, 1) < 1 THEN 1 ELSE @Page END;
+        SET @PageSize = CASE
+            WHEN ISNULL(@PageSize, 20) < 1 THEN 20
+            WHEN @PageSize > 100000 THEN 100000
+            ELSE @PageSize
+        END;
+
+        CREATE TABLE #margin_rows (
+            _source NVARCHAR(10) NOT NULL,
+            ID INT NULL,
+            ItemLookupID INT NULL,
+            Name NVARCHAR(100) NULL,
+            mn VARCHAR(150) NULL,
+            ManufacturerId INT NULL,
+            MedicineTypeId INT NULL,
+            MedicineTypeDesc NVARCHAR(50) NULL,
+            Rate FLOAT NULL,
+            MRP FLOAT NULL,
+            Expr1 FLOAT NULL,
+            qty FLOAT NULL,
+            itemsale FLOAT NULL,
+            Cur_Qty FLOAT NULL
+        );
+
+        IF @Source IN (N'sale', N'both')
+        BEGIN
+            ;WITH sale_base AS (
+                SELECT
+                    CAST(I.ID AS INT) AS ItemID,
+                    CAST(I.Name AS NVARCHAR(100)) AS Name,
+                    CAST(M.Name AS VARCHAR(150)) AS mn,
+                    CAST(M.ID AS INT) AS ManufacturerId,
+                    CAST(MT.MedicineTypeId AS INT) AS MedicineTypeId,
+                    CAST(MT.MedicineTypeDesc AS NVARCHAR(50)) AS MedicineTypeDesc,
+                    CAST(DSM.SaleDate AS DATETIME) AS SaleDate,
+                    SUM(CAST(ISNULL(DSD.Qty, 0) AS FLOAT)) AS itemsale
+                FROM dbo.DrugSaleDtl DSD WITH (NOLOCK)
+                INNER JOIN dbo.DrugSaleMst DSM WITH (NOLOCK)
+                    ON DSM.DrugSaleID = DSD.DrugSaleID
+                INNER JOIN dbo.IVItem I WITH (NOLOCK)
+                    ON I.ID = DSD.DrugID
+                LEFT JOIN dbo.MedicineType_Mst MT WITH (NOLOCK)
+                    ON MT.MedicineTypeId = I.MedicineTypeId
+                LEFT JOIN dbo.IVItemManuLink L WITH (NOLOCK)
+                    ON L.ItemID = I.ID
+                LEFT JOIN dbo.IVManufacturer M WITH (NOLOCK)
+                    ON M.ID = L.ID
+                WHERE
+                    DSM.SaleDate >= @FromDate
+                    AND DSM.SaleDate < DATEADD(DAY, 1, @ToDate)
+                    AND (@MedicineTypeId = 0 OR ISNULL(MT.MedicineTypeId, 0) = @MedicineTypeId)
+                    AND (@ManufacturerId = 0 OR ISNULL(M.ID, 0) = @ManufacturerId)
+                GROUP BY
+                    I.ID,
+                    I.Name,
+                    M.Name,
+                    M.ID,
+                    MT.MedicineTypeId,
+                    MT.MedicineTypeDesc,
+                    DSM.SaleDate
+            ),
+            cur_qty AS (
+                SELECT
+                    CAST(SS.ItemID AS INT) AS ItemID,
+                    SUM(CAST(ISNULL(SS.Qty, 0) AS FLOAT)) AS Cur_Qty
+                FROM dbo.StoreStock SS WITH (NOLOCK)
+                WHERE
+                    SS.StoreID = 2
+                GROUP BY SS.ItemID
+            ),
+            latest_grn AS (
+                SELECT
+                    G.ItemID,
+                    G.Rate,
+                    G.MRP
+                FROM (
+                    SELECT
+                        CAST(D.ItemID AS INT) AS ItemID,
+                        CAST(D.Rate AS FLOAT) AS Rate,
+                        CAST(D.MRP AS FLOAT) AS MRP,
+                        ROW_NUMBER() OVER (
+                            PARTITION BY D.ItemID
+                            ORDER BY GM.GRNDate DESC, GM.ID DESC
+                        ) AS rn
+                    FROM dbo.IVGrnDtl D WITH (NOLOCK)
+                    INNER JOIN dbo.IVGrnMst GM WITH (NOLOCK)
+                        ON GM.ID = D.GrnID
+                    INNER JOIN (
+                        SELECT DISTINCT ItemID
+                        FROM sale_base
+                    ) S
+                        ON S.ItemID = D.ItemID
+                    WHERE GM.GRNDate < DATEADD(DAY, 1, @ToDate)
+                ) G
+                WHERE G.rn = 1
+            ),
+            sale_seed AS (
+                SELECT
+                    SB.ItemID,
+                    SB.Name,
+                    SB.mn,
+                    SB.ManufacturerId,
+                    SB.MedicineTypeId,
+                    SB.MedicineTypeDesc,
+                    CAST(LG.Rate AS FLOAT) AS Rate,
+                    CAST(LG.MRP AS FLOAT) AS MRP,
+                    CAST(ISNULL(SB.itemsale, 0) AS FLOAT) AS itemsale,
+                    CAST(ISNULL(CQ.Cur_Qty, 0) AS FLOAT) AS Cur_Qty
+                FROM sale_base SB
+                LEFT JOIN latest_grn LG
+                    ON LG.ItemID = SB.ItemID
+                LEFT JOIN cur_qty CQ
+                    ON CQ.ItemID = SB.ItemID
+            )
+            INSERT INTO #margin_rows (
+                _source, ID, ItemLookupID, Name, mn, ManufacturerId, MedicineTypeId, MedicineTypeDesc, Rate, MRP, Expr1, qty, itemsale, Cur_Qty
+            )
+            SELECT
+                N'sale' AS _source,
+                CAST(NULL AS INT) AS ID,
+                CASE
+                    WHEN MIN(ISNULL(SS.ItemID, 0)) = MAX(ISNULL(SS.ItemID, 0)) THEN MIN(ISNULL(SS.ItemID, 0))
+                    ELSE NULL
+                END AS ItemLookupID,
+                SS.Name,
+                SS.mn,
+                SS.ManufacturerId,
+                SS.MedicineTypeId,
+                SS.MedicineTypeDesc,
+                SS.Rate,
+                SS.MRP,
+                CAST(NULL AS FLOAT) AS Expr1,
+                CAST(NULL AS FLOAT) AS qty,
+                CAST(
+                    CASE
+                        WHEN MIN(ISNULL(SS.itemsale, 0)) = MAX(ISNULL(SS.itemsale, 0)) THEN MAX(ISNULL(SS.itemsale, 0))
+                        ELSE SUM(ISNULL(SS.itemsale, 0))
+                    END
+                    AS FLOAT
+                ) AS itemsale,
+                MAX(ISNULL(SS.Cur_Qty, 0)) AS Cur_Qty
+            FROM sale_seed SS
+            WHERE ISNULL(LTRIM(RTRIM(SS.Name)), N'') <> N''
+            GROUP BY
+                SS.Name,
+                SS.mn,
+                SS.ManufacturerId,
+                SS.MedicineTypeId,
+                SS.MedicineTypeDesc,
+                SS.Rate,
+                SS.MRP;
+        END;
+
+        IF @Source IN (N'issue', N'both')
+        BEGIN
+            ;WITH issue_qty AS (
+                SELECT
+                    CAST(D.ItemId AS INT) AS ItemID,
+                    SUM(CAST(ISNULL(D.Issueqty, 0) AS FLOAT)) AS itemsale
+                FROM dbo.IvPatientIssueDtl D WITH (NOLOCK)
+                INNER JOIN dbo.IvPatientIssueMst H WITH (NOLOCK)
+                    ON H.IssueId = D.Issueid
+                WHERE CAST(H.IssueDate AS DATE) BETWEEN @FromDate AND @ToDate
+                GROUP BY D.ItemId
+            ),
+            cur_qty AS (
+                SELECT
+                    CAST(SS.ItemID AS INT) AS ItemID,
+                    SUM(CAST(ISNULL(SS.Qty, 0) AS FLOAT)) AS Cur_Qty
+                FROM dbo.StoreStock SS WITH (NOLOCK)
+                WHERE
+                    SS.StoreID = 3
+                GROUP BY SS.ItemID
+            ),
+            issue_seed AS (
+                SELECT
+                    CAST(I.ID AS INT) AS ItemID,
+                    CAST(I.Name AS NVARCHAR(100)) AS Name,
+                    CAST(M.Name AS VARCHAR(150)) AS mn,
+                    CAST(M.ID AS INT) AS ManufacturerId,
+                    CAST(I.MedicineTypeId AS INT) AS MedicineTypeId,
+                    CAST(MT.MedicineTypeDesc AS NVARCHAR(50)) AS MedicineTypeDesc,
+                    CAST(D.Rate AS FLOAT) AS Rate,
+                    CAST(D.Mrp AS FLOAT) AS MRP,
+                    CAST(ISNULL(D.Issueqty, 0) * ISNULL(D.Rate, 0) AS FLOAT) AS qty,
+                    CAST(ISNULL(IQ.itemsale, 0) AS FLOAT) AS itemsale,
+                    CAST(ISNULL(CQ.Cur_Qty, 0) AS FLOAT) AS Cur_Qty
+                FROM dbo.IvPatientIssueDtl D WITH (NOLOCK)
+                INNER JOIN dbo.IvPatientIssueMst H WITH (NOLOCK)
+                    ON H.IssueId = D.Issueid
+                LEFT JOIN dbo.IVItem I WITH (NOLOCK)
+                    ON I.ID = D.ItemId
+                LEFT JOIN dbo.MedicineType_Mst MT WITH (NOLOCK)
+                    ON MT.MedicineTypeId = I.MedicineTypeId
+                LEFT JOIN dbo.IVItemManuLink L WITH (NOLOCK)
+                    ON L.ItemID = I.ID
+                LEFT JOIN dbo.IVManufacturer M WITH (NOLOCK)
+                    ON M.ID = L.ID
+                LEFT JOIN issue_qty IQ
+                    ON IQ.ItemID = I.ID
+                LEFT JOIN cur_qty CQ
+                    ON CQ.ItemID = I.ID
+                WHERE
+                    CAST(H.IssueDate AS DATE) BETWEEN @FromDate AND @ToDate
+                    AND (@ManufacturerId = 0 OR ISNULL(M.ID, 0) = @ManufacturerId)
+            )
+            INSERT INTO #margin_rows (
+                _source, ID, ItemLookupID, Name, mn, ManufacturerId, MedicineTypeId, MedicineTypeDesc, Rate, MRP, Expr1, qty, itemsale, Cur_Qty
+            )
+            SELECT
+                N'issue' AS _source,
+                ISD.ManufacturerId AS ID,
+                CASE
+                    WHEN MIN(ISNULL(ISD.ItemID, 0)) = MAX(ISNULL(ISD.ItemID, 0)) THEN MIN(ISNULL(ISD.ItemID, 0))
+                    ELSE NULL
+                END AS ItemLookupID,
+                ISD.Name,
+                ISD.mn,
+                ISD.ManufacturerId,
+                ISD.MedicineTypeId,
+                ISD.MedicineTypeDesc,
+                ISD.Rate,
+                ISD.MRP,
+                SUM(ISNULL(ISD.qty, 0)) AS Expr1,
+                SUM(ISNULL(ISD.qty, 0)) AS qty,
+                CAST(
+                    CASE
+                        WHEN MIN(ISNULL(ISD.itemsale, 0)) = MAX(ISNULL(ISD.itemsale, 0)) THEN MAX(ISNULL(ISD.itemsale, 0))
+                        ELSE SUM(ISNULL(ISD.itemsale, 0))
+                    END
+                    AS FLOAT
+                ) AS itemsale,
+                MAX(ISNULL(ISD.Cur_Qty, 0)) AS Cur_Qty
+            FROM issue_seed ISD
+            WHERE ISNULL(LTRIM(RTRIM(ISD.Name)), N'') <> N''
+            GROUP BY
+                ISD.Name,
+                ISD.mn,
+                ISD.ManufacturerId,
+                ISD.MedicineTypeId,
+                ISD.MedicineTypeDesc,
+                ISD.Rate,
+                ISD.MRP;
+        END;
+
+        SELECT
+            R._source,
+            R.ID,
+            R.ItemLookupID,
+            R.Name,
+            R.mn,
+            R.ManufacturerId,
+            R.MedicineTypeId,
+            R.MedicineTypeDesc,
+            R.Rate,
+            R.MRP,
+            R.Expr1,
+            R.qty,
+            R.itemsale,
+            R.Cur_Qty
+        INTO #margin_filtered
+        FROM #margin_rows R
+        WHERE
+            @SearchQuery = N''
+            OR CHARINDEX(@SearchQuery, LOWER(ISNULL(R.Name, N''))) > 0
+            OR CHARINDEX(@SearchQuery, LOWER(CONVERT(NVARCHAR(150), ISNULL(R.mn, '')))) > 0
+            OR CHARINDEX(@SearchQuery, LOWER(ISNULL(R.MedicineTypeDesc, N''))) > 0
+            OR CHARINDEX(@SearchQuery, LOWER(ISNULL(R._source, N''))) > 0;
+
+        DECLARE @TotalRows INT = (SELECT COUNT(1) FROM #margin_filtered);
+        DECLARE @TotalPages INT = CASE
+            WHEN @TotalRows <= 0 THEN 1
+            ELSE CEILING(@TotalRows * 1.0 / @PageSize)
+        END;
+
+        IF @Page > @TotalPages
+            SET @Page = @TotalPages;
+
+        DECLARE @Offset INT = (@Page - 1) * @PageSize;
+
+        SELECT
+            F._source,
+            F.ID,
+            F.ItemLookupID,
+            F.Name,
+            F.mn,
+            F.ManufacturerId,
+            F.MedicineTypeId,
+            F.MedicineTypeDesc,
+            F.Rate,
+            F.MRP,
+            F.Expr1,
+            F.qty,
+            F.itemsale,
+            F.Cur_Qty
+        FROM #margin_filtered F
+        ORDER BY
+            CASE
+                WHEN F._source = N'sale' THEN 1
+                WHEN F._source = N'issue' THEN 2
+                ELSE 3
+            END,
+            LOWER(ISNULL(F.Name, N'')),
+            LOWER(CONVERT(NVARCHAR(150), ISNULL(F.mn, ''))),
+            LOWER(ISNULL(F.MedicineTypeDesc, N'')),
+            ISNULL(F.Rate, 0),
+            ISNULL(F.MRP, 0),
+            ISNULL(F.ID, 0)
+        OFFSET @Offset ROWS FETCH NEXT @PageSize ROWS ONLY;
+
+        SELECT
+            @Page AS page,
+            @PageSize AS page_size,
+            @TotalRows AS total_rows,
+            @TotalPages AS total_pages,
+            CAST(N'sql_inline' AS NVARCHAR(30)) AS query_engine;
+        """
+
+        cursor = conn.cursor()
+        cursor.execute(
+            sql,
+            [
+                from_date,
+                to_date,
+                int(medicine_type_id or 0),
+                int(manufacturer_id or 0),
+                source_key,
+                search_text,
+                int(page),
+                int(page_size),
+            ],
+        )
+
+        result_sets = []
+        while True:
+            if cursor.description:
+                result_sets.append(_corp_bill_summary_dict_rows_from_cursor(cursor))
+            if not cursor.nextset():
+                break
+
+        try:
+            cursor.close()
+        except Exception:
+            pass
+
+        if not result_sets:
+            return None
+
+        rows = list(result_sets[0] or [])
+        meta_rec = dict(result_sets[1][0] or {}) if len(result_sets) > 1 and result_sets[1] else {}
+        df = pd.DataFrame(rows)
+        if not df.empty:
+            df.columns = [str(c).strip() for c in df.columns]
+            df["Unit"] = (unit or "").upper()
+
+        meta = {
+            "page": _pharmacy_margin_parse_int(meta_rec.get("page"), page, 1, None),
+            "page_size": _pharmacy_margin_parse_int(meta_rec.get("page_size"), page_size, 1, 100000),
+            "total_rows": _pharmacy_margin_parse_int(meta_rec.get("total_rows"), len(df.index), 0, None),
+            "total_pages": _pharmacy_margin_parse_int(meta_rec.get("total_pages"), 1, 1, None),
+            "query_engine": str(meta_rec.get("query_engine") or "sql_inline"),
+        }
+        return {"df": df, "meta": meta}
+    except Exception as e:
+        print(f"Pharmacy margin page fetch failed for {unit}: {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_pharmacy_margin_period_qty_lookup(
+    unit: str,
+    from_date: str,
+    to_date: str,
+    store_id: int,
+    item_ids,
+):
+    """
+    Fetch purchase qty in the selected date range plus current closing qty for the
+    specific item ids shown on the current margin page.
+    """
+    ids = []
+    seen = set()
+    for raw in list(item_ids or []):
+        try:
+            item_id = int(raw)
+        except Exception:
+            continue
+        if item_id <= 0 or item_id in seen:
+            continue
+        seen.add(item_id)
+        ids.append(item_id)
+    if not ids:
+        return pd.DataFrame(columns=["ItemID", "PurchaseQty", "ClosingQty"])
+
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Pharmacy margin period qty: could not connect to {unit}")
+        return None
+    try:
+        values_sql = ", ".join(f"({item_id})" for item_id in ids)
+        sql = f"""
+        SET NOCOUNT ON;
+        SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+        DECLARE @FromDate DATE = ?;
+        DECLARE @ToDate DATE = ?;
+        DECLARE @StoreID INT = ?;
+
+        IF @FromDate > @ToDate
+        BEGIN
+            DECLARE @SwapDate DATE = @FromDate;
+            SET @FromDate = @ToDate;
+            SET @ToDate = @SwapDate;
+        END;
+
+        WITH target_items AS (
+            SELECT DISTINCT CAST(V.ItemID AS INT) AS ItemID
+            FROM (VALUES {values_sql}) V(ItemID)
+        ),
+        purchase_qty AS (
+            SELECT
+                CAST(B.ItemId AS INT) AS ItemID,
+                SUM(CAST(ISNULL(SR.Qty, 0) AS FLOAT)) AS PurchaseQty
+            FROM dbo.IVStockRegister SR WITH (NOLOCK)
+            INNER JOIN dbo.IVBatch B WITH (NOLOCK)
+                ON B.ID = SR.BatchID
+            INNER JOIN target_items T
+                ON T.ItemID = B.ItemId
+            WHERE
+                SR.DocType = 'GRN'
+                AND SR.StoreID = @StoreID
+                AND CAST(SR.DocDate AS DATE) BETWEEN @FromDate AND @ToDate
+            GROUP BY B.ItemId
+        ),
+        closing_qty AS (
+            SELECT
+                CAST(SS.ItemID AS INT) AS ItemID,
+                SUM(CAST(ISNULL(SS.Qty, 0) AS FLOAT)) AS ClosingQty
+            FROM dbo.StoreStock SS WITH (NOLOCK)
+            INNER JOIN target_items T
+                ON T.ItemID = SS.ItemID
+            INNER JOIN dbo.IVBatch B WITH (NOLOCK)
+                ON B.ID = SS.BatchID
+            WHERE
+                SS.StoreID = @StoreID
+                AND SS.Qty > 0
+                AND B.ExpiryDate >= CONVERT(DATE, GETDATE())
+            GROUP BY SS.ItemID
+        )
+        SELECT
+            T.ItemID,
+            CAST(ISNULL(P.PurchaseQty, 0) AS FLOAT) AS PurchaseQty,
+            CAST(ISNULL(C.ClosingQty, 0) AS FLOAT) AS ClosingQty
+        FROM target_items T
+        LEFT JOIN purchase_qty P
+            ON P.ItemID = T.ItemID
+        LEFT JOIN closing_qty C
+            ON C.ItemID = T.ItemID
+        ORDER BY T.ItemID;
+        """
+        df = pd.read_sql(sql, conn, params=[from_date, to_date, int(store_id or 0)])
+        if df is None or df.empty:
+            return pd.DataFrame(columns=["ItemID", "PurchaseQty", "ClosingQty"])
+        df.columns = [str(c).strip() for c in df.columns]
+        return df
+    except Exception as e:
+        print(f"Pharmacy margin period qty fetch failed for {unit}: {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def fetch_medicine_types(unit: str):
     """
     Fetches medicine type list from MedicineType_Mst.
@@ -11509,6 +14268,385 @@ def fetch_visit_billing_receipt_summary(unit: str, from_date: str, to_date: str)
         return df
     except Exception as e:
         print(f"Error fetching visit billing receipt summary ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_ip_advance_provision(
+    unit: str,
+    admission_from: str,
+    admission_to: str,
+    basis: str,
+    discharge_from: str | None = None,
+    discharge_to: str | None = None,
+    as_on_date: str | None = None,
+):
+    """
+    Fetch visit-wise IP advance receipts that are still unbilled as of a cutoff date.
+
+    Rules:
+      - Base visits are IP admissions inside the admission window.
+      - Only active hospital receipts (ReceiptType='P') are included.
+      - Visits with an active submitted hospital bill on/before cutoff are excluded.
+      - Discharge basis measures advance as of the admission window close
+        (admission_to), and includes every visit still standing at that cutoff:
+          * discharged after cutoff
+          * or not yet discharged
+        The selected discharge window is used to classify which of those visits
+        were discharged inside the requested window.
+      - As_on basis ignores discharge window and uses the explicit as_on_date cutoff.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for IP advance provision")
+        return None
+
+    basis_norm = str(basis or "").strip().lower()
+    if basis_norm not in {"discharge", "as_on"}:
+        basis_norm = "discharge"
+
+    cutoff_date = admission_to if basis_norm == "discharge" else as_on_date
+    if not admission_from or not admission_to or not cutoff_date:
+        return pd.DataFrame()
+
+    try:
+        def _q_ident(name: str) -> str:
+            return f"[{str(name).replace(']', ']]')}]"
+
+        def _table_ref(name: str) -> str:
+            return f"dbo.{_q_ident(name)}"
+
+        def _norm_text_expr(alias: str, col_name: str | None) -> str:
+            if not col_name:
+                return "CAST('' AS NVARCHAR(200))"
+            return f"LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(200), {alias}.{_q_ident(col_name)}), '')))"
+
+        def _date_expr(alias: str, col_name: str | None) -> str:
+            if not col_name:
+                return "CAST(NULL AS DATETIME)"
+            raw_expr = f"CONVERT(NVARCHAR(50), {alias}.{_q_ident(col_name)})"
+            return (
+                "CASE "
+                f"WHEN ISDATE({raw_expr}) = 1 THEN CONVERT(DATETIME, {alias}.{_q_ident(col_name)}) "
+                "ELSE NULL END"
+            )
+
+        def _active_flag_expr(alias: str, col_name: str | None) -> str:
+            if not col_name:
+                return "1 = 1"
+            txt = f"LOWER(LTRIM(RTRIM(CONVERT(NVARCHAR(30), ISNULL({alias}.{_q_ident(col_name)}, 0)))))"
+            return f"{txt} NOT IN ('1', 'true', 'yes', 'y', 'cancelled', 'canceled')"
+
+        def _submitted_flag_expr(alias: str, col_name: str | None) -> str:
+            if not col_name:
+                return "1 = 1"
+            txt = f"LOWER(LTRIM(RTRIM(CONVERT(NVARCHAR(30), ISNULL({alias}.{_q_ident(col_name)}, 0)))))"
+            return f"{txt} IN ('1', 'true', 'yes', 'y', 'submitted', 'final')"
+
+        visit_table = _resolve_table_name(conn, ["Visit", "visit"])
+        receipt_table = _resolve_table_name(conn, ["Receipt_mst", "receipt_mst", "Receipt_Mst"])
+        billing_table = _resolve_table_name(conn, ["Billing_Mst", "billing_mst", "Billing_MST"])
+        patient_type_table = _resolve_table_name(conn, ["PatientType_mst", "PatientType_Mst", "patienttype_mst"])
+        patient_subtype_table = _resolve_table_name(conn, ["PatientSubType_Mst", "PatientSubType_mst", "patientsubtype_mst"])
+
+        if not visit_table or not receipt_table or not billing_table:
+            print(f"IP advance provision schema missing required tables ({unit})")
+            return None
+
+        visit_id_col = _resolve_column(conn, visit_table, ["Visit_ID", "VisitId", "VisitID", "visit_id", "visitid"])
+        visit_no_col = _resolve_column(conn, visit_table, ["VisitNo", "Visit_No", "VisitNO"])
+        admission_no_col = _resolve_column(conn, visit_table, ["AdmissionNo", "Admission_No"])
+        visit_date_col = _resolve_column(conn, visit_table, ["VisitDate", "Visit_Date", "AdmissionDate", "Admission_Date", "AdmitDate", "Admit_Date"])
+        discharge_date_col = _resolve_column(conn, visit_table, ["DischargeDate", "Discharge_Date", "DischargeDateTime", "Discharge_DateTime"])
+        visit_type_id_col = _resolve_column(conn, visit_table, ["VisitTypeID", "VisitTypeId", "VisitType_ID", "Visit_Type_ID"])
+        type_of_visit_col = _resolve_column(conn, visit_table, ["TypeOfVisit", "VisitType", "Type_Of_Visit"])
+        patient_id_col = _resolve_column(conn, visit_table, ["PatientID", "PatientId", "patient_id"])
+        doctor_id_col = _resolve_column(conn, visit_table, ["DocInCharge", "DoctorInCharge", "DoctorID", "DoctorId"])
+        ward_id_col = _resolve_column(conn, visit_table, ["WardID", "WardId", "ward_id"])
+        patient_type_id_col = _resolve_column(conn, visit_table, ["PatientType_ID", "PatientTypeId", "PatientTypeID"])
+        patient_subtype_id_col = _resolve_column(conn, visit_table, ["PatientSubType_ID", "PatientSubTypeId", "PatientSubTypeID"])
+        pay_type_col = _resolve_column(conn, visit_table, ["payType", "PayType", "Pay_Type"])
+
+        receipt_visit_id_col = _resolve_column(conn, receipt_table, ["Visit_ID", "VisitId", "VisitID", "visit_id"])
+        receipt_amount_col = _resolve_column(conn, receipt_table, ["Amount", "ReceiptAmount", "NetAmount", "TotalAmount"])
+        receipt_date_col = _resolve_column(conn, receipt_table, ["Receipt_Date", "ReceiptDate", "InsertedON", "InsertedOn", "Date"])
+        receipt_type_col = _resolve_column(conn, receipt_table, ["ReceiptType", "Receipt_Type", "Type"])
+        receipt_cancel_col = _resolve_column(conn, receipt_table, ["CancelStatus", "Cancel_Status", "Canceled", "Cancelled"])
+
+        bill_visit_id_col = _resolve_column(conn, billing_table, ["Visit_ID", "VisitId", "VisitID", "visit_id"])
+        bill_id_col = _resolve_column(conn, billing_table, ["Bill_ID", "BillId", "BillID", "bill_id"])
+        bill_no_col = _resolve_column(conn, billing_table, ["BillNo", "Bill_No", "BillNO"])
+        bill_type_col = _resolve_column(conn, billing_table, ["BillType", "Bill_Type", "Type"])
+        bill_date_col = _resolve_column(conn, billing_table, ["BillDate", "Bill_Date"])
+        bill_submit_date_col = _resolve_column(conn, billing_table, ["Submit_Date", "SubmittedOn", "Submitted_On", "InsertedON", "InsertedOn"])
+        bill_submitted_col = _resolve_column(conn, billing_table, ["submitted", "Submitted", "IsSubmitted", "FinalSubmitted"])
+        bill_cancel_col = _resolve_column(conn, billing_table, ["CancelStatus", "Cancel_Status", "Canceled", "Cancelled"])
+
+        pt_id_col = _resolve_column(conn, patient_type_table, ["PatientType_ID", "PatientTypeId", "PatientTypeID"]) if patient_type_table else None
+        pt_name_col = _resolve_column(conn, patient_type_table, ["PatientType", "PatientTypeName", "TypeName", "Name"]) if patient_type_table else None
+        pst_id_col = _resolve_column(conn, patient_subtype_table, ["PatientSubType_ID", "PatientSubTypeId", "PatientSubTypeID"]) if patient_subtype_table else None
+        pst_name_col = _resolve_column(conn, patient_subtype_table, ["PatientSubType_Desc", "PatientSubTypeDesc", "PatientSubType", "PatientSubTypeName"]) if patient_subtype_table else None
+
+        if not visit_id_col or not visit_date_col or not receipt_visit_id_col or not receipt_amount_col or not receipt_date_col or not bill_visit_id_col:
+            print(f"IP advance provision schema missing required columns ({unit})")
+            return None
+
+        visit_date_expr = _date_expr("v", visit_date_col)
+        discharge_date_expr = _date_expr("v", discharge_date_col)
+        receipt_date_expr = _date_expr("rm", receipt_date_col)
+        bill_date_parts = []
+        for candidate in [bill_date_col, bill_submit_date_col]:
+            expr = _date_expr("bm", candidate)
+            if expr != "CAST(NULL AS DATETIME)" and expr not in bill_date_parts:
+                bill_date_parts.append(expr)
+        bill_date_expr = f"COALESCE({', '.join(bill_date_parts)})" if bill_date_parts else "CAST(NULL AS DATETIME)"
+
+        visit_type_filter = "1 = 1"
+        if visit_type_id_col:
+            visit_type_filter = f"ISNULL(v.{_q_ident(visit_type_id_col)}, 0) = 1"
+        elif type_of_visit_col:
+            visit_type_filter = f"UPPER(LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(40), v.{_q_ident(type_of_visit_col)}), '')))) LIKE '%IP%'"
+
+        receipt_type_filter = "1 = 1"
+        if receipt_type_col:
+            receipt_type_filter = f"UPPER(LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(20), rm.{_q_ident(receipt_type_col)}), '')))) = 'P'"
+
+        bill_type_filter = "1 = 1"
+        if bill_type_col:
+            bill_type_filter = f"UPPER(LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(20), bm.{_q_ident(bill_type_col)}), '')))) = 'P'"
+
+        receipt_active_filter = _active_flag_expr("rm", receipt_cancel_col)
+        bill_active_filter = _active_flag_expr("bm", bill_cancel_col)
+        bill_submitted_filter = _submitted_flag_expr("bm", bill_submitted_col)
+
+        visit_no_expr = _norm_text_expr("v", visit_no_col)
+        admission_no_expr = _norm_text_expr("v", admission_no_col)
+        patient_name_expr = (
+            f"CASE WHEN ISNULL(v.{_q_ident(patient_id_col)}, 0) > 0 THEN dbo.fn_patientfullname(v.{_q_ident(patient_id_col)}) ELSE '' END"
+            if patient_id_col else
+            "CAST('' AS NVARCHAR(200))"
+        )
+        reg_no_expr = (
+            f"CASE WHEN ISNULL(v.{_q_ident(patient_id_col)}, 0) > 0 THEN dbo.fn_regno(v.{_q_ident(patient_id_col)}) ELSE '' END"
+            if patient_id_col else
+            "CAST('' AS NVARCHAR(100))"
+        )
+        doctor_expr = (
+            f"CASE WHEN ISNULL(v.{_q_ident(doctor_id_col)}, 0) > 0 THEN dbo.fn_doctorfirstname(v.{_q_ident(doctor_id_col)}) ELSE '' END"
+            if doctor_id_col else
+            "CAST('' AS NVARCHAR(200))"
+        )
+        ward_expr = (
+            f"CASE WHEN ISNULL(v.{_q_ident(ward_id_col)}, 0) > 0 THEN dbo.fn_ward_name(v.{_q_ident(ward_id_col)}) ELSE '' END"
+            if ward_id_col else
+            "CAST('' AS NVARCHAR(200))"
+        )
+
+        join_sql = ""
+        patient_type_expr = "CAST('' AS NVARCHAR(120))"
+        if patient_type_table and patient_type_id_col and pt_id_col and pt_name_col:
+            join_sql += (
+                f" LEFT JOIN {_table_ref(patient_type_table)} pt WITH (NOLOCK)"
+                f" ON pt.{_q_ident(pt_id_col)} = v.{_q_ident(patient_type_id_col)}"
+            )
+            patient_type_expr = f"LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(120), pt.{_q_ident(pt_name_col)}), '')))"
+        elif patient_type_id_col:
+            patient_type_expr = f"LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(120), v.{_q_ident(patient_type_id_col)}), '')))"
+
+        patient_subtype_expr = "CAST('' AS NVARCHAR(120))"
+        if patient_subtype_table and patient_subtype_id_col and pst_id_col and pst_name_col:
+            join_sql += (
+                f" LEFT JOIN {_table_ref(patient_subtype_table)} pst WITH (NOLOCK)"
+                f" ON pst.{_q_ident(pst_id_col)} = v.{_q_ident(patient_subtype_id_col)}"
+            )
+            patient_subtype_expr = f"LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(120), pst.{_q_ident(pst_name_col)}), '')))"
+        elif patient_subtype_id_col:
+            patient_subtype_expr = f"LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(120), v.{_q_ident(patient_subtype_id_col)}), '')))"
+
+        pay_category_expr = "CAST('' AS NVARCHAR(40))"
+        if pay_type_col:
+            pay_type_text_expr = f"LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(40), v.{_q_ident(pay_type_col)}), '')))"
+            pay_category_expr = (
+                "CASE "
+                f"WHEN {pay_type_text_expr} = '1' THEN 'Cash' "
+                f"WHEN {pay_type_text_expr} = '2' THEN 'Cashless' "
+                f"ELSE {pay_type_text_expr} "
+                "END"
+            )
+
+        bill_order_col = f"bm.{_q_ident(bill_id_col)}" if bill_id_col else "1"
+        bill_no_expr = (
+            f"LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(80), bm.{_q_ident(bill_no_col)}), CONVERT(NVARCHAR(80), bm.{_q_ident(bill_id_col)}))))"
+            if bill_id_col and bill_no_col else
+            (f"LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(80), bm.{_q_ident(bill_no_col)}), '')))" if bill_no_col else
+             (f"CONVERT(NVARCHAR(80), bm.{_q_ident(bill_id_col)})" if bill_id_col else "CAST('' AS NVARCHAR(80))"))
+        )
+
+        cutoff_bill_filter = ""
+        if bill_date_expr != "CAST(NULL AS DATETIME)":
+            cutoff_bill_filter = f"AND {bill_date_expr} < DATEADD(DAY, 1, CAST(@CutoffDate AS DATETIME))"
+
+        sql = f"""
+            SET NOCOUNT ON;
+            SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+            DECLARE @AdmissionFrom DATE = ?;
+            DECLARE @AdmissionTo DATE = ?;
+            DECLARE @CutoffDate DATE = ?;
+            DECLARE @Basis NVARCHAR(20) = ?;
+            DECLARE @DischargeFrom DATE = ?;
+            DECLARE @DischargeTo DATE = ?;
+
+            ;WITH base_visits AS (
+                SELECT
+                    CAST(v.{_q_ident(visit_id_col)} AS INT) AS Visit_ID,
+                    {visit_no_expr} AS VisitNo,
+                    {admission_no_expr} AS AdmissionNo,
+                    {visit_date_expr} AS AdmissionDate,
+                    {discharge_date_expr} AS DischargeDate,
+                    {patient_name_expr} AS PatientName,
+                    {reg_no_expr} AS RegNo,
+                    {doctor_expr} AS DoctorInCharge,
+                    {ward_expr} AS WardName,
+                    {patient_type_expr} AS PatientType,
+                    {patient_subtype_expr} AS PatientSubType,
+                    {pay_category_expr} AS PayCategory
+                FROM {_table_ref(visit_table)} v WITH (NOLOCK)
+                {join_sql}
+                WHERE {visit_date_expr} IS NOT NULL
+                  AND {visit_date_expr} >= CAST(@AdmissionFrom AS DATETIME)
+                  AND {visit_date_expr} < DATEADD(DAY, 1, CAST(@AdmissionTo AS DATETIME))
+                  AND {visit_type_filter}
+                  AND (@Basis <> N'as_on' OR {visit_date_expr} < DATEADD(DAY, 1, CAST(@CutoffDate AS DATETIME)))
+            )
+            SELECT
+                bv.Visit_ID,
+                bv.VisitNo,
+                bv.AdmissionNo,
+                bv.AdmissionDate,
+                bv.DischargeDate,
+                bv.PatientName,
+                bv.RegNo,
+                bv.DoctorInCharge,
+                bv.WardName,
+                bv.PatientType,
+                bv.PatientSubType,
+                bv.PayCategory,
+                CAST(ISNULL(rec.ReceiptCount, 0) AS INT) AS ReceiptCount,
+                rec.FirstReceiptDate,
+                rec.LastReceiptDate,
+                CAST(ISNULL(rec.AdvanceAmount, 0) AS DECIMAL(18, 2)) AS AdvanceAmount,
+                CASE
+                    WHEN ISNULL(bany.HasBillAny, 0) = 0 THEN 'Unbilled'
+                    WHEN bany.FinalBillDateAny IS NULL THEN 'Bill Found'
+                    WHEN bany.FinalBillDateAny >= DATEADD(DAY, 1, CAST(@CutoffDate AS DATETIME)) THEN 'Billed After Cutoff'
+                    ELSE 'Billed By Cutoff'
+                END AS BillStatusAsOnCutoff,
+                bany.FinalBillDateAny AS FinalBillDate,
+                ISNULL(bany.FinalBillNoAny, '') AS FinalBillNo,
+                CASE
+                    WHEN bv.DischargeDate IS NOT NULL
+                     AND bv.DischargeDate < DATEADD(DAY, 1, CAST(@CutoffDate AS DATETIME))
+                    THEN 'Discharged'
+                    ELSE 'Open'
+                END AS VisitStatusAsOnCutoff,
+                CASE
+                    WHEN @Basis <> N'discharge' THEN ''
+                    WHEN bv.DischargeDate IS NULL THEN 'Still Admitted / Not Yet Discharged'
+                    WHEN @DischargeFrom IS NOT NULL
+                     AND @DischargeTo IS NOT NULL
+                     AND bv.DischargeDate >= CAST(@DischargeFrom AS DATETIME)
+                     AND bv.DischargeDate < DATEADD(DAY, 1, CAST(@DischargeTo AS DATETIME))
+                    THEN 'Discharged In Window'
+                    WHEN bv.DischargeDate >= DATEADD(DAY, 1, CAST(@CutoffDate AS DATETIME))
+                    THEN 'Discharged After Window'
+                    ELSE 'Discharged By Cutoff'
+                END AS DischargeBucket
+            FROM base_visits bv
+            OUTER APPLY (
+                SELECT
+                    COUNT(1) AS ReceiptCount,
+                    MIN({receipt_date_expr}) AS FirstReceiptDate,
+                    MAX({receipt_date_expr}) AS LastReceiptDate,
+                    CAST(SUM(CAST(ISNULL(rm.{_q_ident(receipt_amount_col)}, 0) AS DECIMAL(18, 2))) AS DECIMAL(18, 2)) AS AdvanceAmount
+                FROM {_table_ref(receipt_table)} rm WITH (NOLOCK)
+                WHERE rm.{_q_ident(receipt_visit_id_col)} = bv.Visit_ID
+                  AND {receipt_active_filter}
+                  AND {receipt_type_filter}
+                  AND {receipt_date_expr} IS NOT NULL
+                  AND {receipt_date_expr} < DATEADD(DAY, 1, CAST(@CutoffDate AS DATETIME))
+            ) rec
+            OUTER APPLY (
+                SELECT TOP 1
+                    1 AS HasBillTillCutoff,
+                    {bill_date_expr} AS FinalBillDateTillCutoff
+                FROM {_table_ref(billing_table)} bm WITH (NOLOCK)
+                WHERE bm.{_q_ident(bill_visit_id_col)} = bv.Visit_ID
+                  AND {bill_active_filter}
+                  AND {bill_submitted_filter}
+                  AND {bill_type_filter}
+                  {cutoff_bill_filter}
+                ORDER BY {bill_date_expr} ASC, {bill_order_col} ASC
+            ) bcut
+            OUTER APPLY (
+                SELECT TOP 1
+                    1 AS HasBillAny,
+                    {bill_date_expr} AS FinalBillDateAny,
+                    {bill_no_expr} AS FinalBillNoAny
+                FROM {_table_ref(billing_table)} bm WITH (NOLOCK)
+                WHERE bm.{_q_ident(bill_visit_id_col)} = bv.Visit_ID
+                  AND {bill_active_filter}
+                  AND {bill_submitted_filter}
+                  AND {bill_type_filter}
+                ORDER BY {bill_date_expr} DESC, {bill_order_col} DESC
+            ) bany
+            WHERE ISNULL(rec.AdvanceAmount, 0) > 0
+              AND ISNULL(bcut.HasBillTillCutoff, 0) = 0
+              AND (
+                    (@Basis = N'discharge'
+                     AND (
+                          bv.DischargeDate IS NULL
+                          OR bv.DischargeDate >= DATEADD(DAY, 1, CAST(@CutoffDate AS DATETIME))
+                     ))
+                    OR
+                    (@Basis = N'as_on')
+                  )
+            ORDER BY
+                CASE WHEN @Basis = N'discharge' THEN bv.DischargeDate ELSE bv.AdmissionDate END DESC,
+                bv.AdmissionDate DESC,
+                bv.Visit_ID DESC
+        """
+
+        params = [
+            admission_from,
+            admission_to,
+            cutoff_date,
+            basis_norm,
+            discharge_from if basis_norm == "discharge" else None,
+            discharge_to if basis_norm == "discharge" else None,
+        ]
+        df = pd.read_sql(sql, conn, params=params)
+        if df is None or df.empty:
+            return df
+
+        df.columns = [str(c).strip() for c in df.columns]
+        for col in ["AdvanceAmount"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+        for col in ["ReceiptCount", "Visit_ID"]:
+            if col in df.columns:
+                df[col] = pd.to_numeric(df[col], errors="coerce").fillna(0).astype(int)
+        for col in ["AdmissionDate", "DischargeDate", "FirstReceiptDate", "LastReceiptDate", "FinalBillDate"]:
+            if col in df.columns:
+                df[col] = pd.to_datetime(df[col], errors="coerce")
+        df["Unit"] = (unit or "").upper()
+        return df
+    except Exception as e:
+        print(f"Error fetching IP advance provision ({unit}): {e}")
         return None
     finally:
         try:
@@ -12578,6 +15716,1167 @@ def fetch_modification_patients_search(unit: str, query: str, limit: int = 200):
             pass
 
 
+def _patient_care_journey_parse_int(raw_value, default=0, minimum: int | None = None, maximum: int | None = None):
+    try:
+        value = int(float(raw_value))
+    except Exception:
+        value = default
+    if minimum is not None:
+        value = max(minimum, value)
+    if maximum is not None:
+        value = min(maximum, value)
+    return value
+
+
+def _patient_care_journey_parse_float(raw_value, default=0.0):
+    try:
+        value = float(raw_value)
+    except Exception:
+        value = float(default)
+    return value
+
+
+def _patient_care_journey_trim_text(value) -> str:
+    return str(value or "").strip()
+
+
+def _patient_care_journey_is_cancelled(value) -> bool:
+    text = _patient_care_journey_trim_text(value).lower()
+    return text in {"1", "true", "yes", "y", "cancelled", "canceled"}
+
+
+def _patient_care_journey_df_records(df: pd.DataFrame | None) -> list[dict]:
+    if df is None or df.empty:
+        return []
+    work_df = df.copy()
+    work_df.columns = [str(c).strip() for c in work_df.columns]
+    return work_df.where(pd.notna(work_df), None).to_dict(orient="records")
+
+
+def _patient_care_journey_visit_type_meta(type_id, type_text=None):
+    type_id_val = _patient_care_journey_trim_text(type_id)
+    type_text_val = _patient_care_journey_trim_text(type_text).upper()
+    if type_id_val == "1" or "IPD" in type_text_val:
+        return {"code": "IPD", "label": "IPD", "color": "indigo"}
+    if type_id_val == "2" or "OPD" in type_text_val:
+        return {"code": "OPD", "label": "OPD", "color": "cyan"}
+    if type_id_val == "3" or "DPV" in type_text_val:
+        return {"code": "DPV", "label": "DPV", "color": "emerald"}
+    if type_id_val == "6" or "HCV" in type_text_val or "HEALTH" in type_text_val:
+        return {"code": "HCV", "label": "HCV", "color": "amber"}
+    if type_text_val:
+        return {"code": type_text_val, "label": type_text_val, "color": "slate"}
+    return {"code": "OTHER", "label": "Other", "color": "slate"}
+
+
+def _patient_care_journey_name_map(records: list[dict], key_candidates: list[str], value_candidates: list[str]) -> dict[str, str]:
+    out = {}
+    for row in records or []:
+        key_val = None
+        for cand in key_candidates:
+            if cand in row and row.get(cand) not in (None, ""):
+                key_val = row.get(cand)
+                break
+        value_val = None
+        for cand in value_candidates:
+            if cand in row and _patient_care_journey_trim_text(row.get(cand)):
+                value_val = _patient_care_journey_trim_text(row.get(cand))
+                break
+        if key_val in (None, "") or not value_val:
+            continue
+        out[str(key_val)] = value_val
+    return out
+
+
+_PATIENT_CARE_JOURNEY_REF_CACHE = {}
+_PATIENT_CARE_JOURNEY_REF_CACHE_LOCK = Lock()
+_PATIENT_CARE_JOURNEY_REF_CACHE_TTL_SECONDS = 1800
+
+
+def _patient_care_journey_reference_maps(unit: str) -> dict[str, dict]:
+    cache_key = str(unit or "").strip().upper()
+    now_ts = time.time()
+    with _PATIENT_CARE_JOURNEY_REF_CACHE_LOCK:
+        cached = _PATIENT_CARE_JOURNEY_REF_CACHE.get(cache_key)
+        if cached and (now_ts - float(cached.get("cached_at") or 0.0)) <= _PATIENT_CARE_JOURNEY_REF_CACHE_TTL_SECONDS:
+            return dict(cached.get("payload") or {})
+        if cached:
+            _PATIENT_CARE_JOURNEY_REF_CACHE.pop(cache_key, None)
+
+    wards = _patient_care_journey_df_records(fetch_wards(unit))
+    rooms = _patient_care_journey_df_records(fetch_rooms(unit))
+    beds = _patient_care_journey_df_records(fetch_beds(unit))
+    users = _patient_care_journey_df_records(fetch_users(unit))
+    patient_types = _patient_care_journey_df_records(fetch_patient_types(unit))
+    patient_subtypes = _patient_care_journey_df_records(fetch_patient_subtypes(unit))
+    payload = {
+        "wards": _patient_care_journey_name_map(wards, ["WardID", "WardId"], ["WardName", "Ward", "Name"]),
+        "rooms": _patient_care_journey_name_map(rooms, ["RoomID", "RoomId"], ["RoomName", "Room", "Name"]),
+        "beds": _patient_care_journey_name_map(beds, ["BedID", "BedId"], ["BedName", "Bed", "Name"]),
+        "users": _patient_care_journey_name_map(users, ["UserID", "UserId", "User_ID"], ["UserName", "Username", "User_Name", "Name"]),
+        "patient_types": _patient_care_journey_name_map(patient_types, ["PatientTypeID", "PatientTypeId", "PatientType_ID"], ["PatientTypeName", "PatientType", "TypeName", "Name"]),
+        "patient_subtypes": _patient_care_journey_name_map(patient_subtypes, ["PatientSubTypeID", "PatientSubTypeId", "PatientSubType_ID"], ["PatientSubTypeName", "PatientSubTypeDesc", "PatientSubType_Desc", "Name"]),
+    }
+    with _PATIENT_CARE_JOURNEY_REF_CACHE_LOCK:
+        _PATIENT_CARE_JOURNEY_REF_CACHE[cache_key] = {
+            "cached_at": now_ts,
+            "payload": dict(payload),
+        }
+    return payload
+
+
+def warm_patient_care_journey_reference_cache(unit: str) -> bool:
+    try:
+        _patient_care_journey_reference_maps(unit)
+        return True
+    except Exception as e:
+        print(f"Error warming patient care journey reference cache ({unit}): {e}")
+        return False
+
+
+def _patient_care_journey_apply_reference_maps(rows: list[dict], ref_maps: dict[str, dict]) -> list[dict]:
+    result = []
+    user_map = ref_maps.get("users") or {}
+    ward_map = ref_maps.get("wards") or {}
+    room_map = ref_maps.get("rooms") or {}
+    bed_map = ref_maps.get("beds") or {}
+    patient_type_map = ref_maps.get("patient_types") or {}
+    patient_subtype_map = ref_maps.get("patient_subtypes") or {}
+
+    for row in rows or []:
+        rec = dict(row or {})
+        visit_meta = _patient_care_journey_visit_type_meta(rec.get("VisitTypeId"), rec.get("TypeOfVisit"))
+        patient_type_id = rec.get("PatientTypeId", rec.get("PatientTypeID"))
+        patient_subtype_id = rec.get("PatientSubTypeId", rec.get("PatientSubTypeID"))
+        pay_type_id = _patient_care_journey_trim_text(rec.get("PayTypeId", rec.get("PayTypeID")))
+        ward_id = rec.get("WardId", rec.get("WardID"))
+        room_id = rec.get("RoomId", rec.get("RoomID"))
+        bed_id = rec.get("BedId", rec.get("BedID"))
+        admitted_by = rec.get("AdmittedByUserId")
+        billed_by = rec.get("BilledByUserId")
+        receipt_by = rec.get("ReceiptByUserId")
+
+        rec["JourneyRowType"] = "virtual_visit" if _patient_care_journey_trim_text(rec.get("JourneyRowType")).lower() == "virtual_visit" else "visit"
+        rec["RowTypeLabel"] = "Virtual Visit" if rec["JourneyRowType"] == "virtual_visit" else "Visit"
+        rec["VisitTypeCode"] = visit_meta["code"]
+        rec["VisitTypeLabel"] = visit_meta["label"]
+        rec["ColorToken"] = visit_meta["color"]
+        rec["PatientTypeName"] = patient_type_map.get(str(patient_type_id), _patient_care_journey_trim_text(rec.get("PatientTypeName")))
+        rec["PatientSubTypeName"] = patient_subtype_map.get(str(patient_subtype_id), _patient_care_journey_trim_text(rec.get("PatientSubTypeName")))
+        rec["PayTypeLabel"] = "Cash" if pay_type_id == "1" else "Cashless" if pay_type_id == "2" else _patient_care_journey_trim_text(rec.get("PayTypeLabel"))
+        rec["WardName"] = ward_map.get(str(ward_id), _patient_care_journey_trim_text(rec.get("WardName")))
+        rec["RoomName"] = room_map.get(str(room_id), _patient_care_journey_trim_text(rec.get("RoomName")))
+        rec["BedName"] = bed_map.get(str(bed_id), _patient_care_journey_trim_text(rec.get("BedName")))
+        rec["AdmittedByName"] = user_map.get(str(admitted_by), _patient_care_journey_trim_text(rec.get("AdmittedByName")))
+        rec["BilledByName"] = user_map.get(str(billed_by), _patient_care_journey_trim_text(rec.get("BilledByName")))
+        rec["ReceiptByName"] = user_map.get(str(receipt_by), _patient_care_journey_trim_text(rec.get("ReceiptByName")))
+        rec["RegistrationNo"] = rec.get("RegistrationNo") or rec.get("Registration_No")
+        rec["RegNo"] = rec.get("RegNo") or rec.get("RegistrationNo") or rec.get("Registration_No")
+        rec["HasDuplicateLink"] = bool(
+            rec.get("HasDuplicateLink")
+            or rec.get("SourceVisitId")
+            or rec.get("LinkedDuplicateVisitId")
+        )
+        rec["JourneyKey"] = f"{rec.get('JourneyRowType') or 'visit'}::{rec.get('JourneyVisitId') or rec.get('VisitId') or 0}::{rec.get('SourceVisitId') or 0}"
+        result.append(rec)
+
+    return result
+
+
+def _patient_care_journey_apply_user_names(records: list[dict], user_map: dict[str, str], field_specs: list[tuple[str, str]]) -> list[dict]:
+    result = []
+    for row in records or []:
+        rec = dict(row or {})
+        for id_field, name_field in field_specs:
+            user_id = rec.get(id_field)
+            if user_id in (None, ""):
+                continue
+            rec[name_field] = user_map.get(str(user_id), _patient_care_journey_trim_text(rec.get(name_field)))
+        result.append(rec)
+    return result
+
+
+def fetch_patient_care_journey_patients(unit: str, query: str, limit: int = 200):
+    return fetch_modification_patients_search(unit, query, limit=limit)
+
+
+def fetch_patient_care_journey_page(unit: str, patient_id, page: int = 1, page_size: int = 20):
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for patient care journey page")
+        return None
+
+    patient_id_val = _patient_care_journey_parse_int(patient_id, 0, 0, None)
+    if not patient_id_val:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return {
+            "patient_summary": {},
+            "rows": [],
+            "page": 1,
+            "page_size": 20,
+            "total_rows": 0,
+            "total_pages": 0,
+            "unit": (unit or "").upper(),
+        }
+
+    page_val = _patient_care_journey_parse_int(page, 1, 1, None)
+    page_size_val = _patient_care_journey_parse_int(page_size, 20, 20, 100)
+    if page_size_val not in {20, 50, 100}:
+        page_size_val = 20
+
+    bill_cancel_expr = "CASE WHEN LOWER(LTRIM(RTRIM(CONVERT(VARCHAR(20), ISNULL(bm.CancelStatus, 0))))) IN ('1','true','yes','y','cancelled','canceled') THEN 1 ELSE 0 END"
+    receipt_cancel_expr = "CASE WHEN LOWER(LTRIM(RTRIM(CONVERT(VARCHAR(20), ISNULL(rm.CancelStatus, 0))))) IN ('1','true','yes','y','cancelled','canceled') THEN 1 ELSE 0 END"
+    receipt_type_filter = "LTRIM(RTRIM(CONVERT(VARCHAR(20), rm.ReceiptType))) IN ('P', 'PH', 'PI')"
+    hospital_receipt_type_filter = "LTRIM(RTRIM(CONVERT(VARCHAR(20), rm.ReceiptType))) = 'P'"
+    pharmacy_receipt_type_filter = "LTRIM(RTRIM(CONVERT(VARCHAR(20), rm.ReceiptType))) IN ('PH', 'PI')"
+    pharmacy_component_expr = "CAST(ISNULL(bm.PHAmount, 0) + ISNULL(bm.PHReturnAmount, 0) AS DECIMAL(18, 2))"
+    hospital_due_without_ph_expr = (
+        "CAST(ISNULL(bm.DueAmount, 0) - (ISNULL(bm.PHAmount, 0) + ISNULL(bm.PHReturnAmount, 0)) AS DECIMAL(18, 2))"
+    )
+    receipt_payment_mode_name_expr = (
+        "UPPER(LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(200), pm.PModeName), "
+        "CONVERT(NVARCHAR(100), rm.PaymentMode)))))"
+    )
+    debit_voucher_mode_filter = f"{receipt_payment_mode_name_expr} LIKE '%DEBIT%VOUCHER%'"
+    non_cash_cashless_mode_filter = (
+        f"{receipt_payment_mode_name_expr} LIKE '%NON%CASH%PATIENT%DUE%CONVERTED%TO%CASHLESS%'"
+    )
+    mgbuy_approval_mode_filter = f"{receipt_payment_mode_name_expr} LIKE '%MGBUY%'"
+
+    sql = f"""
+        SET NOCOUNT ON;
+        SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+        DECLARE @PatientId INT = ?;
+        DECLARE @Page INT = ?;
+        DECLARE @PageSize INT = ?;
+        SET @Page = CASE WHEN @Page < 1 THEN 1 ELSE @Page END;
+        SET @PageSize = CASE WHEN @PageSize IN (20, 50, 100) THEN @PageSize ELSE 20 END;
+        DECLARE @OffsetRows INT = (@Page - 1) * @PageSize;
+        DECLARE @RegistrationNo VARCHAR(60) = NULL;
+        DECLARE @PatientName NVARCHAR(300) = NULL;
+
+        SELECT TOP 1
+              @RegistrationNo = CAST(p.Registration_No AS VARCHAR(60))
+            , @PatientName = CASE WHEN ISNULL(p.PatientId, 0) > 0 THEN dbo.fn_patientfullname(p.PatientId) ELSE NULL END
+        FROM dbo.Patient p WITH (NOLOCK)
+        WHERE p.PatientId = @PatientId;
+
+        IF OBJECT_ID('tempdb..#JourneyAll') IS NOT NULL DROP TABLE #JourneyAll;
+        IF OBJECT_ID('tempdb..#FinanceVisitIds') IS NOT NULL DROP TABLE #FinanceVisitIds;
+        IF OBJECT_ID('tempdb..#HospitalFinanceAgg') IS NOT NULL DROP TABLE #HospitalFinanceAgg;
+        IF OBJECT_ID('tempdb..#ReceiptFinanceAgg') IS NOT NULL DROP TABLE #ReceiptFinanceAgg;
+        IF OBJECT_ID('tempdb..#PharmacyFinanceAgg') IS NOT NULL DROP TABLE #PharmacyFinanceAgg;
+
+        ;WITH DuplicateLink AS (
+            SELECT
+                  vd.sourceVisitId
+                , vd.visitId AS DuplicateVisitId
+                , vd.sourceVisitNo
+                , vd.sourceAdmissionNo
+            FROM dbo.Visit_Duplicate vd WITH (NOLOCK)
+            WHERE vd.patientId = @PatientId
+        ),
+        JourneyAll AS (
+            SELECT
+                  JourneyRowType = 'visit'
+                , JourneyVisitId = CAST(v.Visit_ID AS BIGINT)
+                , SourceVisitId = CAST(NULL AS BIGINT)
+                , LinkedDuplicateVisitId = CAST(COALESCE(NULLIF(v.VirtualVisitDuplicateId, 0), NULLIF(dl.DuplicateVisitId, 0)) AS BIGINT)
+                , JourneyDateTime = CAST(ISNULL(v.VisitDate, v.DischargeDate) AS DATETIME)
+                , VisitDate = CAST(v.VisitDate AS DATETIME)
+                , DischargeDate = CAST(v.DischargeDate AS DATETIME)
+                , VisitNo = CAST(v.VisitNo AS VARCHAR(60))
+                , VisitId = CAST(v.Visit_ID AS BIGINT)
+                , AdmissionNo = CAST(v.AdmissionNo AS VARCHAR(60))
+                , Registration_No = @RegistrationNo
+                , PatientId = CAST(v.PatientID AS BIGINT)
+                , PatientName = @PatientName
+                , VisitTypeId = CAST(v.VisitTypeID AS INT)
+                , TypeOfVisit = CAST(v.TypeOfVisit AS VARCHAR(50))
+                , PatientTypeId = CAST(v.PatientType_ID AS INT)
+                , PatientSubTypeId = CAST(v.PatientSubType_ID AS INT)
+                , PayTypeId = CAST(v.payType AS INT)
+                , WardId = CAST(v.WardID AS INT)
+                , RoomId = CAST(v.RoomID AS INT)
+                , BedId = CAST(v.BedID AS INT)
+                , AdmittedByUserId = CAST(v.InsertedByUserID AS INT)
+                , DuplicateInsertedByUserId = CAST(NULL AS INT)
+                , DuplicateUpdatedByUserId = CAST(v.VirtualVisitUpdatedBy AS INT)
+                , SourceVisitNo = CAST(NULL AS VARCHAR(60))
+                , SourceAdmissionNo = CAST(NULL AS VARCHAR(60))
+                , DuplicateVisitStatus = CAST(NULL AS VARCHAR(40))
+                , DuplicateInsertedOn = CAST(v.VirtualVisitUpdatedOn AS DATETIME)
+                , EffectiveFinanceVisitId = CAST(v.Visit_ID AS BIGINT)
+            FROM dbo.Visit v WITH (NOLOCK)
+            LEFT JOIN DuplicateLink dl
+                ON dl.sourceVisitId = v.Visit_ID
+            WHERE v.PatientID = @PatientId
+
+            UNION ALL
+
+            SELECT
+                  JourneyRowType = 'virtual_visit'
+                , JourneyVisitId = CAST(vd.visitId AS BIGINT)
+                , SourceVisitId = CAST(vd.sourceVisitId AS BIGINT)
+                , LinkedDuplicateVisitId = CAST(vd.visitId AS BIGINT)
+                , JourneyDateTime = CAST(ISNULL(vd.visitDate, vd.dischargeDate) AS DATETIME)
+                , VisitDate = CAST(vd.visitDate AS DATETIME)
+                , DischargeDate = CAST(vd.dischargeDate AS DATETIME)
+                , VisitNo = CAST(COALESCE(vd.sourceVisitNo, sv.VisitNo) AS VARCHAR(60))
+                , VisitId = CAST(vd.visitId AS BIGINT)
+                , AdmissionNo = CAST(COALESCE(vd.sourceAdmissionNo, sv.AdmissionNo) AS VARCHAR(60))
+                , Registration_No = @RegistrationNo
+                , PatientId = CAST(vd.patientId AS BIGINT)
+                , PatientName = @PatientName
+                , VisitTypeId = CAST(vd.visitTypeId AS INT)
+                , TypeOfVisit = CAST(
+                    CASE vd.visitTypeId
+                        WHEN 1 THEN 'IPD'
+                        WHEN 2 THEN 'OPD'
+                        WHEN 3 THEN 'DPV'
+                        ELSE COALESCE(sv.TypeOfVisit, 'Other')
+                    END
+                  AS VARCHAR(50))
+                , PatientTypeId = CAST(vd.patientTypeId AS INT)
+                , PatientSubTypeId = CAST(vd.patientSubTypeId AS INT)
+                , PayTypeId = CAST(vd.payType AS INT)
+                , WardId = CAST(sv.WardID AS INT)
+                , RoomId = CAST(sv.RoomID AS INT)
+                , BedId = CAST(sv.BedID AS INT)
+                , AdmittedByUserId = CAST(COALESCE(sv.InsertedByUserID, vd.insertedBy) AS INT)
+                , DuplicateInsertedByUserId = CAST(vd.insertedBy AS INT)
+                , DuplicateUpdatedByUserId = CAST(vd.updatedBy AS INT)
+                , SourceVisitNo = CAST(vd.sourceVisitNo AS VARCHAR(60))
+                , SourceAdmissionNo = CAST(vd.sourceAdmissionNo AS VARCHAR(60))
+                , DuplicateVisitStatus = CAST(vd.visitStatus AS VARCHAR(40))
+                , DuplicateInsertedOn = CAST(vd.insertedOn AS DATETIME)
+                , EffectiveFinanceVisitId = CAST(COALESCE(vd.sourceVisitId, vd.visitId) AS BIGINT)
+            FROM dbo.Visit_Duplicate vd WITH (NOLOCK)
+            LEFT JOIN dbo.Visit sv WITH (NOLOCK)
+                ON sv.Visit_ID = vd.sourceVisitId
+            WHERE vd.patientId = @PatientId
+        )
+        SELECT *
+        INTO #JourneyAll
+        FROM JourneyAll;
+
+        CREATE CLUSTERED INDEX IX_PCJ_JourneyAll_Order
+            ON #JourneyAll (JourneyDateTime DESC, JourneyVisitId DESC);
+
+        CREATE NONCLUSTERED INDEX IX_PCJ_JourneyAll_FinanceVisitId
+            ON #JourneyAll (EffectiveFinanceVisitId);
+
+        SELECT DISTINCT EffectiveFinanceVisitId AS VisitId
+        INTO #FinanceVisitIds
+        FROM #JourneyAll
+        WHERE EffectiveFinanceVisitId IS NOT NULL;
+
+        CREATE UNIQUE CLUSTERED INDEX IX_PCJ_FinanceVisitIds
+            ON #FinanceVisitIds (VisitId);
+
+        SELECT
+              f.VisitId
+            , HospitalBillCount = CAST(COUNT(bm.Bill_ID) AS INT)
+            , HospitalGrossAmount = CAST(SUM(CASE WHEN {bill_cancel_expr} = 0 THEN CAST(ISNULL(bm.GrossAmount, 0) AS DECIMAL(18, 2)) ELSE 0 END) AS DECIMAL(18, 2))
+            , HospitalNetAmount = CAST(SUM(CASE WHEN {bill_cancel_expr} = 0 THEN CAST(ISNULL(bm.NetAmount, 0) AS DECIMAL(18, 2)) ELSE 0 END) AS DECIMAL(18, 2))
+            , HospitalDueAmount = CAST(SUM(CASE WHEN {bill_cancel_expr} = 0 THEN {hospital_due_without_ph_expr} ELSE 0 END) AS DECIMAL(18, 2))
+            , HospitalBillCancellationCount = CAST(SUM(CASE WHEN {bill_cancel_expr} = 1 THEN 1 ELSE 0 END) AS INT)
+        INTO #HospitalFinanceAgg
+        FROM #FinanceVisitIds f
+        LEFT JOIN dbo.Billing_Mst bm WITH (NOLOCK)
+            ON bm.Visit_ID = f.VisitId
+           AND LTRIM(RTRIM(CONVERT(VARCHAR(20), bm.BillType))) = 'P'
+        GROUP BY f.VisitId;
+
+        CREATE UNIQUE CLUSTERED INDEX IX_PCJ_HospitalFinanceAgg
+            ON #HospitalFinanceAgg (VisitId);
+
+        SELECT
+              f.VisitId
+            , ReceiptCount = CAST(COUNT(rm.Receipt_ID) AS INT)
+            , ReceiptTotalAmount = CAST(SUM(CASE WHEN {receipt_cancel_expr} = 0 THEN CAST(ISNULL(rm.Amount, 0) AS DECIMAL(18, 2)) ELSE 0 END) AS DECIMAL(18, 2))
+            , ReceiptCancellationCount = CAST(SUM(CASE WHEN {receipt_cancel_expr} = 1 THEN 1 ELSE 0 END) AS INT)
+            , HospitalReceiptCount = CAST(SUM(CASE WHEN {hospital_receipt_type_filter} THEN 1 ELSE 0 END) AS INT)
+            , HospitalReceiptAmount = CAST(SUM(CASE WHEN {receipt_cancel_expr} = 0 AND {hospital_receipt_type_filter} THEN CAST(ISNULL(rm.Amount, 0) AS DECIMAL(18, 2)) ELSE 0 END) AS DECIMAL(18, 2))
+            , HospitalReceiptCancellationCount = CAST(SUM(CASE WHEN {receipt_cancel_expr} = 1 AND {hospital_receipt_type_filter} THEN 1 ELSE 0 END) AS INT)
+            , PharmacyReceiptCount = CAST(SUM(CASE WHEN {pharmacy_receipt_type_filter} THEN 1 ELSE 0 END) AS INT)
+            , PharmacyReceiptAmount = CAST(SUM(CASE WHEN {receipt_cancel_expr} = 0 AND {pharmacy_receipt_type_filter} THEN CAST(ISNULL(rm.Amount, 0) AS DECIMAL(18, 2)) ELSE 0 END) AS DECIMAL(18, 2))
+            , PharmacyReceiptCancellationCount = CAST(SUM(CASE WHEN {receipt_cancel_expr} = 1 AND {pharmacy_receipt_type_filter} THEN 1 ELSE 0 END) AS INT)
+            , DebitVoucherReceiptCount = CAST(SUM(CASE WHEN {debit_voucher_mode_filter} THEN 1 ELSE 0 END) AS INT)
+            , DebitVoucherReceiptAmount = CAST(SUM(CASE WHEN {receipt_cancel_expr} = 0 AND {debit_voucher_mode_filter} THEN CAST(ISNULL(rm.Amount, 0) AS DECIMAL(18, 2)) ELSE 0 END) AS DECIMAL(18, 2))
+            , NonCashCashlessReceiptCount = CAST(SUM(CASE WHEN {non_cash_cashless_mode_filter} THEN 1 ELSE 0 END) AS INT)
+            , NonCashCashlessReceiptAmount = CAST(SUM(CASE WHEN {receipt_cancel_expr} = 0 AND {non_cash_cashless_mode_filter} THEN CAST(ISNULL(rm.Amount, 0) AS DECIMAL(18, 2)) ELSE 0 END) AS DECIMAL(18, 2))
+            , MGBuyApprovalReceiptCount = CAST(SUM(CASE WHEN {mgbuy_approval_mode_filter} THEN 1 ELSE 0 END) AS INT)
+            , MGBuyApprovalReceiptAmount = CAST(SUM(CASE WHEN {receipt_cancel_expr} = 0 AND {mgbuy_approval_mode_filter} THEN CAST(ISNULL(rm.Amount, 0) AS DECIMAL(18, 2)) ELSE 0 END) AS DECIMAL(18, 2))
+        INTO #ReceiptFinanceAgg
+        FROM #FinanceVisitIds f
+        LEFT JOIN dbo.Receipt_mst rm WITH (NOLOCK)
+            ON rm.Visit_ID = f.VisitId
+           AND {receipt_type_filter}
+        LEFT JOIN dbo.PaymentMode_mst pm WITH (NOLOCK)
+            ON pm.PModeId = rm.PaymentMode
+        GROUP BY f.VisitId;
+
+        CREATE UNIQUE CLUSTERED INDEX IX_PCJ_ReceiptFinanceAgg
+            ON #ReceiptFinanceAgg (VisitId);
+
+        SELECT
+              f.VisitId
+            , PharmacyBillCount = CAST(
+                CASE
+                    WHEN ISNULL(ph.SeparatePharmacyBillCount, 0) > 0 THEN ISNULL(ph.SeparatePharmacyBillCount, 0)
+                    WHEN ABS(ISNULL(hp.EmbeddedPharmacyAmount, 0)) > 0.004 THEN 1
+                    ELSE 0
+                END
+              AS INT)
+            , PharmacyBilledAmount = CAST(
+                CASE
+                    WHEN ISNULL(ph.SeparatePharmacyBillCount, 0) > 0 THEN ISNULL(ph.SeparatePharmacyNetAmount, 0)
+                    ELSE ISNULL(hp.EmbeddedPharmacyAmount, 0)
+                END
+              AS DECIMAL(18, 2))
+            , PharmacyDueAmount = CAST(
+                CASE
+                    WHEN ISNULL(ph.SeparatePharmacyBillCount, 0) > 0 THEN ISNULL(ph.SeparatePharmacyDueAmount, 0)
+                    ELSE ISNULL(hp.EmbeddedPharmacyAmount, 0)
+                END
+              AS DECIMAL(18, 2))
+            , PharmacyCancellationCount = CAST(ISNULL(ph.SeparatePharmacyCancellationCount, 0) AS INT)
+        INTO #PharmacyFinanceAgg
+        FROM #FinanceVisitIds f
+        OUTER APPLY (
+            SELECT
+                  EmbeddedPharmacyAmount = SUM(CASE WHEN {bill_cancel_expr} = 0 THEN {pharmacy_component_expr} ELSE 0 END)
+            FROM dbo.Billing_Mst bm WITH (NOLOCK)
+            WHERE bm.Visit_ID = f.VisitId
+              AND LTRIM(RTRIM(CONVERT(VARCHAR(20), bm.BillType))) = 'P'
+        ) hp
+        OUTER APPLY (
+            SELECT
+                  SeparatePharmacyBillCount = COUNT(1)
+                , SeparatePharmacyNetAmount = SUM(CASE WHEN {bill_cancel_expr} = 0 THEN CAST(ISNULL(bm.NetAmount, 0) AS DECIMAL(18, 2)) ELSE 0 END)
+                , SeparatePharmacyDueAmount = SUM(CASE WHEN {bill_cancel_expr} = 0 THEN CAST(ISNULL(bm.DueAmount, 0) AS DECIMAL(18, 2)) ELSE 0 END)
+                , SeparatePharmacyCancellationCount = SUM(CASE WHEN {bill_cancel_expr} = 1 THEN 1 ELSE 0 END)
+            FROM dbo.Billing_Mst bm WITH (NOLOCK)
+            WHERE bm.Visit_ID = f.VisitId
+              AND LTRIM(RTRIM(CONVERT(VARCHAR(20), bm.BillType))) = 'PH'
+        ) ph;
+
+        CREATE UNIQUE CLUSTERED INDEX IX_PCJ_PharmacyFinanceAgg
+            ON #PharmacyFinanceAgg (VisitId);
+
+        SELECT
+              RegistrationNo = @RegistrationNo
+            , PatientId = @PatientId
+            , PatientName = @PatientName
+            , FirstVisitDate = (SELECT MIN(JourneyDateTime) FROM #JourneyAll)
+            , LastVisitDate = (SELECT MAX(JourneyDateTime) FROM #JourneyAll)
+            , VisitCount = CAST(ISNULL((SELECT COUNT(1) FROM #JourneyAll WHERE JourneyRowType = 'visit'), 0) AS INT)
+            , DuplicateVisitCount = CAST(ISNULL((SELECT COUNT(1) FROM #JourneyAll WHERE JourneyRowType = 'virtual_visit'), 0) AS INT)
+            , TotalHospitalBilledAmount = CAST(ISNULL((
+                SELECT SUM(CAST(ISNULL(hfa.HospitalNetAmount, 0) AS DECIMAL(18, 2)))
+                FROM #HospitalFinanceAgg hfa
+            ), 0) AS DECIMAL(18, 2))
+            , TotalReceipts = CAST(ISNULL((
+                SELECT SUM(CAST(ISNULL(rfa.ReceiptTotalAmount, 0) AS DECIMAL(18, 2)))
+                FROM #ReceiptFinanceAgg rfa
+            ), 0) AS DECIMAL(18, 2))
+            , TotalHospitalReceipts = CAST(ISNULL((
+                SELECT SUM(CAST(ISNULL(rfa.HospitalReceiptAmount, 0) AS DECIMAL(18, 2)))
+                FROM #ReceiptFinanceAgg rfa
+            ), 0) AS DECIMAL(18, 2))
+            , TotalPharmacyReceipts = CAST(ISNULL((
+                SELECT SUM(CAST(ISNULL(rfa.PharmacyReceiptAmount, 0) AS DECIMAL(18, 2)))
+                FROM #ReceiptFinanceAgg rfa
+            ), 0) AS DECIMAL(18, 2))
+            , TotalDebitVoucherReceipts = CAST(ISNULL((
+                SELECT SUM(CAST(ISNULL(rfa.DebitVoucherReceiptAmount, 0) AS DECIMAL(18, 2)))
+                FROM #ReceiptFinanceAgg rfa
+            ), 0) AS DECIMAL(18, 2))
+            , TotalNonCashCashlessReceipts = CAST(ISNULL((
+                SELECT SUM(CAST(ISNULL(rfa.NonCashCashlessReceiptAmount, 0) AS DECIMAL(18, 2)))
+                FROM #ReceiptFinanceAgg rfa
+            ), 0) AS DECIMAL(18, 2))
+            , TotalMGBuyApprovalReceipts = CAST(ISNULL((
+                SELECT SUM(CAST(ISNULL(rfa.MGBuyApprovalReceiptAmount, 0) AS DECIMAL(18, 2)))
+                FROM #ReceiptFinanceAgg rfa
+            ), 0) AS DECIMAL(18, 2))
+            , ActiveDueSnapshot = CAST(ISNULL((
+                SELECT SUM(CAST(ISNULL(hfa.HospitalDueAmount, 0) AS DECIMAL(18, 2)))
+                FROM #HospitalFinanceAgg hfa
+            ), 0) AS DECIMAL(18, 2))
+            , TotalPharmacyBilledAmount = CAST(ISNULL((
+                SELECT SUM(CAST(ISNULL(pfa.PharmacyBilledAmount, 0) AS DECIMAL(18, 2)))
+                FROM #PharmacyFinanceAgg pfa
+            ), 0) AS DECIMAL(18, 2))
+            , TotalPharmacyDueAmount = CAST(ISNULL((
+                SELECT SUM(CAST(ISNULL(pfa.PharmacyDueAmount, 0) AS DECIMAL(18, 2)))
+                FROM #PharmacyFinanceAgg pfa
+            ), 0) AS DECIMAL(18, 2))
+        ;
+
+        ;WITH PageSeed AS (
+            SELECT *
+            FROM #JourneyAll
+            ORDER BY
+                  CASE WHEN JourneyDateTime IS NULL THEN 1 ELSE 0 END
+                , JourneyDateTime DESC
+                , JourneyVisitId DESC
+            OFFSET @OffsetRows ROWS FETCH NEXT @PageSize ROWS ONLY
+        )
+        SELECT
+              ps.JourneyRowType
+            , ps.JourneyVisitId
+            , ps.SourceVisitId
+            , ps.LinkedDuplicateVisitId
+            , ps.JourneyDateTime
+            , ps.VisitDate
+            , ps.DischargeDate
+            , ps.VisitNo
+            , ps.VisitId
+            , ps.AdmissionNo
+            , ps.Registration_No
+            , ps.PatientId
+            , ps.PatientName
+            , ps.VisitTypeId
+            , ps.TypeOfVisit
+            , ps.PatientTypeId
+            , ps.PatientSubTypeId
+            , ps.PayTypeId
+            , ps.WardId
+            , ps.RoomId
+            , ps.BedId
+            , ps.AdmittedByUserId
+            , ps.DuplicateInsertedByUserId
+            , ps.DuplicateUpdatedByUserId
+            , ps.SourceVisitNo
+            , ps.SourceAdmissionNo
+            , ps.DuplicateVisitStatus
+            , ps.DuplicateInsertedOn
+            , HasDuplicateLink = CAST(CASE WHEN ps.SourceVisitId IS NOT NULL OR ps.LinkedDuplicateVisitId IS NOT NULL THEN 1 ELSE 0 END AS BIT)
+            , RowTypeLabel = CASE WHEN ps.JourneyRowType = 'virtual_visit' THEN 'Virtual Visit' ELSE 'Visit' END
+            , HospitalBillCount = CAST(ISNULL(hfa.HospitalBillCount, 0) AS INT)
+            , HospitalGrossAmount = CAST(ISNULL(hfa.HospitalGrossAmount, 0) AS DECIMAL(18, 2))
+            , HospitalNetAmount = CAST(ISNULL(hfa.HospitalNetAmount, 0) AS DECIMAL(18, 2))
+            , HospitalDueAmount = CAST(ISNULL(hfa.HospitalDueAmount, 0) AS DECIMAL(18, 2))
+            , HospitalBillCancellationCount = CAST(ISNULL(hfa.HospitalBillCancellationCount, 0) AS INT)
+            , LatestHospitalBillId = hbl.LatestHospitalBillId
+            , LatestHospitalBillNo = hbl.LatestHospitalBillNo
+            , LatestHospitalBillDate = hbl.LatestHospitalBillDate
+            , BilledByUserId = hbl.BilledByUserId
+            , ReceiptCount = CAST(ISNULL(rfa.ReceiptCount, 0) AS INT)
+            , ReceiptTotalAmount = CAST(ISNULL(rfa.ReceiptTotalAmount, 0) AS DECIMAL(18, 2))
+            , ReceiptCancellationCount = CAST(ISNULL(rfa.ReceiptCancellationCount, 0) AS INT)
+            , HospitalReceiptCount = CAST(ISNULL(rfa.HospitalReceiptCount, 0) AS INT)
+            , HospitalReceiptAmount = CAST(ISNULL(rfa.HospitalReceiptAmount, 0) AS DECIMAL(18, 2))
+            , HospitalReceiptCancellationCount = CAST(ISNULL(rfa.HospitalReceiptCancellationCount, 0) AS INT)
+            , PharmacyReceiptCount = CAST(ISNULL(rfa.PharmacyReceiptCount, 0) AS INT)
+            , PharmacyReceiptAmount = CAST(ISNULL(rfa.PharmacyReceiptAmount, 0) AS DECIMAL(18, 2))
+            , PharmacyReceiptCancellationCount = CAST(ISNULL(rfa.PharmacyReceiptCancellationCount, 0) AS INT)
+            , DebitVoucherReceiptCount = CAST(ISNULL(rfa.DebitVoucherReceiptCount, 0) AS INT)
+            , DebitVoucherReceiptAmount = CAST(ISNULL(rfa.DebitVoucherReceiptAmount, 0) AS DECIMAL(18, 2))
+            , NonCashCashlessReceiptCount = CAST(ISNULL(rfa.NonCashCashlessReceiptCount, 0) AS INT)
+            , NonCashCashlessReceiptAmount = CAST(ISNULL(rfa.NonCashCashlessReceiptAmount, 0) AS DECIMAL(18, 2))
+            , MGBuyApprovalReceiptCount = CAST(ISNULL(rfa.MGBuyApprovalReceiptCount, 0) AS INT)
+            , MGBuyApprovalReceiptAmount = CAST(ISNULL(rfa.MGBuyApprovalReceiptAmount, 0) AS DECIMAL(18, 2))
+            , LatestReceiptId = rcl.LatestReceiptId
+            , LatestReceiptNo = rcl.LatestReceiptNo
+            , LatestReceiptDate = rcl.LatestReceiptDate
+            , ReceiptByUserId = rcl.ReceiptByUserId
+            , PharmacyBillCount = CAST(ISNULL(pfa.PharmacyBillCount, 0) AS INT)
+            , PharmacyNetAmount = CAST(ISNULL(pfa.PharmacyBilledAmount, 0) AS DECIMAL(18, 2))
+            , PharmacyDueAmount = CAST(ISNULL(pfa.PharmacyDueAmount, 0) AS DECIMAL(18, 2))
+            , PharmacyCancellationCount = CAST(ISNULL(pfa.PharmacyCancellationCount, 0) AS INT)
+            , CorpBillCount = CAST(ISNULL(cb.CorpBillCount, 0) AS INT)
+            , CorpBillStatus = cb.CorpBillStatus
+            , CorpBillNo = cb.CorpBillNo
+        FROM PageSeed ps
+        LEFT JOIN #HospitalFinanceAgg hfa
+            ON hfa.VisitId = ps.EffectiveFinanceVisitId
+        OUTER APPLY (
+            SELECT TOP 1
+                  LatestHospitalBillId = bm.Bill_ID
+                , LatestHospitalBillNo = bm.BillNo
+                , LatestHospitalBillDate = bm.BillDate
+                , BilledByUserId = COALESCE(bm.UpdatedBy, bm.CanceledBy)
+            FROM dbo.Billing_Mst bm WITH (NOLOCK)
+            WHERE bm.Visit_ID = ps.EffectiveFinanceVisitId
+              AND LTRIM(RTRIM(CONVERT(VARCHAR(20), bm.BillType))) = 'P'
+            ORDER BY ISNULL(bm.BillDate, '19000101') DESC, bm.Bill_ID DESC
+        ) hbl
+        LEFT JOIN #ReceiptFinanceAgg rfa
+            ON rfa.VisitId = ps.EffectiveFinanceVisitId
+        OUTER APPLY (
+            SELECT TOP 1
+                  LatestReceiptId = rm.Receipt_ID
+                , LatestReceiptNo = rm.Receipt_No
+                , LatestReceiptDate = CAST(
+                    CASE
+                        WHEN rm.Receipt_Time IS NULL THEN rm.Receipt_Date
+                        ELSE DATEADD(SECOND, DATEDIFF(SECOND, CAST('00:00:00' AS TIME), CAST(rm.Receipt_Time AS TIME)), CAST(rm.Receipt_Date AS DATETIME))
+                    END
+                  AS DATETIME)
+                , ReceiptByUserId = COALESCE(rm.UpdatedBy, rm.InsertedByUserID, rm.CanceledBy)
+            FROM dbo.Receipt_mst rm WITH (NOLOCK)
+            WHERE rm.Visit_ID = ps.EffectiveFinanceVisitId
+              AND {receipt_type_filter}
+            ORDER BY ISNULL(rm.Receipt_Date, '19000101') DESC, rm.Receipt_ID DESC
+        ) rcl
+        LEFT JOIN #PharmacyFinanceAgg pfa
+            ON pfa.VisitId = ps.EffectiveFinanceVisitId
+        OUTER APPLY (
+            SELECT
+                  CorpBillCount = COUNT(1)
+                , CorpBillStatus = MAX(CAST(cb.Status AS VARCHAR(80)))
+                , CorpBillNo = MAX(CAST(cb.CBill_NO AS VARCHAR(80)))
+            FROM dbo.Corp_Bill_Mst cb WITH (NOLOCK)
+            WHERE
+                (
+                    ps.JourneyRowType = 'visit'
+                    AND (
+                        cb.Visit_ID = ps.JourneyVisitId
+                        OR (ps.LinkedDuplicateVisitId IS NOT NULL AND cb.duplicateVisitId = ps.LinkedDuplicateVisitId)
+                    )
+                )
+                OR
+                (
+                    ps.JourneyRowType = 'virtual_visit'
+                    AND (
+                        cb.duplicateVisitId = ps.JourneyVisitId
+                        OR (ps.SourceVisitId IS NOT NULL AND cb.Visit_ID = ps.SourceVisitId)
+                    )
+                )
+        ) cb
+        ORDER BY
+              CASE WHEN ps.JourneyDateTime IS NULL THEN 1 ELSE 0 END
+            , ps.JourneyDateTime DESC
+            , ps.JourneyVisitId DESC;
+
+        SELECT
+              TotalRows = CAST(COUNT(1) AS INT)
+            , Page = @Page
+            , PageSize = @PageSize
+            , TotalPages = CAST(CASE WHEN COUNT(1) <= 0 THEN 0 ELSE CEILING(COUNT(1) * 1.0 / @PageSize) END AS INT)
+        FROM #JourneyAll;
+    """
+
+    try:
+        cursor = conn.cursor()
+        cursor.execute(sql, [int(patient_id_val), int(page_val), int(page_size_val)])
+        result_sets = []
+        while True:
+            if cursor.description:
+                result_sets.append(_corp_bill_summary_dict_rows_from_cursor(cursor))
+            if not cursor.nextset():
+                break
+        try:
+            cursor.close()
+        except Exception:
+            pass
+
+        summary_rows = result_sets[0] if len(result_sets) > 0 else []
+        row_rows = result_sets[1] if len(result_sets) > 1 else []
+        meta_rows = result_sets[2] if len(result_sets) > 2 else []
+
+        ref_maps = _patient_care_journey_reference_maps(unit)
+        journey_rows = _patient_care_journey_apply_reference_maps(row_rows, ref_maps)
+        summary = dict(summary_rows[0] or {}) if summary_rows else {}
+        summary["RegistrationNo"] = summary.get("RegistrationNo") or ""
+        summary["PatientId"] = summary.get("PatientId") or patient_id_val
+        summary["PatientName"] = summary.get("PatientName") or ""
+        meta = dict(meta_rows[0] or {}) if meta_rows else {}
+        total_rows = _patient_care_journey_parse_int(meta.get("TotalRows"), len(journey_rows), 0, None)
+        total_pages = _patient_care_journey_parse_int(meta.get("TotalPages"), 0, 0, None)
+        page_out = _patient_care_journey_parse_int(meta.get("Page"), page_val, 1, None)
+        page_size_out = _patient_care_journey_parse_int(meta.get("PageSize"), page_size_val, 20, 100)
+
+        return {
+            "patient_summary": summary,
+            "rows": journey_rows,
+            "page": page_out,
+            "page_size": page_size_out,
+            "total_rows": total_rows,
+            "total_pages": total_pages,
+            "unit": (unit or "").upper(),
+            "patient_id": patient_id_val,
+        }
+    except Exception as e:
+        print(f"Error fetching patient care journey page ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_patient_care_journey_visit_detail(unit: str, patient_id, journey_row_type: str, visit_id, source_visit_id=None):
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for patient care journey detail")
+        return None
+
+    patient_id_val = _patient_care_journey_parse_int(patient_id, 0, 0, None)
+    visit_id_val = _patient_care_journey_parse_int(visit_id, 0, 0, None)
+    source_visit_id_val = _patient_care_journey_parse_int(source_visit_id, 0, 0, None)
+    row_type = "virtual_visit" if _patient_care_journey_trim_text(journey_row_type).lower() in {"virtual_visit", "duplicate", "visit_duplicate"} else "visit"
+    if not patient_id_val or not visit_id_val:
+        try:
+            conn.close()
+        except Exception:
+            pass
+        return {
+            "visit_details": {},
+            "hospital_bills": [],
+            "receipts": [],
+            "pharmacy_bills": [],
+            "pharmacy_returns": [],
+            "cancellations_audit": [],
+            "duplicate_links": {},
+        }
+
+    finance_visit_id = source_visit_id_val if row_type == "virtual_visit" and source_visit_id_val else visit_id_val
+
+    try:
+        if row_type == "virtual_visit":
+            visit_sql = """
+                SELECT TOP 1
+                      JourneyRowType = 'virtual_visit'
+                    , JourneyVisitId = CAST(vd.visitId AS BIGINT)
+                    , SourceVisitId = CAST(vd.sourceVisitId AS BIGINT)
+                    , LinkedDuplicateVisitId = CAST(vd.visitId AS BIGINT)
+                    , PatientId = CAST(vd.patientId AS BIGINT)
+                    , RegistrationNo = p.Registration_No
+                    , PatientName = CASE WHEN ISNULL(p.PatientId, 0) > 0 THEN dbo.fn_patientfullname(p.PatientId) ELSE NULL END
+                    , VisitDate = CAST(vd.visitDate AS DATETIME)
+                    , DischargeDate = CAST(vd.dischargeDate AS DATETIME)
+                    , VisitNo = CAST(COALESCE(vd.sourceVisitNo, sv.VisitNo) AS VARCHAR(60))
+                    , AdmissionNo = CAST(COALESCE(vd.sourceAdmissionNo, sv.AdmissionNo) AS VARCHAR(60))
+                    , VisitTypeId = CAST(vd.visitTypeId AS INT)
+                    , TypeOfVisit = CAST(
+                        CASE vd.visitTypeId
+                            WHEN 1 THEN 'IPD'
+                            WHEN 2 THEN 'OPD'
+                            WHEN 3 THEN 'DPV'
+                            ELSE COALESCE(sv.TypeOfVisit, 'Other')
+                        END
+                      AS VARCHAR(50))
+                    , PatientTypeId = CAST(vd.patientTypeId AS INT)
+                    , PatientSubTypeId = CAST(vd.patientSubTypeId AS INT)
+                    , PayTypeId = CAST(vd.payType AS INT)
+                    , WardId = CAST(sv.WardID AS INT)
+                    , RoomId = CAST(sv.RoomID AS INT)
+                    , BedId = CAST(sv.BedID AS INT)
+                    , AdmittedByUserId = CAST(COALESCE(sv.InsertedByUserID, vd.insertedBy) AS INT)
+                    , DuplicateInsertedByUserId = CAST(vd.insertedBy AS INT)
+                    , DuplicateUpdatedByUserId = CAST(vd.updatedBy AS INT)
+                    , DuplicateVisitStatus = CAST(vd.visitStatus AS VARCHAR(40))
+                    , DuplicateInsertedOn = CAST(vd.insertedOn AS DATETIME)
+                    , DuplicateUpdatedOn = CAST(vd.updatedOn AS DATETIME)
+                    , SourceVisitNo = CAST(vd.sourceVisitNo AS VARCHAR(60))
+                    , SourceAdmissionNo = CAST(vd.sourceAdmissionNo AS VARCHAR(60))
+                    , DepartmentId = CAST(sv.DepartmentID AS INT)
+                    , DocInChargeId = CAST(sv.DocInCharge AS INT)
+                    , DischargeType = CAST(sv.DischargeType AS VARCHAR(40))
+                    , OpenDateTime = CAST(sv.InsertedON AS DATETIME)
+                    , BillSubmitStatus = CAST(sv.billSubmitStatus AS VARCHAR(40))
+                    , Tag = CAST(sv.Remarks AS VARCHAR(100))
+                    , EffectiveFinanceVisitId = CAST(COALESCE(vd.sourceVisitId, vd.visitId) AS BIGINT)
+                FROM dbo.Visit_Duplicate vd WITH (NOLOCK)
+                LEFT JOIN dbo.Visit sv WITH (NOLOCK)
+                    ON sv.Visit_ID = vd.sourceVisitId
+                LEFT JOIN dbo.Patient p WITH (NOLOCK)
+                    ON p.PatientId = vd.patientId
+                WHERE vd.visitId = ? AND vd.patientId = ?
+            """
+            visit_params = [int(visit_id_val), int(patient_id_val)]
+        else:
+            visit_sql = """
+                SELECT TOP 1
+                      JourneyRowType = 'visit'
+                    , JourneyVisitId = CAST(v.Visit_ID AS BIGINT)
+                    , SourceVisitId = CAST(NULL AS BIGINT)
+                    , LinkedDuplicateVisitId = CAST(COALESCE(NULLIF(v.VirtualVisitDuplicateId, 0), NULLIF(vd.visitId, 0)) AS BIGINT)
+                    , PatientId = CAST(v.PatientID AS BIGINT)
+                    , RegistrationNo = p.Registration_No
+                    , PatientName = CASE WHEN ISNULL(p.PatientId, 0) > 0 THEN dbo.fn_patientfullname(p.PatientId) ELSE NULL END
+                    , VisitDate = CAST(v.VisitDate AS DATETIME)
+                    , DischargeDate = CAST(v.DischargeDate AS DATETIME)
+                    , VisitNo = CAST(v.VisitNo AS VARCHAR(60))
+                    , AdmissionNo = CAST(v.AdmissionNo AS VARCHAR(60))
+                    , VisitTypeId = CAST(v.VisitTypeID AS INT)
+                    , TypeOfVisit = CAST(v.TypeOfVisit AS VARCHAR(50))
+                    , PatientTypeId = CAST(v.PatientType_ID AS INT)
+                    , PatientSubTypeId = CAST(v.PatientSubType_ID AS INT)
+                    , PayTypeId = CAST(v.payType AS INT)
+                    , WardId = CAST(v.WardID AS INT)
+                    , RoomId = CAST(v.RoomID AS INT)
+                    , BedId = CAST(v.BedID AS INT)
+                    , AdmittedByUserId = CAST(v.InsertedByUserID AS INT)
+                    , DuplicateInsertedByUserId = CAST(NULL AS INT)
+                    , DuplicateUpdatedByUserId = CAST(v.VirtualVisitUpdatedBy AS INT)
+                    , DuplicateVisitStatus = CAST(NULL AS VARCHAR(40))
+                    , DuplicateInsertedOn = CAST(v.VirtualVisitUpdatedOn AS DATETIME)
+                    , DuplicateUpdatedOn = CAST(v.VirtualVisitUpdatedOn AS DATETIME)
+                    , SourceVisitNo = CAST(NULL AS VARCHAR(60))
+                    , SourceAdmissionNo = CAST(NULL AS VARCHAR(60))
+                    , DepartmentId = CAST(v.DepartmentID AS INT)
+                    , DocInChargeId = CAST(v.DocInCharge AS INT)
+                    , DischargeType = CAST(v.DischargeType AS VARCHAR(40))
+                    , OpenDateTime = CAST(v.InsertedON AS DATETIME)
+                    , BillSubmitStatus = CAST(v.billSubmitStatus AS VARCHAR(40))
+                    , Tag = CAST(v.Remarks AS VARCHAR(100))
+                    , EffectiveFinanceVisitId = CAST(v.Visit_ID AS BIGINT)
+                FROM dbo.Visit v WITH (NOLOCK)
+                LEFT JOIN dbo.Visit_Duplicate vd WITH (NOLOCK)
+                    ON vd.sourceVisitId = v.Visit_ID
+                LEFT JOIN dbo.Patient p WITH (NOLOCK)
+                    ON p.PatientId = v.PatientID
+                WHERE v.Visit_ID = ? AND v.PatientID = ?
+            """
+            visit_params = [int(visit_id_val), int(patient_id_val)]
+
+        core_df = pd.read_sql(visit_sql, conn, params=visit_params)
+        core_records = _patient_care_journey_df_records(core_df)
+        core_row = dict(core_records[0] or {}) if core_records else {}
+        if core_row and not core_row.get("EffectiveFinanceVisitId"):
+            core_row["EffectiveFinanceVisitId"] = finance_visit_id
+        finance_visit_id = _patient_care_journey_parse_int(core_row.get("EffectiveFinanceVisitId"), finance_visit_id, 0, None)
+
+        hospital_bills_df = pd.read_sql(
+            """
+            SELECT
+                  BillId = bm.Bill_ID
+                , bm.BillNo
+                , bm.BillDate
+                , bm.GrossAmount
+                , bm.DiscountAmount
+                , bm.NetAmount
+                , bm.DueAmount
+                , bm.PHAmount
+                , bm.PHReturnAmount
+                , bm.CancelStatus
+                , CanceledByUserId = bm.CanceledBy
+                , bm.CanceledOn
+                , UpdatedByUserId = bm.UpdatedBy
+                , bm.UpdatedOn
+                , SubmittedDate = bm.submittedDate
+            FROM dbo.Billing_Mst bm WITH (NOLOCK)
+            WHERE bm.Visit_ID = ?
+              AND LTRIM(RTRIM(CONVERT(VARCHAR(20), bm.BillType))) = 'P'
+            ORDER BY ISNULL(bm.BillDate, '19000101') DESC, bm.Bill_ID DESC
+            """,
+            conn,
+            params=[int(finance_visit_id)],
+        )
+        receipt_df = pd.read_sql(
+            """
+            SELECT
+                  ReceiptId = rm.Receipt_ID
+                , ReceiptNo = rm.Receipt_No
+                , rm.Receipt_Date AS ReceiptDate
+                , rm.Receipt_Time AS ReceiptTime
+                , rm.Amount
+                , rm.ReceiptType
+                , rm.PaymentMode
+                , rm.CancelStatus
+                , CanceledByUserId = rm.CanceledBy
+                , rm.CancelDate
+                , UpdatedByUserId = rm.UpdatedBy
+                , rm.UpdatedOn
+                , InsertedByUserId = rm.InsertedByUserID
+                , rm.InsertedON
+            FROM dbo.Receipt_mst rm WITH (NOLOCK)
+            WHERE rm.Visit_ID = ?
+              AND LTRIM(RTRIM(CONVERT(VARCHAR(20), rm.ReceiptType))) IN ('P', 'PH', 'PI')
+            ORDER BY ISNULL(rm.Receipt_Date, '19000101') DESC, rm.Receipt_ID DESC
+            """,
+            conn,
+            params=[int(finance_visit_id)],
+        )
+        pharmacy_bills_df = pd.read_sql(
+            """
+            WITH DrugAgg AS (
+                SELECT
+                      dsm.DrugSaleID
+                    , dsm.VisitId
+                    , dsm.BillId
+                    , dsm.SaleDate
+                    , LineCount = COUNT(1)
+                    , TotalQty = SUM(CAST(ISNULL(dsd.Qty, 0) AS DECIMAL(18, 2)))
+                    , ItemAmount = SUM(CAST(ISNULL(COALESCE(dsd.TotalAmt, dsd.amount, 0), 0) AS DECIMAL(18, 2)))
+                    , PharmacyByUserId = MAX(COALESCE(dsm.UpdatedBy, dsm.InsertedByUserID))
+                    , UpdatedOn = MAX(COALESCE(dsm.UpdatedOn, dsm.InsertedON))
+                FROM dbo.DrugSaleMst dsm WITH (NOLOCK)
+                LEFT JOIN dbo.DrugSaleDtl dsd WITH (NOLOCK)
+                    ON dsd.DrugSaleID = dsm.DrugSaleID
+                WHERE dsm.VisitId = ?
+                GROUP BY dsm.DrugSaleID, dsm.VisitId, dsm.BillId, dsm.SaleDate
+            )
+            SELECT
+                  da.DrugSaleID AS DrugSaleId
+                , da.VisitId
+                , da.BillId
+                , bm.BillNo
+                , bm.BillDate
+                , da.SaleDate
+                , da.LineCount
+                , da.TotalQty
+                , da.ItemAmount
+                , bm.NetAmount AS BillNetAmount
+                , bm.DueAmount AS BillDueAmount
+                , bm.CancelStatus
+                , CanceledByUserId = bm.CanceledBy
+                , bm.CanceledOn
+                , da.PharmacyByUserId
+                , da.UpdatedOn
+            FROM DrugAgg da
+            LEFT JOIN dbo.Billing_Mst bm WITH (NOLOCK)
+                ON bm.Bill_ID = da.BillId
+            ORDER BY ISNULL(da.SaleDate, bm.BillDate) DESC, da.DrugSaleID DESC
+            """,
+            conn,
+            params=[int(finance_visit_id)],
+        )
+        pharmacy_returns_df = pd.read_sql(
+            """
+            WITH ReturnAgg AS (
+                SELECT
+                      rm.ReturnId
+                    , rm.ReturnCode
+                    , rm.ReturnDate
+                    , rm.PatientId
+                    , rm.VisitId
+                    , rm.Billid AS BillId
+                    , rm.TotalReturnAmt
+                    , rm.Tag
+                    , rm.cancelstatus AS CancelStatus
+                    , ReturnByUserId = MAX(COALESCE(rm.UpdatedBy, rm.InsertedByUserID))
+                    , UpdatedOn = MAX(COALESCE(rm.UpdatedOn, rm.InsertedON))
+                    , LineCount = COUNT(1)
+                    , TotalReturnQty = SUM(CAST(ISNULL(rd.ReturnQty, 0) AS DECIMAL(18, 2)))
+                    , DetailReturnAmount = SUM(CAST(ISNULL(rd.ReturnAmt, 0) AS DECIMAL(18, 2)))
+                FROM dbo.IvDrugReturnMst rm WITH (NOLOCK)
+                LEFT JOIN dbo.IvDrugReturnDtl rd WITH (NOLOCK)
+                    ON rd.ReturnId = rm.ReturnId
+                WHERE rm.VisitId = ?
+                GROUP BY rm.ReturnId, rm.ReturnCode, rm.ReturnDate, rm.PatientId, rm.VisitId, rm.Billid, rm.TotalReturnAmt, rm.Tag, rm.cancelstatus
+            )
+            SELECT
+                  ra.ReturnId
+                , ra.ReturnCode
+                , ra.ReturnDate
+                , ra.VisitId
+                , ra.BillId
+                , bm.BillNo
+                , bm.BillDate
+                , ra.TotalReturnAmt
+                , ra.LineCount
+                , ra.TotalReturnQty
+                , ra.DetailReturnAmount
+                , ra.CancelStatus
+                , ra.ReturnByUserId
+                , ra.UpdatedOn
+                , ra.Tag
+            FROM ReturnAgg ra
+            LEFT JOIN dbo.Billing_Mst bm WITH (NOLOCK)
+                ON bm.Bill_ID = ra.BillId
+            ORDER BY ISNULL(ra.ReturnDate, bm.BillDate) DESC, ra.ReturnId DESC
+            """,
+            conn,
+            params=[int(finance_visit_id)],
+        )
+
+        linked_duplicate_match = _patient_care_journey_parse_int(core_row.get("LinkedDuplicateVisitId"), visit_id_val, 0, None)
+        duplicate_match_source = source_visit_id_val or visit_id_val
+        duplicate_links_df = pd.read_sql(
+            """
+            SELECT
+                  DuplicateVisitId = vd.visitId
+                , SourceVisitId = vd.sourceVisitId
+                , SourceVisitNo = vd.sourceVisitNo
+                , SourceAdmissionNo = vd.sourceAdmissionNo
+                , vd.visitDate AS VisitDate
+                , vd.dischargeDate AS DischargeDate
+                , vd.visitTypeId AS VisitTypeId
+                , vd.patientTypeId AS PatientTypeId
+                , vd.patientSubTypeId AS PatientSubTypeId
+                , vd.payType AS PayTypeId
+                , vd.visitStatus AS DuplicateVisitStatus
+                , InsertedByUserId = vd.insertedBy
+                , vd.insertedOn AS InsertedOn
+                , UpdatedByUserId = vd.updatedBy
+                , vd.updatedOn AS UpdatedOn
+            FROM dbo.Visit_Duplicate vd WITH (NOLOCK)
+            WHERE vd.visitId = ?
+               OR (? > 0 AND vd.sourceVisitId = ?)
+            ORDER BY ISNULL(vd.insertedOn, vd.visitDate) DESC, vd.visitId DESC
+            """,
+            conn,
+            params=[int(visit_id_val), int(duplicate_match_source), int(duplicate_match_source)],
+        )
+        corp_visit_match = source_visit_id_val if row_type == "virtual_visit" else visit_id_val
+        corp_bill_df = pd.read_sql(
+            """
+            SELECT
+                  CorpBillId = cb.CBill_ID
+                , cb.CBill_NO AS CorpBillNo
+                , cb.Bill_No AS SourceBillNo
+                , cb.Status
+                , cb.CAmount
+                , cb.dueAmount
+                , cb.Submit_Date AS SubmitDate
+                , cb.Visit_ID AS VisitId
+                , cb.duplicateVisitId AS DuplicateVisitId
+            FROM dbo.Corp_Bill_Mst cb WITH (NOLOCK)
+            WHERE (? > 0 AND cb.Visit_ID = ?)
+               OR (? > 0 AND cb.duplicateVisitId = ?)
+            ORDER BY ISNULL(cb.Submit_Date, '19000101') DESC, cb.CBill_ID DESC
+            """,
+            conn,
+            params=[int(corp_visit_match), int(corp_visit_match), int(linked_duplicate_match), int(linked_duplicate_match)],
+        )
+
+        ref_maps = _patient_care_journey_reference_maps(unit)
+        core_row = _patient_care_journey_apply_reference_maps([core_row], ref_maps)[0] if core_row else {}
+        user_map = ref_maps.get("users") or {}
+        hospital_bills = _patient_care_journey_apply_user_names(
+            _patient_care_journey_df_records(hospital_bills_df),
+            user_map,
+            [("UpdatedByUserId", "UpdatedByName"), ("CanceledByUserId", "CanceledByName")],
+        )
+        embedded_pharmacy_bills = []
+        for bill in hospital_bills:
+            raw_due = _patient_care_journey_parse_float(bill.get("DueAmount"), 0.0)
+            ph_amount = _patient_care_journey_parse_float(bill.get("PHAmount"), 0.0)
+            ph_return_amount = _patient_care_journey_parse_float(bill.get("PHReturnAmount"), 0.0)
+            embedded_amount = round(ph_amount + ph_return_amount, 2)
+            adjusted_due = round(raw_due - embedded_amount, 2)
+            bill["RawDueAmount"] = raw_due
+            bill["EmbeddedPharmacyAmount"] = embedded_amount
+            bill["HospitalDueAmount"] = adjusted_due
+            bill["DueAmount"] = adjusted_due
+            if abs(embedded_amount) > 0.004:
+                embedded_pharmacy_bills.append({
+                    "DrugSaleId": None,
+                    "VisitId": finance_visit_id,
+                    "BillId": bill.get("BillId"),
+                    "BillNo": f"{bill.get('BillNo') or bill.get('BillId') or 'Hospital Bill'} (Embedded)",
+                    "SaleDate": bill.get("BillDate"),
+                    "LineCount": 0,
+                    "TotalQty": 0,
+                    "ItemAmount": embedded_amount,
+                    "BillNetAmount": embedded_amount,
+                    "BillDueAmount": embedded_amount,
+                    "PharmacyByName": bill.get("UpdatedByName") or bill.get("CanceledByName") or "",
+                    "CancelStatus": bill.get("CancelStatus"),
+                    "EmbeddedFromHospitalBill": True,
+                })
+        receipts = _patient_care_journey_apply_user_names(
+            _patient_care_journey_df_records(receipt_df),
+            user_map,
+            [("UpdatedByUserId", "UpdatedByName"), ("InsertedByUserId", "InsertedByName"), ("CanceledByUserId", "CanceledByName")],
+        )
+        pharmacy_bills = _patient_care_journey_apply_user_names(
+            _patient_care_journey_df_records(pharmacy_bills_df),
+            user_map,
+            [("PharmacyByUserId", "PharmacyByName"), ("CanceledByUserId", "CanceledByName")],
+        )
+        if pharmacy_bills:
+            for bill in pharmacy_bills:
+                bill["EmbeddedFromHospitalBill"] = False
+        elif embedded_pharmacy_bills:
+            pharmacy_bills = embedded_pharmacy_bills
+        pharmacy_returns = _patient_care_journey_apply_user_names(
+            _patient_care_journey_df_records(pharmacy_returns_df),
+            user_map,
+            [("ReturnByUserId", "ReturnByName")],
+        )
+        related_duplicates = _patient_care_journey_apply_reference_maps(
+            _patient_care_journey_apply_user_names(
+                _patient_care_journey_df_records(duplicate_links_df),
+                user_map,
+                [("InsertedByUserId", "InsertedByName"), ("UpdatedByUserId", "UpdatedByName")],
+            ),
+            ref_maps,
+        )
+        corp_bills = _patient_care_journey_df_records(corp_bill_df)
+
+        cancellations_audit = []
+        for bill in hospital_bills:
+            if _patient_care_journey_is_cancelled(bill.get("CancelStatus")):
+                cancellations_audit.append({
+                    "ItemType": "Hospital Bill",
+                    "ReferenceNo": bill.get("BillNo") or bill.get("BillId"),
+                    "ReferenceDate": bill.get("BillDate"),
+                    "Amount": bill.get("NetAmount"),
+                    "CancelledByName": bill.get("CanceledByName"),
+                    "CancelledOn": bill.get("CanceledOn"),
+                })
+        for receipt in receipts:
+            if _patient_care_journey_is_cancelled(receipt.get("CancelStatus")):
+                cancellations_audit.append({
+                    "ItemType": "Receipt",
+                    "ReferenceNo": receipt.get("ReceiptNo") or receipt.get("ReceiptId"),
+                    "ReferenceDate": receipt.get("ReceiptDate"),
+                    "Amount": receipt.get("Amount"),
+                    "CancelledByName": receipt.get("CanceledByName"),
+                    "CancelledOn": receipt.get("CancelDate"),
+                })
+        for sale in pharmacy_bills:
+            if _patient_care_journey_is_cancelled(sale.get("CancelStatus")):
+                cancellations_audit.append({
+                    "ItemType": "Pharmacy Bill",
+                    "ReferenceNo": sale.get("BillNo") or sale.get("DrugSaleId"),
+                    "ReferenceDate": sale.get("BillDate") or sale.get("SaleDate"),
+                    "Amount": sale.get("BillNetAmount") or sale.get("ItemAmount"),
+                    "CancelledByName": sale.get("CanceledByName"),
+                    "CancelledOn": sale.get("CanceledOn"),
+                })
+        for ret in pharmacy_returns:
+            if _patient_care_journey_is_cancelled(ret.get("CancelStatus")):
+                cancellations_audit.append({
+                    "ItemType": "Pharmacy Return",
+                    "ReferenceNo": ret.get("ReturnCode") or ret.get("ReturnId"),
+                    "ReferenceDate": ret.get("ReturnDate"),
+                    "Amount": ret.get("TotalReturnAmt") or ret.get("DetailReturnAmount"),
+                    "CancelledByName": ret.get("ReturnByName"),
+                    "CancelledOn": ret.get("UpdatedOn"),
+                })
+
+        duplicate_payload = {
+            "journey_row_type": row_type,
+            "source_visit_id": core_row.get("SourceVisitId"),
+            "source_visit_no": core_row.get("SourceVisitNo"),
+            "source_admission_no": core_row.get("SourceAdmissionNo"),
+            "linked_duplicate_visit_id": core_row.get("LinkedDuplicateVisitId"),
+            "related_duplicates": related_duplicates,
+            "corp_bills": corp_bills,
+        }
+
+        return {
+            "visit_details": core_row,
+            "hospital_bills": hospital_bills,
+            "receipts": receipts,
+            "pharmacy_bills": pharmacy_bills,
+            "pharmacy_returns": pharmacy_returns,
+            "cancellations_audit": cancellations_audit,
+            "duplicate_links": duplicate_payload,
+        }
+    except Exception as e:
+        print(f"Error fetching patient care journey detail ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def fetch_virtual_visit_source_visits(unit: str, patient_id, limit: int = 200):
     """
     Fetch recent Visit rows for a selected patient so the UI can clone a linked virtual visit.
@@ -12660,6 +16959,7 @@ def fetch_virtual_visit_source_visits(unit: str, patient_id, limit: int = 200):
         due_count_expr = "CAST(0 AS INT) AS EligibleDueBillCount"
         due_total_expr = "CAST(0 AS FLOAT) AS EligibleDueTotal"
         due_status_expr = "'No Due Pending' AS EligibleDueStatus"
+        settlement_mode_expr = "'no_receipt_needed' AS EligibleSettlementMode"
         if bill_visit_id_col and bill_due_col:
             cancel_filter = f"AND ISNULL(bm.{bill_cancel_col}, 0) = 0" if bill_cancel_col else ""
             due_join_sql = f"""
@@ -12682,6 +16982,12 @@ def fetch_virtual_visit_source_visits(unit: str, patient_id, limit: int = 200):
                     WHEN ISNULL(bill_due.EligibleDueBillCount, 0) > 0 THEN 'Due Pending'
                     ELSE 'No Due Pending'
                 END AS EligibleDueStatus
+            """
+            settlement_mode_expr = """
+                CASE
+                    WHEN ISNULL(bill_due.EligibleDueBillCount, 0) > 0 THEN 'auto_settle'
+                    ELSE 'no_receipt_needed'
+                END AS EligibleSettlementMode
             """
 
         doctor_name_expr = "NULL AS DocInChargeName"
@@ -12770,7 +17076,8 @@ def fetch_virtual_visit_source_visits(unit: str, patient_id, limit: int = 200):
                 {link_status_expr},
                 {due_count_expr},
                 {due_total_expr},
-                {due_status_expr}
+                {due_status_expr},
+                {settlement_mode_expr}
             FROM {visit_table} v WITH (NOLOCK)
             {pt_join_sql}
             {pst_join_sql}
@@ -12975,6 +17282,11 @@ def fetch_virtual_visit_history(unit: str, limit: int | None = None):
                 {_col_expr('vd', vd_table, ['sourceVisitId', 'SourceVisitId', 'SourceVisitID'], 'sourceVisitId')},
                 {_col_expr('vd', vd_table, ['sourceVisitNo', 'SourceVisitNo', 'SourceVisitNO'], 'sourceVisitNo')},
                 {_col_expr('vd', vd_table, ['sourceAdmissionNo', 'SourceAdmissionNo', 'SourceAdmissionNO'], 'sourceAdmissionNo')},
+                {_col_expr('vd', vd_table, ['referralNo', 'ReferralNo'], 'referralNo')},
+                {_col_expr('vd', vd_table, ['referralDate', 'ReferralDate'], 'referralDate')},
+                {_col_expr('vd', vd_table, ['payerTpaName', 'PayerTpaName'], 'payerTpaName')},
+                {_col_expr('vd', vd_table, ['verifiedByUserName', 'VerifiedByUserName'], 'verifiedByUserName')},
+                {_col_expr('vd', vd_table, ['settlementMode', 'SettlementMode'], 'settlementMode')},
                 CASE
                     WHEN {"vd." + source_visit_id_col if source_visit_id_col else "NULL"} IS NULL THEN 'Standalone'
                     ELSE 'Linked'
@@ -12995,10 +17307,119 @@ def fetch_virtual_visit_history(unit: str, limit: int | None = None):
         df.columns = [c.strip() for c in df.columns]
         if "Patient" in df.columns and "PatientName" not in df.columns:
             df["PatientName"] = df["Patient"]
+        if "referralDate" in df.columns:
+            df["referralDate"] = pd.to_datetime(df["referralDate"], errors="coerce").dt.strftime("%Y-%m-%d")
+            df.loc[df["referralDate"] == "NaT", "referralDate"] = None
         df["Unit"] = (unit or "").upper()
         return df
     except Exception as e:
         print(f"Error fetching virtual visit history ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_virtual_visit_conversion_markers(unit: str):
+    """
+    Fetch linked virtual-visit conversion markers so revenue detail exports can flag
+    source visits that were converted to cashless without changing any revenue math.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for virtual visit conversion markers")
+        return None
+    try:
+        vd_table = _resolve_table_name(conn, ["dbo.Visit_Duplicate", "Visit_Duplicate"])
+        if not vd_table:
+            return pd.DataFrame(columns=["SourceVisitNo", "Registration_No", "SourceVisitId", "LinkedVirtualVisitId"])
+
+        visit_table = _resolve_table_name(conn, ["dbo.Visit", "Visit"])
+        patient_table = _resolve_table_name(conn, ["dbo.Patient", "Patient"])
+
+        vd_visit_id_col = _resolve_column(conn, vd_table, ["visitId", "VisitId", "VisitID", "Visit_ID"])
+        vd_source_visit_id_col = _resolve_column(conn, vd_table, ["sourceVisitId", "SourceVisitId", "SourceVisitID"])
+        vd_source_visit_no_col = _resolve_column(conn, vd_table, ["sourceVisitNo", "SourceVisitNo", "SourceVisitNO"])
+        vd_patient_id_col = _resolve_column(conn, vd_table, ["patientId", "PatientId", "PatientID", "Patient_ID"])
+        if not vd_visit_id_col or (not vd_source_visit_id_col and not vd_source_visit_no_col):
+            return pd.DataFrame(columns=["SourceVisitNo", "Registration_No", "SourceVisitId", "LinkedVirtualVisitId"])
+
+        v_visit_id_col = _resolve_column(conn, visit_table, ["Visit_ID", "VisitId", "VisitID", "visit_id"]) if visit_table else None
+        v_visit_no_col = _resolve_column(conn, visit_table, ["VisitNo", "Visit_No"]) if visit_table else None
+        v_patient_id_col = _resolve_column(conn, visit_table, ["PatientID", "PatientId", "patientId", "patient_id"]) if visit_table else None
+        p_patient_id_col = _resolve_column(conn, patient_table, ["PatientId", "patientId", "PatientID", "Patient_ID"]) if patient_table else None
+        p_reg_no_col = _resolve_column(conn, patient_table, ["Registration_No", "RegistrationNo"]) if patient_table else None
+
+        join_visit_sql = ""
+        join_patient_sql = ""
+        source_visit_id_expr = f"vd.{vd_source_visit_id_col}" if vd_source_visit_id_col else "NULL"
+        source_visit_no_expr = f"vd.{vd_source_visit_no_col}" if vd_source_visit_no_col else "NULL"
+        registration_expr = "NULL"
+
+        if visit_table and vd_source_visit_id_col and v_visit_id_col:
+            join_visit_sql = f" LEFT JOIN {visit_table} v WITH (NOLOCK) ON v.{v_visit_id_col} = vd.{vd_source_visit_id_col}"
+            source_visit_id_expr = f"COALESCE(v.{v_visit_id_col}, vd.{vd_source_visit_id_col})"
+            if v_visit_no_col and vd_source_visit_no_col:
+                source_visit_no_expr = f"COALESCE(v.{v_visit_no_col}, vd.{vd_source_visit_no_col})"
+            elif v_visit_no_col:
+                source_visit_no_expr = f"v.{v_visit_no_col}"
+            if patient_table and p_patient_id_col and p_reg_no_col:
+                patient_join_key = f"v.{v_patient_id_col}" if v_patient_id_col else None
+                if patient_join_key:
+                    join_patient_sql = f" LEFT JOIN {patient_table} p WITH (NOLOCK) ON p.{p_patient_id_col} = {patient_join_key}"
+                    registration_expr = f"p.{p_reg_no_col}"
+
+        if not join_patient_sql and patient_table and vd_patient_id_col and p_patient_id_col and p_reg_no_col:
+            join_patient_sql = f" LEFT JOIN {patient_table} p WITH (NOLOCK) ON p.{p_patient_id_col} = vd.{vd_patient_id_col}"
+            registration_expr = f"p.{p_reg_no_col}"
+
+        where_parts = []
+        if vd_source_visit_id_col:
+            where_parts.append(f"vd.{vd_source_visit_id_col} IS NOT NULL")
+        if vd_source_visit_no_col:
+            where_parts.append(f"LTRIM(RTRIM(CAST(vd.{vd_source_visit_no_col} AS NVARCHAR(255)))) <> N''")
+        where_sql = " OR ".join(where_parts) if where_parts else "1 = 0"
+
+        sql = f"""
+            SELECT
+                vd.{vd_visit_id_col} AS LinkedVirtualVisitId,
+                {source_visit_id_expr} AS SourceVisitId,
+                {source_visit_no_expr} AS SourceVisitNo,
+                {registration_expr} AS Registration_No
+            FROM {vd_table} vd WITH (NOLOCK)
+            {join_visit_sql}
+            {join_patient_sql}
+            WHERE {where_sql}
+        """
+        df = pd.read_sql(sql, conn)
+        if df is None or df.empty:
+            return pd.DataFrame(columns=["SourceVisitNo", "Registration_No", "SourceVisitId", "LinkedVirtualVisitId"])
+
+        df.columns = [str(c).strip() for c in df.columns]
+        for col in ["SourceVisitNo", "Registration_No", "SourceVisitId", "LinkedVirtualVisitId"]:
+            if col not in df.columns:
+                df[col] = None
+
+        df["SourceVisitNo"] = df["SourceVisitNo"].astype(str).replace({"nan": "", "None": ""}).str.strip()
+        df["Registration_No"] = df["Registration_No"].astype(str).replace({"nan": "", "None": ""}).str.strip()
+        df["SourceVisitId"] = pd.to_numeric(df["SourceVisitId"], errors="coerce")
+        df["LinkedVirtualVisitId"] = pd.to_numeric(df["LinkedVirtualVisitId"], errors="coerce")
+
+        df = df[
+            (df["SourceVisitNo"].astype(str).str.strip() != "")
+            | df["SourceVisitId"].notna()
+        ].copy()
+        if df.empty:
+            return pd.DataFrame(columns=["SourceVisitNo", "Registration_No", "SourceVisitId", "LinkedVirtualVisitId"])
+
+        df = df.sort_values(["LinkedVirtualVisitId", "SourceVisitId"], ascending=[False, False], na_position="last")
+        df = df.drop_duplicates(subset=["SourceVisitNo", "Registration_No"], keep="first")
+        df["Unit"] = (unit or "").upper()
+        return df[["SourceVisitNo", "Registration_No", "SourceVisitId", "LinkedVirtualVisitId", "Unit"]]
+    except Exception as e:
+        print(f"Error fetching virtual visit conversion markers ({unit}): {e}")
         return None
     finally:
         try:
@@ -13050,9 +17471,15 @@ def fetch_payment_modes(unit: str):
             return None
         id_col = pick(["PaymentModeId", "PModeId", "PayModeId", "ModeId", "Id"])
         name_col = pick(["PaymentModeName", "PModeName", "PaymentMode", "ModeName", "Name"])
+        deactive_col = pick(["Deactive", "IsDeactive", "Inactive", "IsInactive"])
         if id_col and name_col:
-            out = df[[id_col, name_col]].copy()
-            out.columns = ["PaymentModeId", "PaymentModeName"]
+            keep_cols = [id_col, name_col]
+            out_cols = ["PaymentModeId", "PaymentModeName"]
+            if deactive_col:
+                keep_cols.append(deactive_col)
+                out_cols.append("Deactive")
+            out = df[keep_cols].copy()
+            out.columns = out_cols
             return out
         return df
     except Exception as e:
@@ -13274,7 +17701,7 @@ def fetch_bloodbank_service_billing(unit: str, from_date: str, to_date: str):
     - Order date window is anchored to OrderMst.OrdDateTime.
       Shifted/Billing dates are still surfaced in columns for audit trail.
     - Blood Bank service filter is unit-specific for known units:
-      AHL -> (2598,2596,2600,4801,2599,6658,2004,2597,6605)
+      AHL -> (2598,2596,2600,4801,2599,6658,2004,2597,662842,6605)
       ACI -> (2598,2596,2600,4801,2599,6658,2004,2597,5535)
     """
     conn = get_sql_connection(unit)
@@ -13285,7 +17712,7 @@ def fetch_bloodbank_service_billing(unit: str, from_date: str, to_date: str):
         unit_key = (unit or "").strip().upper()
         shared_ids = (2598, 2596, 2600, 4801, 2599, 6658, 2004, 2597)
         unit_service_ids = {
-            "AHL": shared_ids + (6605,),
+            "AHL": shared_ids + (662842, 6605),
             "ACI": shared_ids + (5535,),
         }
         bloodbank_service_ids = unit_service_ids.get(unit_key, shared_ids + (6605, 5535))
@@ -13310,6 +17737,7 @@ def fetch_bloodbank_service_billing(unit: str, from_date: str, to_date: str):
                 v.TypeOfVisit AS TypeOfVisit,
                 dbo.fn_patientfullname(v.PatientID) AS Patient,
                 dbo.fn_regno(v.PatientID) AS RegNo,
+                v.VisitNo AS VisitNo,
                 s.Service_Name,
                 CAST(bd.Rate AS DECIMAL(18,2)) AS Rate,
                 CAST(bd.Quantity AS DECIMAL(18,2)) AS Quantity,
@@ -13350,6 +17778,7 @@ def fetch_bloodbank_service_billing(unit: str, from_date: str, to_date: str):
                 v.TypeOfVisit AS TypeOfVisit,
                 dbo.fn_patientfullname(pctx.EffectivePatientID) AS Patient,
                 dbo.fn_regno(pctx.EffectivePatientID) AS RegNo,
+                v.VisitNo AS VisitNo,
                 s.Service_Name,
                 CAST(COALESCE(NULLIF(od.ServiceAmount, 0), bill_line.BillRate, 0) AS DECIMAL(18,2)) AS Rate,
                 CAST(COALESCE(NULLIF(od.OrdQty, 0), bill_line.BillQty, 0) AS DECIMAL(18,2)) AS Quantity,
@@ -13452,6 +17881,7 @@ def fetch_bloodbank_service_billing(unit: str, from_date: str, to_date: str):
         def _dedupe_key(row):
             return (
                 _norm_text(row.get("RegNo")),
+                _norm_text(row.get("VisitNo")),
                 _norm_text(row.get("Service_Name")),
                 _norm_text(row.get("BillDate")),
                 round(float(pd.to_numeric(row.get("Quantity"), errors="coerce") or 0.0), 3),
@@ -13508,6 +17938,7 @@ def fetch_bloodbank_service_billing(unit: str, from_date: str, to_date: str):
                 return (
                     _norm_text(row.get("RegNo")),
                     _to_int(row.get("PatientID"), 0),
+                    _norm_text(row.get("VisitNo")),
                     _norm_text(row.get("Service_Name")),
                     _date_only(row.get("BillDate")),
                     _num(row.get("Quantity"), 3),
@@ -13529,6 +17960,7 @@ def fetch_bloodbank_service_billing(unit: str, from_date: str, to_date: str):
             def _loose_key(row):
                 return (
                     _patient_token(row),
+                    _norm_text(row.get("VisitNo")),
                     _norm_text(row.get("Service_Name")),
                     _date_only(row.get("BillDate")),
                 )
@@ -13576,13 +18008,13 @@ def fetch_bloodbank_service_billing(unit: str, from_date: str, to_date: str):
                     consumed_shifted.update(s_rows[:pair_count])
                     drop_idx.update(b_rows[:pair_count])
 
-                # Pass 2: fallback loose matching for remaining pairs (patient+service+bill date).
+                # Pass 2: fallback loose matching for remaining pairs (patient+visit+service+bill date).
                 rem_shifted = [r for r in shifted_idx if r not in consumed_shifted]
                 rem_billing = [r for r in billing_idx if r not in drop_idx]
                 loose_shifted = _group_by_key(rem_shifted, _loose_key)
                 loose_billing = _group_by_key(rem_billing, _loose_key)
                 for key, s_rows in loose_shifted.items():
-                    patient_key, service_key, bill_date_key = key
+                    patient_key, visit_key, service_key, bill_date_key = key
                     if not patient_key or not service_key or not bill_date_key:
                         continue
                     b_rows = loose_billing.get(key, [])
@@ -13605,6 +18037,1430 @@ def fetch_bloodbank_service_billing(unit: str, from_date: str, to_date: str):
 
 
 # ===================== Billwise Doctor Share =====================
+def _billwise_doctorshare_parse_int(raw_value, default: int, minimum: int | None = None, maximum: int | None = None) -> int:
+    try:
+        value = int(float(raw_value))
+    except Exception:
+        value = int(default)
+    if minimum is not None:
+        value = max(minimum, value)
+    if maximum is not None:
+        value = min(maximum, value)
+    return value
+
+
+def _billwise_doctorshare_jsonify_rows(rows):
+    out = []
+    for row in rows or []:
+        if not isinstance(row, dict):
+            continue
+        clean = {}
+        for key, value in row.items():
+            if isinstance(value, Decimal):
+                clean[key] = float(value)
+            else:
+                clean[key] = value
+        out.append(clean)
+    return out
+
+
+def _fetch_billwise_doctorshare_page_legacy(
+    unit: str,
+    from_date: str,
+    to_date: str,
+    doc_id: int,
+    vtype: int,
+    page: int = 1,
+    page_size: int = 20,
+    search_query: str = "",
+    include_summary: bool = True,
+):
+    """
+    Fetch paged billwise doctor share data directly from SQL Server.
+    Summary/totals are computed server-side; only the requested detail page is returned.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for paged billwise doctor share")
+        return None
+    try:
+        page = _billwise_doctorshare_parse_int(page, 1, 1, None)
+        page_size = _billwise_doctorshare_parse_int(page_size, 20, 1, 200)
+        search_text = str(search_query or "").strip().lower()
+        include_summary_flag = 1 if include_summary else 0
+
+        sql = """
+        SET NOCOUNT ON;
+
+        DECLARE @FromDate DATETIME = ?;
+        DECLARE @ToDate DATETIME = ?;
+        DECLARE @DocId INT = ?;
+        DECLARE @VisitType INT = ?;
+        DECLARE @Search NVARCHAR(250) = ?;
+        DECLARE @Page INT = ?;
+        DECLARE @PageSize INT = ?;
+        DECLARE @IncludeSummary BIT = ?;
+
+        IF (@FromDate > @ToDate)
+        BEGIN
+            DECLARE @tmp DATETIME = @FromDate;
+            SET @FromDate = @ToDate;
+            SET @ToDate = @tmp;
+        END;
+
+        SET @Search = LOWER(LTRIM(RTRIM(ISNULL(@Search, ''))));
+        SET @Page = CASE WHEN @Page < 1 THEN 1 ELSE @Page END;
+        SET @PageSize = CASE WHEN @PageSize < 1 THEN 20 WHEN @PageSize > 200 THEN 200 ELSE @PageSize END;
+
+        DECLARE @ToDateNextDay DATETIME = DATEADD(DAY, 1, CONVERT(DATE, @ToDate));
+
+        ;WITH Base AS
+        (
+            SELECT
+                  v.TypeOfVisit
+                , bm.Registration_No
+                , bm.BillNo
+                , bm.BillDate
+                , s.Service_Name
+                , bd.Amount
+                , docid =
+                    CASE v.VisitTypeID
+                        WHEN 1 THEN CASE ISNULL(od.DocID, 0) WHEN 0 THEN om.OrdByDocID ELSE od.DocID END
+                        WHEN 3 THEN CASE ISNULL(od.DocID, 0) WHEN 0 THEN om.OrdByDocID ELSE od.DocID END
+                        ELSE CASE ISNULL(od.DocID, 0) WHEN 0 THEN v.DocInCharge ELSE od.DocID END
+                    END
+                , v.PatientID
+                , vtype = v.VisitTypeID
+                , pt.PatientType
+                , BillQty = bd.Quantity
+                , Rate = bd.Rate
+                , v.VisitDate
+                , v.DischargeDate
+                , v.subdocid
+            FROM dbo.Billing_Mst bm
+            INNER JOIN dbo.Visit v
+                ON v.Visit_ID = bm.Visit_ID
+            INNER JOIN dbo.BillingDetails bd
+                ON bd.Bill_ID = bm.Bill_ID
+            LEFT JOIN dbo.Service_Mst s
+                ON s.Service_ID = bd.ServiceID
+            LEFT JOIN dbo.OrderDtl od
+                ON od.OrdDtlID = bd.OrderDtlId
+            LEFT JOIN dbo.OrderMst om
+                ON om.OrdId = od.OrdID
+            LEFT JOIN dbo.PatientType_mst pt
+                ON pt.PatientType_ID = v.PatientType_ID
+            WHERE
+                bm.CancelStatus = 'false'
+                AND bm.BillType = 'P'
+                AND s.Category_Id IN (1, 36, 67)
+                AND bm.BillDate >= @FromDate
+                AND bm.BillDate < @ToDateNextDay
+                AND ISNULL(bd.Amount, 0) > 0
+        )
+        SELECT
+              TypeOfVisit
+            , Registration_No
+            , BillNo
+            , BillDate
+            , Service_Name
+            , Amount
+            , DocIdResolved = docid
+            , PatientID
+            , VisitTypeId = vtype
+            , PatientType
+            , BillQty
+            , Rate
+            , VisitDate
+            , DischargeDate
+            , SecondaryDocId = subdocid
+        INTO #DoctorShareData
+        FROM Base
+        WHERE
+            (@DocId = 0 OR docid = @DocId)
+            AND (@VisitType = 0 OR vtype = @VisitType);
+
+        SELECT
+              TotalRecords = CAST(COUNT(1) AS INT)
+            , TotalQuantity = CAST(ISNULL(SUM(CAST(BillQty AS DECIMAL(18, 4))), 0) AS DECIMAL(18, 2))
+            , TotalRevenue = CAST(ISNULL(SUM(CAST(Amount AS DECIMAL(18, 4))), 0) AS DECIMAL(18, 2))
+        FROM #DoctorShareData;
+
+        IF (@IncludeSummary = 1)
+        BEGIN
+            SELECT
+                  Service_Name = ISNULL(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(250), Service_Name))), ''), 'Unknown')
+                , Quantity = CAST(ISNULL(SUM(CAST(BillQty AS DECIMAL(18, 4))), 0) AS DECIMAL(18, 2))
+                , Revenue = CAST(ISNULL(SUM(CAST(Amount AS DECIMAL(18, 4))), 0) AS DECIMAL(18, 2))
+                , Records = CAST(COUNT(1) AS INT)
+            FROM #DoctorShareData
+            GROUP BY ISNULL(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(250), Service_Name))), ''), 'Unknown')
+            ORDER BY Revenue DESC, Service_Name ASC;
+        END
+        ELSE
+        BEGIN
+            SELECT
+                  CAST(NULL AS NVARCHAR(250)) AS Service_Name
+                , CAST(NULL AS DECIMAL(18, 2)) AS Quantity
+                , CAST(NULL AS DECIMAL(18, 2)) AS Revenue
+                , CAST(NULL AS INT) AS Records
+            WHERE 1 = 0;
+        END;
+
+        DECLARE @SearchLike NVARCHAR(260) = CASE WHEN @Search = '' THEN NULL ELSE '%' + @Search + '%' END;
+        DECLARE @FilteredRecords INT;
+        DECLARE @TotalPages INT;
+        DECLARE @EffectivePage INT;
+
+        IF (@SearchLike IS NULL)
+        BEGIN
+            SELECT @FilteredRecords = COUNT(1)
+            FROM #DoctorShareData;
+
+            SET @FilteredRecords = ISNULL(@FilteredRecords, 0);
+            SET @TotalPages = CASE WHEN @FilteredRecords <= 0 THEN 1 ELSE CAST(CEILING(@FilteredRecords * 1.0 / @PageSize) AS INT) END;
+            SET @EffectivePage = CASE WHEN @Page > @TotalPages THEN @TotalPages ELSE @Page END;
+
+            SELECT
+                  Page = @EffectivePage
+                , PageSize = @PageSize
+                , FilteredRecords = @FilteredRecords
+                , TotalPages = @TotalPages;
+
+            ;WITH Numbered AS
+            (
+                SELECT
+                      BillDate
+                    , BillNo
+                    , Registration_No
+                    , PatientID
+                    , PatientType
+                    , TypeOfVisit
+                    , DocIdResolved
+                    , SecondaryDocId
+                    , Service_Name
+                    , BillQty
+                    , Rate
+                    , Amount
+                    , VisitDate
+                    , DischargeDate
+                    , RowNum = ROW_NUMBER() OVER (ORDER BY BillDate, BillNo, Registration_No)
+                FROM #DoctorShareData
+            )
+            SELECT
+                  BillDate
+                , BillNo
+                , Registration_No
+                , PatientName = dbo.fn_PatientFullName(PatientID)
+                , PatientType
+                , TypeOfVisit
+                , DoctorName = dbo.fn_DoctorFirstName(DocIdResolved)
+                , SecondaryDoc = dbo.fn_DoctorFirstName(SecondaryDocId)
+                , Service_Name
+                , BillQty
+                , Rate
+                , Amount
+                , VisitDate
+                , DischargeDate
+            FROM Numbered
+            WHERE RowNum BETWEEN ((@EffectivePage - 1) * @PageSize) + 1 AND (@EffectivePage * @PageSize)
+            ORDER BY RowNum;
+        END
+        ELSE
+        BEGIN
+            SELECT
+                  BillDate
+                , BillNo
+                , Registration_No
+                , PatientName = dbo.fn_PatientFullName(PatientID)
+                , PatientType
+                , TypeOfVisit
+                , DoctorName = dbo.fn_DoctorFirstName(DocIdResolved)
+                , SecondaryDoc = dbo.fn_DoctorFirstName(SecondaryDocId)
+                , Service_Name
+                , BillQty
+                , Rate
+                , Amount
+                , VisitDate
+                , DischargeDate
+                , SearchText = LOWER(CONCAT(
+                      ISNULL(CONVERT(NVARCHAR(10), BillDate, 23), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(60), BillNo), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(60), Registration_No), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(200), dbo.fn_PatientFullName(PatientID)), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(100), PatientType), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(100), TypeOfVisit), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(200), dbo.fn_DoctorFirstName(DocIdResolved)), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(200), dbo.fn_DoctorFirstName(SecondaryDocId)), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(250), Service_Name), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(50), BillQty), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(50), Rate), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(50), Amount), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(10), VisitDate, 23), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(10), DischargeDate, 23), '')
+                  ))
+            INTO #DoctorShareSearch
+            FROM #DoctorShareData;
+
+            SELECT @FilteredRecords = COUNT(1)
+            FROM #DoctorShareSearch
+            WHERE SearchText LIKE @SearchLike;
+
+            SET @FilteredRecords = ISNULL(@FilteredRecords, 0);
+            SET @TotalPages = CASE WHEN @FilteredRecords <= 0 THEN 1 ELSE CAST(CEILING(@FilteredRecords * 1.0 / @PageSize) AS INT) END;
+            SET @EffectivePage = CASE WHEN @Page > @TotalPages THEN @TotalPages ELSE @Page END;
+
+            SELECT
+                  Page = @EffectivePage
+                , PageSize = @PageSize
+                , FilteredRecords = @FilteredRecords
+                , TotalPages = @TotalPages;
+
+            SELECT
+                  BillDate
+                , BillNo
+                , Registration_No
+                , PatientName
+                , PatientType
+                , TypeOfVisit
+                , DoctorName
+                , SecondaryDoc
+                , Service_Name
+                , BillQty
+                , Rate
+                , Amount
+                , VisitDate
+                , DischargeDate
+            FROM #DoctorShareSearch
+            WHERE SearchText LIKE @SearchLike
+            ORDER BY BillDate, BillNo, Registration_No
+            OFFSET ((@EffectivePage - 1) * @PageSize) ROWS
+            FETCH NEXT @PageSize ROWS ONLY;
+        END;
+        """
+
+        cursor = conn.cursor()
+        cursor.execute(
+            sql,
+            [
+                from_date,
+                to_date,
+                int(doc_id or 0),
+                int(vtype or 0),
+                search_text,
+                int(page),
+                int(page_size),
+                int(include_summary_flag),
+            ],
+        )
+
+        result_sets = []
+        while True:
+            if cursor.description:
+                result_sets.append(_corp_bill_summary_dict_rows_from_cursor(cursor))
+            if not cursor.nextset():
+                break
+        try:
+            cursor.close()
+        except Exception:
+            pass
+
+        totals_rows = result_sets[0] if len(result_sets) > 0 else []
+        summary_rows = result_sets[1] if len(result_sets) > 1 else []
+        meta_rows = result_sets[2] if len(result_sets) > 2 else []
+        detail_rows = result_sets[3] if len(result_sets) > 3 else []
+
+        totals_rec = dict(totals_rows[0] or {}) if totals_rows else {}
+        meta_rec = dict(meta_rows[0] or {}) if meta_rows else {}
+
+        total_records = _billwise_doctorshare_parse_int(totals_rec.get("TotalRecords"), 0, 0, None)
+        filtered_records = _billwise_doctorshare_parse_int(meta_rec.get("FilteredRecords"), total_records, 0, None)
+        total_pages = _billwise_doctorshare_parse_int(meta_rec.get("TotalPages"), 1, 1, None)
+        current_page = _billwise_doctorshare_parse_int(meta_rec.get("Page"), page, 1, total_pages)
+        current_page_size = _billwise_doctorshare_parse_int(meta_rec.get("PageSize"), page_size, 1, 200)
+
+        total_quantity = totals_rec.get("TotalQuantity") or 0
+        total_revenue = totals_rec.get("TotalRevenue") or 0
+        if isinstance(total_quantity, Decimal):
+            total_quantity = float(total_quantity)
+        else:
+            total_quantity = float(total_quantity or 0)
+        if isinstance(total_revenue, Decimal):
+            total_revenue = float(total_revenue)
+        else:
+            total_revenue = float(total_revenue or 0)
+
+        return {
+            "page": int(current_page),
+            "page_size": int(current_page_size),
+            "total_records": int(total_records),
+            "filtered_records": int(filtered_records),
+            "total_pages": int(total_pages),
+            "total_quantity": float(total_quantity),
+            "total_revenue": float(total_revenue),
+            "service_summary": _billwise_doctorshare_jsonify_rows(summary_rows),
+            "details": _billwise_doctorshare_jsonify_rows(detail_rows),
+            "search_query": search_text,
+        }
+    except Exception as e:
+        print(f"Error fetching paged billwise doctor share ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _fetch_billwise_doctorshare_page_full(
+    unit: str,
+    from_date: str,
+    to_date: str,
+    doc_id: int,
+    vtype: int,
+    page: int = 1,
+    page_size: int = 20,
+    search_query: str = "",
+    include_summary: bool = True,
+):
+    """
+    Optimized paged doctor share fetch.
+    Uses visit-type-specific SQL branches so doctor filtering is pushed deeper into the base scan.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for paged billwise doctor share")
+        return None
+    try:
+        page = _billwise_doctorshare_parse_int(page, 1, 1, None)
+        page_size = _billwise_doctorshare_parse_int(page_size, 20, 1, 200)
+        visit_type = _billwise_doctorshare_parse_int(vtype, 0, 0, None)
+        search_text = str(search_query or "").strip().lower()
+        include_summary_flag = 1 if include_summary else 0
+
+        if visit_type in {1, 3}:
+            base_source_sql = f"""
+                SELECT
+                      v.TypeOfVisit
+                    , bm.Registration_No
+                    , bm.BillNo
+                    , bm.BillDate
+                    , s.Service_Name
+                    , bd.Amount
+                    , DocIdResolved = CASE ISNULL(od.DocID, 0) WHEN 0 THEN om.OrdByDocID ELSE od.DocID END
+                    , v.PatientID
+                    , VisitTypeId = v.VisitTypeID
+                    , pt.PatientType
+                    , BillQty = bd.Quantity
+                    , Rate = bd.Rate
+                    , v.VisitDate
+                    , v.DischargeDate
+                    , SecondaryDocId = v.subdocid
+                FROM dbo.Billing_Mst bm
+                INNER JOIN dbo.Visit v
+                    ON v.Visit_ID = bm.Visit_ID
+                INNER JOIN dbo.BillingDetails bd
+                    ON bd.Bill_ID = bm.Bill_ID
+                INNER JOIN dbo.Service_Mst s
+                    ON s.Service_ID = bd.ServiceID
+                   AND s.Category_Id IN (1, 36, 67)
+                LEFT JOIN dbo.OrderDtl od
+                    ON od.OrdDtlID = bd.OrderDtlId
+                LEFT JOIN dbo.OrderMst om
+                    ON om.OrdId = od.OrdID
+                LEFT JOIN dbo.PatientType_mst pt
+                    ON pt.PatientType_ID = v.PatientType_ID
+                WHERE
+                    bm.CancelStatus = 'false'
+                    AND bm.BillType = 'P'
+                    AND bm.BillDate >= @FromDate
+                    AND bm.BillDate < @ToDateNextDay
+                    AND ISNULL(bd.Amount, 0) > 0
+                    AND v.VisitTypeID = {visit_type}
+                    AND (@DocId = 0 OR CASE ISNULL(od.DocID, 0) WHEN 0 THEN om.OrdByDocID ELSE od.DocID END = @DocId)
+            """
+        elif visit_type in {2, 6}:
+            base_source_sql = f"""
+                SELECT
+                      v.TypeOfVisit
+                    , bm.Registration_No
+                    , bm.BillNo
+                    , bm.BillDate
+                    , s.Service_Name
+                    , bd.Amount
+                    , DocIdResolved = CASE ISNULL(od.DocID, 0) WHEN 0 THEN v.DocInCharge ELSE od.DocID END
+                    , v.PatientID
+                    , VisitTypeId = v.VisitTypeID
+                    , pt.PatientType
+                    , BillQty = bd.Quantity
+                    , Rate = bd.Rate
+                    , v.VisitDate
+                    , v.DischargeDate
+                    , SecondaryDocId = v.subdocid
+                FROM dbo.Billing_Mst bm
+                INNER JOIN dbo.Visit v
+                    ON v.Visit_ID = bm.Visit_ID
+                INNER JOIN dbo.BillingDetails bd
+                    ON bd.Bill_ID = bm.Bill_ID
+                INNER JOIN dbo.Service_Mst s
+                    ON s.Service_ID = bd.ServiceID
+                   AND s.Category_Id IN (1, 36, 67)
+                LEFT JOIN dbo.OrderDtl od
+                    ON od.OrdDtlID = bd.OrderDtlId
+                LEFT JOIN dbo.PatientType_mst pt
+                    ON pt.PatientType_ID = v.PatientType_ID
+                WHERE
+                    bm.CancelStatus = 'false'
+                    AND bm.BillType = 'P'
+                    AND bm.BillDate >= @FromDate
+                    AND bm.BillDate < @ToDateNextDay
+                    AND ISNULL(bd.Amount, 0) > 0
+                    AND v.VisitTypeID = {visit_type}
+                    AND (@DocId = 0 OR CASE ISNULL(od.DocID, 0) WHEN 0 THEN v.DocInCharge ELSE od.DocID END = @DocId)
+            """
+        else:
+            base_source_sql = """
+                SELECT
+                      v.TypeOfVisit
+                    , bm.Registration_No
+                    , bm.BillNo
+                    , bm.BillDate
+                    , s.Service_Name
+                    , bd.Amount
+                    , DocIdResolved = CASE ISNULL(od.DocID, 0) WHEN 0 THEN om.OrdByDocID ELSE od.DocID END
+                    , v.PatientID
+                    , VisitTypeId = v.VisitTypeID
+                    , pt.PatientType
+                    , BillQty = bd.Quantity
+                    , Rate = bd.Rate
+                    , v.VisitDate
+                    , v.DischargeDate
+                    , SecondaryDocId = v.subdocid
+                FROM dbo.Billing_Mst bm
+                INNER JOIN dbo.Visit v
+                    ON v.Visit_ID = bm.Visit_ID
+                INNER JOIN dbo.BillingDetails bd
+                    ON bd.Bill_ID = bm.Bill_ID
+                INNER JOIN dbo.Service_Mst s
+                    ON s.Service_ID = bd.ServiceID
+                   AND s.Category_Id IN (1, 36, 67)
+                LEFT JOIN dbo.OrderDtl od
+                    ON od.OrdDtlID = bd.OrderDtlId
+                LEFT JOIN dbo.OrderMst om
+                    ON om.OrdId = od.OrdID
+                LEFT JOIN dbo.PatientType_mst pt
+                    ON pt.PatientType_ID = v.PatientType_ID
+                WHERE
+                    bm.CancelStatus = 'false'
+                    AND bm.BillType = 'P'
+                    AND bm.BillDate >= @FromDate
+                    AND bm.BillDate < @ToDateNextDay
+                    AND ISNULL(bd.Amount, 0) > 0
+                    AND v.VisitTypeID IN (1, 3)
+                    AND (@DocId = 0 OR CASE ISNULL(od.DocID, 0) WHEN 0 THEN om.OrdByDocID ELSE od.DocID END = @DocId)
+
+                UNION ALL
+
+                SELECT
+                      v.TypeOfVisit
+                    , bm.Registration_No
+                    , bm.BillNo
+                    , bm.BillDate
+                    , s.Service_Name
+                    , bd.Amount
+                    , DocIdResolved = CASE ISNULL(od.DocID, 0) WHEN 0 THEN v.DocInCharge ELSE od.DocID END
+                    , v.PatientID
+                    , VisitTypeId = v.VisitTypeID
+                    , pt.PatientType
+                    , BillQty = bd.Quantity
+                    , Rate = bd.Rate
+                    , v.VisitDate
+                    , v.DischargeDate
+                    , SecondaryDocId = v.subdocid
+                FROM dbo.Billing_Mst bm
+                INNER JOIN dbo.Visit v
+                    ON v.Visit_ID = bm.Visit_ID
+                INNER JOIN dbo.BillingDetails bd
+                    ON bd.Bill_ID = bm.Bill_ID
+                INNER JOIN dbo.Service_Mst s
+                    ON s.Service_ID = bd.ServiceID
+                   AND s.Category_Id IN (1, 36, 67)
+                LEFT JOIN dbo.OrderDtl od
+                    ON od.OrdDtlID = bd.OrderDtlId
+                LEFT JOIN dbo.PatientType_mst pt
+                    ON pt.PatientType_ID = v.PatientType_ID
+                WHERE
+                    bm.CancelStatus = 'false'
+                    AND bm.BillType = 'P'
+                    AND bm.BillDate >= @FromDate
+                    AND bm.BillDate < @ToDateNextDay
+                    AND ISNULL(bd.Amount, 0) > 0
+                    AND ISNULL(v.VisitTypeID, 0) NOT IN (1, 3)
+                    AND (@DocId = 0 OR CASE ISNULL(od.DocID, 0) WHEN 0 THEN v.DocInCharge ELSE od.DocID END = @DocId)
+            """
+
+        sql = f"""
+        SET NOCOUNT ON;
+
+        DECLARE @FromDate DATETIME = ?;
+        DECLARE @ToDate DATETIME = ?;
+        DECLARE @DocId INT = ?;
+        DECLARE @Search NVARCHAR(250) = ?;
+        DECLARE @Page INT = ?;
+        DECLARE @PageSize INT = ?;
+        DECLARE @IncludeSummary BIT = ?;
+
+        IF (@FromDate > @ToDate)
+        BEGIN
+            DECLARE @tmp DATETIME = @FromDate;
+            SET @FromDate = @ToDate;
+            SET @ToDate = @tmp;
+        END;
+
+        SET @Search = LOWER(LTRIM(RTRIM(ISNULL(@Search, ''))));
+        SET @Page = CASE WHEN @Page < 1 THEN 1 ELSE @Page END;
+        SET @PageSize = CASE WHEN @PageSize < 1 THEN 20 WHEN @PageSize > 200 THEN 200 ELSE @PageSize END;
+
+        DECLARE @ToDateNextDay DATETIME = DATEADD(DAY, 1, CONVERT(DATE, @ToDate));
+
+        ;WITH Base AS
+        (
+{base_source_sql}
+        )
+        SELECT
+              TypeOfVisit
+            , Registration_No
+            , BillNo
+            , BillDate
+            , Service_Name
+            , Amount
+            , DocIdResolved
+            , PatientID
+            , VisitTypeId
+            , PatientType
+            , BillQty
+            , Rate
+            , VisitDate
+            , DischargeDate
+            , SecondaryDocId
+        INTO #DoctorShareData
+        FROM Base;
+
+        SELECT
+              TotalRecords = CAST(COUNT(1) AS INT)
+            , TotalQuantity = CAST(ISNULL(SUM(CAST(BillQty AS DECIMAL(18, 4))), 0) AS DECIMAL(18, 2))
+            , TotalRevenue = CAST(ISNULL(SUM(CAST(Amount AS DECIMAL(18, 4))), 0) AS DECIMAL(18, 2))
+        FROM #DoctorShareData;
+
+        IF (@IncludeSummary = 1)
+        BEGIN
+            SELECT
+                  Service_Name = ISNULL(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(250), Service_Name))), ''), 'Unknown')
+                , Quantity = CAST(ISNULL(SUM(CAST(BillQty AS DECIMAL(18, 4))), 0) AS DECIMAL(18, 2))
+                , Revenue = CAST(ISNULL(SUM(CAST(Amount AS DECIMAL(18, 4))), 0) AS DECIMAL(18, 2))
+                , Records = CAST(COUNT(1) AS INT)
+            FROM #DoctorShareData
+            GROUP BY ISNULL(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(250), Service_Name))), ''), 'Unknown')
+            ORDER BY Revenue DESC, Service_Name ASC;
+        END
+        ELSE
+        BEGIN
+            SELECT
+                  CAST(NULL AS NVARCHAR(250)) AS Service_Name
+                , CAST(NULL AS DECIMAL(18, 2)) AS Quantity
+                , CAST(NULL AS DECIMAL(18, 2)) AS Revenue
+                , CAST(NULL AS INT) AS Records
+            WHERE 1 = 0;
+        END;
+
+        DECLARE @SearchLike NVARCHAR(260) = CASE WHEN @Search = '' THEN NULL ELSE '%' + @Search + '%' END;
+        DECLARE @FilteredRecords INT;
+        DECLARE @TotalPages INT;
+        DECLARE @EffectivePage INT;
+
+        IF (@SearchLike IS NULL)
+        BEGIN
+            SELECT @FilteredRecords = COUNT(1)
+            FROM #DoctorShareData;
+
+            SET @FilteredRecords = ISNULL(@FilteredRecords, 0);
+            SET @TotalPages = CASE WHEN @FilteredRecords <= 0 THEN 1 ELSE CAST(CEILING(@FilteredRecords * 1.0 / @PageSize) AS INT) END;
+            SET @EffectivePage = CASE WHEN @Page > @TotalPages THEN @TotalPages ELSE @Page END;
+
+            SELECT
+                  Page = @EffectivePage
+                , PageSize = @PageSize
+                , FilteredRecords = @FilteredRecords
+                , TotalPages = @TotalPages;
+
+            ;WITH Numbered AS
+            (
+                SELECT
+                      BillDate
+                    , BillNo
+                    , Registration_No
+                    , PatientID
+                    , PatientType
+                    , TypeOfVisit
+                    , DocIdResolved
+                    , SecondaryDocId
+                    , Service_Name
+                    , BillQty
+                    , Rate
+                    , Amount
+                    , VisitDate
+                    , DischargeDate
+                    , RowNum = ROW_NUMBER() OVER (ORDER BY BillDate, BillNo, Registration_No)
+                FROM #DoctorShareData
+            )
+            SELECT
+                  BillDate
+                , BillNo
+                , Registration_No
+                , PatientName = dbo.fn_PatientFullName(PatientID)
+                , PatientType
+                , TypeOfVisit
+                , DoctorName = dbo.fn_DoctorFirstName(DocIdResolved)
+                , SecondaryDoc = dbo.fn_DoctorFirstName(SecondaryDocId)
+                , Service_Name
+                , BillQty
+                , Rate
+                , Amount
+                , VisitDate
+                , DischargeDate
+            FROM Numbered
+            WHERE RowNum BETWEEN ((@EffectivePage - 1) * @PageSize) + 1 AND (@EffectivePage * @PageSize)
+            ORDER BY RowNum;
+        END
+        ELSE
+        BEGIN
+            SELECT
+                  BillDate
+                , BillNo
+                , Registration_No
+                , PatientName = dbo.fn_PatientFullName(PatientID)
+                , PatientType
+                , TypeOfVisit
+                , DoctorName = dbo.fn_DoctorFirstName(DocIdResolved)
+                , SecondaryDoc = dbo.fn_DoctorFirstName(SecondaryDocId)
+                , Service_Name
+                , BillQty
+                , Rate
+                , Amount
+                , VisitDate
+                , DischargeDate
+                , SearchText = LOWER(CONCAT(
+                      ISNULL(CONVERT(NVARCHAR(10), BillDate, 23), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(60), BillNo), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(60), Registration_No), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(200), dbo.fn_PatientFullName(PatientID)), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(100), PatientType), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(100), TypeOfVisit), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(200), dbo.fn_DoctorFirstName(DocIdResolved)), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(200), dbo.fn_DoctorFirstName(SecondaryDocId)), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(250), Service_Name), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(50), BillQty), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(50), Rate), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(50), Amount), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(10), VisitDate, 23), ''), ' '
+                    , ISNULL(CONVERT(NVARCHAR(10), DischargeDate, 23), '')
+                  ))
+            INTO #DoctorShareSearch
+            FROM #DoctorShareData;
+
+            SELECT @FilteredRecords = COUNT(1)
+            FROM #DoctorShareSearch
+            WHERE SearchText LIKE @SearchLike;
+
+            SET @FilteredRecords = ISNULL(@FilteredRecords, 0);
+            SET @TotalPages = CASE WHEN @FilteredRecords <= 0 THEN 1 ELSE CAST(CEILING(@FilteredRecords * 1.0 / @PageSize) AS INT) END;
+            SET @EffectivePage = CASE WHEN @Page > @TotalPages THEN @TotalPages ELSE @Page END;
+
+            SELECT
+                  Page = @EffectivePage
+                , PageSize = @PageSize
+                , FilteredRecords = @FilteredRecords
+                , TotalPages = @TotalPages;
+
+            SELECT
+                  BillDate
+                , BillNo
+                , Registration_No
+                , PatientName
+                , PatientType
+                , TypeOfVisit
+                , DoctorName
+                , SecondaryDoc
+                , Service_Name
+                , BillQty
+                , Rate
+                , Amount
+                , VisitDate
+                , DischargeDate
+            FROM #DoctorShareSearch
+            WHERE SearchText LIKE @SearchLike
+            ORDER BY BillDate, BillNo, Registration_No
+            OFFSET ((@EffectivePage - 1) * @PageSize) ROWS
+            FETCH NEXT @PageSize ROWS ONLY;
+        END;
+        """
+
+        cursor = conn.cursor()
+        cursor.execute(
+            sql,
+            [
+                from_date,
+                to_date,
+                int(doc_id or 0),
+                search_text,
+                int(page),
+                int(page_size),
+                int(include_summary_flag),
+            ],
+        )
+
+        result_sets = []
+        while True:
+            if cursor.description:
+                result_sets.append(_corp_bill_summary_dict_rows_from_cursor(cursor))
+            if not cursor.nextset():
+                break
+        try:
+            cursor.close()
+        except Exception:
+            pass
+
+        totals_rows = result_sets[0] if len(result_sets) > 0 else []
+        summary_rows = result_sets[1] if len(result_sets) > 1 else []
+        meta_rows = result_sets[2] if len(result_sets) > 2 else []
+        detail_rows = result_sets[3] if len(result_sets) > 3 else []
+
+        totals_rec = dict(totals_rows[0] or {}) if totals_rows else {}
+        meta_rec = dict(meta_rows[0] or {}) if meta_rows else {}
+
+        total_records = _billwise_doctorshare_parse_int(totals_rec.get("TotalRecords"), 0, 0, None)
+        filtered_records = _billwise_doctorshare_parse_int(meta_rec.get("FilteredRecords"), total_records, 0, None)
+        total_pages = _billwise_doctorshare_parse_int(meta_rec.get("TotalPages"), 1, 1, None)
+        current_page = _billwise_doctorshare_parse_int(meta_rec.get("Page"), page, 1, total_pages)
+        current_page_size = _billwise_doctorshare_parse_int(meta_rec.get("PageSize"), page_size, 1, 200)
+
+        total_quantity = totals_rec.get("TotalQuantity") or 0
+        total_revenue = totals_rec.get("TotalRevenue") or 0
+        if isinstance(total_quantity, Decimal):
+            total_quantity = float(total_quantity)
+        else:
+            total_quantity = float(total_quantity or 0)
+        if isinstance(total_revenue, Decimal):
+            total_revenue = float(total_revenue)
+        else:
+            total_revenue = float(total_revenue or 0)
+
+        return {
+            "page": int(current_page),
+            "page_size": int(current_page_size),
+            "total_records": int(total_records),
+            "filtered_records": int(filtered_records),
+            "total_pages": int(total_pages),
+            "total_quantity": float(total_quantity),
+            "total_revenue": float(total_revenue),
+            "service_summary": _billwise_doctorshare_jsonify_rows(summary_rows),
+            "details": _billwise_doctorshare_jsonify_rows(detail_rows),
+            "search_query": search_text,
+        }
+    except Exception as e:
+        print(f"Error fetching paged billwise doctor share ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+_BILLWISE_DOCSHARE_SUMMARY_CACHE = {}
+_BILLWISE_DOCSHARE_SUMMARY_CACHE_LOCK = Lock()
+_BILLWISE_DOCSHARE_SUMMARY_CACHE_TTL_SECONDS = 300
+
+
+def _billwise_doctorshare_summary_cache_key(unit: str, from_date: str, to_date: str, doc_id: int, vtype: int):
+    return (
+        str(unit or "").strip().upper(),
+        str(from_date or "").strip()[:10],
+        str(to_date or "").strip()[:10],
+        int(doc_id or 0),
+        int(vtype or 0),
+    )
+
+
+def _billwise_doctorshare_clone_summary_payload(payload: dict | None, page: int, page_size: int):
+    payload = dict(payload or {})
+    total_records = _billwise_doctorshare_parse_int(payload.get("total_records"), 0, 0, None)
+    total_pages = 1 if total_records <= 0 else int((total_records + page_size - 1) / page_size)
+    current_page = max(1, min(int(page or 1), total_pages))
+    service_summary = [dict(row or {}) for row in (payload.get("service_summary") or [])]
+    return {
+        "page": int(current_page),
+        "page_size": int(page_size),
+        "total_records": int(total_records),
+        "filtered_records": int(total_records),
+        "total_pages": int(total_pages),
+        "total_quantity": float(payload.get("total_quantity") or 0.0),
+        "total_revenue": float(payload.get("total_revenue") or 0.0),
+        "service_summary": service_summary,
+        "details": [],
+        "search_query": "",
+        "has_next_page": bool(current_page < total_pages),
+    }
+
+
+def _billwise_doctorshare_select_visit_13(visit_condition_sql: str, resolved_doc_sql: str, extra_where_sql: str, include_order_mst: bool = False):
+    order_mst_join_sql = """
+                LEFT JOIN dbo.OrderMst om
+                    ON om.OrdId = od.OrdID
+    """ if include_order_mst else ""
+    return f"""
+                SELECT
+                      v.TypeOfVisit
+                    , bm.Registration_No
+                    , bm.BillNo
+                    , bm.BillDate
+                    , s.Service_Name
+                    , bd.Amount
+                    , DocIdResolved = {resolved_doc_sql}
+                    , v.PatientID
+                    , VisitTypeId = v.VisitTypeID
+                    , pt.PatientType
+                    , BillQty = bd.Quantity
+                    , Rate = bd.Rate
+                    , v.VisitDate
+                    , v.DischargeDate
+                    , SecondaryDocId = v.subdocid
+                FROM dbo.Billing_Mst bm
+                INNER JOIN dbo.Visit v
+                    ON v.Visit_ID = bm.Visit_ID
+                INNER JOIN dbo.BillingDetails bd
+                    ON bd.Bill_ID = bm.Bill_ID
+                INNER JOIN dbo.Service_Mst s
+                    ON s.Service_ID = bd.ServiceID
+                   AND s.Category_Id IN (1, 36, 67)
+                LEFT JOIN dbo.OrderDtl od
+                    ON od.OrdDtlID = bd.OrderDtlId
+{order_mst_join_sql}                LEFT JOIN dbo.PatientType_mst pt
+                    ON pt.PatientType_ID = v.PatientType_ID
+                WHERE
+                    bm.CancelStatus = 'false'
+                    AND bm.BillType = 'P'
+                    AND bm.BillDate >= @FromDate
+                    AND bm.BillDate < @ToDateNextDay
+                    AND ISNULL(bd.Amount, 0) > 0
+                    AND {visit_condition_sql}
+                    {extra_where_sql}
+    """
+
+
+def _billwise_doctorshare_select_visit_26(visit_condition_sql: str, resolved_doc_sql: str, extra_where_sql: str):
+    return f"""
+                SELECT
+                      v.TypeOfVisit
+                    , bm.Registration_No
+                    , bm.BillNo
+                    , bm.BillDate
+                    , s.Service_Name
+                    , bd.Amount
+                    , DocIdResolved = {resolved_doc_sql}
+                    , v.PatientID
+                    , VisitTypeId = v.VisitTypeID
+                    , pt.PatientType
+                    , BillQty = bd.Quantity
+                    , Rate = bd.Rate
+                    , v.VisitDate
+                    , v.DischargeDate
+                    , SecondaryDocId = v.subdocid
+                FROM dbo.Billing_Mst bm
+                INNER JOIN dbo.Visit v
+                    ON v.Visit_ID = bm.Visit_ID
+                INNER JOIN dbo.BillingDetails bd
+                    ON bd.Bill_ID = bm.Bill_ID
+                INNER JOIN dbo.Service_Mst s
+                    ON s.Service_ID = bd.ServiceID
+                   AND s.Category_Id IN (1, 36, 67)
+                LEFT JOIN dbo.OrderDtl od
+                    ON od.OrdDtlID = bd.OrderDtlId
+                LEFT JOIN dbo.PatientType_mst pt
+                    ON pt.PatientType_ID = v.PatientType_ID
+                WHERE
+                    bm.CancelStatus = 'false'
+                    AND bm.BillType = 'P'
+                    AND bm.BillDate >= @FromDate
+                    AND bm.BillDate < @ToDateNextDay
+                    AND ISNULL(bd.Amount, 0) > 0
+                    AND {visit_condition_sql}
+                    {extra_where_sql}
+    """
+
+
+def _billwise_doctorshare_base_source_sql(visit_type: int, doc_id: int):
+    doc_filter_active = int(doc_id or 0) > 0
+    visit13_case = "CASE ISNULL(od.DocID, 0) WHEN 0 THEN om.OrdByDocID ELSE od.DocID END"
+    visit26_case = "CASE ISNULL(od.DocID, 0) WHEN 0 THEN v.DocInCharge ELSE od.DocID END"
+
+    if visit_type in {1, 3}:
+        if doc_filter_active:
+            return "\n                UNION ALL\n".join([
+                _billwise_doctorshare_select_visit_13(
+                    f"v.VisitTypeID = {visit_type}",
+                    "od.DocID",
+                    "AND od.DocID = @DocId",
+                    include_order_mst=False,
+                ),
+                _billwise_doctorshare_select_visit_13(
+                    f"v.VisitTypeID = {visit_type}",
+                    "om.OrdByDocID",
+                    "AND ISNULL(od.DocID, 0) = 0 AND om.OrdByDocID = @DocId",
+                    include_order_mst=True,
+                ),
+            ])
+        return _billwise_doctorshare_select_visit_13(
+            f"v.VisitTypeID = {visit_type}",
+            visit13_case,
+            f"AND (@DocId = 0 OR {visit13_case} = @DocId)",
+            include_order_mst=True,
+        )
+
+    if visit_type in {2, 6}:
+        if doc_filter_active:
+            return "\n                UNION ALL\n".join([
+                _billwise_doctorshare_select_visit_26(
+                    f"v.VisitTypeID = {visit_type}",
+                    "od.DocID",
+                    "AND od.DocID = @DocId",
+                ),
+                _billwise_doctorshare_select_visit_26(
+                    f"v.VisitTypeID = {visit_type}",
+                    "v.DocInCharge",
+                    "AND ISNULL(od.DocID, 0) = 0 AND v.DocInCharge = @DocId",
+                ),
+            ])
+        return _billwise_doctorshare_select_visit_26(
+            f"v.VisitTypeID = {visit_type}",
+            visit26_case,
+            f"AND (@DocId = 0 OR {visit26_case} = @DocId)",
+        )
+
+    if doc_filter_active:
+        return "\n                UNION ALL\n".join([
+            _billwise_doctorshare_select_visit_13(
+                "v.VisitTypeID IN (1, 3)",
+                "od.DocID",
+                "AND od.DocID = @DocId",
+                include_order_mst=False,
+            ),
+            _billwise_doctorshare_select_visit_13(
+                "v.VisitTypeID IN (1, 3)",
+                "om.OrdByDocID",
+                "AND ISNULL(od.DocID, 0) = 0 AND om.OrdByDocID = @DocId",
+                include_order_mst=True,
+            ),
+            _billwise_doctorshare_select_visit_26(
+                "ISNULL(v.VisitTypeID, 0) NOT IN (1, 3)",
+                "od.DocID",
+                "AND od.DocID = @DocId",
+            ),
+            _billwise_doctorshare_select_visit_26(
+                "ISNULL(v.VisitTypeID, 0) NOT IN (1, 3)",
+                "v.DocInCharge",
+                "AND ISNULL(od.DocID, 0) = 0 AND v.DocInCharge = @DocId",
+            ),
+        ])
+
+    return "\n                UNION ALL\n".join([
+        _billwise_doctorshare_select_visit_13(
+            "v.VisitTypeID IN (1, 3)",
+            visit13_case,
+            f"AND (@DocId = 0 OR {visit13_case} = @DocId)",
+            include_order_mst=True,
+        ),
+        _billwise_doctorshare_select_visit_26(
+            "ISNULL(v.VisitTypeID, 0) NOT IN (1, 3)",
+            visit26_case,
+            f"AND (@DocId = 0 OR {visit26_case} = @DocId)",
+        ),
+    ])
+
+
+def _fetch_billwise_doctorshare_page_fast(
+    unit: str,
+    from_date: str,
+    to_date: str,
+    doc_id: int,
+    vtype: int,
+    page: int = 1,
+    page_size: int = 20,
+    search_query: str = "",
+):
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for quick paged billwise doctor share")
+        return None
+    try:
+        page = _billwise_doctorshare_parse_int(page, 1, 1, None)
+        page_size = _billwise_doctorshare_parse_int(page_size, 20, 1, 200)
+        visit_type = _billwise_doctorshare_parse_int(vtype, 0, 0, None)
+        search_text = str(search_query or "").strip().lower()
+        if search_text:
+            return _fetch_billwise_doctorshare_page_full(
+                unit,
+                from_date,
+                to_date,
+                doc_id,
+                visit_type,
+                page=page,
+                page_size=page_size,
+                search_query=search_text,
+                include_summary=False,
+            )
+
+        base_source_sql = _billwise_doctorshare_base_source_sql(visit_type, int(doc_id or 0))
+        sql = f"""
+        SET NOCOUNT ON;
+        SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+        DECLARE @FromDate DATETIME = ?;
+        DECLARE @ToDate DATETIME = ?;
+        DECLARE @DocId INT = ?;
+        DECLARE @Page INT = ?;
+        DECLARE @PageSize INT = ?;
+
+        IF (@FromDate > @ToDate)
+        BEGIN
+            DECLARE @tmp DATETIME = @FromDate;
+            SET @FromDate = @ToDate;
+            SET @ToDate = @tmp;
+        END;
+
+        SET @Page = CASE WHEN @Page < 1 THEN 1 ELSE @Page END;
+        SET @PageSize = CASE WHEN @PageSize < 1 THEN 20 WHEN @PageSize > 200 THEN 200 ELSE @PageSize END;
+
+        DECLARE @ToDateNextDay DATETIME = DATEADD(DAY, 1, CONVERT(DATE, @ToDate));
+        DECLARE @OffsetRows INT = (@Page - 1) * @PageSize;
+        DECLARE @FetchRows INT = @PageSize + 1;
+
+        ;WITH Base AS
+        (
+{base_source_sql}
+        )
+        SELECT
+              BillDate
+            , BillNo
+            , Registration_No
+            , PatientID
+            , PatientType
+            , TypeOfVisit
+            , DocIdResolved
+            , SecondaryDocId
+            , Service_Name
+            , BillQty
+            , Rate
+            , Amount
+            , VisitDate
+            , DischargeDate
+        INTO #DoctorSharePageData
+        FROM
+        (
+            SELECT
+                  BillDate
+                , BillNo
+                , Registration_No
+                , PatientID
+                , PatientType
+                , TypeOfVisit
+                , DocIdResolved
+                , SecondaryDocId
+                , Service_Name
+                , BillQty
+                , Rate
+                , Amount
+                , VisitDate
+                , DischargeDate
+            FROM Base
+            ORDER BY BillDate DESC, BillNo DESC, Registration_No DESC
+            OFFSET @OffsetRows ROWS FETCH NEXT @FetchRows ROWS ONLY
+        ) AS PageSeed;
+
+        SELECT
+              Page = @Page
+            , PageSize = @PageSize
+            , HasNextPage = CAST(CASE WHEN (SELECT COUNT(1) FROM #DoctorSharePageData) > @PageSize THEN 1 ELSE 0 END AS BIT);
+
+        SELECT
+              BillDate
+            , BillNo
+            , Registration_No
+            , PatientName = dbo.fn_PatientFullName(PatientID)
+            , PatientType
+            , TypeOfVisit
+            , DoctorName = dbo.fn_DoctorFirstName(DocIdResolved)
+            , SecondaryDoc = dbo.fn_DoctorFirstName(SecondaryDocId)
+            , Service_Name
+            , BillQty
+            , Rate
+            , Amount
+            , VisitDate
+            , DischargeDate
+        FROM
+        (
+            SELECT TOP (@PageSize)
+                  BillDate
+                , BillNo
+                , Registration_No
+                , PatientID
+                , PatientType
+                , TypeOfVisit
+                , DocIdResolved
+                , SecondaryDocId
+                , Service_Name
+                , BillQty
+                , Rate
+                , Amount
+                , VisitDate
+                , DischargeDate
+            FROM #DoctorSharePageData
+            ORDER BY BillDate DESC, BillNo DESC, Registration_No DESC
+        ) AS PageRows
+        ORDER BY BillDate DESC, BillNo DESC, Registration_No DESC;
+        """
+
+        cursor = conn.cursor()
+        cursor.execute(sql, [from_date, to_date, int(doc_id or 0), int(page), int(page_size)])
+
+        result_sets = []
+        while True:
+            if cursor.description:
+                result_sets.append(_corp_bill_summary_dict_rows_from_cursor(cursor))
+            if not cursor.nextset():
+                break
+        try:
+            cursor.close()
+        except Exception:
+            pass
+
+        meta_rows = result_sets[0] if len(result_sets) > 0 else []
+        detail_rows = result_sets[1] if len(result_sets) > 1 else []
+        meta_rec = dict(meta_rows[0] or {}) if meta_rows else {}
+        current_page = _billwise_doctorshare_parse_int(meta_rec.get("Page"), page, 1, None)
+        current_page_size = _billwise_doctorshare_parse_int(meta_rec.get("PageSize"), page_size, 1, 200)
+        has_next_page = bool(meta_rec.get("HasNextPage"))
+
+        return {
+            "page": int(current_page),
+            "page_size": int(current_page_size),
+            "total_records": None,
+            "filtered_records": None,
+            "total_pages": None,
+            "total_quantity": None,
+            "total_revenue": None,
+            "service_summary": [],
+            "details": _billwise_doctorshare_jsonify_rows(detail_rows),
+            "search_query": "",
+            "has_next_page": bool(has_next_page),
+        }
+    except Exception as e:
+        print(f"Error fetching quick paged billwise doctor share ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_billwise_doctorshare_summary(
+    unit: str,
+    from_date: str,
+    to_date: str,
+    doc_id: int,
+    vtype: int,
+    page: int = 1,
+    page_size: int = 20,
+    search_query: str = "",
+):
+    page = _billwise_doctorshare_parse_int(page, 1, 1, None)
+    page_size = _billwise_doctorshare_parse_int(page_size, 20, 1, 200)
+    visit_type = _billwise_doctorshare_parse_int(vtype, 0, 0, None)
+    search_text = str(search_query or "").strip().lower()
+
+    if search_text:
+        payload = _fetch_billwise_doctorshare_page_full(
+            unit,
+            from_date,
+            to_date,
+            doc_id,
+            visit_type,
+            page=page,
+            page_size=page_size,
+            search_query=search_text,
+            include_summary=True,
+        )
+        if payload is None:
+            return None
+        payload["details"] = []
+        payload["has_next_page"] = bool(int(payload.get("page") or 1) < int(payload.get("total_pages") or 1))
+        return payload
+
+    cache_key = _billwise_doctorshare_summary_cache_key(unit, from_date, to_date, doc_id, visit_type)
+    now_ts = time.time()
+    with _BILLWISE_DOCSHARE_SUMMARY_CACHE_LOCK:
+        cached = _BILLWISE_DOCSHARE_SUMMARY_CACHE.get(cache_key)
+        if cached and (now_ts - float(cached.get("cached_at") or 0.0)) <= _BILLWISE_DOCSHARE_SUMMARY_CACHE_TTL_SECONDS:
+            return _billwise_doctorshare_clone_summary_payload(cached.get("payload"), page, page_size)
+        if cached:
+            _BILLWISE_DOCSHARE_SUMMARY_CACHE.pop(cache_key, None)
+
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for doctor share summary")
+        return None
+    try:
+        base_source_sql = _billwise_doctorshare_base_source_sql(visit_type, int(doc_id or 0))
+        sql = f"""
+        SET NOCOUNT ON;
+        SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+        DECLARE @FromDate DATETIME = ?;
+        DECLARE @ToDate DATETIME = ?;
+        DECLARE @DocId INT = ?;
+
+        IF (@FromDate > @ToDate)
+        BEGIN
+            DECLARE @tmp DATETIME = @FromDate;
+            SET @FromDate = @ToDate;
+            SET @ToDate = @tmp;
+        END;
+
+        DECLARE @ToDateNextDay DATETIME = DATEADD(DAY, 1, CONVERT(DATE, @ToDate));
+
+        ;WITH Base AS
+        (
+{base_source_sql}
+        )
+        SELECT
+              TotalRecords = CAST(COUNT(1) AS INT)
+            , TotalQuantity = CAST(ISNULL(SUM(CAST(BillQty AS DECIMAL(18, 4))), 0) AS DECIMAL(18, 2))
+            , TotalRevenue = CAST(ISNULL(SUM(CAST(Amount AS DECIMAL(18, 4))), 0) AS DECIMAL(18, 2))
+        FROM Base
+        OPTION (RECOMPILE);
+        """
+
+        cursor = conn.cursor()
+        cursor.execute(sql, [from_date, to_date, int(doc_id or 0)])
+        result_sets = []
+        while True:
+            if cursor.description:
+                result_sets.append(_corp_bill_summary_dict_rows_from_cursor(cursor))
+            if not cursor.nextset():
+                break
+        try:
+            cursor.close()
+        except Exception:
+            pass
+
+        totals_rows = result_sets[0] if len(result_sets) > 0 else []
+        totals_rec = dict(totals_rows[0] or {}) if totals_rows else {}
+        total_records = _billwise_doctorshare_parse_int(totals_rec.get("TotalRecords"), 0, 0, None)
+        total_quantity = totals_rec.get("TotalQuantity") or 0
+        total_revenue = totals_rec.get("TotalRevenue") or 0
+        if isinstance(total_quantity, Decimal):
+            total_quantity = float(total_quantity)
+        else:
+            total_quantity = float(total_quantity or 0)
+        if isinstance(total_revenue, Decimal):
+            total_revenue = float(total_revenue)
+        else:
+            total_revenue = float(total_revenue or 0)
+
+        payload = {
+            "total_records": int(total_records),
+            "total_quantity": float(total_quantity),
+            "total_revenue": float(total_revenue),
+            "service_summary": [],
+        }
+        with _BILLWISE_DOCSHARE_SUMMARY_CACHE_LOCK:
+            _BILLWISE_DOCSHARE_SUMMARY_CACHE[cache_key] = {
+                "cached_at": time.time(),
+                "payload": dict(payload),
+            }
+        return _billwise_doctorshare_clone_summary_payload(payload, page, page_size)
+    except Exception as e:
+        print(f"Error fetching doctor share summary ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_billwise_doctorshare_page(
+    unit: str,
+    from_date: str,
+    to_date: str,
+    doc_id: int,
+    vtype: int,
+    page: int = 1,
+    page_size: int = 20,
+    search_query: str = "",
+    include_summary: bool = True,
+    mode: str = "full",
+):
+    mode_key = str(mode or "").strip().lower()
+    search_text = str(search_query or "").strip()
+    if search_text:
+        return _fetch_billwise_doctorshare_page_full(
+            unit,
+            from_date,
+            to_date,
+            doc_id,
+            vtype,
+            page=page,
+            page_size=page_size,
+            search_query=search_text,
+            include_summary=include_summary,
+        )
+    if mode_key == "summary":
+        return fetch_billwise_doctorshare_summary(
+            unit,
+            from_date,
+            to_date,
+            doc_id,
+            vtype,
+            page=page,
+            page_size=page_size,
+            search_query="",
+        )
+    if mode_key == "page" or not include_summary:
+        return _fetch_billwise_doctorshare_page_fast(
+            unit,
+            from_date,
+            to_date,
+            doc_id,
+            vtype,
+            page=page,
+            page_size=page_size,
+            search_query="",
+        )
+    return _fetch_billwise_doctorshare_page_full(
+        unit,
+        from_date,
+        to_date,
+        doc_id,
+        vtype,
+        page=page,
+        page_size=page_size,
+        search_query="",
+        include_summary=True,
+    )
+
+
 def fetch_billwise_doctorshare(unit: str, from_date: str, to_date: str, doc_id: int, vtype: int):
     """
     Calls dbo.usp_BillwiseDoctorshare to fetch billwise doctor share rows.

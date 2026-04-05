@@ -109,13 +109,27 @@
     let statusEl = null;
 
     const WARNING_THRESHOLD = 300; // 5 minutes
-    const POLL_INTERVAL = 30000;   // 30 seconds
+    const POLL_INTERVAL = 60000;   // 60 seconds
 
     let pollTimer = null;
     let countdownTimer = null;
     let promptVisible = false;
     let disabled = false;
     let pending = false;
+    let lastRemainingSeconds = null;
+
+    function publishRemaining(secs) {
+      if (!Number.isFinite(secs)) return;
+      lastRemainingSeconds = Math.max(0, Math.floor(secs));
+      window.__SESSION_REMAINING_SECONDS__ = lastRemainingSeconds;
+      window.dispatchEvent(new CustomEvent('sessionRemainingUpdated', {
+        detail: { remaining_seconds: lastRemainingSeconds }
+      }));
+    }
+
+    window.__getSessionRemainingSeconds = function () {
+      return Number.isFinite(lastRemainingSeconds) ? lastRemainingSeconds : null;
+    };
 
     function fmt(secs) {
       secs = Math.max(0, Math.floor(secs || 0));
@@ -247,6 +261,7 @@
         }
         const data = await res.json();
         const secs = Number(data.remaining_seconds) || 0;
+        publishRemaining(secs);
         
         // CRITICAL: Only act if session is actually expiring
         if (secs <= WARNING_THRESHOLD && secs > 0) {
@@ -285,8 +300,11 @@
         hidePrompt();
         if (data.remaining_seconds) {
           updateCountdownDisplay(data.remaining_seconds);
+          publishRemaining(Number(data.remaining_seconds) || 0);
         }
-        window.dispatchEvent(new CustomEvent('sessionRefreshed'));
+        window.dispatchEvent(new CustomEvent('sessionRefreshed', {
+          detail: { remaining_seconds: Number(data.remaining_seconds) || 0 }
+        }));
       } catch (err) {
         // ignore
       } finally {

@@ -1469,6 +1469,28 @@ thead th {
           <label>Discharge Date</label>
           <input type="datetime-local" id="vvDischargeDate">
         </div>
+        <div class="edit-field full" id="vvReferralProofSection" hidden>
+          <label>Referral Proof</label>
+          <div class="edit-meta" id="vvReferralProofHint">Referral proof is mandatory for linked creation.</div>
+          <div class="edit-grid" style="margin-top:10px;">
+            <div class="edit-field">
+              <label>Referral Number</label>
+              <input type="text" id="vvReferralNo" placeholder="Enter referral number">
+            </div>
+            <div class="edit-field">
+              <label>Referral Date</label>
+              <input type="date" id="vvReferralDate">
+            </div>
+            <div class="edit-field">
+              <label>Payer / TPA Name</label>
+              <input type="text" id="vvPayerTpaName" placeholder="Enter payer or TPA name">
+            </div>
+            <div class="edit-field">
+              <label>Verified By</label>
+              <input type="text" id="vvVerifiedByUser" readonly>
+            </div>
+          </div>
+        </div>
       </div>
       <div class="edit-actions">
         <button class="btn" type="button" id="vvCreateBtn">Create Virtual Visit</button>
@@ -1659,6 +1681,7 @@ thead th {
 <script>
   const allowedUnits = JSON.parse('{{ (allowed_units or []) | tojson | safe }}');
   const userRole = JSON.parse('{{ (session.get("role") or "") | tojson | safe }}');
+  const VV_CURRENT_USER = JSON.parse('{{ (session.get("username") or session.get("user") or "") | tojson | safe }}');
   const userRoleBase = String(userRole || '').split(':')[0].trim().toUpperCase();
   const isItUser = userRoleBase === 'IT';
   const billsModal = document.getElementById('billsModal');
@@ -1761,6 +1784,12 @@ thead th {
   const vvSourceVisitId = document.getElementById('vvSourceVisitId');
   const vvSourceVisitNo = document.getElementById('vvSourceVisitNo');
   const vvSourceSummary = document.getElementById('vvSourceSummary');
+  const vvReferralProofSection = document.getElementById('vvReferralProofSection');
+  const vvReferralProofHint = document.getElementById('vvReferralProofHint');
+  const vvReferralNo = document.getElementById('vvReferralNo');
+  const vvReferralDate = document.getElementById('vvReferralDate');
+  const vvPayerTpaName = document.getElementById('vvPayerTpaName');
+  const vvVerifiedByUser = document.getElementById('vvVerifiedByUser');
   const vvVisitTypeId = document.getElementById('vvVisitTypeId');
   const vvPatientTypeId = document.getElementById('vvPatientTypeId');
   const vvPatientTypeList = document.getElementById('vvPatientTypeList');
@@ -2081,6 +2110,7 @@ thead th {
     { label: 'Due Bills', keys: ['EligibleDueBillCount'], formatter: (val) => String(parseInt(String(val ?? '0'), 10) || 0) },
     { label: 'Due Total', keys: ['EligibleDueTotal'], formatter: (val) => fmtMoney(val || 0) },
     { label: 'Due Status', keys: ['EligibleDueStatus'] },
+    { label: 'Create Flow', keys: ['EligibleSettlementMode'], formatter: (val, row) => formatVirtualVisitSettlementMode(getVirtualVisitSourceSettlementMode(row) || val) },
     { label: 'Link Status', keys: ['LinkStatus'] },
     { label: 'Linked Duplicate', keys: ['LinkedDuplicateVisitId'] },
   ];
@@ -2098,6 +2128,11 @@ thead th {
     { label: 'Patient Category', keys: ['PatientCategory', 'payType'], formatter: (val, row) => mapNameFromRow(row, ['payType'], ['PatientCategory'], comboMaps.payTypes) },
     { label: 'Link Status', keys: ['LinkStatus'] },
     { label: 'Source Visit', keys: ['sourceVisitNo', 'sourceVisitId'], formatter: (val, row) => getField(row, ['sourceVisitNo']) || getField(row, ['sourceVisitId']) || '' },
+    { label: 'Referral No', keys: ['referralNo', 'ReferralNo'] },
+    { label: 'Referral Date', keys: ['referralDate', 'ReferralDate'] },
+    { label: 'Payer / TPA', keys: ['payerTpaName', 'PayerTpaName'] },
+    { label: 'Verified By', keys: ['verifiedByUserName', 'VerifiedByUserName'] },
+    { label: 'Settlement', keys: ['settlementMode', 'SettlementMode'], formatter: (val) => formatVirtualVisitSettlementMode(val) },
     { label: 'Doctor', keys: ['docId', 'DocId'], formatter: (val) => formatVirtualDoctorName(val) },
     { label: 'Inserted On', keys: ['insertedOn', 'InsertedOn'] },
     { label: 'Action', action: true },
@@ -2191,6 +2226,20 @@ thead th {
     return parseNumber(getField(row, ['EligibleDueTotal']));
   }
 
+  function getVirtualVisitSourceSettlementMode(row) {
+    const raw = String(getField(row, ['EligibleSettlementMode']) || '').trim();
+    if (raw) return raw;
+    return getVirtualVisitEligibleDueCount(row) > 0 ? 'auto_settle' : 'no_receipt_needed';
+  }
+
+  function formatVirtualVisitSettlementMode(value) {
+    const mode = String(value || '').trim().toLowerCase();
+    if (!mode) return '';
+    if (mode === 'auto_settle') return 'Auto Settle';
+    if (mode === 'no_receipt_needed') return 'No Receipt Needed';
+    return mode.replace(/_/g, ' ');
+  }
+
   function isVirtualVisitSourceDueBlocked(row) {
     return getVirtualVisitEligibleDueCount(row) <= 0;
   }
@@ -2214,6 +2263,15 @@ thead th {
     if (raw.includes('T')) return raw.slice(0, 16);
     if (raw.includes(' ')) return raw.replace(' ', 'T').slice(0, 16);
     return raw.slice(0, 16);
+  }
+
+  function toInputDate(val) {
+    if (!val) return '';
+    const raw = String(val).trim();
+    if (!raw) return '';
+    if (raw.includes('T')) return raw.slice(0, 10);
+    if (raw.includes(' ')) return raw.slice(0, 10);
+    return raw.slice(0, 10);
   }
 
   function fromInputDateTime(val) {
@@ -4526,15 +4584,54 @@ thead th {
     if (type) vvBanner.classList.add(`status-${type}`);
   }
 
+  function clearVirtualVisitReferralProof() {
+    if (vvReferralNo) vvReferralNo.value = '';
+    if (vvReferralDate) vvReferralDate.value = '';
+    if (vvPayerTpaName) vvPayerTpaName.value = '';
+    if (vvVerifiedByUser) vvVerifiedByUser.value = '';
+  }
+
+  function syncVirtualVisitReferralProofSection() {
+    const linkedMode = virtualVisitState.workflowMode === 'linked';
+    const isEdit = virtualVisitState.mode === 'edit';
+    if (vvReferralProofSection) vvReferralProofSection.hidden = !linkedMode;
+    if (!linkedMode) {
+      clearVirtualVisitReferralProof();
+      return;
+    }
+    const settlementMode = getVirtualVisitSourceSettlementMode(virtualVisitState.sourceSelected);
+    if (vvReferralProofHint) {
+      if (isEdit) {
+        vvReferralProofHint.textContent = 'Referral proof details are shown here for review. Verified By is stamped from the logged-in user whenever these fields are saved.';
+      } else if (settlementMode === 'auto_settle') {
+        vvReferralProofHint.textContent = 'Referral proof is mandatory for linked creation. Pending due bills will be auto-settled and settlement receipts will be posted.';
+      } else if (virtualVisitState.sourceSelected) {
+        vvReferralProofHint.textContent = 'Referral proof is mandatory for linked creation. Source due is already clear, so no receipt will be posted.';
+      } else {
+        vvReferralProofHint.textContent = 'Referral proof is mandatory for linked creation.';
+      }
+    }
+    if (vvVerifiedByUser && !isEdit) {
+      vvVerifiedByUser.value = String(VV_CURRENT_USER || '').trim();
+    }
+  }
+
   function syncVirtualVisitFieldLocks() {
     const hasLinkedSource = String(vvSourceVisitId?.value || '').trim() !== '';
     const linkedMode = virtualVisitState.workflowMode === 'linked';
     const isEdit = virtualVisitState.mode === 'edit';
     if (vvVisitTypeId) vvVisitTypeId.disabled = linkedMode && hasLinkedSource;
+    if (vvPayType) {
+      vvPayType.disabled = linkedMode;
+      if (linkedMode && !isEdit) {
+        setComboInputById(vvPayType, comboMaps.payTypes, 2);
+      }
+    }
     if (vvModeLinked) vvModeLinked.checked = linkedMode;
     if (vvModeManual) vvModeManual.checked = !linkedMode;
     if (vvModeLinked) vvModeLinked.disabled = isEdit;
     if (vvModeManual) vvModeManual.disabled = isEdit;
+    syncVirtualVisitReferralProofSection();
   }
 
   function renderVirtualVisitHistoryHeader(columns) {
@@ -4624,6 +4721,11 @@ thead th {
           getField(r, ['PatientCategory']),
           getField(r, ['LinkStatus']),
           getField(r, ['sourceVisitNo', 'sourceVisitId']),
+          getField(r, ['referralNo', 'ReferralNo']),
+          getField(r, ['referralDate', 'ReferralDate']),
+          getField(r, ['payerTpaName', 'PayerTpaName']),
+          getField(r, ['verifiedByUserName', 'VerifiedByUserName']),
+          formatVirtualVisitSettlementMode(getField(r, ['settlementMode', 'SettlementMode'])),
           formatVirtualDoctorName(getField(r, ['docId', 'DocId'])),
           getField(r, ['visitDate', 'VisitDate']),
           getField(r, ['dischargeDate', 'DischargeDate']),
@@ -4732,7 +4834,7 @@ thead th {
   function applyVirtualVisitSourceRow(row, options = {}) {
     if (!row) return;
     virtualVisitState.sourceSelected = row;
-    virtualVisitState.sourceDueBlocked = isVirtualVisitSourceDueBlocked(row);
+    virtualVisitState.sourceDueBlocked = false;
     if (!options.keepWorkflow) {
       setVirtualVisitWorkflowMode('linked', { preserveSourceInfo: true, skipBanner: true });
     }
@@ -4758,11 +4860,12 @@ thead th {
     if (patientSubTypeId !== undefined && patientSubTypeId !== null && String(patientSubTypeId).trim()) {
       setComboInputById(vvPatientSubTypeId, comboMaps.patientSubtypes, patientSubTypeId);
     }
-    const payTypeVal = getField(row, ['payType', 'PayType', 'LinkedDuplicatePayType']);
-    if (payTypeVal !== undefined && payTypeVal !== null && String(payTypeVal).trim()) {
-      setComboInputById(vvPayType, comboMaps.payTypes, payTypeVal);
-    } else if (vvPayType) {
-      vvPayType.value = '';
+    if (virtualVisitState.mode === 'create') {
+      setComboInputById(vvPayType, comboMaps.payTypes, 2);
+      if (vvReferralNo) vvReferralNo.value = '';
+      if (vvReferralDate) vvReferralDate.value = '';
+      if (vvPayerTpaName) vvPayerTpaName.value = '';
+      if (vvVerifiedByUser) vvVerifiedByUser.value = String(VV_CURRENT_USER || '').trim();
     }
     const docId = getField(row, ['DocInCharge', 'DocId']);
     if (docId !== undefined && docId !== null && String(docId).trim()) {
@@ -4778,18 +4881,20 @@ thead th {
     renderVirtualVisitSourceRows(virtualVisitState.sourceRows, virtualVisitSourceColumns);
 
     const existingDuplicateId = getField(row, ['LinkedDuplicateVisitId']);
+    const settlementMode = getVirtualVisitSourceSettlementMode(row);
     if (virtualVisitState.mode === 'create' && (isTruthyFlag(getField(row, ['LinkedDuplicateExists'])) || existingDuplicateId)) {
       setVirtualVisitBanner(`Linked duplicate already exists for this source visit. Existing Visit_Duplicate ID: ${existingDuplicateId || 'available in history'}.`, 'warn');
       setVirtualVisitCreateStatus('This source visit is already linked. Open the history grid to edit the existing virtual visit.', 'warn');
-    } else if (virtualVisitState.mode === 'create' && virtualVisitState.workflowMode === 'linked' && virtualVisitState.sourceDueBlocked) {
-      setVirtualVisitBanner('No pending due amount was found for this source visit. Consult IT/Accounts before continuing.', 'warn');
-      setVirtualVisitCreateStatus('Linked conversion is blocked because the selected source visit has no pending due amount.', 'warn');
-      showVirtualVisitSourceDueWarning(row);
     } else {
       const dueCount = getVirtualVisitEligibleDueCount(row);
       const dueTotal = fmtMoney(getVirtualVisitEligibleDueTotal(row));
-      setVirtualVisitBanner(`Source visit loaded with ${dueCount} pending due bill(s) totaling ${dueTotal}. Review billing fields, then create the virtual visit.`, 'success');
-      setVirtualVisitCreateStatus(`Source visit copied. ${dueCount} bill(s) with due ${dueTotal} will be auto-settled on linked create.`, options.auto ? undefined : 'success');
+      if (settlementMode === 'no_receipt_needed') {
+        setVirtualVisitBanner('Source visit loaded. Referral proof is required, and no receipt will be posted because the source due is already clear.', 'success');
+        setVirtualVisitCreateStatus('Source visit copied. Referral proof is required, and no receipt will be posted for this linked create.', options.auto ? undefined : 'success');
+      } else {
+        setVirtualVisitBanner(`Source visit loaded with ${dueCount} pending due bill(s) totaling ${dueTotal}. Referral proof is required, and those bills will be auto-settled on linked create.`, 'success');
+        setVirtualVisitCreateStatus(`Source visit copied. ${dueCount} bill(s) with due ${dueTotal} will be auto-settled on linked create.`, options.auto ? undefined : 'success');
+      }
     }
   }
 
@@ -4858,6 +4963,10 @@ thead th {
     if (vvPatientTypeId) vvPatientTypeId.value = '';
     if (vvPatientSubTypeId) vvPatientSubTypeId.value = '';
     if (vvPayType) vvPayType.value = '';
+    if (vvReferralNo) vvReferralNo.value = '';
+    if (vvReferralDate) vvReferralDate.value = '';
+    if (vvPayerTpaName) vvPayerTpaName.value = '';
+    if (vvVerifiedByUser) vvVerifiedByUser.value = '';
     if (vvDoctorId) vvDoctorId.value = '';
     if (vvVisitTypeId) vvVisitTypeId.value = '1';
     if (vvDischargeTypeId) vvDischargeTypeId.value = '2';
@@ -4952,6 +5061,10 @@ thead th {
     if (vvSourceVisitId) vvSourceVisitId.value = '';
     if (vvSourceVisitNo) vvSourceVisitNo.value = '';
     if (vvSourceSummary) vvSourceSummary.value = '';
+    if (vvReferralNo) vvReferralNo.value = '';
+    if (vvReferralDate) vvReferralDate.value = '';
+    if (vvPayerTpaName) vvPayerTpaName.value = '';
+    if (vvVerifiedByUser) vvVerifiedByUser.value = '';
     if (vvPatientTypeId) vvPatientTypeId.value = '';
     if (vvPatientSubTypeId) vvPatientSubTypeId.value = '';
     if (vvPayType) vvPayType.value = '';
@@ -4992,6 +5105,10 @@ thead th {
     const visitId = getField(row, ['visitId', 'VisitId']);
     const sourceVisitId = getField(row, ['sourceVisitId', 'SourceVisitId']);
     const sourceVisitNo = getField(row, ['sourceVisitNo', 'SourceVisitNo']);
+    const referralNo = getField(row, ['referralNo', 'ReferralNo']);
+    const referralDate = getField(row, ['referralDate', 'ReferralDate']);
+    const payerTpaName = getField(row, ['payerTpaName', 'PayerTpaName']);
+    const verifiedByUser = getField(row, ['verifiedByUserName', 'VerifiedByUserName']);
     setVirtualVisitFormMode('edit', visitId);
     if (vvPatientId) vvPatientId.value = String(patientId || '');
     if (vvRegNo) vvRegNo.value = String(regNo || '');
@@ -5045,6 +5162,14 @@ thead th {
     }
     if (vvVisitDate) vvVisitDate.value = toInputDateTime(getField(row, ['visitDate', 'VisitDate']));
     if (vvDischargeDate) vvDischargeDate.value = toInputDateTime(getField(row, ['dischargeDate', 'DischargeDate']));
+    if (sourceVisitId) {
+      if (vvReferralNo) vvReferralNo.value = String(referralNo || '');
+      if (vvReferralDate) vvReferralDate.value = toInputDate(referralDate);
+      if (vvPayerTpaName) vvPayerTpaName.value = String(payerTpaName || '');
+      if (vvVerifiedByUser) vvVerifiedByUser.value = String(verifiedByUser || '');
+    } else {
+      clearVirtualVisitReferralProof();
+    }
     ensureVirtualVisitDateDefaults();
     syncVirtualVisitDischargeFields();
     syncVirtualVisitFieldLocks();
@@ -5134,6 +5259,9 @@ thead th {
     if (isEdit && !visitId) return { error: 'Visit ID is required for update mode.' };
     const workflowMode = virtualVisitState.workflowMode === 'manual' ? 'manual' : 'linked';
     const sourceVisitId = _coerceFormInt(vvSourceVisitId?.value || '');
+    const referralNo = String(vvReferralNo?.value || '').trim();
+    const referralDate = String(vvReferralDate?.value || '').trim();
+    const payerTpaName = String(vvPayerTpaName?.value || '').trim();
 
     const patientTypeResolved = resolveComboInput(vvPatientTypeId, comboMaps.patientTypes, 'Patient Type');
     if (patientTypeResolved.error) return { error: patientTypeResolved.error };
@@ -5183,8 +5311,10 @@ thead th {
     if (!isEdit && workflowMode === 'linked' && !sourceVisitId) {
       return { error: 'Select an existing source visit or switch to Standalone mode.' };
     }
-    if (!isEdit && workflowMode === 'linked' && sourceVisitId && virtualVisitState.sourceDueBlocked) {
-      return { error: 'Linked conversion is blocked because the selected source visit has no pending due amount. Please consult IT/Accounts department.' };
+    if (!isEdit && workflowMode === 'linked') {
+      if (!referralNo) return { error: 'Referral Number is required for linked create.' };
+      if (!referralDate) return { error: 'Referral Date is required for linked create.' };
+      if (!payerTpaName) return { error: 'Payer / TPA Name is required for linked create.' };
     }
 
     const dischargeTypeVal = visitTypeVal === 1
@@ -5199,12 +5329,17 @@ thead th {
       discharge_date: dischargeDateValue,
       patient_type_id: patientTypeResolved.id,
       patient_sub_type_id: subtypeResolved.id,
-      pay_type: payTypeResolved.id,
+      pay_type: (!isEdit && workflowMode === 'linked') ? 2 : payTypeResolved.id,
       visit_type_id: visitTypeVal,
       doc_id: doctorResolved.id ?? 0,
       discharge_type_id: Number.isFinite(dischargeTypeVal) ? dischargeTypeVal : 2
     };
     if (isEdit) payload.visit_id = visitId;
+    if (workflowMode === 'linked') {
+      payload.referral_no = referralNo;
+      payload.referral_date = referralDate;
+      payload.payer_tpa_name = payerTpaName;
+    }
     return {
       payload: {
         ...payload
@@ -5245,14 +5380,6 @@ thead th {
         if (data?.error_code === 'migration_required') {
           throw new Error(data.message || 'DB migration missing for this unit.');
         }
-        if (data?.error_code === 'source_due_zero') {
-          virtualVisitState.sourceDueBlocked = true;
-          if (virtualVisitState.sourceSelected) {
-            setVirtualVisitBanner('No pending due amount was found for this source visit. Consult IT/Accounts before continuing.', 'warn');
-            showVirtualVisitSourceDueWarning(virtualVisitState.sourceSelected);
-          }
-          throw new Error(data.message || 'No pending due amount was found for this source visit.');
-        }
         throw new Error(data.message || (isEdit ? 'Failed to update virtual visit' : 'Failed to create virtual visit'));
       }
       if (isLinked) {
@@ -5267,6 +5394,7 @@ thead th {
       setVirtualVisitLoading(true, 'Refreshing history...', 7);
       const receiptNumbers = Array.isArray(data?.receipt_numbers) ? data.receipt_numbers.filter(Boolean) : [];
       const settlementBits = [];
+      const settlementMode = String(data?.settlement_mode || '').trim();
       if (Number(data?.settled_bill_count || 0) > 0) {
         settlementBits.push(`Settled ${Number(data.settled_bill_count || 0)} bill(s)`);
       }
@@ -5275,6 +5403,9 @@ thead th {
       }
       if (receiptNumbers.length) {
         settlementBits.push(`Receipts ${receiptNumbers.join(', ')}`);
+      }
+      if (isLinked && settlementMode === 'no_receipt_needed') {
+        settlementBits.push('No receipt needed');
       }
       const settlementText = settlementBits.length ? ` | ${settlementBits.join(' | ')}` : '';
       setVirtualVisitCreateStatus(
@@ -7165,18 +7296,20 @@ thead th {
   }
   let remainingSec = 0;
   function updateTimerDisplay(){ if(fabTimer) fabTimer.textContent = fmtSecs(remainingSec); }
-  async function refreshSessionTimer(){
+  function refreshSessionTimer(){
     try{
-      const res = await fetch('/session_remaining');
-      const data = await res.json();
-      if(res.ok && typeof data.remaining_seconds !== 'undefined'){
-        remainingSec = Math.max(0, Math.floor(data.remaining_seconds));
+      const next = typeof window.__getSessionRemainingSeconds === 'function'
+        ? window.__getSessionRemainingSeconds()
+        : null;
+      if (Number.isFinite(next)) {
+        remainingSec = Math.max(0, Math.floor(next));
         updateTimerDisplay();
       }
     }catch(e){ /* silent */ }
   }
   setInterval(()=>{ if(remainingSec>0){ remainingSec -= 1; updateTimerDisplay(); } }, 1000);
-  setInterval(refreshSessionTimer, 20000);
   refreshSessionTimer();
+  window.addEventListener('sessionRemainingUpdated', refreshSessionTimer);
+  window.addEventListener('sessionRefreshed', refreshSessionTimer);
 </script>
 {% endblock %}

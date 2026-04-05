@@ -47,6 +47,7 @@
   .actions{flex-direction:row;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
   .export-opt{display:inline-flex;align-items:center;gap:8px;color:#345676;font-size:12px;font-weight:700;white-space:nowrap;margin-right:auto}
   .export-opt input[type="checkbox"]{width:16px;height:16px;min-width:16px;accent-color:#0f4c81;margin:0}
+  #reconEntryPrintDateWrap{display:none}
   #reconPanel .ctrl.actions{grid-column:1/-1;justify-content:flex-end;flex-wrap:wrap}
   #legacyPanel .ctrls{grid-template-columns:repeat(12,minmax(0,1fr));gap:10px 12px;padding:12px}
   #legacyPanel .ctrl{grid-column:span 2}
@@ -177,6 +178,19 @@
   .audit-btn:hover{background:#dcfce7}
   .audit-btn:disabled{cursor:not-allowed;opacity:.65}
   .bulk-foot{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid #e6eef7;background:#fbfdff}
+  .receipt-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:14px}
+  .receipt-field{display:flex;flex-direction:column;gap:6px}
+  .receipt-field label{font-size:12px;font-weight:700;color:#234566}
+  .receipt-field input,.receipt-field textarea,.receipt-field select{width:100%;min-height:38px;border:1px solid #c9d7e6;border-radius:10px;padding:8px 10px;font-size:13px;color:#132941;background:#fff}
+  .receipt-field input[type="number"]{-moz-appearance:textfield;appearance:textfield}
+  .receipt-field input[type="number"]::-webkit-outer-spin-button,.receipt-field input[type="number"]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
+  .receipt-field input[readonly]{background:#f5f9fd;color:#526b85}
+  .receipt-field.wide{grid-column:1/-1}
+  .receipt-context{padding:12px 14px;border-bottom:1px solid #edf3f9;background:#fbfdff;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  .receipt-context .kv{font-size:12px;color:#294763}
+  .receipt-context b{color:#12355b}
+  .receipt-hint{padding:0 14px 12px;font-size:12px;color:#49627d}
+  .receipt-actions{display:flex;justify-content:flex-end;gap:8px;padding:10px 14px;border-top:1px solid #e6eef7;background:#fbfdff}
   .row-final{background:#ecfdf3}
   .legacy-st{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid transparent;white-space:nowrap}
   .legacy-st-final{color:#166534;background:#ecfdf3;border-color:#bbf7d0}
@@ -199,7 +213,7 @@
   .recon-table th:nth-child(7),.recon-table td:nth-child(7),.recon-table th:nth-child(8),.recon-table td:nth-child(8){min-width:120px}
   .recon-table th:nth-child(9),.recon-table td:nth-child(9){min-width:170px}
   @media (max-width:1200px){.ctrls{grid-template-columns:repeat(4,minmax(0,1fr))}.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.updates-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.suspense-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}#reconPanel .ctrl.actions{grid-column:1/-1;justify-content:flex-end;flex-wrap:wrap}#legacyPanel .ctrls{grid-template-columns:repeat(8,minmax(0,1fr))}#legacyPanel .ctrl{grid-column:span 2}#legacyPanel .ctrl.legacy-search{grid-column:span 5}#legacyPanel .ctrl.actions{grid-column:span 3;justify-content:flex-end}#legacyPanel .ctrl.actions .btn{min-width:0}}
-  @media (max-width:900px){.head{grid-template-columns:1fr;padding:14px}.head h1{font-size:28px}.head-side{align-items:flex-start;min-width:0}.top-actions{top:12px;right:12px}.ctrls{grid-template-columns:repeat(2,minmax(0,1fr))}.actions{justify-content:flex-start}#reconPanel .ctrl.actions{grid-column:1/-1;justify-content:flex-start;flex-wrap:wrap}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.updates-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.suspense-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.updates-modal-kv{grid-template-columns:1fr}#legacyPanel .ctrls{grid-template-columns:repeat(2,minmax(0,1fr))}#legacyPanel .ctrl{grid-column:span 1}#legacyPanel .ctrl.legacy-search,#legacyPanel .ctrl.actions{grid-column:1/-1}#legacyPanel .ctrl.actions .btn{flex:1 1 180px}}
+  @media (max-width:900px){.head{grid-template-columns:1fr;padding:14px}.head h1{font-size:28px}.head-side{align-items:flex-start;min-width:0}.top-actions{top:12px;right:12px}.ctrls{grid-template-columns:repeat(2,minmax(0,1fr))}.actions{justify-content:flex-start}#reconPanel .ctrl.actions{grid-column:1/-1;justify-content:flex-start;flex-wrap:wrap}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.updates-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.suspense-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.updates-modal-kv,.receipt-context,.receipt-form{grid-template-columns:1fr}#legacyPanel .ctrls{grid-template-columns:repeat(2,minmax(0,1fr))}#legacyPanel .ctrl{grid-column:span 1}#legacyPanel .ctrl.legacy-search,#legacyPanel .ctrl.actions{grid-column:1/-1}#legacyPanel .ctrl.actions .btn{flex:1 1 180px}}
 </style>
 <div class="corp">
   <div class="top-actions"><div class="fab-user"><div class="fab-timer" id="fabTimer">--:--</div><button class="fab-btn" id="fabToggle" type="button"><span class="fab-icon"><span></span><span></span><span></span></span></button><div class="fab-menu" id="fabMenu"><div class="menu-title">{{ session.get('username') or session.get('user') or 'User' }}</div><a href="{{ url_for('dashboard') }}">Back to Dashboard</a><a href="{{ url_for('settings') }}">Settings</a><a href="{{ url_for('logout') }}">Logout</a></div></div></div>
@@ -230,6 +244,7 @@
         <div class="ctrl"><label>Unit</label><select id="reconUnit"></select></div>
         <div class="ctrl"><label>Date From</label><input type="date" id="reconBillFrom"></div>
         <div class="ctrl"><label>Date To</label><input type="date" id="reconBillTo"></div>
+        <div class="ctrl" id="reconEntryPrintDateWrap"><label>Receipt Entry Date</label><input type="date" id="reconEntryPrintDate"></div>
         <div class="ctrl inline"><input type="checkbox" id="reconIncludeCancelled"><label for="reconIncludeCancelled">Include Cancelled</label></div>
         <div class="ctrl"><label>Search</label><input type="text" id="reconSearch" placeholder="Bill / Patient / Visit / Dept"></div>
         <div class="ctrl"><label>Source</label><select id="reconSource"><option value="">All Sources</option></select></div>
@@ -237,7 +252,7 @@
         <div class="ctrl"><label>Sort By</label><select id="reconSortBy"><option value="balance_all_time">Balance All-time</option><option value="balance_window">Balance In Window</option><option value="bill_amount">Bill Amount</option><option value="receipt_total_all_time">Receipt All-time</option><option value="tds_total_all_time">TDS All-time</option><option value="rebate_discount_all_time">Rebate/Discount All-time</option><option value="writeoff_total_all_time">Write-off All-time</option><option value="settled_total_all_time">Settled All-time</option><option value="receipt_total_window">Receipt In Window</option><option value="tds_total_window">TDS In Window</option><option value="rebate_discount_window">Rebate/Discount In Window</option><option value="writeoff_total_window">Write-off In Window</option><option value="settled_total_window">Settled In Window</option><option value="bill_date">Submit Date</option><option value="due_date">Due Date</option><option value="patient_name">Patient Name</option><option value="last_receipt_date_all_time">Last Receipt Date</option></select></div>
         <div class="ctrl"><label>Sort Direction</label><select id="reconSortDir"><option value="desc">Descending</option><option value="asc">Ascending</option></select></div>
         <div class="ctrl"><label>Page Size</label><select id="reconPageSize"><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="200">200</option></select></div>
-        <div class="ctrl actions"><label class="export-opt" for="reconExportSubmittedOnly"><input type="checkbox" id="reconExportSubmittedOnly"><span>Export Bills: Submitted Only</span></label><button class="btn sec" type="button" id="reconLoadBtn">Load Data</button><button class="btn sec" type="button" id="reconForceRefreshBtn">Refresh Data</button><button class="btn sec" type="button" id="reconOpeningBtn">Load Opening</button><button class="btn warn" type="button" id="reconSuspenseBtn">Review Exceptions</button><button class="btn" type="button" id="reconExportBtn">Export XLSX</button></div>
+        <div class="ctrl actions"><label class="export-opt" for="reconExportSubmittedOnly"><input type="checkbox" id="reconExportSubmittedOnly"><span>Export Bills: Submitted Only</span></label><button class="btn sec" type="button" id="reconLoadBtn">Load Data</button><button class="btn sec" type="button" id="reconForceRefreshBtn">Refresh Data</button><button class="btn sec" type="button" id="reconOpeningBtn">Load Opening</button><button class="btn sec" type="button" id="reconDailyPrintBtn" style="display:none">Print Daily Receipts</button><button class="btn warn" type="button" id="reconSuspenseBtn">Review Exceptions</button><button class="btn" type="button" id="reconExportBtn">Export XLSX</button></div>
       </div>
       <div class="status sr-only" id="reconStatus" aria-live="polite" aria-atomic="true">Ready.</div>
       <div class="bulkbar" id="reconBulkBar">
@@ -283,7 +298,7 @@
       <div class="ctrls">
         <div class="ctrl"><label>Unit</label><select id="updatesUnit"></select></div>
         <div class="ctrl"><label>Lookback Window</label><select id="updatesLookback"><option value="6">Last 6 Hours</option><option value="24" selected>Last 24 Hours</option><option value="72">Last 72 Hours</option><option value="168">Last 7 Days</option><option value="720">Last 30 Days</option></select></div>
-        <div class="ctrl"><label>Source</label><select id="updatesSource"><option value="">All Sources</option><option value="corp_receipt">Receipt Activity</option><option value="corp_bill_mst">Bill Master</option><option value="corpopening">Opening Balance</option></select></div>
+<div class="ctrl"><label>Source</label><select id="updatesSource"><option value="">All Sources</option></select></div>
         <div class="ctrl"><label>Event Type</label><select id="updatesEventType"><option value="">All Types</option><option value="addition">Addition</option><option value="update">Update</option></select></div>
         <div class="ctrl"><label>Search</label><input type="text" id="updatesSearch" placeholder="Table / Event / Record / User / Summary"></div>
         <div class="ctrl"><label>Fetch Limit</label><select id="updatesLimit"><option value="500">500</option><option value="1200" selected>1200</option><option value="2500">2500</option><option value="5000">5000</option></select></div>
@@ -381,11 +396,71 @@
       </div>
     </div>
   </div>
+  <div class="updates-modal" id="receiptModal" aria-hidden="true">
+    <div class="updates-modal-card" style="width:min(860px,100%)">
+      <div class="updates-modal-head">
+        <h3 id="receiptModalTitle">Take Receipt</h3>
+        <button class="updates-modal-close" type="button" id="receiptModalClose">&times;</button>
+      </div>
+      <div class="receipt-context" id="receiptContext">
+        <div class="kv"><b>Bill</b><div id="receiptContextBill">-</div></div>
+        <div class="kv"><b>Patient</b><div id="receiptContextPatient">-</div></div>
+        <div class="kv"><b>Visit</b><div id="receiptContextVisit">-</div></div>
+      </div>
+      <div class="receipt-form">
+        <div class="receipt-field">
+          <label for="receiptCorrectionMonth">Correction Month</label>
+          <input type="month" id="receiptCorrectionMonth">
+        </div>
+        <div class="receipt-field">
+          <label for="receiptDateInput">Receipt Date</label>
+          <input type="date" id="receiptDateInput">
+        </div>
+        <div class="receipt-field">
+          <label for="receiptPaymentMode">Payment Mode</label>
+          <select id="receiptPaymentMode">
+            <option value="5">Loading payment modes...</option>
+          </select>
+        </div>
+        <div class="receipt-field">
+          <label for="receiptUtrNo">UTR No</label>
+          <input type="text" id="receiptUtrNo" placeholder="Optional UTR / reference no">
+        </div>
+        <div class="receipt-field">
+          <label for="receiptBillAmount">C_amount</label>
+          <input type="text" id="receiptBillAmount" inputmode="decimal" readonly>
+        </div>
+        <div class="receipt-field">
+          <label for="receiptApprovedAmount">Approved Amt</label>
+          <input type="text" id="receiptApprovedAmount" inputmode="decimal">
+        </div>
+        <div class="receipt-field">
+          <label for="receiptTdsAmount">TDS Amt</label>
+          <input type="text" id="receiptTdsAmount" inputmode="decimal">
+        </div>
+        <div class="receipt-field">
+          <label for="receiptReceivedAmount">Received Amt</label>
+          <input type="text" id="receiptReceivedAmount" inputmode="decimal">
+        </div>
+        <div class="receipt-field wide">
+          <label for="receiptRebateAmount">Rebate</label>
+          <input type="text" id="receiptRebateAmount" inputmode="decimal">
+        </div>
+      </div>
+      <div class="receipt-hint" id="receiptHint">Approved Amt should equal Received Amt + TDS Amt, and C_amount should equal Received Amt + TDS Amt + Rebate.</div>
+      <div class="receipt-actions">
+        <button class="btn sec" type="button" id="receiptModalCancelBtn">Cancel</button>
+        <button class="btn" type="button" id="receiptSaveBtn">Save &amp; Print</button>
+      </div>
+    </div>
+  </div>
 </div>
 <script>
 (() => {
   const ALLOWED_UNITS = {{ (allowed_units or []) | tojson }};
   const DEFAULT_UNIT = {{ (selected_unit or "") | tojson }};
+  const UNIT_LABELS = {{ (unit_labels or {}) | tojson }};
+  const CAN_RECEIPT = {{ (can_receipt or False) | tojson }};
   const CAN_WRITEOFF = {{ (can_writeoff or False) | tojson }};
   const fmtMoney = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtInt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
@@ -422,6 +497,17 @@
       suspenseVisibleKeys: [],
       suspenseAuditBusy: false,
     },
+    receipt: {
+      open: false,
+      saving: false,
+      activeBill: null,
+      calcLock: false,
+      paymentModes: [],
+      paymentModesLoaded: false,
+      paymentModesLoading: false,
+      paymentModesPromise: null,
+      paymentModesUnit: "",
+    },
     updates: {
       loading: false,
       loaded: false,
@@ -452,7 +538,7 @@
   const els = {
     modulePrompt: $("modulePrompt"),
     tabs: Array.from(document.querySelectorAll(".tab")), panels: Array.from(document.querySelectorAll(".panel")),
-    recon: { unit: $("reconUnit"), billFrom: $("reconBillFrom"), billTo: $("reconBillTo"), includeCancelled: $("reconIncludeCancelled"), exportSubmittedOnly: $("reconExportSubmittedOnly"), search: $("reconSearch"), source: $("reconSource"), patientSubtype: $("reconPatientSubtype"), sortBy: $("reconSortBy"), sortDir: $("reconSortDir"), pageSize: $("reconPageSize"), loadBtn: $("reconLoadBtn"), forceRefreshBtn: $("reconForceRefreshBtn"), openingBtn: $("reconOpeningBtn"), suspenseBtn: $("reconSuspenseBtn"), exportBtn: $("reconExportBtn"), status: $("reconStatus"), scopeSummary: $("reconScopeSummary"), subtypeMini: $("reconSubtypeMini"), bulkMeta: $("reconBulkMeta"), bulkPreviewBtn: $("reconBulkPreviewBtn"), bulkClearBtn: $("reconBulkClearBtn"), selectAllVisible: $("reconSelectAllVisible"), kpis: $("reconKpis"), body: $("reconBody"), pageInfo: $("reconPageInfo"), prev: $("reconPrev"), next: $("reconNext"), bulkModal: $("reconBulkModal"), bulkModalTitle: $("reconBulkModalTitle"), bulkModalMeta: $("reconBulkModalMeta"), bulkModalClose: $("reconBulkModalClose"), bulkModalBody: $("reconBulkBody"), bulkModalCancel: $("reconBulkCancelBtn"), bulkModalApply: $("reconBulkApplyBtn"), suspenseModal: $("reconSuspenseModal"), suspenseModalTitle: $("reconSuspenseModalTitle"), suspenseModalClose: $("reconSuspenseModalClose"), suspenseSearch: $("reconSuspenseSearch"), suspenseMeta: $("reconSuspenseMeta"), suspenseKpis: $("reconSuspenseKpis"), suspenseBody: $("reconSuspenseBody"), suspenseSelectAll: $("reconSuspenseSelectAll"), suspenseApproveBtn: $("reconSuspenseApproveBtn"), suspenseClearBtn: $("reconSuspenseClearBtn") },
+    recon: { unit: $("reconUnit"), billFrom: $("reconBillFrom"), billTo: $("reconBillTo"), entryPrintDateWrap: $("reconEntryPrintDateWrap"), entryPrintDate: $("reconEntryPrintDate"), includeCancelled: $("reconIncludeCancelled"), exportSubmittedOnly: $("reconExportSubmittedOnly"), search: $("reconSearch"), source: $("reconSource"), patientSubtype: $("reconPatientSubtype"), sortBy: $("reconSortBy"), sortDir: $("reconSortDir"), pageSize: $("reconPageSize"), loadBtn: $("reconLoadBtn"), forceRefreshBtn: $("reconForceRefreshBtn"), openingBtn: $("reconOpeningBtn"), dailyPrintBtn: $("reconDailyPrintBtn"), suspenseBtn: $("reconSuspenseBtn"), exportBtn: $("reconExportBtn"), status: $("reconStatus"), scopeSummary: $("reconScopeSummary"), subtypeMini: $("reconSubtypeMini"), bulkMeta: $("reconBulkMeta"), bulkPreviewBtn: $("reconBulkPreviewBtn"), bulkClearBtn: $("reconBulkClearBtn"), selectAllVisible: $("reconSelectAllVisible"), kpis: $("reconKpis"), body: $("reconBody"), pageInfo: $("reconPageInfo"), prev: $("reconPrev"), next: $("reconNext"), bulkModal: $("reconBulkModal"), bulkModalTitle: $("reconBulkModalTitle"), bulkModalMeta: $("reconBulkModalMeta"), bulkModalClose: $("reconBulkModalClose"), bulkModalBody: $("reconBulkBody"), bulkModalCancel: $("reconBulkCancelBtn"), bulkModalApply: $("reconBulkApplyBtn"), suspenseModal: $("reconSuspenseModal"), suspenseModalTitle: $("reconSuspenseModalTitle"), suspenseModalClose: $("reconSuspenseModalClose"), suspenseSearch: $("reconSuspenseSearch"), suspenseMeta: $("reconSuspenseMeta"), suspenseKpis: $("reconSuspenseKpis"), suspenseBody: $("reconSuspenseBody"), suspenseSelectAll: $("reconSuspenseSelectAll"), suspenseApproveBtn: $("reconSuspenseApproveBtn"), suspenseClearBtn: $("reconSuspenseClearBtn") },
     legacy: {
       unit: $("legacyUnit"),
       from: $("legacyFrom"),
@@ -488,6 +574,26 @@
       modalMeta: $("updatesModalMeta"),
       modalBody: $("updatesModalBody"),
     },
+    receipt: {
+      modal: $("receiptModal"),
+      title: $("receiptModalTitle"),
+      close: $("receiptModalClose"),
+      cancel: $("receiptModalCancelBtn"),
+      save: $("receiptSaveBtn"),
+      correctionMonth: $("receiptCorrectionMonth"),
+      receiptDate: $("receiptDateInput"),
+      paymentMode: $("receiptPaymentMode"),
+      utrNo: $("receiptUtrNo"),
+      billAmount: $("receiptBillAmount"),
+      approvedAmount: $("receiptApprovedAmount"),
+      tdsAmount: $("receiptTdsAmount"),
+      receivedAmount: $("receiptReceivedAmount"),
+      rebateAmount: $("receiptRebateAmount"),
+      hint: $("receiptHint"),
+      contextBill: $("receiptContextBill"),
+      contextPatient: $("receiptContextPatient"),
+      contextVisit: $("receiptContextVisit"),
+    },
   };
   const esc = (v) => String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
   const money = (v) => fmtMoney.format(Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -496,7 +602,8 @@
   const bClass = (n) => { const x = Number(n || 0); if (x < -1) return "bover"; if (x > 1) return "bpos"; return "bok"; };
   const bBadge = (s) => { const k = String(s || "").toLowerCase(); let c = "st-un"; if (k === "settled") c = "st-set"; else if (k === "partial") c = "st-par"; else if (k === "overpaid") c = "st-over"; return `<span class="badge ${c}">${esc(s || "Unpaid")}</span>`; };
   const num = (v) => {
-    const n = Number(v);
+    const raw = typeof v === "string" ? v.replace(/,/g, "").trim() : v;
+    const n = Number(raw);
     return Number.isFinite(n) ? n : 0;
   };
   const parseIsoDate = (value) => {
@@ -589,10 +696,52 @@
     if (p === "reconPanel") return "Receipt Reconciliation";
     return "Not Selected";
   };
+  const unitLabel = (unit) => {
+    const key = String(unit || "").trim().toUpperCase();
+    return UNIT_LABELS[key] || key;
+  };
+  const currentUnit = () => String(els.recon.unit?.value || els.legacy.unit?.value || els.updates.unit?.value || "").trim().toUpperCase();
+  const isSharpSightUnit = (unit) => String(unit || "").trim().toUpperCase() === "SHARPSIGHT";
+  const supportsOpeningRecon = (unit) => !isSharpSightUnit(unit);
+  const monthEndDateValue = (monthValue) => {
+    const txt = String(monthValue || "").trim();
+    const m = txt.match(/^(\d{4})-(\d{2})$/);
+    if (!m) return "";
+    const year = Number(m[1]);
+    const month = Number(m[2]);
+    const dt = new Date(year, month, 0);
+    if (Number.isNaN(dt.getTime())) return "";
+    return dateKey(dt);
+  };
+  const defaultReconSourcesForUnit = (unit) => (supportsOpeningRecon(unit) ? ["Corporate Bill", "Opening Balance"] : ["Corporate Bill"]);
+  const refreshUpdatesSourceOptionsForUnit = (unit, preserveSelection = true) => {
+    if (!els.updates.source) return;
+    const prev = preserveSelection ? String(els.updates.source.value || "").trim() : "";
+    const opts = ['<option value="">All Sources</option>', '<option value="corp_receipt">Receipt Activity</option>', '<option value="corp_bill_mst">Bill Master</option>'];
+    if (supportsOpeningRecon(unit)) opts.push('<option value="corpopening">Opening Balance</option>');
+    els.updates.source.innerHTML = opts.join("");
+    const values = Array.from(els.updates.source.options || []).map((opt) => String(opt.value || "").trim().toLowerCase());
+    if (prev && values.includes(prev.toLowerCase())) els.updates.source.value = prev;
+    else els.updates.source.value = "";
+  };
+  const refreshReconUnitActions = (unit) => {
+    if (els.recon.openingBtn) {
+      const show = supportsOpeningRecon(unit);
+      els.recon.openingBtn.style.display = show ? "" : "none";
+      els.recon.openingBtn.disabled = !show || !!state.recon.loading;
+    }
+    const showDailyPrint = isSharpSightUnit(unit);
+    if (els.recon.entryPrintDateWrap) els.recon.entryPrintDateWrap.style.display = showDailyPrint ? "flex" : "none";
+    if (els.recon.entryPrintDate) els.recon.entryPrintDate.disabled = !showDailyPrint || !!state.recon.loading;
+    if (els.recon.dailyPrintBtn) {
+      els.recon.dailyPrintBtn.style.display = showDailyPrint ? "" : "none";
+      els.recon.dailyPrintBtn.disabled = !showDailyPrint || !!state.recon.loading;
+    }
+  };
   const refreshHeaderChips = (panelId) => {
     const unitVal = String(els.recon.unit?.value || els.legacy.unit?.value || "").trim().toUpperCase();
     const activePanel = panelId || document.querySelector(".tab.active")?.getAttribute("data-panel") || "";
-    setTxt($("headUnitChipTxt"), `Unit: ${unitVal || "Not Selected"}`);
+    setTxt($("headUnitChipTxt"), `Unit: ${unitVal ? unitLabel(unitVal) : "Not Selected"}`);
     setTxt($("headModuleChipTxt"), `Module: ${headerModuleLabel(activePanel)}`);
     if (activePanel === "legacyPanel") {
       setTxt($("headCutoffTxt"), "Corporate Bill Summary Context");
@@ -626,7 +775,7 @@
     if (!select) return;
     const arr = [];
     if (ALLOWED_UNITS.length !== 1) arr.push('<option value="">Select Unit</option>');
-    for (const u of ALLOWED_UNITS) arr.push(`<option value="${esc(u)}">${esc(u)}</option>`);
+    for (const u of ALLOWED_UNITS) arr.push(`<option value="${esc(u)}">${esc(unitLabel(u))}</option>`);
     select.innerHTML = arr.join("");
     const v = DEFAULT_UNIT || (ALLOWED_UNITS.length === 1 ? ALLOWED_UNITS[0] : "");
     if (v) select.value = v;
@@ -636,10 +785,12 @@
     if (els.legacy.unit) els.legacy.unit.value = v || "";
     if (els.updates.unit) els.updates.unit.value = v || "";
     refreshHeaderChips();
+    refreshReconUnitActions(v);
+    refreshUpdatesSourceOptionsForUnit(v);
   };
   const isLegacyServerUnit = (unit) => {
     const key = String(unit || "").trim().toUpperCase();
-    return key === "AHL" || key === "ACI";
+    return key === "AHL" || key === "ACI" || key === "SHARPSIGHT";
   };
   const ensureReconSourceOption = (value, label = "") => {
     if (!els.recon.source) return;
@@ -660,7 +811,7 @@
       const t = String(r?.bill_source || "").trim();
       if (t) uniq.add(t);
     });
-    ["Corporate Bill", "Opening Balance"].forEach((src) => uniq.add(src));
+    defaultReconSourcesForUnit(currentUnit()).forEach((src) => uniq.add(src));
     const opts = ['<option value="">All Sources</option>'];
     Array.from(uniq).sort((a, b) => a.localeCompare(b)).forEach((t) => {
       opts.push(`<option value="${esc(t)}">${esc(t)}</option>`);
@@ -1126,7 +1277,7 @@
     const rows = detailsMap?.[billKey] || [];
     if (!rows.length) return '<div class="empty" style="padding:10px;text-align:left;font-size:12px;">No receipt lines for this bill.</div>';
     const body = rows.map((r) => `<tr><td>${esc(r.receipt_detail_id ?? "")}</td><td>${esc(r.receipt_id ?? "")}</td><td>${esc(r.receipt_no || "")}</td><td>${esc(r.receipt_date || "")}</td><td class="num">${money(r.receipt_amount)}</td><td class="num">${money(r.bill_amount)}</td><td class="num">${money(r.due_amount)}</td><td class="num"><span class="tds">${money(r.tds_amount)}</span></td><td class="num"><span class="rebate">${money(r.rebate_discount_amount)}</span></td><td class="num"><span class="writeoff">${money(r.writeoff_amount)}</span></td><td class="center">${r.in_window ? "Yes" : "No"}</td><td class="center">${esc(r.payment_mode || r.payment_mode_id || "")}</td><td>${esc(r.inserted_by || r.inserted_by_id || "-")}</td><td>${esc(r.utr_no || "")}</td><td class="center">${esc(r.cancel_status ?? "")}</td></tr>`).join("");
-    return `<div class="dinner"><table class="dtable"><thead><tr><th>RecDtl ID</th><th>Receipt ID</th><th>Receipt No</th><th>Date</th><th class="num">Receipt Amt</th><th class="num">Bill Amt (Dtl)</th><th class="num">Due Amt (Dtl)</th><th class="num">TDS Amt</th><th class="num">Rebate / Discount</th><th class="num">Write-off</th><th class="center">In Window</th><th class="center">Mode</th><th>Entry By</th><th>UTR</th><th class="center">Cancel</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    return `<div class="dinner"><table class="dtable"><thead><tr><th>RecDtl ID</th><th>Receipt ID</th><th>Receipt No</th><th>Date</th><th class="num">Receipt Amt</th><th class="num">Bill Amt (Dtl)</th><th class="num">Net Due Amt (Dtl)</th><th class="num">TDS Amt</th><th class="num">Rebate / Discount</th><th class="num">Write-off</th><th class="center">In Window</th><th class="center">Mode</th><th>Entry By</th><th>UTR</th><th class="center">Cancel</th></tr></thead><tbody>${body}</tbody></table></div>`;
   };
   const detailHtml = (billKey) => detailHtmlFromMap(state.recon.details, billKey);
 
@@ -1160,6 +1311,325 @@
       return `<button class="wo-btn" type="button" data-bill-key="${esc(row.bill_key || "")}" ${disabled ? "disabled" : ""}>Write-off Due</button>`;
     }
     return '<span class="sub">Not Required</span>';
+  };
+
+  const canTakeReceiptRow = (row) => (
+    CAN_RECEIPT
+    && isSharpSightUnit(currentUnit())
+    && String(row?.bill_source_key || "").trim().toUpperCase() === "BILL_MST_AHL"
+    && num(row?.bill_id) > 0
+    && num(row?.balance_all_time) > 1
+    && ["partial", "unpaid"].includes(String(row?.status_all_time || "").trim().toLowerCase())
+  );
+  const reconActionHtml = (row) => {
+    if (canTakeReceiptRow(row)) {
+      const disabled = state.recon.loading || state.receipt.saving;
+      return `<button class="updates-btn receipt-btn" type="button" data-bill-key="${esc(row.bill_key || "")}" ${disabled ? "disabled" : ""}>Take Receipt</button>`;
+    }
+    return writeoffActionHtml(row);
+  };
+  const lockReceiptModal = (locked) => {
+    [
+      els.receipt.correctionMonth,
+      els.receipt.receiptDate,
+      els.receipt.paymentMode,
+      els.receipt.utrNo,
+      els.receipt.approvedAmount,
+      els.receipt.tdsAmount,
+      els.receipt.receivedAmount,
+      els.receipt.rebateAmount,
+      els.receipt.cancel,
+      els.receipt.close,
+      els.receipt.save,
+    ].forEach((node) => { if (node) node.disabled = !!locked; });
+  };
+  const receiptRound = (value) => {
+    const n = Number(value);
+    return Number.isFinite(n) ? Math.round((n + Number.EPSILON) * 100) / 100 : 0;
+  };
+  const bindReceiptQuickSelect = (node) => {
+    if (!node || node.dataset.quickSelectBound === "1") return;
+    node.dataset.quickSelectBound = "1";
+    const suppressPointerRelease = (ev) => {
+      if (node.dataset.quickSelectActive === "1") {
+        ev.preventDefault();
+        node.dataset.quickSelectActive = "0";
+      }
+    };
+    node.addEventListener("focus", () => {
+      node.dataset.quickSelectActive = "1";
+      requestAnimationFrame(() => {
+        try { node.select(); } catch (err) {}
+      });
+    });
+    node.addEventListener("mouseup", suppressPointerRelease);
+    node.addEventListener("pointerup", suppressPointerRelease);
+    node.addEventListener("blur", () => {
+      node.dataset.quickSelectActive = "0";
+    });
+  };
+  const setReceiptAmountValue = (node, value) => {
+    if (!node) return;
+    node.value = receiptRound(value).toFixed(2);
+  };
+  const receiptDefaultPaymentModeId = (modes = state.receipt.paymentModes) => {
+    const rows = Array.isArray(modes) ? modes : [];
+    if (rows.some((row) => String(row?.PaymentModeId || "").trim() === "5")) return "5";
+    const first = rows.find((row) => String(row?.PaymentModeId || "").trim());
+    return first ? String(first.PaymentModeId).trim() : "5";
+  };
+  const renderReceiptPaymentModes = (preserveSelection = true) => {
+    if (!els.receipt.paymentMode) return;
+    const prev = preserveSelection ? String(els.receipt.paymentMode.value || "").trim() : "";
+    const rows = (Array.isArray(state.receipt.paymentModes) ? state.receipt.paymentModes : []).filter((row) => String(row?.PaymentModeId || "").trim());
+    if (!rows.length) {
+      els.receipt.paymentMode.innerHTML = '<option value="5">Online Payment (5)</option>';
+      els.receipt.paymentMode.value = "5";
+      return;
+    }
+    els.receipt.paymentMode.innerHTML = rows.map((row) => {
+      const id = String(row?.PaymentModeId || "").trim();
+      const name = String(row?.PaymentModeName || `Mode ${id}`).trim() || `Mode ${id}`;
+      return `<option value="${esc(id)}">${esc(`${name} (${id})`)}</option>`;
+    }).join("");
+    const values = rows.map((row) => String(row?.PaymentModeId || "").trim());
+    const next = preserveSelection && prev && values.includes(prev) ? prev : receiptDefaultPaymentModeId(rows);
+    els.receipt.paymentMode.value = values.includes(next) ? next : values[0];
+  };
+  const loadReceiptPaymentModes = async ({ force = false, preserveSelection = true } = {}) => {
+    if (!els.receipt.paymentMode) return [];
+    const unit = String(currentUnit() || "").trim().toUpperCase();
+    if (!unit) {
+      state.receipt.paymentModes = [{ PaymentModeId: 5, PaymentModeName: "Online Payment" }];
+      state.receipt.paymentModesLoaded = true;
+      state.receipt.paymentModesUnit = "";
+      renderReceiptPaymentModes(preserveSelection);
+      return state.receipt.paymentModes;
+    }
+    if (!force && state.receipt.paymentModesLoaded && state.receipt.paymentModesUnit === unit && state.receipt.paymentModes.length) {
+      renderReceiptPaymentModes(preserveSelection);
+      return state.receipt.paymentModes;
+    }
+    if (state.receipt.paymentModesLoading && state.receipt.paymentModesPromise) {
+      await state.receipt.paymentModesPromise;
+      renderReceiptPaymentModes(preserveSelection);
+      return state.receipt.paymentModes;
+    }
+    els.receipt.paymentMode.innerHTML = '<option value="">Loading payment modes...</option>';
+    els.receipt.paymentMode.value = "";
+    state.receipt.paymentModesLoading = true;
+    state.receipt.paymentModesPromise = (async () => {
+      try {
+        const res = await fetch(`/api/corporate/payment_modes?unit=${encodeURIComponent(unit)}`);
+        const data = await res.json();
+        if (!res.ok || data.status !== "success") throw new Error(data.message || "Unable to load payment modes.");
+        const rows = Array.isArray(data.data) ? data.data : [];
+        state.receipt.paymentModes = rows.filter((row) => String(row?.PaymentModeId || "").trim());
+      } catch (err) {
+        state.receipt.paymentModes = [{ PaymentModeId: 5, PaymentModeName: "Online Payment" }];
+        notify(err?.message || "Unable to load payment modes. Using default Online Payment.", "warn", "receipt-modes");
+      } finally {
+        state.receipt.paymentModesLoaded = true;
+        state.receipt.paymentModesLoading = false;
+        state.receipt.paymentModesUnit = unit;
+      }
+      renderReceiptPaymentModes(preserveSelection);
+      state.receipt.paymentModesPromise = null;
+      return state.receipt.paymentModes;
+    })();
+    return state.receipt.paymentModesPromise;
+  };
+  const receiptFormValues = () => ({
+    correction_month: String(els.receipt.correctionMonth?.value || "").trim(),
+    receipt_date: String(els.receipt.receiptDate?.value || "").trim(),
+    payment_mode: Number(els.receipt.paymentMode?.value || 5),
+    utr_no: String(els.receipt.utrNo?.value || "").trim(),
+    bill_amount: num(els.receipt.billAmount?.value),
+    approved_amount: num(els.receipt.approvedAmount?.value),
+    tds_amount: num(els.receipt.tdsAmount?.value),
+    received_amount: num(els.receipt.receivedAmount?.value),
+    rebate_amount: num(els.receipt.rebateAmount?.value),
+  });
+  const applyReceiptAutocalc = (trigger = "", { sourceNode = null, formatSource = true } = {}) => {
+    if (state.receipt.calcLock) {
+      refreshReceiptHint();
+      return;
+    }
+    const billAmount = receiptRound(num(els.receipt.billAmount?.value));
+    const key = String(trigger || "").trim().toLowerCase();
+    let approved = receiptRound(num(els.receipt.approvedAmount?.value));
+    const tds = receiptRound(Math.max(0, num(els.receipt.tdsAmount?.value)));
+    let received = receiptRound(num(els.receipt.receivedAmount?.value));
+    let rebate = receiptRound(num(els.receipt.rebateAmount?.value));
+    if (key === "tds" || key === "rebate") {
+      approved = receiptRound(billAmount - rebate);
+      received = receiptRound(approved - tds);
+      rebate = receiptRound(billAmount - approved);
+    } else if (key === "received") {
+      approved = receiptRound(received + tds);
+      rebate = receiptRound(billAmount - approved);
+    } else {
+      received = receiptRound(approved - tds);
+      rebate = receiptRound(billAmount - approved);
+    }
+    state.receipt.calcLock = true;
+    try {
+      [
+        [els.receipt.approvedAmount, approved],
+        [els.receipt.tdsAmount, tds],
+        [els.receipt.receivedAmount, received],
+        [els.receipt.rebateAmount, rebate],
+      ].forEach(([node, value]) => {
+        if (!node) return;
+        if (!formatSource && sourceNode && node === sourceNode) return;
+        setReceiptAmountValue(node, value);
+      });
+    } finally {
+      state.receipt.calcLock = false;
+    }
+    refreshReceiptHint();
+  };
+  const refreshReceiptHint = () => {
+    if (!els.receipt.hint) return;
+    const f = receiptFormValues();
+    const approvedGap = f.approved_amount - (f.received_amount + f.tds_amount);
+    const billGap = f.bill_amount - (f.received_amount + f.tds_amount + f.rebate_amount);
+    const balanced = Math.abs(approvedGap) <= 0.01 && Math.abs(billGap) <= 0.01 && [f.approved_amount, f.tds_amount, f.received_amount, f.rebate_amount].every((v) => v >= -0.01);
+    setTxt(
+      els.receipt.hint,
+      `${balanced ? "Balanced split" : "Needs correction"} | Approved delta: ${money(approvedGap)} | Bill delta: ${money(billGap)} | Correction Month is reporting-only. Receipt Date is the actual collection date.`
+    );
+  };
+  const closeReceiptModal = (force = false) => {
+    if (!els.receipt.modal) return;
+    if (state.receipt.saving && !force) return;
+    els.receipt.modal.classList.remove("open");
+    els.receipt.modal.setAttribute("aria-hidden", "true");
+    state.receipt.open = false;
+    state.receipt.saving = false;
+    state.receipt.activeBill = null;
+  };
+  const openReceiptModal = async (row) => {
+    if (!row || !els.receipt.modal) return;
+    const billAmount = num(row?.bill_amount);
+    const outstanding = Math.max(0, num(row?.balance_all_time));
+    const suggested = outstanding > 0 ? outstanding : billAmount;
+    const now = new Date();
+    const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
+    const todayValue = dateKey(now);
+    if (els.receipt.title) els.receipt.title.textContent = `Take Receipt - ${unitLabel(currentUnit())}`;
+    setTxt(els.receipt.contextBill, `${row?.bill_no || "-"} | Bill ID: ${row?.bill_id || "-"}`);
+    setTxt(els.receipt.contextPatient, `${row?.patient_name || "-"} | Patient ID: ${row?.patient_id || "-"}`);
+    setTxt(els.receipt.contextVisit, `${row?.type_of_visit || "-"} | Visit ID: ${row?.visit_id || "-"}`);
+    if (els.receipt.correctionMonth) els.receipt.correctionMonth.value = defaultMonth;
+    if (els.receipt.receiptDate) els.receipt.receiptDate.value = todayValue;
+    if (els.receipt.paymentMode) {
+      els.receipt.paymentMode.innerHTML = '<option value="">Loading payment modes...</option>';
+      els.receipt.paymentMode.value = "";
+    }
+    if (els.receipt.utrNo) els.receipt.utrNo.value = "";
+    setReceiptAmountValue(els.receipt.billAmount, billAmount);
+    setReceiptAmountValue(els.receipt.approvedAmount, suggested);
+    setReceiptAmountValue(els.receipt.tdsAmount, 0);
+    setReceiptAmountValue(els.receipt.receivedAmount, suggested);
+    setReceiptAmountValue(els.receipt.rebateAmount, 0);
+    state.receipt.activeBill = row;
+    state.receipt.open = true;
+    state.receipt.saving = false;
+    state.receipt.calcLock = false;
+    lockReceiptModal(false);
+    refreshReceiptHint();
+    els.receipt.modal.classList.add("open");
+    els.receipt.modal.setAttribute("aria-hidden", "false");
+    await loadReceiptPaymentModes({ preserveSelection: false });
+    if (els.receipt.paymentMode && !String(els.receipt.paymentMode.value || "").trim()) {
+      els.receipt.paymentMode.value = receiptDefaultPaymentModeId();
+    }
+    refreshReceiptHint();
+  };
+  const saveReceipt = async () => {
+    const row = state.receipt.activeBill;
+    if (!row || state.receipt.saving) return;
+    const f = receiptFormValues();
+    if (!f.correction_month) { notify("Please select Correction Month.", "warn", "receipt-save"); return; }
+    if (!f.receipt_date) { notify("Please select Receipt Date.", "warn", "receipt-save"); return; }
+    if (f.approved_amount < 0 || f.tds_amount < 0 || f.received_amount < 0 || f.rebate_amount < 0) { notify("Approved, TDS, Received, and Rebate amounts cannot be negative.", "warn", "receipt-save"); return; }
+    if (f.received_amount <= 0) { notify("Received Amt must be greater than zero.", "warn", "receipt-save"); return; }
+    const tol = 1.0;
+    if (f.approved_amount > f.bill_amount + tol) { notify("Approved Amt cannot be greater than C_amount.", "warn", "receipt-save"); return; }
+    if (f.received_amount > f.bill_amount + tol) { notify("Received Amt cannot be greater than C_amount.", "warn", "receipt-save"); return; }
+    if (Math.abs((f.received_amount + f.tds_amount) - f.approved_amount) > tol) { notify("Approved Amt must match Received Amt + TDS Amt.", "warn", "receipt-save"); return; }
+    if (Math.abs((f.received_amount + f.tds_amount + f.rebate_amount) - f.bill_amount) > tol) { notify("Received Amt + TDS Amt + Rebate must match C_amount.", "warn", "receipt-save"); return; }
+
+    let printWindow = null;
+    try {
+      printWindow = window.open("", "_blank");
+    } catch (e) {
+      printWindow = null;
+    }
+
+    state.receipt.saving = true;
+    lockReceiptModal(true);
+    notify("Saving SharpSight receipt...", "loading", "receipt-save");
+    try {
+      const res = await fetch("/api/corporate/receipt", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          unit: currentUnit(),
+          bill_id: Number(row.bill_id),
+          bill_amount: f.bill_amount,
+          patient_id: row.patient_id ?? null,
+          visit_id: row.visit_id ?? null,
+          correction_month: f.correction_month,
+          receipt_date: f.receipt_date,
+          payment_mode: f.payment_mode || 5,
+          utr_no: f.utr_no,
+          approved_amount: f.approved_amount,
+          tds_amount: f.tds_amount,
+          received_amount: f.received_amount,
+          rebate_amount: f.rebate_amount,
+        }),
+      });
+      const raw = await res.text();
+      let d = null;
+      try {
+        d = raw ? JSON.parse(raw) : {};
+      } catch (parseErr) {
+        const fallbackMsg = res.ok ? "Unexpected response received while saving receipt." : "Receipt save failed on the server.";
+        throw new Error(fallbackMsg);
+      }
+      if (!res.ok || d.status !== "success") throw new Error(d.message || "Failed to save receipt.");
+      clearLoading("receipt-save");
+      notify(d.message || "Receipt saved successfully.", "success", "receipt-save");
+      closeReceiptModal(true);
+      if (printWindow && d.print_url) printWindow.location = d.print_url;
+      else if (d.print_url) window.open(d.print_url, "_blank");
+      await loadRecon({ resetPage: false, forceRefresh: true });
+    } catch (e) {
+      clearLoading("receipt-save");
+      if (printWindow) {
+        try { printWindow.close(); } catch (closeErr) {}
+      }
+      notify(e?.message || "Failed to save receipt.", "error", "receipt-save");
+      state.receipt.saving = false;
+      lockReceiptModal(false);
+    }
+  };
+  const openDailyReceiptPrint = () => {
+    const unit = currentUnit();
+    if (!isSharpSightUnit(unit)) {
+      notify("Daily receipt print is available only for SharpSight.", "warn", "recon-daily-print");
+      return;
+    }
+    const entryDate = String(els.recon.entryPrintDate?.value || "").trim();
+    if (!entryDate) {
+      notify("Please select Receipt Entry Date first.", "warn", "recon-daily-print");
+      return;
+    }
+    const url = `/api/corporate/receipts/daily_print?unit=${encodeURIComponent(unit)}&entry_date=${encodeURIComponent(entryDate)}`;
+    const win = window.open(url, "_blank");
+    if (!win) notify("Popup blocked. Please allow popups to print daily receipts.", "warn", "recon-daily-print");
   };
 
   const askWriteoffAmount = (row, { channel = "recon-writeoff", defaultAmount = null } = {}) => {
@@ -1223,6 +1693,7 @@
           ? remaining
           : (added * Math.max(0, num(d?.receipt_amount)) / positiveBase);
         d.writeoff_amount = num(d?.writeoff_amount) + share;
+        d.due_amount = Math.max(0, Math.round((num(d?.due_amount) - share) * 100) / 100);
         remaining -= share;
       });
     } else {
@@ -1230,6 +1701,7 @@
       scoped.forEach((d, idx) => {
         const share = idx === scoped.length - 1 ? remaining : perLine;
         d.writeoff_amount = num(d?.writeoff_amount) + share;
+        d.due_amount = Math.max(0, Math.round((num(d?.due_amount) - share) * 100) / 100);
         remaining -= share;
       });
     }
@@ -1436,9 +1908,12 @@
       const disabledSel = (!selectable || state.recon.loading || state.recon.writeoffBusy) ? "disabled" : "";
       const checkedSel = selected ? "checked" : "";
       const sourceText = String(r.bill_source || "-").trim() || "-";
+      const sourceKeyText = String(r.bill_source_key || sourceText || "").trim().toUpperCase();
       const billNoText = String(r.bill_no || "-").trim() || "-";
       const billIdText = String(r.bill_id ?? "").trim() || "-";
-      const submitDateText = shortDate(r.bill_date || "-");
+      const submitDateValue = String(r.submit_date_raw || r.submit_date || "").trim();
+      const submitDateText = shortDate(submitDateValue || "-");
+      const submittedStatusText = sourceKeyText === "OPENING" ? "-" : (submitDateValue ? "Yes" : "No");
       const dueDateText = shortDate(r.due_date || "-");
       const updatedByText = String(r.bill_updated_by || r.bill_updated_by_id || "-").trim() || "-";
       const patientNameText = String(r.patient_name || r.source_patient_name || "-").trim() || "-";
@@ -1450,7 +1925,7 @@
       const patientTypeText = String(r.patient_type || "").trim() || "-";
       const patientSubtypeText = String(r.patient_subtype || "").trim() || "-";
       const patientTone = patientTypeTone(patientTypeText, patientSubtypeText);
-      html.push(`<tr><td class="center"><input type="checkbox" class="recon-select-row" data-bill-key="${esc(key)}" ${checkedSel} ${disabledSel}></td><td class="center"><button class="tg" type="button" data-key="${esc(key)}" aria-expanded="false">Details</button></td><td class="src-cell">${esc(sourceText)}</td><td><div class="meta-stack"><div><b>${esc(billNoText)}</b></div><div class="meta-line"><span class="meta-label">Bill ID</span><span class="meta-val">${esc(billIdText)}</span></div><div class="meta-line"><span class="meta-label">Submit</span><span class="meta-val">${esc(submitDateText)}</span></div><div class="meta-line"><span class="meta-label">Due</span><span class="meta-val">${esc(dueDateText)}</span></div><div class="meta-line"><span class="meta-label">Updated By</span><span class="meta-val">${esc(updatedByText)}</span></div></div></td><td class="center">${bBadge(r.status_all_time)}</td><td><div class="meta-stack"><div><b>${esc(patientNameText)}</b></div><div class="meta-line"><span class="meta-label">Patient ID</span><span class="meta-val">${esc(patientIdText)}</span></div></div></td><td>${patientTypeChip(patientTypeText, patientTone, "Patient Type", "type")}</td><td>${patientTypeChip(patientSubtypeText, patientTone, "Patient SubType", "subtype")}</td><td><div class="meta-stack"><div><b>${esc(visitKindText)}</b></div><div class="meta-line"><span class="meta-label">Visit ID</span><span class="meta-val">${esc(visitIdText)}</span></div><div class="meta-line"><span class="meta-label">Visit</span><span class="meta-val">${esc(visitDateText)}</span></div><div class="meta-line"><span class="meta-label">Discharge</span><span class="meta-val">${esc(dischargeDateText)}</span></div></div></td><td class="num"><span class="amt bill">${money(r.bill_amount)}</span></td><td class="num"><span class="amt receipt">${money(r.receipt_total_all_time)}</span></td><td class="num"><span class="amt tds">${money(r.tds_total_all_time)}</span></td><td class="num"><span class="amt rebate">${money(r.rebate_discount_all_time)}</span></td><td class="num"><span class="amt writeoff">${money(r.writeoff_total_all_time)}</span></td><td class="num"><span class="amt ${bClass(r.balance_all_time)}">${money(r.balance_all_time)}</span></td><td class="num"><span class="amt receipt">${money(r.receipt_total_window)}</span></td><td class="num"><span class="amt rebate">${money(r.rebate_discount_window)}</span></td><td class="num"><span class="amt ${bClass(r.balance_window)}">${money(r.balance_window)}</span></td><td class="center">${bBadge(r.status_window)}</td><td class="center"><div><b>${integer(r.receipt_count_all_time)} / ${integer(r.receipt_count_window)}</b></div><div class="sub">All / Window</div></td><td><div><b>${esc(shortDate(r.last_receipt_date_all_time || "-"))}</b></div><div class="sub">Window: ${esc(shortDate(r.last_receipt_date_window || "-"))}</div></td><td class="center">${writeoffActionHtml(r)}</td></tr><tr class="drow" data-detail="${esc(key)}" hidden><td colspan="22">${detailHtml(key)}</td></tr>`);
+      html.push(`<tr><td class="center"><input type="checkbox" class="recon-select-row" data-bill-key="${esc(key)}" ${checkedSel} ${disabledSel}></td><td class="center"><button class="tg" type="button" data-key="${esc(key)}" aria-expanded="false">Details</button></td><td class="src-cell">${esc(sourceText)}</td><td><div class="meta-stack"><div><b>${esc(billNoText)}</b></div><div class="meta-line"><span class="meta-label">Bill ID</span><span class="meta-val">${esc(billIdText)}</span></div><div class="meta-line"><span class="meta-label">Submit</span><span class="meta-val">${esc(submitDateText)}</span></div><div class="meta-line"><span class="meta-label">Submitted Status</span><span class="meta-val">${esc(submittedStatusText)}</span></div><div class="meta-line"><span class="meta-label">Due</span><span class="meta-val">${esc(dueDateText)}</span></div><div class="meta-line"><span class="meta-label">Updated By</span><span class="meta-val">${esc(updatedByText)}</span></div></div></td><td class="center">${bBadge(r.status_all_time)}</td><td><div class="meta-stack"><div><b>${esc(patientNameText)}</b></div><div class="meta-line"><span class="meta-label">Patient ID</span><span class="meta-val">${esc(patientIdText)}</span></div></div></td><td>${patientTypeChip(patientTypeText, patientTone, "Patient Type", "type")}</td><td>${patientTypeChip(patientSubtypeText, patientTone, "Patient SubType", "subtype")}</td><td><div class="meta-stack"><div><b>${esc(visitKindText)}</b></div><div class="meta-line"><span class="meta-label">Visit ID</span><span class="meta-val">${esc(visitIdText)}</span></div><div class="meta-line"><span class="meta-label">Visit</span><span class="meta-val">${esc(visitDateText)}</span></div><div class="meta-line"><span class="meta-label">Discharge</span><span class="meta-val">${esc(dischargeDateText)}</span></div></div></td><td class="num"><span class="amt bill">${money(r.bill_amount)}</span></td><td class="num"><span class="amt receipt">${money(r.receipt_total_all_time)}</span></td><td class="num"><span class="amt tds">${money(r.tds_total_all_time)}</span></td><td class="num"><span class="amt rebate">${money(r.rebate_discount_all_time)}</span></td><td class="num"><span class="amt writeoff">${money(r.writeoff_total_all_time)}</span></td><td class="num"><span class="amt ${bClass(r.balance_all_time)}">${money(r.balance_all_time)}</span></td><td class="num"><span class="amt receipt">${money(r.receipt_total_window)}</span></td><td class="num"><span class="amt rebate">${money(r.rebate_discount_window)}</span></td><td class="num"><span class="amt ${bClass(r.balance_window)}">${money(r.balance_window)}</span></td><td class="center">${bBadge(r.status_window)}</td><td class="center"><div><b>${integer(r.receipt_count_all_time)} / ${integer(r.receipt_count_window)}</b></div><div class="sub">All / Window</div></td><td><div><b>${esc(shortDate(r.last_receipt_date_all_time || "-"))}</b></div><div class="sub">Window: ${esc(shortDate(r.last_receipt_date_window || "-"))}</div></td><td class="center">${reconActionHtml(r)}</td></tr><tr class="drow" data-detail="${esc(key)}" hidden><td colspan="22">${detailHtml(key)}</td></tr>`);
     }
     els.recon.body.innerHTML = html.join("");
     els.recon.body.querySelectorAll(".tg").forEach((b) => {
@@ -1469,6 +1944,14 @@
         const row = (state.recon.rows || []).find((r) => String(r?.bill_key || "").trim() === billKey);
         if (!row) return;
         await writeoffBill(row);
+      });
+    });
+    els.recon.body.querySelectorAll(".receipt-btn[data-bill-key]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const billKey = String(btn.getAttribute("data-bill-key") || "").trim();
+        const row = (state.recon.rows || []).find((r) => String(r?.bill_key || "").trim() === billKey);
+        if (!row) return;
+        await openReceiptModal(row);
       });
     });
     els.recon.body.querySelectorAll(".recon-select-row[data-bill-key]").forEach((cb) => {
@@ -1521,9 +2004,15 @@
     const subtypeLabel = f.patient_subtype || "All SubTypes";
     const scopeMode = String(options?.scope || "").trim().toLowerCase();
     const scopeKpiLabel = String(options?.kpiLabel || "").trim();
+    const metaScopeRule = String(meta?.scope_rule || "").trim();
     let note = "This closing summary reflects the current filter scope.";
     if ((scopeMode === "kpi_page" || scopeMode === "kpi_filter") && scopeKpiLabel) {
-      note = `KPI filter "${scopeKpiLabel}" is active; summary reflects full filtered scope.`;
+      note = metaScopeRule ? `KPI filter "${scopeKpiLabel}" is active. ${metaScopeRule}` : `KPI filter "${scopeKpiLabel}" is active; summary reflects full filtered scope.`;
+    } else if (metaScopeRule) note = metaScopeRule;
+    else if (!supportsOpeningRecon(currentUnit())) {
+      note = f.bill_source
+        ? `Source = ${sourceLabel} for ${unitLabel(currentUnit())}.`
+        : `Current filter scope includes ${unitLabel(currentUnit())} bills and linked receipts only.`;
     } else if (f.bill_source) note = "For combined closing (opening + current), set Source to All Sources.";
     else if (f.patient_subtype) note = "Subtype closing includes mapped subtype rows; opening rows without subtype mapping remain under All SubTypes.";
     else note = "Source = All Sources already includes current and opening records in one closing view.";
@@ -1551,6 +2040,7 @@
   };
   const renderSubtypeMini = ({ rows = [], summaryRows = [], scope = "page", totalRows = 0 } = {}) => {
     if (!els.recon.subtypeMini) return;
+    const includeOpening = supportsOpeningRecon(currentUnit());
     const scopedSummary = Array.isArray(summaryRows) ? summaryRows.filter((r) => String(r?.subtype || "").trim()) : [];
 
     let grouped = [];
@@ -1675,17 +2165,27 @@
       closing_balance: 0,
     });
 
-    const bodyRows = visibleRows.map((g) => `<tr><td>${esc(g.subtype)}</td><td class="num">${integer(g.bills)}</td><td class="num">${integer(g.corporate_bills)}</td><td class="num">${integer(g.opening_bills)}</td><td class="num">${integer(g.settled)}</td><td class="num">${integer(g.settled_corporate)}</td><td class="num">${integer(g.settled_opening)}</td><td class="num">${integer(g.partial)}</td><td class="num">${integer(g.partial_corporate)}</td><td class="num">${integer(g.partial_opening)}</td><td class="num">${integer(g.unpaid)}</td><td class="num">${integer(g.unpaid_corporate)}</td><td class="num">${integer(g.unpaid_opening)}</td><td class="num">${integer(g.overpaid)}</td><td class="num">${integer(g.overpaid_corporate)}</td><td class="num">${integer(g.overpaid_opening)}</td><td class="num">${money(g.closing_balance)}</td></tr>`).join("");
+    const bodyRows = visibleRows.map((g) => {
+      if (!includeOpening) {
+        return `<tr><td>${esc(g.subtype)}</td><td class="num">${integer(g.bills)}</td><td class="num">${integer(g.corporate_bills)}</td><td class="num">${integer(g.settled)}</td><td class="num">${integer(g.settled_corporate)}</td><td class="num">${integer(g.partial)}</td><td class="num">${integer(g.partial_corporate)}</td><td class="num">${integer(g.unpaid)}</td><td class="num">${integer(g.unpaid_corporate)}</td><td class="num">${integer(g.overpaid)}</td><td class="num">${integer(g.overpaid_corporate)}</td><td class="num">${money(g.closing_balance)}</td></tr>`;
+      }
+      return `<tr><td>${esc(g.subtype)}</td><td class="num">${integer(g.bills)}</td><td class="num">${integer(g.corporate_bills)}</td><td class="num">${integer(g.opening_bills)}</td><td class="num">${integer(g.settled)}</td><td class="num">${integer(g.settled_corporate)}</td><td class="num">${integer(g.settled_opening)}</td><td class="num">${integer(g.partial)}</td><td class="num">${integer(g.partial_corporate)}</td><td class="num">${integer(g.partial_opening)}</td><td class="num">${integer(g.unpaid)}</td><td class="num">${integer(g.unpaid_corporate)}</td><td class="num">${integer(g.unpaid_opening)}</td><td class="num">${integer(g.overpaid)}</td><td class="num">${integer(g.overpaid_corporate)}</td><td class="num">${integer(g.overpaid_opening)}</td><td class="num">${money(g.closing_balance)}</td></tr>`;
+    }).join("");
     const shownCount = visibleRows.length;
     const scopeText = String(scope || "").toLowerCase() === "full_filter"
       ? `Full filter scope (${integer(totalRows || total.bills)} bills). Showing all ${integer(shownCount)} subtypes.`
       : `Current page scope (${integer(total.bills)} rows). Showing all ${integer(shownCount)} subtypes.`;
     const totalLabel = String(scope || "").toLowerCase() === "full_filter" ? "Total (Filter)" : "Total (Page)";
+    if (!includeOpening) {
+      els.recon.subtypeMini.innerHTML = `<div class="subtype-mini-head"><span class="title">Closing by SubType</span><span class="meta">${esc(scopeText)}</span></div><div class="subtype-mini-scroll"><table class="subtype-mini-table"><thead><tr><th>Subtype</th><th class="num">Bills</th><th class="num">Corporate</th><th class="num">Settled</th><th class="num">Settled (C)</th><th class="num">Partial</th><th class="num">Partial (C)</th><th class="num">Unpaid</th><th class="num">Unpaid (C)</th><th class="num">Overpaid</th><th class="num">Overpaid (C)</th><th class="num">Closing</th></tr></thead><tbody>${bodyRows}<tr><td><b>${esc(totalLabel)}</b></td><td class="num"><b>${integer(total.bills)}</b></td><td class="num"><b>${integer(total.corporate_bills)}</b></td><td class="num"><b>${integer(total.settled)}</b></td><td class="num"><b>${integer(total.settled_corporate)}</b></td><td class="num"><b>${integer(total.partial)}</b></td><td class="num"><b>${integer(total.partial_corporate)}</b></td><td class="num"><b>${integer(total.unpaid)}</b></td><td class="num"><b>${integer(total.unpaid_corporate)}</b></td><td class="num"><b>${integer(total.overpaid)}</b></td><td class="num"><b>${integer(total.overpaid_corporate)}</b></td><td class="num"><b>${money(total.closing_balance)}</b></td></tr></tbody></table></div><div class="foot">Computed on filtered scope without extra base-table scan.</div>`;
+      return;
+    }
     els.recon.subtypeMini.innerHTML = `<div class="subtype-mini-head"><span class="title">Closing by SubType</span><span class="meta">${esc(scopeText)}</span></div><div class="subtype-mini-scroll"><table class="subtype-mini-table"><thead><tr><th>Subtype</th><th class="num">Bills</th><th class="num">Corporate</th><th class="num">Opening</th><th class="num">Settled</th><th class="num">Settled (C)</th><th class="num">Settled (O)</th><th class="num">Partial</th><th class="num">Partial (C)</th><th class="num">Partial (O)</th><th class="num">Unpaid</th><th class="num">Unpaid (C)</th><th class="num">Unpaid (O)</th><th class="num">Overpaid</th><th class="num">Overpaid (C)</th><th class="num">Overpaid (O)</th><th class="num">Closing</th></tr></thead><tbody>${bodyRows}<tr><td><b>${esc(totalLabel)}</b></td><td class="num"><b>${integer(total.bills)}</b></td><td class="num"><b>${integer(total.corporate_bills)}</b></td><td class="num"><b>${integer(total.opening_bills)}</b></td><td class="num"><b>${integer(total.settled)}</b></td><td class="num"><b>${integer(total.settled_corporate)}</b></td><td class="num"><b>${integer(total.settled_opening)}</b></td><td class="num"><b>${integer(total.partial)}</b></td><td class="num"><b>${integer(total.partial_corporate)}</b></td><td class="num"><b>${integer(total.partial_opening)}</b></td><td class="num"><b>${integer(total.unpaid)}</b></td><td class="num"><b>${integer(total.unpaid_corporate)}</b></td><td class="num"><b>${integer(total.unpaid_opening)}</b></td><td class="num"><b>${integer(total.overpaid)}</b></td><td class="num"><b>${integer(total.overpaid_corporate)}</b></td><td class="num"><b>${integer(total.overpaid_opening)}</b></td><td class="num"><b>${money(total.closing_balance)}</b></td></tr></tbody></table></div><div class="foot">Computed on filtered scope without extra base-table scan.</div>`;
   };
 
   const lockRecon = (x) => {
-    [els.recon.loadBtn, els.recon.forceRefreshBtn, els.recon.openingBtn, els.recon.suspenseBtn, els.recon.exportBtn, els.recon.bulkPreviewBtn, els.recon.bulkClearBtn, els.recon.bulkModalApply, els.recon.unit, els.recon.billFrom, els.recon.billTo, els.recon.includeCancelled, els.recon.exportSubmittedOnly, els.recon.search, els.recon.source, els.recon.patientSubtype, els.recon.sortBy, els.recon.sortDir, els.recon.pageSize, els.recon.selectAllVisible, els.recon.suspenseApproveBtn, els.recon.suspenseClearBtn, els.recon.suspenseSelectAll].forEach((n) => { if (n) n.disabled = !!x; });
+    [els.recon.loadBtn, els.recon.forceRefreshBtn, els.recon.openingBtn, els.recon.dailyPrintBtn, els.recon.suspenseBtn, els.recon.exportBtn, els.recon.bulkPreviewBtn, els.recon.bulkClearBtn, els.recon.bulkModalApply, els.recon.unit, els.recon.billFrom, els.recon.billTo, els.recon.entryPrintDate, els.recon.includeCancelled, els.recon.exportSubmittedOnly, els.recon.search, els.recon.source, els.recon.patientSubtype, els.recon.sortBy, els.recon.sortDir, els.recon.pageSize, els.recon.selectAllVisible, els.recon.suspenseApproveBtn, els.recon.suspenseClearBtn, els.recon.suspenseSelectAll].forEach((n) => { if (n) n.disabled = !!x; });
+    refreshReconUnitActions(currentUnit());
     refreshSuspenseButton();
     renderPager();
   };
@@ -1887,6 +2387,10 @@
   };
 
   const loadOpeningRecon = () => {
+    if (!supportsOpeningRecon(currentUnit())) {
+      notify(`Load Opening is not available for ${unitLabel(currentUnit())}.`, "warn", "recon-opening");
+      return;
+    }
     ensureReconSourceOption("Opening Balance", "Opening Balance");
     if (els.recon.source) els.recon.source.value = "Opening Balance";
     if (els.recon.billFrom) els.recon.billFrom.value = "";
@@ -2342,13 +2846,14 @@
     const query = String(els.updates.search?.value || "").trim().toLowerCase();
     const sourceFilter = String(els.updates.source?.value || "").trim().toLowerCase();
     const typeFilter = String(els.updates.eventType?.value || "").trim().toLowerCase();
+    const includeOpening = supportsOpeningRecon(els.updates.unit?.value || currentUnit());
     let rows = Array.isArray(state.updates.baseEvents) ? state.updates.baseEvents.slice() : [];
     if (sourceFilter) rows = rows.filter((e) => String(e.table_key || "").toLowerCase() === sourceFilter);
     if (typeFilter) rows = rows.filter((e) => String(e.event_type || "").toLowerCase() === typeFilter);
     if (query) rows = rows.filter((e) => updatesSearchBlob(e).includes(query));
     state.updates.events = rows;
 
-    const tableOrder = ["corp_receipt", "corp_bill_mst", "corpopening"];
+    const tableOrder = includeOpening ? ["corp_receipt", "corp_bill_mst", "corpopening"] : ["corp_receipt", "corp_bill_mst"];
     const titleMap = {
       corp_receipt: "Receipt Activity",
       corp_bill_mst: "Bill Master",
@@ -2449,13 +2954,15 @@
     const timer = $("fabTimer"), tog = $("fabToggle"), menu = $("fabMenu"); let remain = 0;
     const fmt = (s) => { s = Math.max(0, Math.floor(s || 0)); return `${String(Math.floor(s / 60)).padStart(2, "0")}:${String(s % 60).padStart(2, "0")}`; };
     const paint = () => { if (timer) timer.textContent = fmt(remain); };
-    const pull = async () => { try { const r = await fetch("/session_remaining"); const d = await r.json(); if (r.ok && typeof d.remaining_seconds !== "undefined") { remain = Math.max(0, Math.floor(Number(d.remaining_seconds) || 0)); paint(); } } catch (_) {} };
+    const pull = () => { try { const next = typeof window.__getSessionRemainingSeconds === "function" ? window.__getSessionRemainingSeconds() : null; if (Number.isFinite(next)) { remain = Math.max(0, Math.floor(Number(next) || 0)); paint(); } } catch (_) {} };
     if (tog && menu) {
       tog.addEventListener("click", (e) => { e.stopPropagation(); menu.classList.toggle("open"); });
       document.addEventListener("click", (e) => { if (!e.target.closest(".fab-user")) menu.classList.remove("open"); });
     }
     setInterval(() => { if (remain > 0) { remain -= 1; paint(); } }, 1000);
-    setInterval(pull, 20000); pull();
+    window.addEventListener("sessionRemainingUpdated", pull);
+    window.addEventListener("sessionRefreshed", pull);
+    pull();
   };
 
   const initTabs = () => {
@@ -2477,6 +2984,7 @@
     const from90 = d90.toISOString().slice(0, 10);
     if (els.recon.billFrom && !els.recon.billFrom.value) els.recon.billFrom.value = from90;
     if (els.recon.billTo && !els.recon.billTo.value) els.recon.billTo.value = today;
+    if (els.recon.entryPrintDate && !els.recon.entryPrintDate.value) els.recon.entryPrintDate.value = today;
     const legacyUnit = String(els.legacy.unit?.value || "").trim().toUpperCase();
     if (!isLegacyServerUnit(legacyUnit)) {
       if (els.legacy.from && !els.legacy.from.value) els.legacy.from.value = today;
@@ -2509,6 +3017,7 @@
     els.recon.loadBtn?.addEventListener("click", () => { state.recon.page = 1; loadRecon({ resetPage: true, forceRefresh: false }); });
     els.recon.forceRefreshBtn?.addEventListener("click", () => { state.recon.page = 1; loadRecon({ resetPage: true, forceRefresh: true }); });
     els.recon.openingBtn?.addEventListener("click", loadOpeningRecon);
+    els.recon.dailyPrintBtn?.addEventListener("click", openDailyReceiptPrint);
     els.recon.suspenseBtn?.addEventListener("click", openSuspenseModal);
     els.recon.exportBtn?.addEventListener("click", exportRecon);
     els.recon.bulkPreviewBtn?.addEventListener("click", openBulkModal);
@@ -2527,6 +3036,26 @@
     els.recon.suspenseModal?.addEventListener("click", (ev) => {
       if (ev.target === els.recon.suspenseModal) closeSuspenseModal();
     });
+    els.receipt.close?.addEventListener("click", closeReceiptModal);
+    els.receipt.cancel?.addEventListener("click", closeReceiptModal);
+    els.receipt.modal?.addEventListener("click", (ev) => {
+      if (ev.target === els.receipt.modal) closeReceiptModal();
+    });
+    els.receipt.correctionMonth?.addEventListener("change", refreshReceiptHint);
+    [els.receipt.receiptDate, els.receipt.paymentMode, els.receipt.utrNo].forEach((n) => n?.addEventListener("input", refreshReceiptHint));
+    [els.receipt.receiptDate, els.receipt.paymentMode].forEach((n) => n?.addEventListener("change", refreshReceiptHint));
+    [
+      [els.receipt.approvedAmount, "approved"],
+      [els.receipt.tdsAmount, "tds"],
+      [els.receipt.receivedAmount, "received"],
+      [els.receipt.rebateAmount, "rebate"],
+    ].forEach(([node, trigger]) => {
+      bindReceiptQuickSelect(node);
+      node?.addEventListener("input", () => applyReceiptAutocalc(trigger, { sourceNode: node, formatSource: false }));
+      node?.addEventListener("change", () => applyReceiptAutocalc(trigger, { sourceNode: node, formatSource: true }));
+      node?.addEventListener("blur", () => applyReceiptAutocalc(trigger, { sourceNode: node, formatSource: true }));
+    });
+    els.receipt.save?.addEventListener("click", saveReceipt);
     els.recon.suspenseSearch?.addEventListener("input", () => {
       if (state.recon.suspenseSearchTimer) clearTimeout(state.recon.suspenseSearchTimer);
       state.recon.suspenseSearchTimer = setTimeout(() => {
@@ -2568,6 +3097,11 @@
     });
     els.recon.unit?.addEventListener("change", () => {
       syncUnit(els.recon.unit.value);
+      state.receipt.paymentModes = [];
+      state.receipt.paymentModesLoaded = false;
+      state.receipt.paymentModesLoading = false;
+      state.receipt.paymentModesPromise = null;
+      state.receipt.paymentModesUnit = "";
       state.recon.page = 1;
       state.recon.datasetLoaded = false;
       state.recon.kpiFilter = "";
@@ -2593,6 +3127,7 @@
       state.recon.bulkPreviewRows = [];
       closeBulkModal();
       closeSuspenseModal();
+      closeReceiptModal();
       setReconSourceOptions([], false);
       setReconSubtypeOptions([], false);
       renderKpis({});
@@ -2641,6 +3176,11 @@
     });
     els.legacy.unit?.addEventListener("change", () => {
       syncUnit(els.legacy.unit.value);
+      state.receipt.paymentModes = [];
+      state.receipt.paymentModesLoaded = false;
+      state.receipt.paymentModesLoading = false;
+      state.receipt.paymentModesPromise = null;
+      state.receipt.paymentModesUnit = "";
       state.legacy.mode = isLegacyServerUnit(els.legacy.unit.value) ? "server" : "client";
       state.legacy.loaded = false;
       state.legacy.page = 1;
@@ -2679,6 +3219,11 @@
     }));
     els.updates.unit?.addEventListener("change", () => {
       syncUnit(els.updates.unit.value);
+      state.receipt.paymentModes = [];
+      state.receipt.paymentModesLoaded = false;
+      state.receipt.paymentModesLoading = false;
+      state.receipt.paymentModesPromise = null;
+      state.receipt.paymentModesUnit = "";
       state.updates.loaded = false;
       state.updates.baseEvents = [];
       state.updates.events = [];
@@ -2707,6 +3252,7 @@
       if (ev.key === "Escape" && els.updates.modal?.classList.contains("open")) closeUpdatesModal();
       if (ev.key === "Escape" && els.recon.bulkModal?.classList.contains("open")) closeBulkModal();
       if (ev.key === "Escape" && els.recon.suspenseModal?.classList.contains("open")) closeSuspenseModal();
+      if (ev.key === "Escape" && els.receipt.modal?.classList.contains("open")) closeReceiptModal();
     });
 
     if (ALLOWED_UNITS.length === 1 || DEFAULT_UNIT) {

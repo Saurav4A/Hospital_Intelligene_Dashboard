@@ -22,6 +22,7 @@ BEGIN
  DECLARE @HasReceiptWriteoff BIT=CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(@ReceiptWriteoffColumn,N''))),N'') IS NULL THEN 0 ELSE 1 END;
  DECLARE @HasOpeningWriteoff BIT=CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(@OpeningWriteoffColumn,N''))),N'') IS NULL THEN 0 ELSE 1 END;
  DECLARE @HasBillAudited BIT=CASE WHEN NULLIF(LTRIM(RTRIM(ISNULL(@BillAuditedColumn,N''))),N'') IS NULL THEN 0 ELSE 1 END;
+ DECLARE @SettleTolerance FLOAT=1.0;
 
  ;WITH bill_mst AS (
   SELECT CAST(b.CBill_ID AS INT) BillId,N'BILL_MST_POST' BillSourceKey,N'Corporate Bill' BillSource,
@@ -89,15 +90,22 @@ BEGIN
  ) SELECT BillId,ReceiptId WriteOffTargetReceiptId INTO #target_receipt FROM trg WHERE rn=1;
 
  SELECT * INTO #receipt_scope FROM (
-  SELECT rr.*,
-   CAST(CASE WHEN SUM(rr.ReceiptAmtDtl) OVER (PARTITION BY rr.ReceiptId)>0 THEN rr.RebateDiscountAmt*(rr.ReceiptAmtDtl/NULLIF(SUM(rr.ReceiptAmtDtl) OVER (PARTITION BY rr.ReceiptId),0))
-             WHEN COUNT(1) OVER (PARTITION BY rr.ReceiptId)>0 THEN rr.RebateDiscountAmt/NULLIF(COUNT(1) OVER (PARTITION BY rr.ReceiptId),0) ELSE 0 END AS FLOAT) RebateAllocated,
-   CAST(CASE WHEN SUM(rr.ReceiptAmtDtl) OVER (PARTITION BY rr.ReceiptId)>0 THEN rr.TDSAmt*(rr.ReceiptAmtDtl/NULLIF(SUM(rr.ReceiptAmtDtl) OVER (PARTITION BY rr.ReceiptId),0))
-             WHEN COUNT(1) OVER (PARTITION BY rr.ReceiptId)>0 THEN rr.TDSAmt/NULLIF(COUNT(1) OVER (PARTITION BY rr.ReceiptId),0) ELSE 0 END AS FLOAT) TDSAllocated,
-   CAST(CASE WHEN SUM(rr.ReceiptAmtDtl) OVER (PARTITION BY rr.ReceiptId)>0 THEN rr.WriteOffAmt*(rr.ReceiptAmtDtl/NULLIF(SUM(rr.ReceiptAmtDtl) OVER (PARTITION BY rr.ReceiptId),0))
-             WHEN COUNT(1) OVER (PARTITION BY rr.ReceiptId)>0 THEN rr.WriteOffAmt/NULLIF(COUNT(1) OVER (PARTITION BY rr.ReceiptId),0) ELSE 0 END AS FLOAT) WriteOffAllocated
-  FROM #receipt_raw rr
-  WHERE (@IncludeCancelled=1 OR ISNULL(rr.CancelStatus,0)<>1)
+  SELECT alloc.*,
+   CAST(CASE WHEN net.NetDueRounded<=0 THEN 0 ELSE net.NetDueRounded END AS FLOAT) NetDueAmtDtl
+  FROM (
+   SELECT rr.*,
+    CAST(CASE WHEN SUM(rr.ReceiptAmtDtl) OVER (PARTITION BY rr.ReceiptId)>0 THEN rr.RebateDiscountAmt*(rr.ReceiptAmtDtl/NULLIF(SUM(rr.ReceiptAmtDtl) OVER (PARTITION BY rr.ReceiptId),0))
+              WHEN COUNT(1) OVER (PARTITION BY rr.ReceiptId)>0 THEN rr.RebateDiscountAmt/NULLIF(COUNT(1) OVER (PARTITION BY rr.ReceiptId),0) ELSE 0 END AS FLOAT) RebateAllocated,
+    CAST(CASE WHEN SUM(rr.ReceiptAmtDtl) OVER (PARTITION BY rr.ReceiptId)>0 THEN rr.TDSAmt*(rr.ReceiptAmtDtl/NULLIF(SUM(rr.ReceiptAmtDtl) OVER (PARTITION BY rr.ReceiptId),0))
+              WHEN COUNT(1) OVER (PARTITION BY rr.ReceiptId)>0 THEN rr.TDSAmt/NULLIF(COUNT(1) OVER (PARTITION BY rr.ReceiptId),0) ELSE 0 END AS FLOAT) TDSAllocated,
+    CAST(CASE WHEN SUM(rr.ReceiptAmtDtl) OVER (PARTITION BY rr.ReceiptId)>0 THEN rr.WriteOffAmt*(rr.ReceiptAmtDtl/NULLIF(SUM(rr.ReceiptAmtDtl) OVER (PARTITION BY rr.ReceiptId),0))
+              WHEN COUNT(1) OVER (PARTITION BY rr.ReceiptId)>0 THEN rr.WriteOffAmt/NULLIF(COUNT(1) OVER (PARTITION BY rr.ReceiptId),0) ELSE 0 END AS FLOAT) WriteOffAllocated
+   FROM #receipt_raw rr
+   WHERE (@IncludeCancelled=1 OR ISNULL(rr.CancelStatus,0)<>1)
+  ) alloc
+  CROSS APPLY (
+   SELECT ROUND(ISNULL(alloc.DueAmtDtl,0)-ISNULL(alloc.TDSAllocated,0)-ISNULL(alloc.RebateAllocated,0)-ISNULL(alloc.WriteOffAllocated,0),2) NetDueRounded
+  ) net
  )x;
 
  SELECT BillId,SUM(ReceiptAmtDtl) receipt_total_all_time,SUM(TDSAllocated) tds_total_all_time,SUM(RebateAllocated) rebate_discount_all_time,SUM(WriteOffAllocated) writeoff_total_all_time,
@@ -141,14 +149,15 @@ BEGIN
            (
             UPPER(ISNULL(r.BillSourceKey,N''))=N'OPENING'
             AND (
-                 ISNULL(r.receipt_total_window,0)>1
-                 OR ISNULL(r.balance_all_time,0)>1
+                 ISNULL(r.settled_total_window,0)>@SettleTolerance
+                 OR ISNULL(r.balance_all_time,0)>@SettleTolerance
                 )
            )
            OR (
             UPPER(ISNULL(r.BillSourceKey,N''))<>N'OPENING'
             AND (
                  ((@BillFrom IS NULL OR CAST(r.BillDate AS DATE)>=@BillFrom) AND (@BillTo IS NULL OR CAST(r.BillDate AS DATE)<=@BillTo))
+                 OR ISNULL(r.settled_total_window,0)>@SettleTolerance
                 )
            )
          )
@@ -212,7 +221,7 @@ BEGIN
  SELECT
   CONCAT(N'BILL-',CONVERT(NVARCHAR(30),d.BillId)) bill_key,
   d.BillId bill_id,d.ReceiptDetailId receipt_detail_id,d.ReceiptId receipt_id,d.ReceiptNo receipt_no,
-  CONVERT(NVARCHAR(10),d.ReceiptDateNorm,23) receipt_date,d.ReceiptAmtDtl receipt_amount,d.BillAmtDtl bill_amount,d.DueAmtDtl due_amount,
+  CONVERT(NVARCHAR(10),d.ReceiptDateNorm,23) receipt_date,d.ReceiptAmtDtl receipt_amount,d.BillAmtDtl bill_amount,d.NetDueAmtDtl due_amount,
   d.TDSAllocated tds_amount,d.RebateAllocated rebate_discount_amount,d.WriteOffAllocated writeoff_amount,
   d.CancelStatus cancel_status,d.PaymentModeId payment_mode_id,
   CASE WHEN LTRIM(RTRIM(ISNULL(d.PaymentMode,N'')))=N'' THEN CONVERT(NVARCHAR(20),ISNULL(d.PaymentModeId,0)) ELSE d.PaymentMode END payment_mode,
@@ -236,8 +245,12 @@ BEGIN
 
  -- Result set 4: Meta
  SELECT
-  @PageSafe page,@PageSizeSafe page_size,@TotalRows total_rows,@TotalPages total_pages,@SortBySafe sort_by,@SortDirSafe sort_dir,
+ @PageSafe page,@PageSizeSafe page_size,@TotalRows total_rows,@TotalPages total_pages,@SortBySafe sort_by,@SortDirSafe sort_dir,
   @QSafe q,NULLIF(@BillSourceSafe,N'') bill_source,NULLIF(@SubtypeSafe,N'') patient_subtype,NULLIF(@KpiFilterSafe,N'') kpi_filter,
+  CASE
+   WHEN @BillFrom IS NULL AND @BillTo IS NULL THEN NULL
+   ELSE N'Includes bills in submit date range plus older bills with settlement activity in the receipt window; openings remain when they have in-window settlement or open balance'
+  END scope_rule,
   CASE @KpiFilterSafe
    WHEN N'bill_count' THEN N'All Bills'
    WHEN N'total_bill_amount' THEN N'Bill Amount > 0'
@@ -276,8 +289,14 @@ SELECT
   ELSE N'Unspecified'
  END subtype,
  COUNT(1) bills,
+ ISNULL(SUM(BillAmount),0) bill_amount,
  SUM(CASE WHEN UPPER(ISNULL(BillSourceKey,N''))=N'OPENING' THEN 0 ELSE 1 END) corporate_bills,
  SUM(CASE WHEN UPPER(ISNULL(BillSourceKey,N''))=N'OPENING' THEN 1 ELSE 0 END) opening_bills,
+ ISNULL(SUM(receipt_total_all_time),0) receipt_all_time,
+ ISNULL(SUM(tds_total_all_time),0) tds_all_time,
+ ISNULL(SUM(rebate_discount_all_time),0) rebate_discount_all_time,
+ ISNULL(SUM(writeoff_total_all_time),0) writeoff_all_time,
+ ISNULL(SUM(settled_total_all_time),0) settled_total_all_time,
  SUM(CASE WHEN status_all_time=N'Settled' THEN 1 ELSE 0 END) settled_count,
  SUM(CASE WHEN status_all_time=N'Settled' AND UPPER(ISNULL(BillSourceKey,N''))<>N'OPENING' THEN 1 ELSE 0 END) settled_corporate_count,
  SUM(CASE WHEN status_all_time=N'Settled' AND UPPER(ISNULL(BillSourceKey,N''))=N'OPENING' THEN 1 ELSE 0 END) settled_opening_count,
@@ -290,6 +309,7 @@ SELECT
  SUM(CASE WHEN status_all_time=N'Overpaid' THEN 1 ELSE 0 END) overpaid_count,
  SUM(CASE WHEN status_all_time=N'Overpaid' AND UPPER(ISNULL(BillSourceKey,N''))<>N'OPENING' THEN 1 ELSE 0 END) overpaid_corporate_count,
  SUM(CASE WHEN status_all_time=N'Overpaid' AND UPPER(ISNULL(BillSourceKey,N''))=N'OPENING' THEN 1 ELSE 0 END) overpaid_opening_count,
+  SUM(CASE WHEN status_all_time IN (N'Partial',N'Unpaid',N'Overpaid') THEN 1 ELSE 0 END) closing_qty,
   ISNULL(SUM(balance_all_time),0) closing_balance
 FROM #rows_filtered
  GROUP BY

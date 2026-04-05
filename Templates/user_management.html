@@ -482,8 +482,8 @@
 
         <label>Unit Scope</label>
         <div class="um-chips-grid" id="unitScopeGrid">
-          {% if allowed_units %}
-            {% for u in allowed_units %}
+          {% if scope_units %}
+            {% for u in scope_units %}
               <label class="um-chip">
                 <input type="checkbox" name="unit_option" value="{{ u }}">
                 <span>{{ u }}</span>
@@ -616,90 +616,96 @@
       <div class="um-card">
         <div class="um-section-head">
           <h2 class="um-title">Historical Data Access</h2>
-          {% if historical_allowed %}
+          {% if not historical_lock_enabled %}
+            <span class="um-badge badge-submit">Disabled</span>
+          {% elif historical_allowed %}
             <span class="um-badge badge-submit">Active this session</span>
           {% else %}
             <span class="um-badge badge-review">Locked</span>
           {% endif %}
         </div>
-        <p class="um-subtitle">Data before {{ historical_cutoff }} is locked for non-IT users. Request session-scoped access.</p>
-        <div style="display:flex; gap:12px; align-items:center; margin-bottom:12px;">
-          <span class="um-pill {% if historical_allowed %}pill-approved{% else %}pill-hold{% endif %}">
-            {% if historical_allowed %}Allowed{% else %}Needs Approval{% endif %}
-          </span>
-          <span style="font-size:12px; color:#64748b;">Cutoff: {{ historical_cutoff }}</span>
-        </div>
+        {% if not historical_lock_enabled %}
+          <p class="um-subtitle">Historical lock is currently disabled for all reports. No approval or request is needed.</p>
+        {% else %}
+          <p class="um-subtitle">Data before {{ historical_cutoff }} is locked for non-IT users. Request session-scoped access.</p>
+          <div style="display:flex; gap:12px; align-items:center; margin-bottom:12px;">
+            <span class="um-pill {% if historical_allowed %}pill-approved{% else %}pill-hold{% endif %}">
+              {% if historical_allowed %}Allowed{% else %}Needs Approval{% endif %}
+            </span>
+            <span style="font-size:12px; color:#64748b;">Cutoff: {{ historical_cutoff }}</span>
+          </div>
 
-        {% if role != "IT" %}
-          {% if hist_requests %}
-            <div class="um-table-wrapper" style="margin-bottom:14px;">
+          {% if role != "IT" %}
+            {% if hist_requests %}
+              <div class="um-table-wrapper" style="margin-bottom:14px;">
+                <table class="um-table">
+                  <thead>
+                    <tr><th>Requested At</th><th>Status</th><th>Note</th></tr>
+                  </thead>
+                  <tbody>
+                    {% for r in hist_requests %}
+                      <tr>
+                        <td>{{ r.RequestedAt }}</td>
+                        <td>
+                          {% if r.Status == "Approved" %}
+                            <span class="um-pill pill-approved">Approved</span>
+                          {% elif r.Status == "Pending" %}
+                            <span class="um-pill pill-pending">Pending</span>
+                          {% elif r.Status == "Hold" %}
+                            <span class="um-pill pill-hold">Hold</span>
+                          {% else %}
+                            {{ r.Status }}
+                          {% endif %}
+                        </td>
+                        <td>{{ r.Note or "-" }}</td>
+                      </tr>
+                    {% endfor %}
+                  </tbody>
+                </table>
+              </div>
+            {% endif %}
+            <form method="post" action="{{ url_for('historical_request') }}" class="um-form" id="histRequestForm">
+              <label>Reason (optional)</label>
+              <textarea name="reason" placeholder="Why do you need historical data?"></textarea>
+              <button type="submit" class="um-btn-primary">Request Historical Access</button>
+            </form>
+          {% else %}
+            <p class="um-subtitle" style="margin-top:-8px;">Approve or hold session-scoped requests below.</p>
+            <div class="um-table-wrapper">
               <table class="um-table">
                 <thead>
-                  <tr><th>Requested At</th><th>Status</th><th>Note</th></tr>
+                  <tr><th>User</th><th>Requested At</th><th>Status</th><th>Action</th></tr>
                 </thead>
                 <tbody>
                   {% for r in hist_requests %}
                     <tr>
+                      <td>{{ r.NewUserName }}</td>
                       <td>{{ r.RequestedAt }}</td>
+                      <td>{{ r.Status }}</td>
                       <td>
-                        {% if r.Status == "Approved" %}
-                          <span class="um-pill pill-approved">Approved</span>
-                        {% elif r.Status == "Pending" %}
-                          <span class="um-pill pill-pending">Pending</span>
-                        {% elif r.Status == "Hold" %}
-                          <span class="um-pill pill-hold">Hold</span>
-                        {% else %}
-                          {{ r.Status }}
-                        {% endif %}
+                        {% if r.Status in ("Pending","Hold") %}
+                          <div style="display:flex; gap:6px;">
+                            <form method="post" action="{{ url_for('user_management_decision') }}">
+                              <input type="hidden" name="request_id" value="{{ r.RequestId }}">
+                              <input type="hidden" name="action" value="approve">
+                              <button style="border:none; background:none; cursor:pointer; color:#16a34a; font-weight:bold; font-size:16px;" title="Approve">&#10003;</button>
+                            </form>
+                            <form method="post" action="{{ url_for('user_management_decision') }}">
+                              <input type="hidden" name="request_id" value="{{ r.RequestId }}">
+                              <input type="hidden" name="action" value="hold">
+                              <button style="border:none; background:none; cursor:pointer; color:#d97706; font-weight:bold; font-size:16px;" title="Hold">!</button>
+                            </form>
+                          </div>
+                        {% else %}{{ r.Status }}{% endif %}
                       </td>
-                      <td>{{ r.Note or "-" }}</td>
                     </tr>
+                  {% else %}
+                    <tr><td colspan="4" style="text-align:center; padding:14px; color:#94a3b8;">No historical requests.</td></tr>
                   {% endfor %}
                 </tbody>
               </table>
             </div>
           {% endif %}
-          <form method="post" action="{{ url_for('historical_request') }}" class="um-form" id="histRequestForm">
-            <label>Reason (optional)</label>
-            <textarea name="reason" placeholder="Why do you need historical data?"></textarea>
-            <button type="submit" class="um-btn-primary">Request Historical Access</button>
-          </form>
-        {% else %}
-          <p class="um-subtitle" style="margin-top:-8px;">Approve or hold session-scoped requests below.</p>
-          <div class="um-table-wrapper">
-            <table class="um-table">
-              <thead>
-                <tr><th>User</th><th>Requested At</th><th>Status</th><th>Action</th></tr>
-              </thead>
-              <tbody>
-                {% for r in hist_requests %}
-                  <tr>
-                    <td>{{ r.NewUserName }}</td>
-                    <td>{{ r.RequestedAt }}</td>
-                    <td>{{ r.Status }}</td>
-                    <td>
-                      {% if r.Status in ("Pending","Hold") %}
-                        <div style="display:flex; gap:6px;">
-                          <form method="post" action="{{ url_for('user_management_decision') }}">
-                            <input type="hidden" name="request_id" value="{{ r.RequestId }}">
-                            <input type="hidden" name="action" value="approve">
-                            <button style="border:none; background:none; cursor:pointer; color:#16a34a; font-weight:bold; font-size:16px;" title="Approve">&#10003;</button>
-                          </form>
-                          <form method="post" action="{{ url_for('user_management_decision') }}">
-                            <input type="hidden" name="request_id" value="{{ r.RequestId }}">
-                            <input type="hidden" name="action" value="hold">
-                            <button style="border:none; background:none; cursor:pointer; color:#d97706; font-weight:bold; font-size:16px;" title="Hold">!</button>
-                          </form>
-                        </div>
-                      {% else %}{{ r.Status }}{% endif %}
-                    </td>
-                  </tr>
-                {% else %}
-                  <tr><td colspan="4" style="text-align:center; padding:14px; color:#94a3b8;">No historical requests.</td></tr>
-                {% endfor %}
-              </tbody>
-            </table>
-          </div>
         {% endif %}
       </div>
       
@@ -861,8 +867,8 @@
                 </div>
                 <div class="um-units-scroll">
                   <div class="um-chips-grid" id="unitScopeGridEdit">
-                    {% if allowed_units %}
-                      {% for u in allowed_units %}
+                    {% if scope_units %}
+                      {% for u in scope_units %}
                         <label class="um-chip">
                           <input type="checkbox" name="unit_option_edit" value="{{ u }}">
                           <span>{{ u }}</span>
@@ -1146,7 +1152,7 @@
                         <input type="checkbox" value="*">
                         <span>All Units</span>
                       </label>
-                      {% for u in allowed_units or [] %}
+                      {% for u in scope_units or [] %}
                         <label class="um-chip">
                           <input type="checkbox" value="{{ (u or '')|upper }}">
                           <span>{{ u }}</span>

@@ -1,0 +1,477 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>{{ unit_label }} Daily Corporate Receipts</title>
+  <style>
+    :root{
+      --ink:#192a3d;
+      --muted:#61758b;
+      --accent:#123f6b;
+      --accent-soft:#eaf2fb;
+      --line:#cfd9e4;
+      --paper:#ffffff;
+      --bg:#eef3f8;
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      background:var(--bg);
+      color:var(--ink);
+      font-family:"Segoe UI",Tahoma,Arial,sans-serif;
+    }
+    .toolbar{
+      position:sticky;
+      top:0;
+      z-index:5;
+      display:flex;
+      justify-content:flex-end;
+      gap:10px;
+      padding:12px 18px;
+      background:rgba(238,243,248,.96);
+      border-bottom:1px solid var(--line);
+    }
+    .btn{
+      border:1px solid #b7c8da;
+      background:#fff;
+      color:var(--accent);
+      border-radius:8px;
+      padding:8px 14px;
+      font-size:13px;
+      font-weight:700;
+      cursor:pointer;
+    }
+    .sheet{
+      width:min(297mm,calc(100vw - 28px));
+      margin:18px auto 28px;
+      background:var(--paper);
+      border:1px solid var(--line);
+      box-shadow:0 18px 40px rgba(15,23,42,.10);
+    }
+    .sheet-inner{
+      padding:16mm 14mm 14mm;
+    }
+    .masthead{
+      display:flex;
+      justify-content:space-between;
+      gap:18px;
+      align-items:flex-start;
+      padding-bottom:12px;
+      border-bottom:2px solid var(--accent);
+    }
+    .eyebrow{
+      display:inline-block;
+      padding:4px 10px;
+      border:1px solid #c8d8ea;
+      background:var(--accent-soft);
+      color:var(--accent);
+      font-size:11px;
+      font-weight:800;
+      letter-spacing:.6px;
+      text-transform:uppercase;
+    }
+    h1{
+      margin:10px 0 4px;
+      font-size:26px;
+      line-height:1.1;
+      color:#102f51;
+    }
+    .subtitle{
+      color:var(--muted);
+      font-size:12px;
+      line-height:1.45;
+      max-width:720px;
+    }
+    .meta{
+      min-width:280px;
+      border:1px solid var(--line);
+      background:#fbfdff;
+    }
+    .meta-row{
+      display:grid;
+      grid-template-columns:120px minmax(0,1fr);
+      border-bottom:1px solid var(--line);
+    }
+    .meta-row:last-child{border-bottom:none}
+    .meta-label{
+      padding:8px 10px;
+      background:#f5f8fc;
+      color:var(--muted);
+      font-size:11px;
+      font-weight:800;
+      letter-spacing:.3px;
+      text-transform:uppercase;
+    }
+    .meta-value{
+      padding:8px 10px;
+      font-size:12px;
+      font-weight:700;
+    }
+    .summary{
+      margin-top:14px;
+      display:grid;
+      grid-template-columns:repeat(7,minmax(0,1fr));
+      gap:8px;
+    }
+    .sum-card{
+      border:1px solid var(--line);
+      background:#fbfdff;
+      padding:10px;
+      min-height:72px;
+    }
+    .sum-label{
+      color:var(--muted);
+      font-size:10px;
+      font-weight:800;
+      letter-spacing:.4px;
+      text-transform:uppercase;
+    }
+    .sum-value{
+      margin-top:6px;
+      font-size:18px;
+      font-weight:800;
+      color:#103352;
+      font-variant-numeric:tabular-nums;
+    }
+    .section-title{
+      margin:16px 0 8px;
+      padding:6px 10px;
+      background:#f5f8fc;
+      border:1px solid var(--line);
+      color:#143a62;
+      font-size:12px;
+      font-weight:800;
+      letter-spacing:.5px;
+      text-transform:uppercase;
+    }
+    table{
+      width:100%;
+      border-collapse:collapse;
+    }
+    th,td{
+      border:1px solid var(--line);
+      padding:7px 8px;
+      font-size:10.5px;
+      vertical-align:top;
+    }
+    th{
+      background:#f5f8fc;
+      color:#153b61;
+      font-size:10px;
+      font-weight:800;
+      letter-spacing:.35px;
+      text-transform:uppercase;
+      text-align:left;
+      white-space:nowrap;
+    }
+    td.num{
+      text-align:right;
+      font-variant-numeric:tabular-nums;
+      white-space:nowrap;
+      font-weight:700;
+    }
+    .muted{
+      color:var(--muted);
+    }
+    .stack{
+      display:flex;
+      flex-direction:column;
+      gap:2px;
+      min-width:0;
+    }
+    .row-strong{
+      font-weight:700;
+      color:var(--ink);
+    }
+    .empty{
+      padding:20px 10px;
+      text-align:center;
+      color:var(--muted);
+      font-size:12px;
+    }
+    .foot{
+      margin-top:18px;
+      display:grid;
+      grid-template-columns:repeat(3,minmax(0,1fr));
+      gap:14px;
+    }
+    .sign{
+      border-top:1px solid #9eb0c3;
+      padding-top:8px;
+      min-height:56px;
+    }
+    .sign .title{
+      font-size:11px;
+      font-weight:800;
+      color:#173b62;
+      text-transform:uppercase;
+      letter-spacing:.4px;
+    }
+    .sign .sub{
+      margin-top:4px;
+      font-size:11px;
+      color:var(--muted);
+    }
+    .print-meta{
+      margin-top:12px;
+      display:flex;
+      justify-content:space-between;
+      gap:12px;
+      font-size:11px;
+      color:var(--muted);
+    }
+    @media (max-width:1200px){
+      .sheet{width:calc(100vw - 14px);margin:8px auto 16px}
+      .sheet-inner{padding:14px}
+      .masthead{flex-direction:column}
+      .meta{width:100%}
+      .summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .foot{grid-template-columns:1fr}
+    }
+    @media print{
+      body{background:#fff}
+      .toolbar{display:none}
+      .sheet{
+        width:100%;
+        margin:0;
+        border:none;
+        box-shadow:none;
+      }
+      .sheet-inner{padding:0}
+      .masthead{
+        display:flex;
+        flex-direction:row;
+        justify-content:space-between;
+        align-items:flex-start;
+        gap:14px;
+        padding-bottom:10px;
+      }
+      .meta{
+        width:300px;
+        min-width:300px;
+      }
+      .summary{
+        grid-template-columns:repeat(7,minmax(0,1fr));
+        gap:6px;
+        margin-top:12px;
+      }
+      .sum-card{
+        min-height:0;
+        padding:8px;
+      }
+      .sum-label{
+        font-size:9px;
+      }
+      .sum-value{
+        margin-top:4px;
+        font-size:15px;
+      }
+      .section-title{
+        margin:10px 0 6px;
+        padding:5px 8px;
+      }
+      table{
+        width:100%;
+        break-inside:auto;
+        page-break-inside:auto;
+      }
+      th,td{
+        padding:5px 6px;
+        font-size:9px;
+      }
+      th{
+        font-size:8.5px;
+      }
+      .foot{
+        margin-top:14px;
+        grid-template-columns:repeat(3,minmax(0,1fr));
+        gap:12px;
+      }
+      .print-meta{
+        margin-top:10px;
+      }
+      .meta,.summary,.foot,.print-meta,.sum-card{
+        break-inside:avoid;
+        page-break-inside:avoid;
+      }
+      .section-title{
+        break-after:avoid;
+        page-break-after:avoid;
+      }
+      tbody tr{
+        break-inside:avoid;
+        page-break-inside:avoid;
+      }
+      thead{
+        display:table-header-group;
+      }
+      @page{
+        size:A4 landscape;
+        margin:8mm;
+      }
+    }
+  </style>
+</head>
+<body>
+  <div class="toolbar">
+    <button class="btn" type="button" onclick="window.print()">Print</button>
+    <button class="btn" type="button" onclick="window.close()">Close</button>
+  </div>
+
+  <main class="sheet">
+    <div class="sheet-inner">
+      <header class="masthead">
+        <div>
+          <div class="eyebrow">{{ unit_label }}</div>
+          <h1>Daily Corporate Receipts Register</h1>
+        </div>
+        <div class="meta">
+          <div class="meta-row">
+            <div class="meta-label">Entry Date</div>
+            <div class="meta-value">{{ payload.entry_date_label or "-" }}</div>
+          </div>
+          <div class="meta-row">
+            <div class="meta-label">Receipt Count</div>
+            <div class="meta-value">{{ payload.summary.count or 0 }}</div>
+          </div>
+          <div class="meta-row">
+            <div class="meta-label">Printed By</div>
+            <div class="meta-value">{{ printed_by or "-" }}</div>
+          </div>
+          <div class="meta-row">
+            <div class="meta-label">Printed On</div>
+            <div class="meta-value">{{ printed_at or "-" }}</div>
+          </div>
+        </div>
+      </header>
+
+      <section class="summary">
+        <div class="sum-card">
+          <div class="sum-label">Gross Total</div>
+          <div class="sum-value">{{ "%.2f"|format(payload.summary.gross_amount or 0) }}</div>
+        </div>
+        <div class="sum-card">
+          <div class="sum-label">TDS Total</div>
+          <div class="sum-value">{{ "%.2f"|format(payload.summary.tds_amount or 0) }}</div>
+        </div>
+        <div class="sum-card">
+          <div class="sum-label">Net Received</div>
+          <div class="sum-value">{{ "%.2f"|format(payload.summary.net_amount or 0) }}</div>
+        </div>
+        <div class="sum-card">
+          <div class="sum-label">Rebate Total</div>
+          <div class="sum-value">{{ "%.2f"|format(payload.summary.rebate_amount or 0) }}</div>
+        </div>
+        <div class="sum-card">
+          <div class="sum-label">Bill Total</div>
+          <div class="sum-value">{{ "%.2f"|format(payload.summary.bill_amount or 0) }}</div>
+        </div>
+        <div class="sum-card">
+          <div class="sum-label">Receipt Total</div>
+          <div class="sum-value">{{ "%.2f"|format(payload.summary.receipt_amount or 0) }}</div>
+        </div>
+        <div class="sum-card">
+          <div class="sum-label">Balance After Receipt</div>
+          <div class="sum-value">{{ "%.2f"|format(payload.summary.due_amount or 0) }}</div>
+        </div>
+      </section>
+
+      <div class="section-title">Receipt Listing</div>
+      <table>
+        <thead>
+          <tr>
+            <th>Sl</th>
+            <th>Receipt</th>
+            <th>Patient / Registration</th>
+            <th>Bill</th>
+            <th>Visit</th>
+            <th>Mode / UTR</th>
+            <th class="num">Gross</th>
+            <th class="num">TDS</th>
+            <th class="num">Net</th>
+            <th class="num">Rebate</th>
+            <th class="num">Due</th>
+            <th>Entry</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% if payload.rows %}
+            {% for row in payload.rows %}
+            <tr>
+              <td>{{ loop.index }}</td>
+              <td>
+                <div class="stack">
+                  <span class="row-strong">{{ row.receipt_no or row.receipt_id }}</span>
+                  <span class="muted">Receipt Date: {{ row.receipt_date or "-" }}</span>
+                </div>
+              </td>
+              <td>
+                <div class="stack">
+                  <span class="row-strong">{{ row.patient_name or "-" }}</span>
+                  <span class="muted">{{ row.registration_no or "-" }}</span>
+                  <span class="muted">Patient ID: {{ row.patient_id or "-" }}</span>
+                </div>
+              </td>
+              <td>
+                <div class="stack">
+                  <span class="row-strong">{{ row.bill_no or row.bill_id or "-" }}</span>
+                  <span class="muted">Bill ID: {{ row.bill_id or "-" }}</span>
+                  <span class="muted">Bill Amt: {{ "%.2f"|format(row.bill_amount or 0) }}</span>
+                </div>
+              </td>
+              <td>
+                <div class="stack">
+                  <span class="row-strong">{{ row.type_of_visit or "-" }}</span>
+                  <span class="muted">Visit ID: {{ row.visit_id or "-" }}</span>
+                </div>
+              </td>
+              <td>
+                <div class="stack">
+                  <span class="row-strong">{{ row.payment_mode or "-" }}</span>
+                  <span class="muted">{{ row.utr_no or "-" }}</span>
+                </div>
+              </td>
+              <td class="num">{{ "%.2f"|format(row.gross_amount or 0) }}</td>
+              <td class="num">{{ "%.2f"|format(row.tds_amount or 0) }}</td>
+              <td class="num">{{ "%.2f"|format(row.net_amount or 0) }}</td>
+              <td class="num">{{ "%.2f"|format(row.rebate_amount or 0) }}</td>
+              <td class="num">{{ "%.2f"|format(row.due_amount or 0) }}</td>
+              <td>
+                <div class="stack">
+                  <span class="row-strong">{{ row.updated_by or row.inserted_by or "-" }}</span>
+                  <span class="muted">{{ row.entry_datetime or row.updated_on or "-" }}</span>
+                </div>
+              </td>
+            </tr>
+            {% endfor %}
+          {% else %}
+            <tr>
+              <td colspan="12" class="empty">No SharpSight receipts were entered on {{ payload.entry_date_label or "the selected date" }}.</td>
+            </tr>
+          {% endif %}
+        </tbody>
+      </table>
+
+      <div class="foot">
+        <div class="sign">
+          <div class="title">Prepared By</div>
+          <div class="sub">{{ printed_by or "-" }}</div>
+        </div>
+        <div class="sign">
+          <div class="title">Submitted To Accounts</div>
+          <div class="sub">&nbsp;</div>
+        </div>
+        <div class="sign">
+          <div class="title">Accounts Verification</div>
+          <div class="sub">&nbsp;</div>
+        </div>
+      </div>
+
+      <div class="print-meta">
+        <span>Unit: {{ unit_label }} ({{ unit_key }})</span>
+        <span>Entry Date Filter: {{ payload.entry_date or "-" }}</span>
+      </div>
+    </div>
+  </main>
+</body>
+</html>

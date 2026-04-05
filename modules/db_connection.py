@@ -1,3 +1,4 @@
+import os
 import pyodbc
 import sqlite3
 import config
@@ -12,6 +13,23 @@ except Exception:
 
 # Build a small, conservative pool per unit.
 ENGINE_CACHE = {}
+
+
+def _env_int(name: str, default: int, *, minimum: int | None = None) -> int:
+    raw = os.getenv(name)
+    try:
+        value = int(str(raw).strip()) if raw is not None else int(default)
+    except Exception:
+        value = int(default)
+    if minimum is not None:
+        value = max(int(minimum), value)
+    return value
+
+
+DB_POOL_SIZE = _env_int("DB_POOL_SIZE", 5, minimum=1)
+DB_POOL_MAX_OVERFLOW = _env_int("DB_POOL_MAX_OVERFLOW", 2, minimum=0)
+DB_POOL_TIMEOUT = _env_int("DB_POOL_TIMEOUT", 30, minimum=1)
+DB_POOL_RECYCLE = _env_int("DB_POOL_RECYCLE", 300, minimum=30)
 
 
 def _brace_driver(name: str) -> str:
@@ -86,10 +104,10 @@ def _make_engine(cfg: dict):
         timeout = int(cfg.get("TIMEOUT", 5))
         return create_engine(
             url,
-            pool_size=5,
-            max_overflow=2,
-            pool_timeout=30,
-            pool_recycle=300,
+            pool_size=DB_POOL_SIZE,
+            max_overflow=DB_POOL_MAX_OVERFLOW,
+            pool_timeout=DB_POOL_TIMEOUT,
+            pool_recycle=DB_POOL_RECYCLE,
             pool_pre_ping=True,
             connect_args={"timeout": timeout},
         )
