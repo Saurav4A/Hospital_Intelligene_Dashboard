@@ -2,7 +2,7 @@
 <html lang="en">
 <head>
   <meta charset="utf-8">
-  <title>{{ unit_label }} Daily Corporate Receipts</title>
+  <title>{{ unit_label }} Corporate Receipts Register</title>
   <style>
     :root{
       --ink:#192a3d;
@@ -41,6 +41,7 @@
       font-weight:700;
       cursor:pointer;
     }
+    .screen-only{}
     .sheet{
       width:min(297mm,calc(100vw - 28px));
       margin:18px auto 28px;
@@ -110,14 +111,15 @@
     .summary{
       margin-top:14px;
       display:grid;
-      grid-template-columns:repeat(7,minmax(0,1fr));
+      grid-template-columns:repeat(6,minmax(0,1fr));
       gap:8px;
     }
     .sum-card{
       border:1px solid var(--line);
       background:#fbfdff;
-      padding:10px;
-      min-height:72px;
+      padding:10px 12px;
+      min-height:76px;
+      min-width:0;
     }
     .sum-label{
       color:var(--muted);
@@ -128,10 +130,13 @@
     }
     .sum-value{
       margin-top:6px;
-      font-size:18px;
+      font-size:16px;
+      line-height:1.2;
       font-weight:800;
       color:#103352;
       font-variant-numeric:tabular-nums;
+      letter-spacing:-.2px;
+      overflow-wrap:anywhere;
     }
     .section-title{
       margin:16px 0 8px;
@@ -143,6 +148,182 @@
       font-weight:800;
       letter-spacing:.5px;
       text-transform:uppercase;
+    }
+    .bulk-edit-panel{
+      margin-top:14px;
+      padding:12px;
+      border:1px solid var(--line);
+      border-radius:12px;
+      background:linear-gradient(180deg,#fbfdff 0,#f6fbff 100%);
+    }
+    .bulk-edit-head{
+      display:flex;
+      flex-direction:column;
+      gap:4px;
+      margin-bottom:10px;
+    }
+    .bulk-edit-title{
+      font-size:12px;
+      font-weight:800;
+      letter-spacing:.4px;
+      text-transform:uppercase;
+      color:#143a62;
+    }
+    .bulk-edit-sub{
+      font-size:12px;
+      line-height:1.45;
+      color:var(--muted);
+    }
+    .bulk-edit-grid{
+      display:grid;
+      grid-template-columns:180px minmax(280px,1fr) auto auto;
+      gap:10px;
+      align-items:end;
+    }
+    .bulk-edit-field{
+      display:flex;
+      flex-direction:column;
+      gap:5px;
+      min-width:0;
+    }
+    .bulk-edit-field label{
+      font-size:11px;
+      font-weight:800;
+      letter-spacing:.3px;
+      text-transform:uppercase;
+      color:#345676;
+    }
+    .bulk-edit-field input{
+      width:100%;
+      min-width:0;
+      height:38px;
+      border:1px solid #c9d7e6;
+      border-radius:10px;
+      background:#fff;
+      padding:0 10px;
+      font-size:13px;
+      color:#132941;
+    }
+    .bulk-edit-field input:focus{
+      outline:none;
+      border-color:#5a8fc2;
+      box-shadow:0 0 0 3px rgba(90,143,194,.18);
+    }
+    .bulk-edit-toggle{
+      display:inline-flex;
+      align-items:center;
+      gap:8px;
+      min-height:38px;
+      font-size:12px;
+      font-weight:700;
+      color:#345676;
+      white-space:nowrap;
+    }
+    .bulk-edit-toggle input{
+      width:16px;
+      height:16px;
+      accent-color:#0f4c81;
+      margin:0;
+    }
+    .bulk-edit-actions{
+      display:flex;
+      align-items:flex-end;
+      justify-content:flex-end;
+    }
+    .bulk-edit-meta{
+      margin-top:10px;
+      font-size:12px;
+      font-weight:700;
+      color:#345676;
+    }
+    .bulk-edit-status{
+      margin-top:8px;
+      font-size:12px;
+      font-weight:700;
+      color:#4f647d;
+      min-height:18px;
+    }
+    .bulk-edit-status.success{color:#166534}
+    .bulk-edit-status.error{color:#b42318}
+    .bulk-edit-status.warn{color:#b45309}
+    .bulk-edit-status.loading{color:#0f4c81}
+    .bulk-filter-shell{
+      display:grid;
+      gap:10px;
+      margin-bottom:12px;
+      padding:10px;
+      border:1px dashed #c9d7e6;
+      border-radius:10px;
+      background:#ffffff;
+    }
+    .bulk-filter-head{
+      display:flex;
+      flex-direction:column;
+      gap:3px;
+    }
+    .bulk-filter-title{
+      font-size:11px;
+      font-weight:800;
+      letter-spacing:.35px;
+      text-transform:uppercase;
+      color:#23496b;
+    }
+    .bulk-filter-sub{
+      font-size:11px;
+      line-height:1.45;
+      color:var(--muted);
+    }
+    .bulk-filter-tabs{
+      display:flex;
+      gap:8px;
+      overflow-x:auto;
+      padding-bottom:2px;
+      scrollbar-width:thin;
+    }
+    .bulk-filter-tab{
+      border:1px solid #c9d7e6;
+      background:#f7fbff;
+      color:#204867;
+      border-radius:999px;
+      padding:8px 12px;
+      font-size:12px;
+      font-weight:800;
+      line-height:1;
+      white-space:nowrap;
+      cursor:pointer;
+      transition:all .15s ease;
+    }
+    .bulk-filter-tab:hover{
+      border-color:#92b3d2;
+      background:#eef6ff;
+    }
+    .bulk-filter-tab.active{
+      background:#123f6b;
+      border-color:#123f6b;
+      color:#ffffff;
+      box-shadow:0 6px 14px rgba(18,63,107,.18);
+    }
+    .bulk-filter-tab small{
+      font-size:11px;
+      font-weight:700;
+      opacity:.9;
+    }
+    .bulk-filter-range{
+      display:grid;
+      grid-template-columns:170px 170px auto;
+      gap:10px;
+      align-items:end;
+    }
+    .bulk-filter-actions{
+      display:flex;
+      align-items:flex-end;
+      gap:8px;
+      flex-wrap:wrap;
+    }
+    .bulk-filter-meta{
+      font-size:12px;
+      font-weight:700;
+      color:#345676;
     }
     table{
       width:100%;
@@ -163,6 +344,20 @@
       text-transform:uppercase;
       text-align:left;
       white-space:nowrap;
+    }
+    th.center,td.center{
+      text-align:center;
+    }
+    .sel-col{
+      width:44px;
+      min-width:44px;
+      text-align:center;
+    }
+    .row-select{
+      width:15px;
+      height:15px;
+      accent-color:#0f4c81;
+      margin:0;
     }
     td.num{
       text-align:right;
@@ -225,12 +420,17 @@
       .sheet-inner{padding:14px}
       .masthead{flex-direction:column}
       .meta{width:100%}
+      .bulk-filter-range{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .bulk-filter-actions{grid-column:1 / -1}
+      .bulk-edit-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+      .bulk-edit-actions{justify-content:flex-start}
       .summary{grid-template-columns:repeat(2,minmax(0,1fr))}
       .foot{grid-template-columns:1fr}
     }
     @media print{
       body{background:#fff}
       .toolbar{display:none}
+      .screen-only{display:none!important}
       .sheet{
         width:100%;
         margin:0;
@@ -251,7 +451,7 @@
         min-width:300px;
       }
       .summary{
-        grid-template-columns:repeat(7,minmax(0,1fr));
+        grid-template-columns:repeat(6,minmax(0,1fr));
         gap:6px;
         margin-top:12px;
       }
@@ -264,7 +464,7 @@
       }
       .sum-value{
         margin-top:4px;
-        font-size:15px;
+        font-size:14px;
       }
       .section-title{
         margin:10px 0 6px;
@@ -313,6 +513,8 @@
   </style>
 </head>
 <body>
+  {% set can_inline_receipt_date_edit = can_bulk_receipt_date_edit and ((payload.date_filter_mode or "entry_date") == "entry_date") %}
+  {% set listing_colspan = 14 if can_inline_receipt_date_edit else 13 %}
   <div class="toolbar">
     <button class="btn" type="button" onclick="window.print()">Print</button>
     <button class="btn" type="button" onclick="window.close()">Close</button>
@@ -323,12 +525,13 @@
       <header class="masthead">
         <div>
           <div class="eyebrow">{{ unit_label }}</div>
-          <h1>Daily Corporate Receipts Register</h1>
+          <h1>Corporate Receipts Register</h1>
+          <div class="subtitle">Receipt register for {{ unit_label }} covering both corporate bills and opening-balance receipts, formatted clearly for printing, review, and filing.</div>
         </div>
         <div class="meta">
           <div class="meta-row">
-            <div class="meta-label">Entry Date</div>
-            <div class="meta-value">{{ payload.entry_date_label or "-" }}</div>
+            <div class="meta-label">{{ payload.date_filter_label or payload.entry_meta_label or "Entry Date" }}</div>
+            <div class="meta-value">{{ payload.entry_period_label or payload.entry_date_label or "-" }}</div>
           </div>
           <div class="meta-row">
             <div class="meta-label">Receipt Count</div>
@@ -345,34 +548,92 @@
         </div>
       </header>
 
+      {% if can_inline_receipt_date_edit %}
+      <section class="bulk-edit-panel screen-only" id="bulkReceiptDateEditor">
+        <div class="bulk-edit-head">
+          <div class="bulk-edit-title">Bulk Receipt Date Correction</div>
+          <div class="bulk-edit-sub">Available only in Entry Date mode for users who have the receipt-date correction right. Select receipts below, set the corrected receipt date, and save. Every corrected receipt is written to the audit log with old date, new date, user, unit, and reason.</div>
+        </div>
+        <div class="bulk-filter-shell">
+          <div class="bulk-filter-head">
+            <div class="bulk-filter-title">Selection Filter</div>
+            <div class="bulk-filter-sub">Use quick date tabs or a smaller date range to narrow the receipt list before selecting rows. The filter works only on this screen and does not change the printed register.</div>
+          </div>
+          <div class="bulk-filter-tabs" id="bulkFilterTabs" aria-label="Quick date filters"></div>
+          <div class="bulk-filter-range">
+            <div class="bulk-edit-field">
+              <label for="bulkFilterFromInput">{{ payload.date_filter_base_label or "Entry Date" }} From</label>
+              <input
+                type="date"
+                id="bulkFilterFromInput"
+                min="{{ payload.entry_from or '' }}"
+                max="{{ payload.entry_to or '' }}"
+                value="{{ payload.entry_from or '' }}"
+              >
+            </div>
+            <div class="bulk-edit-field">
+              <label for="bulkFilterToInput">{{ payload.date_filter_base_label or "Entry Date" }} To</label>
+              <input
+                type="date"
+                id="bulkFilterToInput"
+                min="{{ payload.entry_from or '' }}"
+                max="{{ payload.entry_to or '' }}"
+                value="{{ payload.entry_to or '' }}"
+              >
+            </div>
+            <div class="bulk-filter-actions">
+              <button class="btn" type="button" id="bulkFilterApplyBtn">Apply Filter</button>
+              <button class="btn" type="button" id="bulkFilterResetBtn">Show All</button>
+            </div>
+          </div>
+          <div class="bulk-filter-meta" id="bulkFilterMeta">Showing all receipts in the loaded {{ (payload.date_filter_base_label or "entry date") | lower }} range.</div>
+        </div>
+        <div class="bulk-edit-grid">
+          <div class="bulk-edit-field">
+            <label for="bulkReceiptDateInput">New Receipt Date</label>
+            <input type="date" id="bulkReceiptDateInput">
+          </div>
+          <div class="bulk-edit-field">
+            <label for="bulkReceiptReasonInput">Reason</label>
+            <input type="text" id="bulkReceiptReasonInput" placeholder="Why is this receipt date being corrected?">
+          </div>
+          <label class="bulk-edit-toggle" for="bulkReceiptSelectAll">
+            <input type="checkbox" id="bulkReceiptSelectAll">
+            <span>Select All Visible</span>
+          </label>
+          <div class="bulk-edit-actions">
+            <button class="btn" type="button" id="bulkReceiptApplyBtn" disabled>Change Receipt Date</button>
+          </div>
+        </div>
+        <div class="bulk-edit-meta" id="bulkReceiptMeta">No receipts selected.</div>
+        <div class="bulk-edit-status" id="bulkReceiptStatus" aria-live="polite"></div>
+      </section>
+      {% endif %}
+
       <section class="summary">
         <div class="sum-card">
           <div class="sum-label">Gross Total</div>
-          <div class="sum-value">{{ "%.2f"|format(payload.summary.gross_amount or 0) }}</div>
+          <div class="sum-value">&#8377;{{ format_indian_currency(payload.summary.gross_amount or 0) }}</div>
         </div>
         <div class="sum-card">
           <div class="sum-label">TDS Total</div>
-          <div class="sum-value">{{ "%.2f"|format(payload.summary.tds_amount or 0) }}</div>
+          <div class="sum-value">&#8377;{{ format_indian_currency(payload.summary.tds_amount or 0) }}</div>
         </div>
         <div class="sum-card">
           <div class="sum-label">Net Received</div>
-          <div class="sum-value">{{ "%.2f"|format(payload.summary.net_amount or 0) }}</div>
+          <div class="sum-value">&#8377;{{ format_indian_currency(payload.summary.net_amount or 0) }}</div>
         </div>
         <div class="sum-card">
           <div class="sum-label">Rebate Total</div>
-          <div class="sum-value">{{ "%.2f"|format(payload.summary.rebate_amount or 0) }}</div>
+          <div class="sum-value">&#8377;{{ format_indian_currency(payload.summary.rebate_amount or 0) }}</div>
         </div>
         <div class="sum-card">
           <div class="sum-label">Bill Total</div>
-          <div class="sum-value">{{ "%.2f"|format(payload.summary.bill_amount or 0) }}</div>
+          <div class="sum-value">&#8377;{{ format_indian_currency(payload.summary.bill_amount or 0) }}</div>
         </div>
         <div class="sum-card">
           <div class="sum-label">Receipt Total</div>
-          <div class="sum-value">{{ "%.2f"|format(payload.summary.receipt_amount or 0) }}</div>
-        </div>
-        <div class="sum-card">
-          <div class="sum-label">Balance After Receipt</div>
-          <div class="sum-value">{{ "%.2f"|format(payload.summary.due_amount or 0) }}</div>
+          <div class="sum-value">&#8377;{{ format_indian_currency(payload.summary.receipt_amount or 0) }}</div>
         </div>
       </section>
 
@@ -380,24 +641,41 @@
       <table>
         <thead>
           <tr>
+            {% if can_inline_receipt_date_edit %}
+            <th class="center sel-col screen-only">Select</th>
+            {% endif %}
             <th>Sl</th>
             <th>Receipt</th>
             <th>Patient / Registration</th>
+            <th>Against</th>
             <th>Bill</th>
             <th>Visit</th>
             <th>Mode / UTR</th>
-            <th class="num">Gross</th>
-            <th class="num">TDS</th>
-            <th class="num">Net</th>
-            <th class="num">Rebate</th>
-            <th class="num">Due</th>
+            <th class="num">Gross (&#8377;)</th>
+            <th class="num">TDS (&#8377;)</th>
+            <th class="num">Net (&#8377;)</th>
+            <th class="num">Rebate (&#8377;)</th>
+            <th class="num">Due (&#8377;)</th>
             <th>Entry</th>
           </tr>
         </thead>
         <tbody>
           {% if payload.rows %}
             {% for row in payload.rows %}
-            <tr>
+            <tr
+              data-receipt-id="{{ row.receipt_id or 0 }}"
+              data-filter-date="{{ row.filter_date_iso or row.entry_date_iso or row.receipt_date_iso or '' }}"
+            >
+              {% if can_inline_receipt_date_edit %}
+              <td class="center sel-col screen-only">
+                <input
+                  class="row-select receipt-select"
+                  type="checkbox"
+                  data-receipt-id="{{ row.receipt_id or 0 }}"
+                  {% if not (row.receipt_id or 0) %}disabled{% endif %}
+                >
+              </td>
+              {% endif %}
               <td>{{ loop.index }}</td>
               <td>
                 <div class="stack">
@@ -410,13 +688,20 @@
                   <span class="row-strong">{{ row.patient_name or "-" }}</span>
                   <span class="muted">{{ row.registration_no or "-" }}</span>
                   <span class="muted">Patient ID: {{ row.patient_id or "-" }}</span>
+                  <span class="muted">Patient SubType: {{ row.patient_subtype or "-" }}</span>
+                </div>
+              </td>
+              <td>
+                <div class="stack">
+                  <span class="row-strong">{{ row.receipt_against_source or "-" }}</span>
+                  <span class="muted">{{ row.receipt_source_key or "-" }}</span>
                 </div>
               </td>
               <td>
                 <div class="stack">
                   <span class="row-strong">{{ row.bill_no or row.bill_id or "-" }}</span>
-                  <span class="muted">Bill ID: {{ row.bill_id or "-" }}</span>
-                  <span class="muted">Bill Amt: {{ "%.2f"|format(row.bill_amount or 0) }}</span>
+                  <span class="muted">{% if row.receipt_source_key == "OPENING" %}Opening ID{% else %}Bill ID{% endif %}: {{ row.bill_id or "-" }}</span>
+                  <span class="muted">Bill Amt: &#8377;{{ format_indian_currency(row.bill_amount or 0) }}</span>
                 </div>
               </td>
               <td>
@@ -431,11 +716,11 @@
                   <span class="muted">{{ row.utr_no or "-" }}</span>
                 </div>
               </td>
-              <td class="num">{{ "%.2f"|format(row.gross_amount or 0) }}</td>
-              <td class="num">{{ "%.2f"|format(row.tds_amount or 0) }}</td>
-              <td class="num">{{ "%.2f"|format(row.net_amount or 0) }}</td>
-              <td class="num">{{ "%.2f"|format(row.rebate_amount or 0) }}</td>
-              <td class="num">{{ "%.2f"|format(row.due_amount or 0) }}</td>
+              <td class="num">{{ format_indian_currency(row.gross_amount or 0) }}</td>
+              <td class="num">{{ format_indian_currency(row.tds_amount or 0) }}</td>
+              <td class="num">{{ format_indian_currency(row.net_amount or 0) }}</td>
+              <td class="num">{{ format_indian_currency(row.rebate_amount or 0) }}</td>
+              <td class="num">{{ format_indian_currency(row.due_amount or 0) }}</td>
               <td>
                 <div class="stack">
                   <span class="row-strong">{{ row.updated_by or row.inserted_by or "-" }}</span>
@@ -446,7 +731,12 @@
             {% endfor %}
           {% else %}
             <tr>
-              <td colspan="12" class="empty">No SharpSight receipts were entered on {{ payload.entry_date_label or "the selected date" }}.</td>
+              <td colspan="{{ listing_colspan }}" class="empty">No corporate receipts were entered for {{ payload.entry_period_label or "the selected entry-date range" }} in {{ unit_label }}.</td>
+            </tr>
+          {% endif %}
+          {% if can_inline_receipt_date_edit %}
+            <tr id="clientFilterEmptyRow" class="screen-only" style="display:none;">
+              <td colspan="{{ listing_colspan }}" class="empty">No receipts match the current selection filter.</td>
             </tr>
           {% endif %}
         </tbody>
@@ -469,9 +759,337 @@
 
       <div class="print-meta">
         <span>Unit: {{ unit_label }} ({{ unit_key }})</span>
-        <span>Entry Date Filter: {{ payload.entry_date or "-" }}</span>
+        <span>{{ payload.date_filter_label or payload.entry_meta_label or "Entry Date" }}: {{ payload.entry_period_label or payload.entry_date or "-" }}</span>
       </div>
     </div>
   </main>
+  {% if can_inline_receipt_date_edit %}
+  <script>
+    (() => {
+      const unitKey = {{ unit_key | tojson }};
+      const filterBy = {{ (payload.date_filter_mode or "entry_date") | tojson }};
+      const dateFilterBaseLabel = {{ (payload.date_filter_base_label or "Entry Date") | tojson }};
+      const entryFrom = {{ (payload.entry_from or "") | tojson }};
+      const entryTo = {{ (payload.entry_to or "") | tojson }};
+      const dataRows = Array.from(document.querySelectorAll("tbody tr[data-receipt-id]"));
+      const emptyFilterRow = document.getElementById("clientFilterEmptyRow");
+      const rowChecks = Array.from(document.querySelectorAll(".receipt-select"));
+      const selectAll = document.getElementById("bulkReceiptSelectAll");
+      const dateInput = document.getElementById("bulkReceiptDateInput");
+      const reasonInput = document.getElementById("bulkReceiptReasonInput");
+      const applyBtn = document.getElementById("bulkReceiptApplyBtn");
+      const metaEl = document.getElementById("bulkReceiptMeta");
+      const statusEl = document.getElementById("bulkReceiptStatus");
+      const filterTabsEl = document.getElementById("bulkFilterTabs");
+      const filterFromInput = document.getElementById("bulkFilterFromInput");
+      const filterToInput = document.getElementById("bulkFilterToInput");
+      const filterApplyBtn = document.getElementById("bulkFilterApplyBtn");
+      const filterResetBtn = document.getElementById("bulkFilterResetBtn");
+      const filterMetaEl = document.getElementById("bulkFilterMeta");
+      const selectedIds = new Set();
+      const monthNames = ["Jan", "Feb", "Mar", "Apr", "May", "Jun", "Jul", "Aug", "Sep", "Oct", "Nov", "Dec"];
+      const currentFilter = {
+        from: String(entryFrom || "").trim(),
+        to: String(entryTo || "").trim(),
+        kind: "all",
+      };
+
+      const normalizeIsoDate = (value) => {
+        const text = String(value || "").trim();
+        return /^\d{4}-\d{2}-\d{2}$/.test(text) ? text : "";
+      };
+
+      const parseIsoParts = (iso) => {
+        const clean = normalizeIsoDate(iso);
+        if (!clean) return null;
+        const [yearText, monthText, dayText] = clean.split("-");
+        const year = Number(yearText);
+        const month = Number(monthText);
+        const day = Number(dayText);
+        if (!year || !month || !day || month < 1 || month > 12) return null;
+        return { year, month, day };
+      };
+
+      const formatShortDateLabel = (iso) => {
+        const parts = parseIsoParts(iso);
+        if (!parts) return iso || "-";
+        return `${String(parts.day).padStart(2, "0")} ${monthNames[parts.month - 1]}`;
+      };
+
+      const formatLongDateLabel = (iso) => {
+        const parts = parseIsoParts(iso);
+        if (!parts) return iso || "-";
+        return `${String(parts.day).padStart(2, "0")} ${monthNames[parts.month - 1]} ${parts.year}`;
+      };
+
+      const getRowFilterDate = (row) => normalizeIsoDate(row?.dataset?.filterDate || "");
+      const isRowVisible = (row) => !!row && row.style.display !== "none";
+      const isSelectableCheckbox = (cb) => /^\d+$/.test(String(cb?.dataset?.receiptId || "").trim()) && Number(cb.dataset.receiptId) > 0;
+      const visibleRows = () => dataRows.filter((row) => isRowVisible(row));
+      const uniqueReceiptIdsFromRows = (rows) => Array.from(new Set(
+        (rows || [])
+          .map((row) => String(row?.dataset?.receiptId || "").trim())
+          .filter((id) => /^\d+$/.test(id) && Number(id) > 0)
+      ));
+      const uniqueVisibleIds = () => uniqueReceiptIdsFromRows(visibleRows());
+
+      const dateCountMap = new Map();
+      dataRows.forEach((row, index) => {
+        const iso = getRowFilterDate(row);
+        if (!iso) return;
+        if (!dateCountMap.has(iso)) dateCountMap.set(iso, new Set());
+        const receiptId = String(row?.dataset?.receiptId || "").trim();
+        dateCountMap.get(iso).add(/^\d+$/.test(receiptId) && Number(receiptId) > 0 ? receiptId : `row-${index}`);
+      });
+      const orderedDates = Array.from(dateCountMap.keys()).sort();
+
+      const setStatus = (msg, kind = "") => {
+        if (!statusEl) return;
+        statusEl.textContent = String(msg || "").trim();
+        statusEl.className = `bulk-edit-status${kind ? ` ${kind}` : ""}`;
+      };
+
+      const setFilterControlsDisabled = (disabled) => {
+        if (filterFromInput) filterFromInput.disabled = !!disabled;
+        if (filterToInput) filterToInput.disabled = !!disabled;
+        if (filterApplyBtn) filterApplyBtn.disabled = !!disabled;
+        if (filterResetBtn) filterResetBtn.disabled = !!disabled;
+        filterTabsEl?.querySelectorAll(".bulk-filter-tab").forEach((btn) => {
+          btn.disabled = !!disabled;
+        });
+      };
+
+      const updateFilterEmptyState = () => {
+        if (!emptyFilterRow) return;
+        emptyFilterRow.style.display = visibleRows().length ? "none" : "table-row";
+      };
+
+      const isAllRangeActive = () => {
+        const cleanFrom = normalizeIsoDate(currentFilter.from);
+        const cleanTo = normalizeIsoDate(currentFilter.to);
+        return currentFilter.kind === "all" || (
+          cleanFrom === normalizeIsoDate(entryFrom) &&
+          cleanTo === normalizeIsoDate(entryTo)
+        );
+      };
+
+      const formatRangeLabel = (fromIso, toIso) => {
+        const from = normalizeIsoDate(fromIso);
+        const to = normalizeIsoDate(toIso);
+        if (!from && !to) return `all ${String(dateFilterBaseLabel || "dates").toLowerCase()}s`;
+        if (from && to && from === to) return `${dateFilterBaseLabel} ${formatLongDateLabel(from)}`;
+        if (from && to) return `${formatLongDateLabel(from)} to ${formatLongDateLabel(to)}`;
+        return formatLongDateLabel(from || to);
+      };
+
+      const refreshFilterMeta = () => {
+        if (!filterMetaEl) return;
+        const visible = visibleRows();
+        const visibleReceiptCount = uniqueReceiptIdsFromRows(visible).length;
+        const totalRows = dataRows.length;
+        const totalReceiptCount = uniqueReceiptIdsFromRows(dataRows).length;
+        if (isAllRangeActive()) {
+          filterMetaEl.textContent = `Showing all ${totalRows} line(s) across ${totalReceiptCount} receipt(s) in the loaded ${String(dateFilterBaseLabel || "date").toLowerCase()} range.`;
+          return;
+        }
+        filterMetaEl.textContent = `Showing ${visible.length} line(s) across ${visibleReceiptCount} receipt(s) for ${formatRangeLabel(currentFilter.from, currentFilter.to)}.`;
+      };
+
+      const renderFilterTabs = () => {
+        if (!filterTabsEl) return;
+        filterTabsEl.innerHTML = "";
+        const makeTab = (label, countText, isActive, onClick) => {
+          const btn = document.createElement("button");
+          btn.type = "button";
+          btn.className = `bulk-filter-tab${isActive ? " active" : ""}`;
+          btn.innerHTML = `${label} <small>${countText}</small>`;
+          btn.addEventListener("click", onClick);
+          filterTabsEl.appendChild(btn);
+        };
+
+        makeTab(
+          "All Dates",
+          `(${uniqueReceiptIdsFromRows(dataRows).length})`,
+          isAllRangeActive(),
+          () => {
+            applyLocalFilter(entryFrom, entryTo, "all");
+          }
+        );
+
+        orderedDates.forEach((iso) => {
+          const isActive = currentFilter.kind === "tab" && currentFilter.from === iso && currentFilter.to === iso;
+          makeTab(
+            formatShortDateLabel(iso),
+            `(${dateCountMap.get(iso)?.size || 0})`,
+            isActive,
+            () => {
+              applyLocalFilter(iso, iso, "tab");
+            }
+          );
+        });
+      };
+
+      const applyLocalFilter = (fromValue, toValue, kind = "custom") => {
+        const nextFrom = normalizeIsoDate(fromValue) || normalizeIsoDate(entryFrom);
+        const nextTo = normalizeIsoDate(toValue) || normalizeIsoDate(entryTo) || nextFrom;
+        if (nextFrom && nextTo && nextFrom > nextTo) {
+          setStatus(`${dateFilterBaseLabel} From cannot be after ${dateFilterBaseLabel} To.`, "warn");
+          return;
+        }
+
+        currentFilter.from = nextFrom;
+        currentFilter.to = nextTo;
+        currentFilter.kind = kind;
+        if (filterFromInput) filterFromInput.value = nextFrom || "";
+        if (filterToInput) filterToInput.value = nextTo || "";
+
+        dataRows.forEach((row) => {
+          const rowDate = getRowFilterDate(row);
+          let matches = true;
+          if (!rowDate) {
+            matches = isAllRangeActive();
+          } else {
+            if (nextFrom && rowDate < nextFrom) matches = false;
+            if (nextTo && rowDate > nextTo) matches = false;
+          }
+          row.style.display = matches ? "" : "none";
+          row.dataset.filteredOut = matches ? "0" : "1";
+        });
+
+        renderFilterTabs();
+        updateFilterEmptyState();
+        refreshFilterMeta();
+        refreshBulkState();
+        if (String(statusEl?.className || "").includes("warn") && String(statusEl?.textContent || "").includes("cannot be after")) {
+          setStatus("");
+        }
+      };
+
+      const syncReceiptId = (receiptId, checked) => {
+        rowChecks.forEach((cb) => {
+          if (String(cb.dataset.receiptId || "").trim() === receiptId) cb.checked = !!checked;
+        });
+        if (checked) selectedIds.add(receiptId);
+        else selectedIds.delete(receiptId);
+      };
+
+      const refreshBulkState = () => {
+        const visibleIds = uniqueVisibleIds();
+        const visibleReceiptCount = visibleIds.length;
+        const selectedCount = selectedIds.size;
+        if (metaEl) {
+          metaEl.textContent = selectedCount
+            ? `${selectedCount} receipt(s) selected for date correction. ${visibleReceiptCount} receipt(s) are visible in the current filter.`
+            : `No receipts selected. ${visibleReceiptCount} receipt(s) are visible in the current filter.`;
+        }
+        if (applyBtn) applyBtn.disabled = selectedCount <= 0;
+        if (selectAll) {
+          const anyVisibleSelected = visibleIds.some((id) => selectedIds.has(id));
+          const allVisibleSelected = visibleIds.length > 0 && visibleIds.every((id) => selectedIds.has(id));
+          selectAll.disabled = visibleIds.length <= 0;
+          selectAll.checked = allVisibleSelected;
+          selectAll.indeterminate = anyVisibleSelected && !allVisibleSelected;
+        }
+      };
+
+      rowChecks.forEach((cb) => {
+        cb.addEventListener("change", () => {
+          const receiptId = String(cb.dataset.receiptId || "").trim();
+          if (!receiptId) return;
+          syncReceiptId(receiptId, cb.checked);
+          refreshBulkState();
+        });
+      });
+
+      selectAll?.addEventListener("change", () => {
+        uniqueVisibleIds().forEach((receiptId) => syncReceiptId(receiptId, !!selectAll.checked));
+        refreshBulkState();
+      });
+
+      filterApplyBtn?.addEventListener("click", () => {
+        applyLocalFilter(filterFromInput?.value, filterToInput?.value, "custom");
+      });
+
+      filterResetBtn?.addEventListener("click", () => {
+        applyLocalFilter(entryFrom, entryTo, "all");
+      });
+
+      [filterFromInput, filterToInput].forEach((el) => {
+        el?.addEventListener("keydown", (evt) => {
+          if (evt.key !== "Enter") return;
+          evt.preventDefault();
+          applyLocalFilter(filterFromInput?.value, filterToInput?.value, "custom");
+        });
+      });
+
+      applyBtn?.addEventListener("click", async () => {
+        const receiptIds = Array.from(selectedIds);
+        if (!receiptIds.length) {
+          setStatus("Select at least one receipt first.", "warn");
+          return;
+        }
+        const newReceiptDate = String(dateInput?.value || "").trim();
+        if (!newReceiptDate) {
+          setStatus("Please select the corrected receipt date.", "warn");
+          dateInput?.focus();
+          return;
+        }
+        const reason = String(reasonInput?.value || "").trim();
+        if (!reason) {
+          setStatus("Please enter the reason for this correction.", "warn");
+          reasonInput?.focus();
+          return;
+        }
+        if (!window.confirm(`Change receipt date to ${newReceiptDate} for ${receiptIds.length} selected receipt(s)?`)) return;
+
+        rowChecks.forEach((cb) => { cb.disabled = true; });
+        if (selectAll) selectAll.disabled = true;
+        if (dateInput) dateInput.disabled = true;
+        if (reasonInput) reasonInput.disabled = true;
+        if (applyBtn) applyBtn.disabled = true;
+        setFilterControlsDisabled(true);
+        setStatus("Updating selected receipts...", "loading");
+
+        try {
+          const res = await fetch("/api/corporate/receipts/bulk_update_date", {
+            method: "POST",
+            headers: { "Content-Type": "application/json" },
+            body: JSON.stringify({
+              unit: unitKey,
+              receipt_ids: receiptIds.map((val) => Number(val)),
+              new_receipt_date: newReceiptDate,
+              reason,
+              filter_by: filterBy,
+              entry_from: currentFilter.from || entryFrom,
+              entry_to: currentFilter.to || entryTo,
+            }),
+          });
+          const raw = await res.text();
+          let data = {};
+          try {
+            data = raw ? JSON.parse(raw) : {};
+          } catch (parseErr) {
+            throw new Error(raw || "Failed to update receipt date.");
+          }
+          if (!res.ok || data.status !== "success") {
+            throw new Error(data.message || "Failed to update receipt date.");
+          }
+          setStatus(data.message || "Receipt date updated successfully.", "success");
+          window.setTimeout(() => window.location.reload(), 700);
+        } catch (err) {
+          setStatus(err?.message || "Failed to update receipt date.", "error");
+          rowChecks.forEach((cb) => { cb.disabled = !isSelectableCheckbox(cb); });
+          if (dateInput) dateInput.disabled = false;
+          if (reasonInput) reasonInput.disabled = false;
+          setFilterControlsDisabled(false);
+          refreshBulkState();
+        }
+      });
+
+      renderFilterTabs();
+      applyLocalFilter(entryFrom, entryTo, "all");
+    })();
+  </script>
+  {% endif %}
 </body>
 </html>

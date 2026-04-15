@@ -1,0 +1,2423 @@
+{% extends "layout.html" %}
+
+{% block page_header %}{% endblock %}
+
+{% block content %}
+<style>
+  .grn-page {
+    width: min(1440px, calc(100vw - 24px));
+    margin: 14px auto 32px;
+    color: #0f172a;
+    font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+    --grn-brand: #1e3a8a;
+    --grn-brand-2: #2563eb;
+    --grn-accent: #0f766e;
+    --grn-line: #dbe4f0;
+    --grn-card: rgba(255, 255, 255, 0.94);
+    --grn-muted: #64748b;
+    --grn-shadow: 0 18px 40px rgba(15, 23, 42, 0.08);
+    --grn-radius: 20px;
+  }
+  .grn-topbar {
+    display: flex;
+    justify-content: flex-end;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .grn-topbar a {
+    text-decoration: none;
+    color: #0f172a;
+    background: rgba(255, 255, 255, 0.82);
+    border: 1px solid #d6e2f0;
+    border-radius: 999px;
+    padding: 9px 14px;
+    font-size: 13px;
+    font-weight: 700;
+    box-shadow: 0 8px 20px rgba(15, 23, 42, 0.06);
+  }
+  .grn-hero {
+    background: linear-gradient(135deg, rgba(30, 58, 138, 0.98), rgba(37, 99, 235, 0.92));
+    color: #fff;
+    padding: 24px 26px;
+    border-radius: 28px;
+    box-shadow: var(--grn-shadow);
+    position: relative;
+    overflow: hidden;
+  }
+  .grn-hero::after {
+    content: "";
+    position: absolute;
+    inset: auto -80px -100px auto;
+    width: 260px;
+    height: 260px;
+    border-radius: 50%;
+    background: radial-gradient(circle, rgba(255,255,255,0.28), transparent 68%);
+  }
+  .grn-hero h1 {
+    margin: 0 0 8px;
+    font-size: clamp(26px, 3vw, 34px);
+    font-weight: 800;
+  }
+  .grn-hero p {
+    margin: 0;
+    max-width: 760px;
+    color: rgba(239, 246, 255, 0.92);
+    font-size: 14px;
+  }
+  .grn-chip-row {
+    margin-top: 14px;
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+  }
+  .grn-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 8px;
+    padding: 8px 12px;
+    border-radius: 999px;
+    background: rgba(255, 255, 255, 0.14);
+    border: 1px solid rgba(255, 255, 255, 0.18);
+    font-size: 12px;
+    font-weight: 700;
+    letter-spacing: 0.2px;
+  }
+  .grn-grid {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) minmax(290px, 320px);
+    gap: 18px;
+    margin-top: 18px;
+    align-items: start;
+  }
+  .grn-entry-card { grid-column: 1; }
+  .grn-side {
+    grid-column: 2;
+    display: grid;
+    gap: 18px;
+    align-self: start;
+  }
+  .grn-item-card { grid-column: 1 / -1; }
+  .grn-card {
+    background: var(--grn-card);
+    border: 1px solid #d9e4f1;
+    border-radius: var(--grn-radius);
+    box-shadow: var(--grn-shadow);
+    backdrop-filter: blur(12px);
+  }
+  .grn-card-head {
+    padding: 18px 20px 0;
+  }
+  .grn-card-head h2,
+  .grn-card-head h3 {
+    margin: 0 0 6px;
+    font-size: 16px;
+    color: #0f172a;
+  }
+  .grn-card-head p {
+    margin: 0;
+    color: var(--grn-muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .grn-card-body {
+    padding: 18px 20px 20px;
+  }
+  .grn-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-bottom: 16px;
+  }
+  .btn {
+    border: none;
+    border-radius: 14px;
+    min-height: 44px;
+    padding: 9px 14px;
+    font-size: 12px;
+    font-weight: 800;
+    cursor: pointer;
+    transition: transform 0.16s ease, box-shadow 0.16s ease, opacity 0.16s ease;
+  }
+  .btn:hover { transform: translateY(-1px); }
+  .btn:disabled { opacity: 0.58; cursor: not-allowed; transform: none; }
+  .btn-primary {
+    color: #fff;
+    background: linear-gradient(135deg, var(--grn-brand), var(--grn-brand-2));
+    box-shadow: 0 12px 22px rgba(37, 99, 235, 0.25);
+  }
+  .btn-soft {
+    color: #0f172a;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+  }
+  .btn-danger {
+    color: #991b1b;
+    background: #fef2f2;
+    border: 1px solid #fecaca;
+  }
+  .btn-success {
+    color: #fff;
+    background: linear-gradient(135deg, #166534, #16a34a);
+    box-shadow: 0 12px 22px rgba(22, 101, 52, 0.22);
+  }
+  .grn-banner {
+    display: none;
+    align-items: center;
+    gap: 10px;
+    margin-bottom: 16px;
+    padding: 12px 14px;
+    border-radius: 14px;
+    background: #fff7ed;
+    color: #9a3412;
+    border: 1px solid #fdba74;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .grn-banner.show { display: flex; }
+  .grn-form-grid {
+    display: grid;
+    grid-template-columns: repeat(12, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .field { grid-column: span 3; }
+  .field.span-2 { grid-column: span 2; }
+  .field.span-4 { grid-column: span 4; }
+  .field.span-6 { grid-column: span 6; }
+  .field.span-8 { grid-column: span 8; }
+  .field.span-12 { grid-column: span 12; }
+  .field label {
+    display: block;
+    margin-bottom: 6px;
+    font-size: 11px;
+    font-weight: 800;
+    color: #334155;
+    text-transform: uppercase;
+    letter-spacing: 0.24px;
+  }
+  .field input,
+  .field select,
+  .field textarea {
+    width: 100%;
+    border: 1px solid #cbd5e1;
+    border-radius: 14px;
+    background: #fff;
+    min-height: 48px;
+    padding: 10px 14px;
+    font-family: inherit;
+    font-size: 13px;
+    line-height: 1.3;
+    color: #0f172a;
+    transition: border-color 0.16s ease, box-shadow 0.16s ease;
+  }
+  .field input::placeholder,
+  .field textarea::placeholder {
+    color: #94a3b8;
+    opacity: 1;
+  }
+  .field select {
+    padding-right: 38px;
+    overflow: hidden;
+    white-space: nowrap;
+    text-overflow: ellipsis;
+  }
+  .field input[type="date"] {
+    padding-right: 38px;
+    font-size: 12.5px;
+    letter-spacing: 0.08px;
+  }
+  .field textarea {
+    min-height: 96px;
+    resize: vertical;
+  }
+  .field input:focus,
+  .field select:focus,
+  .field textarea:focus {
+    outline: none;
+    border-color: #60a5fa;
+    box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.14);
+  }
+  .helper {
+    margin-top: 5px;
+    color: var(--grn-muted);
+    font-size: 11px;
+    line-height: 1.4;
+  }
+  .inline-pair {
+    display: flex;
+    gap: 10px;
+    align-items: stretch;
+  }
+  .inline-pair > * { flex: 1; }
+  .inline-pair--po .btn {
+    flex: 0 0 210px;
+    min-height: 48px;
+  }
+  .po-search-shell {
+    position: relative;
+    min-width: 0;
+  }
+  .po-search-shell input {
+    padding-right: 20px;
+  }
+  .grn-table-wrap {
+    overflow: auto;
+    border: 1px solid #dbe4f0;
+    border-radius: 18px;
+    background: #fff;
+  }
+  .grn-table {
+    width: 100%;
+    min-width: 1410px;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  .grn-table th,
+  .grn-table td {
+    border-bottom: 1px solid #e5edf6;
+    padding: 12px 10px;
+    vertical-align: top;
+  }
+  .grn-table th {
+    position: sticky;
+    top: 0;
+    z-index: 2;
+    background: linear-gradient(180deg, #eff6ff, #dbeafe);
+    font-size: 12px;
+    text-transform: uppercase;
+    letter-spacing: 0.28px;
+    color: #1e3a8a;
+    text-align: left;
+  }
+  .grn-table td input,
+  .grn-table td select {
+    width: 100%;
+    border: 1px solid #d3dce8;
+    border-radius: 10px;
+    min-height: 40px;
+    padding: 8px 11px;
+    font-family: inherit;
+    font-size: 14px;
+    line-height: 1.25;
+    background: #fff;
+  }
+  .grn-table td input::placeholder {
+    color: #94a3b8;
+    opacity: 1;
+  }
+  .grn-table td input[readonly] { background: #f8fafc; }
+  .row-flags {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 6px;
+  }
+  .grn-item-cell {
+    display: grid;
+    gap: 6px;
+  }
+  .grn-row-note {
+    min-height: 15px;
+    color: var(--grn-muted);
+    font-size: 10px;
+    font-weight: 700;
+    line-height: 1.3;
+    white-space: normal;
+  }
+  .flag {
+    display: inline-flex;
+    align-items: center;
+    padding: 4px 8px;
+    border-radius: 999px;
+    font-size: 11px;
+    font-weight: 800;
+    background: #eef2ff;
+    color: #3730a3;
+    border: 1px solid #c7d2fe;
+  }
+  .flag.warn {
+    background: #fff7ed;
+    color: #c2410c;
+    border-color: #fdba74;
+  }
+  .grn-summary {
+    display: grid;
+    gap: 10px;
+  }
+  .grn-summary-meta {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 8px;
+  }
+  .grn-summary-meta-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    padding: 9px 11px;
+    border-radius: 12px;
+    background: linear-gradient(135deg, #eff6ff, #f8fbff);
+    border: 1px solid #dbeafe;
+  }
+  .grn-summary-meta-row span {
+    color: var(--grn-muted);
+    font-size: 11px;
+    font-weight: 800;
+    text-transform: uppercase;
+    letter-spacing: 0.2px;
+  }
+  .grn-summary-meta-row strong {
+    color: #0f172a;
+    font-size: 13px;
+    font-weight: 800;
+    text-align: right;
+  }
+  .grn-summary-row {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: center;
+    padding: 8px 11px;
+    border-radius: 12px;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .grn-summary-row strong {
+    font-size: 12px;
+  }
+  .grn-summary-row.total {
+    background: linear-gradient(135deg, #dbeafe, #eff6ff);
+    border-color: #93c5fd;
+    color: #1e3a8a;
+  }
+  .grn-search-results {
+    display: grid;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .grn-search-pager {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 10px;
+    margin-top: 14px;
+  }
+  .grn-search-pager .btn {
+    min-width: 108px;
+  }
+  .grn-search-page-meta {
+    flex: 1;
+    text-align: center;
+    color: var(--grn-muted);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .grn-search-item {
+    border: 1px solid #dbe4f0;
+    border-radius: 16px;
+    padding: 12px 14px;
+    background: #fff;
+    cursor: pointer;
+  }
+  .grn-search-item:hover {
+    border-color: #93c5fd;
+    background: #f8fbff;
+  }
+  .grn-search-item strong {
+    display: block;
+    margin-bottom: 4px;
+    color: #1e3a8a;
+  }
+  .grn-search-item-head,
+  .grn-auth-card-head {
+    display: flex;
+    align-items: center;
+    justify-content: space-between;
+    gap: 12px;
+    margin-bottom: 6px;
+  }
+  .grn-status-pill {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 4px 9px;
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.22px;
+    white-space: nowrap;
+    border: 1px solid transparent;
+  }
+  .grn-status-pill.pending {
+    background: #fff7ed;
+    color: #c2410c;
+    border-color: #fdba74;
+  }
+  .grn-status-pill.authorized {
+    background: #ecfdf5;
+    color: #166534;
+    border-color: #86efac;
+  }
+  .grn-muted {
+    color: var(--grn-muted);
+    font-size: 12px;
+  }
+  .grn-empty {
+    padding: 18px 0 6px;
+    color: var(--grn-muted);
+    font-size: 13px;
+  }
+  .grn-toast-viewport {
+    position: fixed;
+    top: 18px;
+    right: 18px;
+    width: min(380px, calc(100vw - 24px));
+    display: flex;
+    flex-direction: column;
+    gap: 10px;
+    z-index: 1200;
+  }
+  .grn-toast {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    padding: 14px 15px;
+    border-radius: 16px;
+    border: 1px solid transparent;
+    background: rgba(15, 23, 42, 0.92);
+    color: #fff;
+    box-shadow: 0 16px 30px rgba(15, 23, 42, 0.18);
+    transform: translateX(24px);
+    opacity: 0;
+    transition: transform 0.2s ease, opacity 0.2s ease;
+  }
+  .grn-toast.show { transform: translateX(0); opacity: 1; }
+  .grn-toast.success { background: #166534; border-color: #86efac; }
+  .grn-toast.warn { background: #9a3412; border-color: #fdba74; }
+  .grn-toast.error { background: #991b1b; border-color: #fecaca; }
+  .grn-toast.loading { background: #1d4ed8; border-color: #93c5fd; }
+  .grn-toast button {
+    border: none;
+    background: transparent;
+    color: inherit;
+    cursor: pointer;
+    font-size: 18px;
+    line-height: 1;
+  }
+  .spinner {
+    width: 13px;
+    height: 13px;
+    border: 2px solid rgba(255,255,255,0.35);
+    border-top-color: #fff;
+    border-radius: 50%;
+    display: inline-block;
+    animation: grn-spin 0.8s linear infinite;
+    margin-right: 8px;
+    vertical-align: -2px;
+  }
+  .grn-modal-shell[hidden] {
+    display: none !important;
+  }
+  .grn-modal-shell {
+    position: fixed;
+    inset: 0;
+    z-index: 1250;
+    padding: 12px;
+    overflow: auto;
+  }
+  .grn-modal-backdrop {
+    position: absolute;
+    inset: 0;
+    background: rgba(15, 23, 42, 0.34);
+    backdrop-filter: blur(3px);
+  }
+  .grn-modal {
+    position: relative;
+    z-index: 1;
+    width: min(1160px, calc(100vw - 26px));
+    height: min(860px, calc(100vh - 24px));
+    max-height: calc(100vh - 24px);
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    overflow: hidden;
+    border-radius: 24px;
+    background: rgba(255, 255, 255, 0.98);
+    border: 1px solid #dbe4f0;
+    box-shadow: 0 26px 60px rgba(15, 23, 42, 0.22);
+  }
+  .grn-modal-head {
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 14px;
+    padding: 18px 20px 16px;
+    border-bottom: 1px solid #e2e8f0;
+    background: linear-gradient(180deg, #f8fbff, #eef5ff);
+  }
+  .grn-modal-head h3 {
+    margin: 0 0 4px;
+    font-size: 18px;
+    color: #0f172a;
+  }
+  .grn-modal-head p {
+    margin: 0;
+    color: var(--grn-muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .grn-modal-close {
+    border: 1px solid #dbe4f0;
+    background: #fff;
+    color: #475569;
+    width: 40px;
+    height: 40px;
+    border-radius: 12px;
+    font-size: 22px;
+    cursor: pointer;
+    line-height: 1;
+  }
+  .grn-modal-body {
+    padding: 18px 20px 20px;
+    overflow: auto;
+    min-height: 0;
+    padding-bottom: 28px;
+  }
+  .grn-search-modal {
+    width: min(980px, calc(100vw - 26px));
+    height: min(760px, calc(100vh - 24px));
+  }
+  .grn-search-modal-results {
+    min-height: 320px;
+    max-height: calc(100vh - 320px);
+    overflow: auto;
+    padding-right: 4px;
+  }
+  .grn-auth-grid {
+    display: grid;
+    grid-template-columns: minmax(360px, 0.92fr) minmax(0, 1.08fr);
+    gap: 16px;
+    align-items: stretch;
+    min-height: 0;
+  }
+  .grn-auth-results {
+    display: grid;
+    gap: 10px;
+    min-height: 460px;
+    max-height: calc(100vh - 320px);
+    overflow: auto;
+    padding-right: 4px;
+    min-width: 0;
+  }
+  .grn-auth-card {
+    width: 100%;
+    border: 1px solid #dbe4f0;
+    border-radius: 18px;
+    background: #fff;
+    padding: 14px 15px;
+    text-align: left;
+    cursor: pointer;
+    transition: border-color 0.16s ease, background 0.16s ease, transform 0.16s ease;
+  }
+  .grn-auth-card:hover {
+    border-color: #93c5fd;
+    background: #f8fbff;
+    transform: translateY(-1px);
+  }
+  .grn-auth-card.active {
+    border-color: #60a5fa;
+    background: #eff6ff;
+    box-shadow: inset 0 0 0 1px rgba(96, 165, 250, 0.3);
+  }
+  .grn-auth-card-title {
+    margin: 0;
+    font-size: 15px;
+    font-weight: 800;
+    color: #1e3a8a;
+  }
+  .grn-auth-card-subtitle {
+    margin: 0 0 6px;
+    font-size: 13px;
+    font-weight: 700;
+    color: #0f172a;
+  }
+  .grn-auth-card-meta {
+    color: var(--grn-muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .grn-auth-preview {
+    min-height: 460px;
+    max-height: calc(100vh - 320px);
+    overflow: auto;
+    border: 1px solid #dbe4f0;
+    border-radius: 20px;
+    background: linear-gradient(180deg, #f8fbff, #ffffff);
+    padding: 16px;
+    display: grid;
+    grid-template-columns: minmax(0, 1fr);
+    gap: 14px;
+    align-content: start;
+    min-width: 0;
+    width: 100%;
+  }
+  .grn-auth-preview-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+    flex-wrap: wrap;
+  }
+  .grn-auth-preview-head > div:first-child {
+    flex: 1 1 280px;
+    min-width: 0;
+  }
+  .grn-auth-preview-head h4 {
+    margin: 6px 0 4px;
+    font-size: 20px;
+    color: #0f172a;
+    word-break: break-word;
+  }
+  .grn-auth-preview-head p {
+    margin: 0;
+    color: var(--grn-muted);
+    font-size: 12px;
+    word-break: break-word;
+  }
+  .grn-auth-amount {
+    min-width: 180px;
+    text-align: center;
+    font-size: 22px;
+    font-weight: 800;
+    color: #166534;
+    padding: 14px 16px;
+    border-radius: 18px;
+    background: linear-gradient(135deg, #ecfdf5, #f0fdf4);
+    border: 1px solid #bbf7d0;
+    box-shadow: inset 0 0 0 1px rgba(34, 197, 94, 0.08);
+  }
+  .grn-auth-preview-summary {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(260px, 0.95fr);
+    gap: 14px;
+    align-items: start;
+    width: 100%;
+    min-width: 0;
+  }
+  .grn-auth-section {
+    width: 100%;
+    min-width: 0;
+    border: 1px solid #dbe4f0;
+    border-radius: 18px;
+    background: #fff;
+    padding: 14px 15px;
+  }
+  .grn-auth-section-title {
+    margin: 0 0 10px;
+    font-size: 12px;
+    font-weight: 800;
+    color: #334155;
+    letter-spacing: 0.18px;
+    text-transform: uppercase;
+  }
+  .grn-auth-kv {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 10px 12px;
+    min-width: 0;
+    width: 100%;
+  }
+  .grn-auth-kv-item {
+    padding: 10px 12px;
+    border-radius: 14px;
+    background: #fff;
+    border: 1px solid #e2e8f0;
+    min-width: 0;
+  }
+  .grn-auth-kv-item small {
+    display: block;
+    margin-bottom: 4px;
+    color: var(--grn-muted);
+    font-size: 10px;
+    font-weight: 800;
+    letter-spacing: 0.24px;
+    text-transform: uppercase;
+  }
+  .grn-auth-kv-item strong {
+    display: block;
+    font-size: 13px;
+    line-height: 1.4;
+    color: #0f172a;
+    word-break: break-word;
+  }
+  .grn-auth-items {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    width: 100%;
+    align-items: flex-start;
+  }
+  .grn-auth-item-chip {
+    display: inline-flex;
+    align-items: center;
+    border-radius: 999px;
+    padding: 7px 10px;
+    background: #fff;
+    border: 1px solid #dbe4f0;
+    font-size: 12px;
+    font-weight: 700;
+    color: #334155;
+    max-width: 100%;
+    white-space: normal;
+    line-height: 1.35;
+    word-break: break-word;
+  }
+  .grn-auth-actions {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-start;
+    gap: 10px;
+  }
+  @keyframes grn-spin { to { transform: rotate(360deg); } }
+  @media (max-width: 1180px) {
+    .grn-grid { grid-template-columns: 1fr; }
+    .grn-entry-card,
+    .grn-side,
+    .grn-item-card { grid-column: 1; }
+    .grn-side { position: static; }
+    .grn-auth-grid { grid-template-columns: 1fr; }
+    .grn-auth-results,
+    .grn-auth-preview,
+    .grn-search-modal-results {
+      min-height: 0;
+      max-height: none;
+    }
+    .grn-auth-preview-summary { grid-template-columns: 1fr; }
+  }
+  @media (max-width: 860px) {
+    .grn-page { width: min(100vw, calc(100vw - 14px)); }
+    .field, .field.span-2, .field.span-4, .field.span-6, .field.span-8 { grid-column: span 12; }
+    .grn-card-body, .grn-card-head { padding-left: 16px; padding-right: 16px; }
+    .inline-pair { flex-direction: column; align-items: stretch; }
+    .inline-pair--po .btn { flex-basis: auto; width: 100%; }
+    .grn-auth-kv { grid-template-columns: 1fr; }
+    .grn-auth-preview-head { flex-direction: column; align-items: stretch; }
+    .grn-auth-amount { text-align: left; min-width: 0; }
+  }
+</style>
+
+<div class="grn-page" id="grnPage" data-can-authorize="{{ '1' if can_authorize_grn else '0' }}">
+  <div class="grn-topbar">
+    <a href="{{ url_for('dashboard') }}">Dashboard</a>
+    <a href="{{ url_for('purchase_module') }}">Purchase</a>
+    <a href="{{ url_for('logout') }}">Logout</a>
+  </div>
+
+  <section class="grn-hero">
+    <h1>Goods Receipt Note</h1>
+    <p>Sharpsight GRN entry with GST-first item entry, PO-linked receipt flow, live totals, and quick draft lookup without leaving the workspace.</p>
+    <div class="grn-chip-row">
+      <span class="grn-chip">Unit: {{ unit }}</span>
+      <span class="grn-chip">GST mode: CGST + SGST</span>
+      <span class="grn-chip">Pending GRNs stay editable until authorization</span>
+    </div>
+  </section>
+
+  <div class="grn-grid">
+      <section class="grn-card grn-entry-card">
+        <div class="grn-card-head">
+          <h2>Entry Workspace</h2>
+          <p>Use Direct Purchase for manual receipt entry or Against PO to pull approved PO lines and receive them against balance.</p>
+        </div>
+        <div class="grn-card-body grn-editor">
+          <div class="grn-actions">
+            <button class="btn btn-primary" type="button" id="saveGrnBtn" data-editable="true">Save GRN</button>
+            <button class="btn btn-soft" type="button" id="newGrnBtn">New GRN</button>
+            <button class="btn btn-soft" type="button" id="openSearchModalBtn">Find Existing GRN</button>
+            <button class="btn btn-soft" type="button" id="printGrnBtn" disabled>Print PDF</button>
+            {% if can_authorize_grn %}
+            <button class="btn btn-soft" type="button" id="openAuthModalBtn">Authorization Queue</button>
+            {% endif %}
+            <button class="btn btn-soft" type="button" id="addItemBtn" data-editable="true">Add Item Row</button>
+            <button class="btn btn-danger" type="button" id="clearRowsBtn" data-editable="true">Clear Rows</button>
+          </div>
+          <div class="grn-banner" id="grnModeBanner"></div>
+
+          <div class="grn-form-grid">
+            <div class="field span-2">
+              <label>GRN No</label>
+              <input type="text" id="grnNo" readonly placeholder="Assigned on save">
+            </div>
+            <div class="field span-2">
+              <label>GRN Date</label>
+              <input type="date" id="grnDate" data-editable="true">
+            </div>
+            <div class="field span-2">
+              <label>GRN Type</label>
+              <select id="grnType" data-editable="true"></select>
+            </div>
+            <div class="field span-3">
+              <label>Supplier</label>
+              <select id="supplierId" data-editable="true"></select>
+            </div>
+            <div class="field span-3">
+              <label>Store</label>
+              <select id="storeId" data-editable="true"></select>
+            </div>
+
+            <div class="field span-6" id="poPickerField" hidden>
+              <label>Approved PO</label>
+              <div class="inline-pair inline-pair--po">
+                <div class="po-search-shell">
+                  <input type="text" id="poSearch" list="grnPoOptions" placeholder="Search approved PO number" autocomplete="off" data-editable="true">
+                  <input type="hidden" id="poId">
+                </div>
+                <button class="btn btn-soft" type="button" id="loadPoBtn" data-editable="true">Load PO Items</button>
+              </div>
+              <div class="helper" id="poMetaText">Search by PO number, choose the approved PO, then load pending lines.</div>
+            </div>
+
+            <div class="field span-3">
+              <label>DC No</label>
+              <input type="text" id="dcNo" maxlength="80" data-editable="true">
+            </div>
+            <div class="field span-3">
+              <label>DC Date</label>
+              <input type="date" id="dcDate" data-editable="true">
+            </div>
+            <div class="field span-3">
+              <label>Invoice No</label>
+              <input type="text" id="invoiceNo" maxlength="80" data-editable="true">
+            </div>
+            <div class="field span-3">
+              <label>Invoice Date</label>
+              <input type="date" id="invoiceDate" data-editable="true">
+            </div>
+
+            <div class="field span-3">
+              <label>Transporter</label>
+              <input type="text" id="transporter" maxlength="120" data-editable="true">
+            </div>
+            <div class="field span-3">
+              <label>Vehicle No</label>
+              <input type="text" id="vehicleNo" maxlength="50" data-editable="true">
+            </div>
+            <div class="field span-3">
+              <label>Purchase Register No</label>
+              <input type="text" id="purRegNo" maxlength="80" data-editable="true">
+            </div>
+            <div class="field span-3">
+              <label>Prepared By</label>
+              <input type="text" id="preparedBy" maxlength="80" value="{{ prepared_by }}" data-editable="true">
+            </div>
+
+            <div class="field span-12">
+              <label>Remarks</label>
+              <textarea id="notes" maxlength="500" placeholder="Optional receipt notes, condition remarks, or delivery comments." data-editable="true"></textarea>
+            </div>
+          </div>
+        </div>
+      </section>
+
+    <aside class="grn-side">
+      <section class="grn-card">
+        <div class="grn-card-head">
+          <h3>GRN Summary</h3>
+          <p>Use this quick summary to review the active document status and live GST totals while you work.</p>
+        </div>
+        <div class="grn-card-body">
+          <div class="grn-summary-meta">
+            <div class="grn-summary-meta-row">
+              <span>Current GRN</span>
+              <strong id="summaryGrnNo">Assigned on save</strong>
+            </div>
+            <div class="grn-summary-meta-row">
+              <span>Status</span>
+              <strong id="summaryStatus">Draft</strong>
+            </div>
+          </div>
+          <div class="grn-summary">
+            <div class="grn-summary-row"><span>Gross</span><strong id="grossTotal">0.00</strong></div>
+            <div class="grn-summary-row"><span>Discount</span><strong id="discountTotal">0.00</strong></div>
+            <div class="grn-summary-row"><span>Taxable</span><strong id="taxableTotal">0.00</strong></div>
+            <div class="grn-summary-row"><span>CGST</span><strong id="cgstTotal">0.00</strong></div>
+            <div class="grn-summary-row"><span>SGST</span><strong id="sgstTotal">0.00</strong></div>
+            <div class="grn-summary-row"><span>Total GST</span><strong id="taxTotal">0.00</strong></div>
+            <div class="grn-summary-row"><span>F.O.R.</span><strong id="forTotal">0.00</strong></div>
+            <div class="grn-summary-row total"><span>Grand Total</span><strong id="grandTotal">0.00</strong></div>
+          </div>
+        </div>
+      </section>
+    </aside>
+
+      <section class="grn-card grn-item-card">
+        <div class="grn-card-head">
+          <h3>Item Details</h3>
+          <p>Batch name is mandatory for every line. Expiry becomes mandatory automatically for items that need it.</p>
+        </div>
+        <div class="grn-card-body grn-editor">
+          <div class="grn-table-wrap">
+            <table class="grn-table">
+              <thead>
+                <tr>
+                  <th style="width: 88px;">Remove</th>
+                  <th style="width: 330px;">Item</th>
+                  <th style="width: 120px;">UOM</th>
+                  <th style="width: 150px;">Pack Size</th>
+                  <th style="width: 110px;">Stock</th>
+                  <th style="width: 170px;">Batch</th>
+                  <th style="width: 150px;">Expiry</th>
+                  <th style="width: 100px;">Qty</th>
+                  <th style="width: 100px;">Free</th>
+                  <th style="width: 110px;">Rate</th>
+                  <th style="width: 90px;">Disc %</th>
+                  <th style="width: 90px;">GST %</th>
+                  <th style="width: 120px;">GST Amt</th>
+                  <th style="width: 110px;">F.O.R.</th>
+                  <th style="width: 140px;">Net Amt</th>
+                </tr>
+              </thead>
+              <tbody id="grnItemRows"></tbody>
+            </table>
+          </div>
+          <div class="grn-empty" id="itemEmptyState">No items added yet. Add a row for Direct Purchase or load an approved PO.</div>
+        </div>
+      </section>
+  </div>
+</div>
+
+<div class="grn-modal-shell" id="grnSearchModal" hidden>
+  <div class="grn-modal-backdrop" data-search-close="1"></div>
+  <div class="grn-modal grn-search-modal" role="dialog" aria-modal="true" aria-labelledby="grnSearchModalTitle">
+    <div class="grn-modal-head">
+      <div>
+        <h3 id="grnSearchModalTitle">Find Existing GRN</h3>
+        <p>Search saved GRNs, review the latest receipt list, and open a draft or authorized GRN directly into the workspace.</p>
+      </div>
+      <button class="grn-modal-close" type="button" id="closeSearchModalBtn" aria-label="Close GRN search">&times;</button>
+    </div>
+    <div class="grn-modal-body">
+      <div class="grn-form-grid">
+        <div class="field span-4">
+          <label>GRN No</label>
+          <input type="text" id="searchGrnNo" placeholder="GRN-11738">
+        </div>
+        <div class="field span-4">
+          <label>Supplier Name</label>
+          <input type="text" id="searchSupplier" placeholder="Supplier name">
+        </div>
+      </div>
+      <div class="grn-actions" style="margin-top: 14px; margin-bottom: 6px;">
+        <button class="btn btn-soft" type="button" id="searchGrnBtn">Search</button>
+        <button class="btn btn-soft" type="button" id="recentGrnBtn">Show Recent</button>
+      </div>
+      <div class="grn-search-results grn-search-modal-results" id="searchResults"></div>
+      <div class="grn-search-pager" id="searchPager" hidden>
+        <button class="btn btn-soft" type="button" id="searchPrevBtn">Previous</button>
+        <div class="grn-search-page-meta" id="searchPageMeta"></div>
+        <button class="btn btn-soft" type="button" id="searchNextBtn">Next</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+{% if can_authorize_grn %}
+<div class="grn-modal-shell" id="grnAuthModal" hidden>
+  <div class="grn-modal-backdrop" data-auth-close="1"></div>
+  <div class="grn-modal" role="dialog" aria-modal="true" aria-labelledby="grnAuthModalTitle">
+    <div class="grn-modal-head">
+      <div>
+        <h3 id="grnAuthModalTitle">GRN Authorization Queue</h3>
+        <p>Search pending Sharpsight GRNs, inspect a short receipt summary, and authorize stock posting when the receipt is ready.</p>
+      </div>
+      <button class="grn-modal-close" type="button" id="closeAuthModalBtn" aria-label="Close authorization queue">&times;</button>
+    </div>
+    <div class="grn-modal-body">
+      <div class="grn-form-grid">
+        <div class="field span-3">
+          <label>GRN No</label>
+          <input type="text" id="authSearchGrnNo" placeholder="GRN-11738">
+        </div>
+        <div class="field span-4">
+          <label>Supplier Name</label>
+          <input type="text" id="authSearchSupplier" placeholder="Search pending supplier">
+        </div>
+      </div>
+      <div class="grn-actions" style="margin-top: 14px;">
+        <button class="btn btn-soft" type="button" id="authSearchBtn">Search Pending</button>
+        <button class="btn btn-soft" type="button" id="authRecentBtn">Show Recent Pending</button>
+      </div>
+
+      <div class="grn-auth-grid">
+        <div>
+          <div class="grn-auth-results" id="authResults"></div>
+          <div class="grn-search-pager" id="authPager" hidden>
+            <button class="btn btn-soft" type="button" id="authPrevBtn">Previous</button>
+            <div class="grn-search-page-meta" id="authPageMeta"></div>
+            <button class="btn btn-soft" type="button" id="authNextBtn">Next</button>
+          </div>
+        </div>
+        <div class="grn-auth-preview" id="authPreviewPanel">
+          <div class="grn-empty">Select a pending GRN to review its summary, item list, and authorization action.</div>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endif %}
+
+<datalist id="grnItemOptions"></datalist>
+<datalist id="grnPoOptions"></datalist>
+<div class="grn-toast-viewport" id="grnToastViewport"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const grnState = {
+    init: null,
+    permissions: { can_authorize: false },
+    itemsCatalog: [],
+    itemOptionMap: new Map(),
+    poList: [],
+    poOptionMap: new Map(),
+    searchPage: 1,
+    searchPageSize: 6,
+    lastSearchMode: 'recent',
+    authSearchPage: 1,
+    authSearchPageSize: 6,
+    authLastSearchMode: 'recent',
+    authSelectedGrnId: null,
+    authPreview: null,
+    readOnly: false,
+    currentGrnId: null,
+    currentStatusLabel: 'Draft',
+    toastSeq: 0,
+    loadingToastByChannel: new Map(),
+    toastTimers: new Map(),
+  };
+
+  const byId = (id) => document.getElementById(id);
+  const money = (value) => Number(value || 0).toFixed(2);
+  const round = (value, places = 2) => {
+    const factor = 10 ** places;
+    return Math.round((Number(value || 0) + Number.EPSILON) * factor) / factor;
+  };
+  const apiJson = async (url, options = {}) => {
+    const response = await fetch(url, {
+      headers: { 'Content-Type': 'application/json', ...(options.headers || {}) },
+      credentials: 'same-origin',
+      ...options,
+    });
+    const data = await response.json().catch(() => ({}));
+    if (!response.ok || data.status === 'error') {
+      throw new Error(data.message || `Request failed (${response.status})`);
+    }
+    return data;
+  };
+
+  const els = {
+    viewport: byId('grnToastViewport'),
+    grnNo: byId('grnNo'),
+    grnDate: byId('grnDate'),
+    grnType: byId('grnType'),
+    supplierId: byId('supplierId'),
+    storeId: byId('storeId'),
+    poPickerField: byId('poPickerField'),
+    poSearch: byId('poSearch'),
+    poId: byId('poId'),
+    poOptions: byId('grnPoOptions'),
+    poMetaText: byId('poMetaText'),
+    dcNo: byId('dcNo'),
+    dcDate: byId('dcDate'),
+    invoiceNo: byId('invoiceNo'),
+    invoiceDate: byId('invoiceDate'),
+    transporter: byId('transporter'),
+    vehicleNo: byId('vehicleNo'),
+    purRegNo: byId('purRegNo'),
+    preparedBy: byId('preparedBy'),
+    notes: byId('notes'),
+    saveBtn: byId('saveGrnBtn'),
+    newBtn: byId('newGrnBtn'),
+    searchModalBtn: byId('openSearchModalBtn'),
+    printBtn: byId('printGrnBtn'),
+    authQueueBtn: byId('openAuthModalBtn'),
+    addItemBtn: byId('addItemBtn'),
+    clearRowsBtn: byId('clearRowsBtn'),
+    rowsBody: byId('grnItemRows'),
+    itemEmptyState: byId('itemEmptyState'),
+    modeBanner: byId('grnModeBanner'),
+    searchGrnNo: byId('searchGrnNo'),
+    searchSupplier: byId('searchSupplier'),
+    searchBtn: byId('searchGrnBtn'),
+    recentBtn: byId('recentGrnBtn'),
+    searchResults: byId('searchResults'),
+    searchPager: byId('searchPager'),
+    searchPrevBtn: byId('searchPrevBtn'),
+    searchNextBtn: byId('searchNextBtn'),
+    searchPageMeta: byId('searchPageMeta'),
+    searchModal: byId('grnSearchModal'),
+    searchModalCloseBtn: byId('closeSearchModalBtn'),
+    authModal: byId('grnAuthModal'),
+    authModalCloseBtn: byId('closeAuthModalBtn'),
+    authSearchGrnNo: byId('authSearchGrnNo'),
+    authSearchSupplier: byId('authSearchSupplier'),
+    authSearchBtn: byId('authSearchBtn'),
+    authRecentBtn: byId('authRecentBtn'),
+    authResults: byId('authResults'),
+    authPager: byId('authPager'),
+    authPrevBtn: byId('authPrevBtn'),
+    authNextBtn: byId('authNextBtn'),
+    authPageMeta: byId('authPageMeta'),
+    authPreviewPanel: byId('authPreviewPanel'),
+    loadPoBtn: byId('loadPoBtn'),
+    itemOptions: byId('grnItemOptions'),
+    grossTotal: byId('grossTotal'),
+    discountTotal: byId('discountTotal'),
+    taxableTotal: byId('taxableTotal'),
+    cgstTotal: byId('cgstTotal'),
+    sgstTotal: byId('sgstTotal'),
+    taxTotal: byId('taxTotal'),
+    forTotal: byId('forTotal'),
+    grandTotal: byId('grandTotal'),
+    summaryGrnNo: byId('summaryGrnNo'),
+    summaryStatus: byId('summaryStatus'),
+  };
+
+  const normalizeKey = (value) => String(value || '').trim().toLowerCase();
+  const escapeHtml = (value) => String(value ?? '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;',
+  }[char]));
+  const currentTypeId = () => Number(els.grnType.value || 0);
+  const isAgainstPo = () => currentTypeId() === 1;
+  const currentStoreId = () => Number(els.storeId.value || 0);
+  const currentSupplierId = () => Number(els.supplierId.value || 0);
+  const isPoLinkedRow = (rowLike) => Number(rowLike?.po_detail_id || rowLike?.dataset?.poDetailId || 0) > 0;
+  const canAuthorizeGrn = () => Boolean(grnState.permissions?.can_authorize || byId('grnPage')?.dataset?.canAuthorize === '1');
+  const statusPillClass = (statusLabel = '') => {
+    const text = String(statusLabel || '').trim().toLowerCase();
+    return text.startsWith('authorized') || text === 'approved' ? 'authorized' : 'pending';
+  };
+  const statusPill = (statusLabel = 'Pending Authorization') => `<span class="grn-status-pill ${statusPillClass(statusLabel)}">${escapeHtml(statusLabel)}</span>`;
+
+  const removeToast = (id) => {
+    const toast = els.viewport.querySelector(`[data-toast-id="${id}"]`);
+    if (!toast) return;
+    const timer = grnState.toastTimers.get(id);
+    if (timer) {
+      window.clearTimeout(timer);
+      grnState.toastTimers.delete(id);
+    }
+    toast.classList.remove('show');
+    window.setTimeout(() => toast.remove(), 180);
+  };
+
+  const setChannelAlert = (message, type = 'success', channel = 'grn') => {
+    const text = String(message || '').trim();
+    const channelKey = String(channel || 'grn').trim().toLowerCase() || 'grn';
+    if (!text) return;
+    const activeLoadingId = grnState.loadingToastByChannel.get(channelKey);
+    if (type === 'loading' && activeLoadingId) {
+      const existing = els.viewport.querySelector(`[data-toast-id="${activeLoadingId}"]`);
+      if (existing) {
+        const body = existing.querySelector('[data-toast-body]');
+        if (body) body.innerHTML = `<span class="spinner"></span>${text}`;
+        return;
+      }
+    }
+    if (type !== 'loading' && activeLoadingId) {
+      grnState.loadingToastByChannel.delete(channelKey);
+      removeToast(activeLoadingId);
+    }
+
+    const toastId = `grn-toast-${++grnState.toastSeq}`;
+    const toast = document.createElement('div');
+    toast.className = `grn-toast ${type}`;
+    toast.dataset.toastId = toastId;
+    toast.innerHTML = `
+      <div data-toast-body>${type === 'loading' ? '<span class="spinner"></span>' : ''}${text}</div>
+      <button type="button" aria-label="Dismiss">&times;</button>
+    `;
+    toast.querySelector('button').addEventListener('click', () => removeToast(toastId));
+    els.viewport.appendChild(toast);
+    window.requestAnimationFrame(() => toast.classList.add('show'));
+
+    if (type === 'loading') {
+      grnState.loadingToastByChannel.set(channelKey, toastId);
+      return;
+    }
+
+    const timer = window.setTimeout(() => removeToast(toastId), type === 'error' ? 8000 : 4600);
+    grnState.toastTimers.set(toastId, timer);
+  };
+
+  const clearChannelLoading = (channel = 'grn') => {
+    const toastId = grnState.loadingToastByChannel.get(String(channel).toLowerCase());
+    if (!toastId) return;
+    grnState.loadingToastByChannel.delete(String(channel).toLowerCase());
+    removeToast(toastId);
+  };
+
+  const syncBodyScrollLock = () => {
+    const searchOpen = Boolean(els.searchModal && !els.searchModal.hidden);
+    const authOpen = Boolean(els.authModal && !els.authModal.hidden);
+    document.body.style.overflow = (searchOpen || authOpen) ? 'hidden' : '';
+  };
+
+  const syncSummaryMeta = ({ grnNo, statusLabel } = {}) => {
+    if (els.summaryGrnNo) {
+      els.summaryGrnNo.textContent = String(grnNo || els.grnNo.value || '').trim() || 'Assigned on save';
+    }
+    if (els.summaryStatus) {
+      const nextStatus = String(statusLabel || grnState.currentStatusLabel || '').trim() || (grnState.currentGrnId ? 'Draft' : 'Draft');
+      els.summaryStatus.textContent = nextStatus;
+    }
+  };
+
+  const syncPrimaryActionState = () => {
+    if (els.saveBtn) {
+      els.saveBtn.textContent = grnState.currentGrnId && !grnState.readOnly ? 'Update GRN' : 'Save GRN';
+    }
+    syncSummaryMeta();
+  };
+
+  const toggleAuthQueueButton = () => {
+    if (els.authQueueBtn) {
+      els.authQueueBtn.hidden = !canAuthorizeGrn();
+    }
+  };
+
+  const openSearchModal = async () => {
+    if (!els.searchModal) return;
+    els.searchModal.hidden = false;
+    syncBodyScrollLock();
+    await searchGrns({
+      recentOnly: grnState.lastSearchMode === 'recent',
+      page: 1,
+    });
+  };
+
+  const closeSearchModal = () => {
+    if (!els.searchModal) return;
+    els.searchModal.hidden = true;
+    clearChannelLoading('search');
+    syncBodyScrollLock();
+  };
+
+  const openAuthModal = async () => {
+    if (!els.authModal || !canAuthorizeGrn()) return;
+    els.authModal.hidden = false;
+    syncBodyScrollLock();
+    await searchAuthorizationQueue({
+      recentOnly: grnState.authLastSearchMode === 'recent',
+      page: 1,
+    });
+  };
+
+  const closeAuthModal = () => {
+    if (!els.authModal) return;
+    els.authModal.hidden = true;
+    clearChannelLoading('auth');
+    syncBodyScrollLock();
+  };
+
+  const populateSelect = (select, rows, placeholder, valueKey = 'id', labelBuilder = (row) => row.name || row.label || '') => {
+    const current = select.value;
+    select.innerHTML = `<option value="">${placeholder}</option>`;
+    (rows || []).forEach((row) => {
+      const option = document.createElement('option');
+      option.value = row[valueKey];
+      option.textContent = labelBuilder(row);
+      select.appendChild(option);
+    });
+    if (current && [...select.options].some((opt) => opt.value === current)) {
+      select.value = current;
+    }
+  };
+
+  const ensureSelectOption = (select, value, label) => {
+    const val = String(value || '').trim();
+    if (!val) return;
+    if (![...select.options].some((opt) => opt.value === val)) {
+      const option = document.createElement('option');
+      option.value = val;
+      option.textContent = label || val;
+      select.appendChild(option);
+    }
+    select.value = val;
+  };
+
+  const buildPackSizeOptions = (selectedId) => {
+    const current = String(selectedId || '');
+    const rows = grnState.init?.pack_sizes || [];
+    return [
+      '<option value="">Select pack</option>',
+      ...rows.map((row) => `<option value="${row.id}" ${String(row.id) === current ? 'selected' : ''}>${row.name}</option>`),
+    ].join('');
+  };
+
+  const getDefaultStoreId = () => {
+    const initDefault = Number(grnState.init?.default_store_id || 0);
+    if (initDefault > 0) return initDefault;
+    const storeMatch = (grnState.init?.stores || []).find((row) => {
+      const code = String(row.code || '').trim().toUpperCase();
+      const name = String(row.name || '').trim().toLowerCase();
+      return code === 'EYE' || name === 'eye pharmacy' || name.includes('eye pharmacy');
+    });
+    return Number(storeMatch?.id || grnState.init?.stores?.[0]?.id || 0);
+  };
+
+  const buildItemDatalist = (items) => {
+    grnState.itemOptionMap = new Map();
+    const fragments = [];
+    (items || []).forEach((item) => {
+      const label = item.display_name || item.item_name || '';
+      if (!label) return;
+      fragments.push(`<option value="${escapeHtml(label)}"></option>`);
+      [label, item.item_name, item.item_code].forEach((key) => {
+        const normalized = normalizeKey(key);
+        if (normalized) grnState.itemOptionMap.set(normalized, item);
+      });
+      if (item.item_id) grnState.itemOptionMap.set(`id:${item.item_id}`, item);
+    });
+    els.itemOptions.innerHTML = fragments.join('');
+  };
+
+  const clearPoSelection = (keepText = false) => {
+    els.poId.value = '';
+    if (!keepText) els.poSearch.value = '';
+  };
+
+  const buildPoDatalist = (items) => {
+    grnState.poOptionMap = new Map();
+    const fragments = [];
+    (items || []).forEach((row) => {
+      const poNo = String(row.po_no || '').trim();
+      const poId = Number(row.po_id || 0);
+      if (!poNo || poId <= 0) return;
+      fragments.push(`<option value="${escapeHtml(poNo)}"></option>`);
+      grnState.poOptionMap.set(normalizeKey(poNo), row);
+      grnState.poOptionMap.set(`id:${poId}`, row);
+    });
+    els.poOptions.innerHTML = fragments.join('');
+  };
+
+  const syncPoSelection = ({ alertOnMiss = false } = {}) => {
+    const typed = String(els.poSearch.value || '').trim();
+    if (!typed) {
+      clearPoSelection();
+      els.poMetaText.textContent = 'Search by PO number, choose the approved PO, then load pending lines.';
+      return null;
+    }
+    const match = grnState.poOptionMap.get(normalizeKey(typed));
+    if (!match) {
+      els.poId.value = '';
+      if (alertOnMiss) {
+        setChannelAlert('Pick a valid approved PO from the search suggestions before loading items.', 'warn', 'grn');
+      }
+      return null;
+    }
+    els.poId.value = String(match.po_id || '');
+    els.poSearch.value = match.po_no || typed;
+    els.poMetaText.textContent = `Approved PO ${match.po_no} selected. Click Load PO Items to pull pending lines.`;
+    return match;
+  };
+
+  const itemRequirementNote = (row) => {
+    const notes = [];
+    if (row.expiry_required) notes.push('Expiry required');
+    if (row.po_os_bal > 0) notes.push(`PO balance ${row.po_os_bal}`);
+    return notes.join(' | ');
+  };
+
+  const computeRow = (row) => {
+    const qty = Math.max(0, Number(row.qty || 0));
+    const rate = Math.max(0, Number(row.rate || 0));
+    const discountPct = Math.max(0, Number(row.discount_pct || 0));
+    const gstPct = Math.max(0, Number(row.gst_pct || 0));
+    const forAmt = Math.max(0, Number(row.for_amt || 0));
+    const grossAmt = round(qty * rate);
+    const discountAmt = round(Math.min(grossAmt, grossAmt * discountPct / 100));
+    const taxableAmt = round(Math.max(grossAmt - discountAmt, 0));
+    const gstAmt = round(taxableAmt * gstPct / 100);
+    const netAmt = round(taxableAmt + gstAmt + forAmt);
+    return {
+      ...row,
+      qty,
+      free_qty: Math.max(0, Number(row.free_qty || 0)),
+      rate,
+      mrp: Math.max(0, Number(row.mrp || 0)),
+      discount_pct: discountPct,
+      gst_pct: gstPct,
+      for_amt: forAmt,
+      gross_amt: grossAmt,
+      discount_amt: discountAmt,
+      taxable_amt: taxableAmt,
+      gst_amt: gstAmt,
+      net_amt: netAmt,
+    };
+  };
+
+  const rowTemplate = (row = {}) => {
+    const calculated = computeRow(row);
+    const disableItem = grnState.readOnly || isPoLinkedRow(calculated);
+    const disablePack = grnState.readOnly || isPoLinkedRow(calculated);
+    const itemLabel = escapeHtml(calculated.display_name || calculated.item_name || '');
+    return `
+      <tr
+        data-item-id="${calculated.item_id || 0}"
+        data-item-code="${escapeHtml(calculated.item_code || '')}"
+        data-item-name="${escapeHtml(calculated.item_name || '')}"
+        data-mrp="${calculated.mrp || 0}"
+        data-unit-id="${calculated.unit_id || 0}"
+        data-unit-name="${escapeHtml(calculated.unit_name || '')}"
+        data-batch-required="${calculated.batch_required ? '1' : '0'}"
+        data-expiry-required="${calculated.expiry_required ? '1' : '0'}"
+        data-po-detail-id="${calculated.po_detail_id || 0}"
+        data-po-os-bal="${calculated.po_os_bal || 0}"
+        data-po-qty="${calculated.po_qty || 0}"
+      >
+        <td><button class="btn btn-danger" type="button" data-row-action="remove" ${grnState.readOnly ? 'disabled' : ''}>X</button></td>
+        <td>
+          <div class="grn-item-cell">
+            <input type="text" list="grnItemOptions" data-field="item_label" value="${itemLabel}" ${disableItem ? 'disabled' : ''}>
+            <div class="grn-row-note" data-role="row-note">${escapeHtml(itemRequirementNote(calculated))}</div>
+          </div>
+        </td>
+        <td><input type="text" data-field="unit_name" value="${escapeHtml(calculated.unit_name || '')}" readonly tabindex="-1"></td>
+        <td><select data-field="pack_size_id" ${disablePack ? 'disabled' : ''}>${buildPackSizeOptions(calculated.pack_size_id)}</select></td>
+        <td><input type="number" step="0.01" data-field="store_stock" value="${calculated.store_stock || 0}" readonly tabindex="-1"></td>
+        <td><input type="text" data-field="batch_name" value="${escapeHtml(calculated.batch_name || '')}" ${grnState.readOnly ? 'disabled' : ''}></td>
+        <td><input type="date" data-field="expiry_date" value="${calculated.expiry_date || ''}" ${grnState.readOnly ? 'disabled' : ''}></td>
+        <td><input type="number" min="0" step="0.01" data-field="qty" value="${calculated.qty || 0}" ${grnState.readOnly ? 'disabled' : ''}></td>
+        <td><input type="number" min="0" step="0.01" data-field="free_qty" value="${calculated.free_qty || 0}" ${grnState.readOnly ? 'disabled' : ''}></td>
+        <td><input type="number" min="0" step="0.01" data-field="rate" value="${calculated.rate || 0}" ${grnState.readOnly ? 'disabled' : ''}></td>
+        <td><input type="number" min="0" step="0.01" data-field="discount_pct" value="${calculated.discount_pct || 0}" ${grnState.readOnly ? 'disabled' : ''}></td>
+        <td><input type="number" min="0" step="0.01" data-field="gst_pct" value="${calculated.gst_pct || 0}" ${grnState.readOnly ? 'disabled' : ''}></td>
+        <td><input type="number" step="0.01" data-role="gst_amt" value="${calculated.gst_amt || 0}" readonly tabindex="-1"></td>
+        <td><input type="number" min="0" step="0.01" data-field="for_amt" value="${calculated.for_amt || 0}" ${grnState.readOnly ? 'disabled' : ''}></td>
+        <td><input type="number" step="0.01" data-role="net_amt" value="${calculated.net_amt || 0}" readonly tabindex="-1"></td>
+      </tr>
+    `;
+  };
+
+  const collectRow = (tr) => {
+    const get = (selector) => tr.querySelector(selector);
+    return computeRow({
+      item_id: Number(tr.dataset.itemId || 0),
+      item_code: tr.dataset.itemCode || '',
+      item_name: tr.dataset.itemName || '',
+      display_name: get('[data-field="item_label"]').value || '',
+      mrp: Number(tr.dataset.mrp || 0),
+      unit_id: Number(tr.dataset.unitId || 0),
+      unit_name: get('[data-field="unit_name"]').value || '',
+      pack_size_id: Number(get('[data-field="pack_size_id"]').value || 0),
+      store_stock: Number(get('[data-field="store_stock"]').value || 0),
+      batch_required: tr.dataset.batchRequired === '1',
+      expiry_required: tr.dataset.expiryRequired === '1',
+      po_detail_id: Number(tr.dataset.poDetailId || 0),
+      po_os_bal: Number(tr.dataset.poOsBal || 0),
+      po_qty: Number(tr.dataset.poQty || 0),
+      batch_name: get('[data-field="batch_name"]').value || '',
+      expiry_date: get('[data-field="expiry_date"]').value || '',
+      qty: get('[data-field="qty"]').value,
+      free_qty: get('[data-field="free_qty"]').value,
+      rate: get('[data-field="rate"]').value,
+      discount_pct: get('[data-field="discount_pct"]').value,
+      gst_pct: get('[data-field="gst_pct"]').value,
+      for_amt: get('[data-field="for_amt"]').value,
+    });
+  };
+
+  const updateRowComputed = (tr) => {
+    const row = collectRow(tr);
+    tr.querySelector('[data-role="gst_amt"]').value = money(row.gst_amt);
+    tr.querySelector('[data-role="net_amt"]').value = money(row.net_amt);
+    const rowNote = tr.querySelector('[data-role="row-note"]');
+    if (rowNote) rowNote.textContent = itemRequirementNote(row);
+    if (row.expiry_required) {
+      tr.querySelector('[data-field="expiry_date"]').required = true;
+    } else {
+      tr.querySelector('[data-field="expiry_date"]').required = false;
+    }
+    return row;
+  };
+
+  const recalcTotals = () => {
+    const totals = {
+      gross: 0,
+      discount: 0,
+      taxable: 0,
+      cgst: 0,
+      sgst: 0,
+      tax: 0,
+      forAmt: 0,
+      grand: 0,
+    };
+    [...els.rowsBody.querySelectorAll('tr')].forEach((tr) => {
+      const row = updateRowComputed(tr);
+      totals.gross += row.gross_amt;
+      totals.discount += row.discount_amt;
+      totals.taxable += row.taxable_amt;
+      totals.tax += row.gst_amt;
+      totals.cgst += row.gst_amt / 2;
+      totals.sgst += row.gst_amt / 2;
+      totals.forAmt += row.for_amt;
+      totals.grand += row.net_amt;
+    });
+    els.grossTotal.textContent = money(totals.gross);
+    els.discountTotal.textContent = money(totals.discount);
+    els.taxableTotal.textContent = money(totals.taxable);
+    els.cgstTotal.textContent = money(totals.cgst);
+    els.sgstTotal.textContent = money(totals.sgst);
+    els.taxTotal.textContent = money(totals.tax);
+    els.forTotal.textContent = money(totals.forAmt);
+    els.grandTotal.textContent = money(totals.grand);
+    els.itemEmptyState.style.display = els.rowsBody.children.length ? 'none' : 'block';
+    return totals;
+  };
+
+  const setModeBanner = (message = '') => {
+    els.modeBanner.textContent = message;
+    els.modeBanner.classList.toggle('show', !!message);
+  };
+
+  const syncPrintButtonState = () => {
+    els.printBtn.disabled = !Number(grnState.currentGrnId || 0);
+  };
+
+  const setReadOnly = (readOnly, message = '') => {
+    grnState.readOnly = !!readOnly;
+    document.querySelectorAll('[data-editable="true"]').forEach((node) => {
+      node.disabled = grnState.readOnly;
+    });
+    els.saveBtn.disabled = grnState.readOnly;
+    els.addItemBtn.disabled = grnState.readOnly;
+    els.clearRowsBtn.disabled = grnState.readOnly || !els.rowsBody.children.length;
+    [...els.rowsBody.querySelectorAll('tr')].forEach((tr) => {
+      tr.querySelectorAll('input, select, button').forEach((control) => {
+        if (grnState.readOnly) {
+          control.disabled = true;
+        } else if (control.dataset.field === 'item_label' || control.dataset.field === 'pack_size_id') {
+          control.disabled = isPoLinkedRow(tr);
+        }
+      });
+    });
+    setModeBanner(message);
+    syncPrintButtonState();
+    syncPrimaryActionState();
+  };
+
+  const focusFirstEditableCell = (tr) => {
+    const target = tr?.querySelector('input[data-field="item_label"]:not([disabled]), input[data-field="batch_name"]:not([disabled]), input[data-field="qty"]:not([disabled]), input[data-field="rate"]:not([disabled])');
+    target?.focus();
+    target?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  };
+
+  const clearRows = () => {
+    els.rowsBody.innerHTML = '';
+    recalcTotals();
+    setReadOnly(grnState.readOnly, grnState.readOnly ? els.modeBanner.textContent : '');
+  };
+
+  const applyCatalogItemToRow = (tr, item, keepQuantities = true) => {
+    if (!item) return;
+    const itemInput = tr.querySelector('[data-field="item_label"]');
+    const unitInput = tr.querySelector('[data-field="unit_name"]');
+    const packSelect = tr.querySelector('[data-field="pack_size_id"]');
+    const stockInput = tr.querySelector('[data-field="store_stock"]');
+    const rateInput = tr.querySelector('[data-field="rate"]');
+    const gstInput = tr.querySelector('[data-field="gst_pct"]');
+
+    tr.dataset.itemId = item.item_id || 0;
+    tr.dataset.itemCode = item.item_code || '';
+    tr.dataset.itemName = item.item_name || '';
+    tr.dataset.mrp = item.mrp || 0;
+    tr.dataset.unitId = item.unit_id || 0;
+    tr.dataset.batchRequired = item.batch_required ? '1' : '0';
+    tr.dataset.expiryRequired = item.expiry_required ? '1' : '0';
+
+    itemInput.value = item.display_name || item.item_name || '';
+    unitInput.value = item.unit_name || '';
+    packSelect.innerHTML = buildPackSizeOptions(item.pack_size_id || 0);
+    stockInput.value = item.store_stock || 0;
+    if (!keepQuantities || !Number(rateInput.value || 0)) rateInput.value = item.rate || 0;
+    if (!keepQuantities || !Number(gstInput.value || 0)) gstInput.value = item.gst_pct || 0;
+    updateRowComputed(tr);
+    recalcTotals();
+  };
+
+  const addRow = (row = {}, { focusRow = true } = {}) => {
+    const wrapper = document.createElement('tbody');
+    wrapper.innerHTML = rowTemplate(row).trim();
+    const tr = wrapper.firstElementChild;
+    els.rowsBody.appendChild(tr);
+    if (row.item_id && grnState.itemOptionMap.has(`id:${row.item_id}`)) {
+      applyCatalogItemToRow(tr, grnState.itemOptionMap.get(`id:${row.item_id}`), true);
+      if (row.batch_name) tr.querySelector('[data-field="batch_name"]').value = row.batch_name;
+      if (row.expiry_date) tr.querySelector('[data-field="expiry_date"]').value = row.expiry_date;
+      if (row.qty != null) tr.querySelector('[data-field="qty"]').value = row.qty;
+      if (row.free_qty != null) tr.querySelector('[data-field="free_qty"]').value = row.free_qty;
+      if (row.rate != null) tr.querySelector('[data-field="rate"]').value = row.rate;
+      if (row.discount_pct != null) tr.querySelector('[data-field="discount_pct"]').value = row.discount_pct;
+      if (row.gst_pct != null) tr.querySelector('[data-field="gst_pct"]').value = row.gst_pct;
+      if (row.for_amt != null) tr.querySelector('[data-field="for_amt"]').value = row.for_amt;
+    }
+    updateRowComputed(tr);
+    recalcTotals();
+    setReadOnly(grnState.readOnly, grnState.readOnly ? els.modeBanner.textContent : '');
+    if (focusRow) {
+      window.requestAnimationFrame(() => {
+        const firstEditable = tr.querySelector('input[data-field="item_label"]:not([disabled]), input[data-field="batch_name"]:not([disabled]), input[data-field="qty"]:not([disabled])');
+        firstEditable?.focus();
+        firstEditable?.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+      });
+    }
+    return tr;
+  };
+
+  const loadItemCatalog = async () => {
+    if (!grnState.init) return;
+    const params = new URLSearchParams();
+    if (!isAgainstPo() && currentSupplierId()) params.set('supplier_id', currentSupplierId());
+    if (currentStoreId()) params.set('store_id', currentStoreId());
+    const data = await apiJson(`/api/purchase/grn/items?${params.toString()}`);
+    grnState.itemsCatalog = data.items || [];
+    buildItemDatalist(grnState.itemsCatalog);
+    [...els.rowsBody.querySelectorAll('tr')].forEach((tr) => {
+      const item = grnState.itemOptionMap.get(`id:${tr.dataset.itemId}`);
+      if (!item) return;
+      tr.querySelector('[data-field="store_stock"]').value = item.store_stock || 0;
+      if (!tr.querySelector('[data-field="item_label"]').value) {
+        applyCatalogItemToRow(tr, item, true);
+      }
+    });
+  };
+
+  const loadPoList = async () => {
+    try {
+      const params = new URLSearchParams();
+      const query = String(els.poSearch.value || '').trim();
+      if (query.length >= 2) params.set('q', query);
+      const queryString = params.toString();
+      const data = await apiJson(`/api/purchase/grn/po_list${queryString ? `?${queryString}` : ''}`);
+      grnState.poList = data.items || [];
+      buildPoDatalist(grnState.poList);
+      if (!els.poId.value) {
+        els.poMetaText.textContent = query.length >= 2
+          ? (grnState.poList.length
+              ? 'Choose the exact approved PO from the suggestions, then load pending lines.'
+              : `No approved PO matched "${query}".`)
+          : 'Search by PO number, choose the approved PO, then load pending lines.';
+      }
+      return grnState.poList;
+    } catch (error) {
+      grnState.poList = [];
+      buildPoDatalist([]);
+      setChannelAlert(error.message || 'Failed to load approved PO list.', 'error', 'grn');
+      return [];
+    }
+  };
+
+  const toggleTypeUi = async () => {
+    const againstPo = isAgainstPo();
+    els.poPickerField.hidden = !againstPo;
+    els.supplierId.disabled = grnState.readOnly || againstPo;
+    if (againstPo) {
+      if (!grnState.poList.length) await loadPoList();
+      await loadItemCatalog();
+      if (!els.poId.value) {
+        els.poMetaText.textContent = 'Search the approved PO, then click Load PO Items. You can also add extra manual item rows if needed.';
+      }
+    } else {
+      clearPoSelection();
+      els.poMetaText.textContent = 'Search by PO number, choose the approved PO, then load pending lines.';
+      await loadItemCatalog();
+    }
+    clearRows();
+    if (!againstPo && !grnState.readOnly) addRow();
+    setReadOnly(grnState.readOnly, grnState.readOnly ? els.modeBanner.textContent : '');
+  };
+
+  const fillHeader = (header = {}) => {
+    ensureSelectOption(els.grnType, header.grn_type_id, header.grn_type_name);
+    ensureSelectOption(els.supplierId, header.supplier_id, header.supplier_name || `Supplier ${header.supplier_id}`);
+    ensureSelectOption(els.storeId, header.store_id, header.store_name || `Store ${header.store_id}`);
+    els.grnNo.value = header.grn_no || '';
+    els.grnDate.value = header.grn_date || '';
+    els.grnType.value = String(header.grn_type_id || '');
+    els.supplierId.value = String(header.supplier_id || '');
+    els.storeId.value = String(header.store_id || '');
+    els.poId.value = String(header.po_id || '');
+    els.poSearch.value = header.po_no || '';
+    els.dcNo.value = header.dc_no || '';
+    els.dcDate.value = header.dc_date || '';
+    els.invoiceNo.value = header.invoice_no || '';
+    els.invoiceDate.value = header.invoice_date || '';
+    els.transporter.value = header.transporter || '';
+    els.vehicleNo.value = header.vehicle_no || '';
+    els.purRegNo.value = header.pur_reg_no || '';
+    els.preparedBy.value = header.prepared_by || '';
+    els.notes.value = header.notes || '';
+    syncSummaryMeta({ grnNo: header.grn_no, statusLabel: header.status_label });
+  };
+
+  const loadPoItems = async () => {
+    if (!Number(els.poId.value || 0)) syncPoSelection({ alertOnMiss: true });
+    const poId = Number(els.poId.value || 0);
+    if (!poId) {
+      setChannelAlert('Select an approved PO first.', 'warn', 'grn');
+      return;
+    }
+    try {
+      setChannelAlert('Loading PO-linked GRN items...', 'loading', 'grn');
+      const params = new URLSearchParams({ po_id: poId });
+      if (currentStoreId()) params.set('store_id', currentStoreId());
+      const data = await apiJson(`/api/purchase/grn/po_items?${params.toString()}`);
+      clearRows();
+      if (data.po?.supplier_id) {
+        ensureSelectOption(els.supplierId, data.po.supplier_id, data.po.supplier_name || `Supplier ${data.po.supplier_id}`);
+        els.supplierId.value = String(data.po.supplier_id);
+      }
+      await loadItemCatalog();
+      if (data.po?.po_no) {
+        els.poSearch.value = data.po.po_no;
+        els.poId.value = String(data.po.po_id || poId);
+      }
+      els.poMetaText.textContent = data.po?.po_no ? `Loaded ${data.po.po_no}${data.po.po_date ? ` dated ${data.po.po_date}` : ''}.` : 'PO items loaded.';
+      (data.items || []).forEach((item) => addRow(item, { focusRow: false }));
+      clearChannelLoading('grn');
+      setChannelAlert(`Loaded ${(data.items || []).length} PO line(s).`, 'success', 'grn');
+    } catch (error) {
+      clearChannelLoading('grn');
+      setChannelAlert(error.message || 'Failed to load PO items.', 'error', 'grn');
+    }
+  };
+
+  const renderSearchPagination = (pagination = {}) => {
+    const totalCount = Number(pagination.total_count || 0);
+    const totalPages = Math.max(1, Number(pagination.total_pages || 1));
+    const page = Math.max(1, Number(pagination.page || 1));
+    const pageSize = Math.max(1, Number(pagination.page_size || grnState.searchPageSize || 6));
+    grnState.searchPage = page;
+    grnState.searchPageSize = pageSize;
+    if (!totalCount) {
+      els.searchPager.hidden = true;
+      els.searchPageMeta.textContent = '';
+      els.searchPrevBtn.disabled = true;
+      els.searchNextBtn.disabled = true;
+      return;
+    }
+    const start = ((page - 1) * pageSize) + 1;
+    const end = Math.min(page * pageSize, totalCount);
+    els.searchPager.hidden = false;
+    els.searchPageMeta.textContent = `Showing ${start}-${end} of ${totalCount} | Page ${page} of ${totalPages}`;
+    els.searchPrevBtn.disabled = !pagination.has_prev;
+    els.searchNextBtn.disabled = !pagination.has_next;
+  };
+
+  const renderSearchResults = (items, pagination = {}) => {
+    if (!items.length) {
+      els.searchResults.innerHTML = '<div class="grn-empty">No matching GRNs found.</div>';
+      renderSearchPagination({ total_count: 0, page: 1, page_size: grnState.searchPageSize, total_pages: 1, has_prev: false, has_next: false });
+      return;
+    }
+    els.searchResults.innerHTML = items.map((item) => `
+      <button class="grn-search-item" type="button" data-grn-id="${item.grn_id}">
+        <div class="grn-search-item-head">
+          <strong>${escapeHtml(item.grn_no)}</strong>
+          ${statusPill(item.status_label || (item.authorise ? 'Authorized' : 'Pending Authorization'))}
+        </div>
+        <div>${escapeHtml(item.supplier_name || 'Unknown supplier')}</div>
+        <div class="grn-muted">${escapeHtml(item.grn_date || '')}${item.invoice_no ? ` | Invoice ${escapeHtml(item.invoice_no)}` : ''}${item.amount ? ` | ${money(item.amount)}` : ''}</div>
+      </button>
+    `).join('');
+    renderSearchPagination(pagination);
+  };
+
+  const syncAuthResultSelection = () => {
+    if (!els.authResults) return;
+    els.authResults.querySelectorAll('[data-auth-grn-id]').forEach((card) => {
+      card.classList.toggle('active', Number(card.dataset.authGrnId || 0) === Number(grnState.authSelectedGrnId || 0));
+    });
+  };
+
+  const renderAuthorizationPagination = (pagination = {}) => {
+    if (!els.authPager) return;
+    const totalCount = Number(pagination.total_count || 0);
+    const totalPages = Math.max(1, Number(pagination.total_pages || 1));
+    const page = Math.max(1, Number(pagination.page || 1));
+    const pageSize = Math.max(1, Number(pagination.page_size || grnState.authSearchPageSize || 6));
+    grnState.authSearchPage = page;
+    grnState.authSearchPageSize = pageSize;
+    if (!totalCount) {
+      els.authPager.hidden = true;
+      if (els.authPageMeta) els.authPageMeta.textContent = '';
+      if (els.authPrevBtn) els.authPrevBtn.disabled = true;
+      if (els.authNextBtn) els.authNextBtn.disabled = true;
+      return;
+    }
+    const start = ((page - 1) * pageSize) + 1;
+    const end = Math.min(page * pageSize, totalCount);
+    els.authPager.hidden = false;
+    els.authPageMeta.textContent = `Showing ${start}-${end} of ${totalCount} | Page ${page} of ${totalPages}`;
+    els.authPrevBtn.disabled = !pagination.has_prev;
+    els.authNextBtn.disabled = !pagination.has_next;
+  };
+
+  const renderAuthorizationResults = (items, pagination = {}) => {
+    if (!els.authResults) return;
+    if (!items.length) {
+      els.authResults.innerHTML = '<div class="grn-empty">No pending GRNs matched your search.</div>';
+      renderAuthorizationPagination({ total_count: 0, page: 1, page_size: grnState.authSearchPageSize, total_pages: 1, has_prev: false, has_next: false });
+      return;
+    }
+    els.authResults.innerHTML = items.map((item) => `
+      <button class="grn-auth-card" type="button" data-auth-grn-id="${item.grn_id}">
+        <div class="grn-auth-card-head">
+          <div class="grn-auth-card-title">${escapeHtml(item.grn_no || `GRN-${item.grn_id}`)}</div>
+          ${statusPill(item.status_label || 'Pending Authorization')}
+        </div>
+        <div class="grn-auth-card-subtitle">${escapeHtml(item.supplier_name || 'Unknown supplier')}</div>
+        <div class="grn-auth-card-meta">
+          ${escapeHtml(item.grn_date || '-')}
+          ${item.invoice_no ? ` | Invoice ${escapeHtml(item.invoice_no)}` : ''}
+          ${item.amount ? ` | ${money(item.amount)}` : ''}
+        </div>
+      </button>
+    `).join('');
+    renderAuthorizationPagination(pagination);
+    syncAuthResultSelection();
+  };
+
+  const renderAuthorizationPreview = (payload = null) => {
+    grnState.authPreview = payload || null;
+    if (!els.authPreviewPanel) return;
+    if (!payload || !payload.header) {
+      grnState.authSelectedGrnId = null;
+      els.authPreviewPanel.innerHTML = '<div class="grn-empty">Select a pending GRN to review its summary, item list, and authorization action.</div>';
+      syncAuthResultSelection();
+      return;
+    }
+
+    const header = payload.header || {};
+    const items = payload.items || [];
+    const statusLabel = header.status_label || (header.authorise ? 'Authorized' : 'Pending Authorization');
+    const canAuthorizeNow = canAuthorizeGrn() && !header.authorise && !header.canceled;
+    const chips = items.slice(0, 6).map((item) => `
+      <span class="grn-auth-item-chip">
+        ${escapeHtml(item.item_name || item.display_name || `Item ${item.item_id || ''}`)}
+        ${Number(item.qty || 0) ? ` x ${escapeHtml(String(item.qty))}` : ''}
+      </span>
+    `).join('');
+    const extraItems = items.length > 6 ? `<div class="helper">+${items.length - 6} more item(s) on this GRN.</div>` : '';
+
+    els.authPreviewPanel.innerHTML = `
+      <div class="grn-auth-preview-head">
+        <div>
+          ${statusPill(statusLabel)}
+          <h4>${escapeHtml(header.grn_no || `GRN-${header.grn_id || ''}`)}</h4>
+          <p>${escapeHtml(header.supplier_name || 'Unknown supplier')}</p>
+        </div>
+        <div class="grn-auth-amount">${money(header.amount || 0)}</div>
+      </div>
+
+      <div class="grn-auth-preview-summary">
+        <div class="grn-auth-section">
+          <div class="grn-auth-section-title">Receipt Details</div>
+          <div class="grn-auth-kv">
+            <div class="grn-auth-kv-item"><small>GRN Date</small><strong>${escapeHtml(header.grn_date || '-')}</strong></div>
+            <div class="grn-auth-kv-item"><small>GRN Type</small><strong>${escapeHtml(header.grn_type_name || '-')}</strong></div>
+            <div class="grn-auth-kv-item"><small>Store</small><strong>${escapeHtml(header.store_name || '-')}</strong></div>
+            <div class="grn-auth-kv-item"><small>Invoice No</small><strong>${escapeHtml(header.invoice_no || '-')}</strong></div>
+            <div class="grn-auth-kv-item"><small>Approved PO</small><strong>${escapeHtml(header.po_no || '-')}</strong></div>
+            <div class="grn-auth-kv-item"><small>Created By</small><strong>${escapeHtml(header.created_by || header.prepared_by || '-')}</strong></div>
+            <div class="grn-auth-kv-item"><small>Created On</small><strong>${escapeHtml(header.created_on || header.grn_date || '-')}</strong></div>
+            <div class="grn-auth-kv-item"><small>Items</small><strong>${items.length}</strong></div>
+            ${header.notes ? `<div class="grn-auth-kv-item" style="grid-column: 1 / -1;"><small>Receipt Notes</small><strong>${escapeHtml(header.notes)}</strong></div>` : ''}
+          </div>
+        </div>
+
+        <div class="grn-auth-section">
+          <div class="grn-auth-section-title">Item Summary</div>
+          <div class="grn-auth-items">${chips || '<span class="grn-muted">No item rows found.</span>'}</div>
+          ${extraItems}
+        </div>
+      </div>
+
+      <div class="grn-auth-section">
+        <div class="field span-12" style="margin: 0;">
+          <label>Authorization Note</label>
+          <textarea id="authRemarks" maxlength="300" placeholder="Optional note for the audit trail before stock is posted."></textarea>
+          <div class="helper">This note is captured in the authorization audit trail. Stock will post only after you confirm authorization.</div>
+        </div>
+      </div>
+
+      <div class="grn-auth-actions">
+        <button class="btn btn-soft" type="button" data-auth-action="open-workspace">Open In Workspace</button>
+        <button class="btn btn-success" type="button" data-auth-action="authorize" ${canAuthorizeNow ? '' : 'disabled'}>Authorize &amp; Post Stock</button>
+      </div>
+    `;
+    syncAuthResultSelection();
+  };
+
+  const loadAuthorizationPreview = async (grnId, { quiet = false } = {}) => {
+    if (!grnId) return;
+    try {
+      if (!quiet) setChannelAlert('Loading GRN authorization summary...', 'loading', 'auth');
+      const data = await apiJson(`/api/purchase/grn/${grnId}`);
+      grnState.authSelectedGrnId = Number(grnId);
+      if (data.permissions) {
+        grnState.permissions = { ...grnState.permissions, ...data.permissions };
+        toggleAuthQueueButton();
+      }
+      renderAuthorizationPreview(data);
+      if (!quiet) {
+        clearChannelLoading('auth');
+        setChannelAlert(`GRN ${data.header?.grn_no || grnId} is ready for authorization review.`, 'success', 'auth');
+      }
+    } catch (error) {
+      if (!quiet) {
+        clearChannelLoading('auth');
+        setChannelAlert(error.message || 'Failed to load GRN authorization summary.', 'error', 'auth');
+      }
+    }
+  };
+
+  const searchAuthorizationQueue = async ({ recentOnly = false, page = 1 } = {}) => {
+    if (!els.authResults || !canAuthorizeGrn()) return;
+    try {
+      grnState.authLastSearchMode = recentOnly ? 'recent' : 'search';
+      setChannelAlert(recentOnly ? 'Loading pending GRNs...' : 'Searching pending GRNs...', 'loading', 'auth');
+      const params = new URLSearchParams({
+        page: String(Math.max(1, Number(page || 1))),
+        page_size: String(grnState.authSearchPageSize || 6),
+        pending_only: '1',
+      });
+      if (!recentOnly && els.authSearchGrnNo?.value.trim()) params.set('grn_no', els.authSearchGrnNo.value.trim());
+      if (!recentOnly && els.authSearchSupplier?.value.trim()) params.set('supplier_name', els.authSearchSupplier.value.trim());
+      const data = await apiJson(`/api/purchase/grn/list?${params.toString()}`);
+      clearChannelLoading('auth');
+      const rows = data.items || [];
+      renderAuthorizationResults(rows, data.pagination || {});
+      if (!rows.length) {
+        renderAuthorizationPreview(null);
+      } else if (!rows.some((item) => Number(item.grn_id) === Number(grnState.authSelectedGrnId || 0))) {
+        await loadAuthorizationPreview(rows[0].grn_id, { quiet: true });
+      } else {
+        syncAuthResultSelection();
+      }
+      setChannelAlert(`Loaded ${Number(data.pagination?.total_count || rows.length)} pending GRN(s).`, 'success', 'auth');
+    } catch (error) {
+      clearChannelLoading('auth');
+      setChannelAlert(error.message || 'Failed to fetch pending GRNs.', 'error', 'auth');
+    }
+  };
+
+  const openAuthorizationPreviewInWorkspace = async () => {
+    const grnId = Number(grnState.authSelectedGrnId || 0);
+    if (!grnId) {
+      setChannelAlert('Select a pending GRN first.', 'warn', 'auth');
+      return;
+    }
+    closeAuthModal();
+    await loadExistingGrn(grnId);
+  };
+
+  const authorizeSelectedGrn = async () => {
+    const grnId = Number(grnState.authSelectedGrnId || 0);
+    if (!grnId) {
+      setChannelAlert('Select a pending GRN first.', 'warn', 'auth');
+      return;
+    }
+    if (!canAuthorizeGrn()) {
+      setChannelAlert('Only IT and Departmental Heads can authorize GRNs.', 'warn', 'auth');
+      return;
+    }
+    const remarks = byId('authRemarks')?.value.trim() || '';
+    try {
+      setChannelAlert('Authorizing GRN and posting stock...', 'loading', 'auth');
+      const data = await apiJson('/api/purchase/grn/authorize', {
+        method: 'POST',
+        body: JSON.stringify({ grn_id: grnId, remarks }),
+      });
+      clearChannelLoading('auth');
+      setChannelAlert(`${data.grn_no} authorized and stock posted.`, 'success', 'auth');
+      closeAuthModal();
+      await loadExistingGrn(grnId);
+      await searchGrns({ recentOnly: true, page: 1 });
+    } catch (error) {
+      clearChannelLoading('auth');
+      setChannelAlert(error.message || 'Failed to authorize GRN.', 'error', 'auth');
+    }
+  };
+
+  const searchGrns = async ({ recentOnly = false, page = 1 } = {}) => {
+    try {
+      grnState.lastSearchMode = recentOnly ? 'recent' : 'search';
+      setChannelAlert(recentOnly ? 'Loading recent GRNs...' : 'Searching GRNs...', 'loading', 'search');
+      const params = new URLSearchParams({
+        page: String(Math.max(1, Number(page || 1))),
+        page_size: String(grnState.searchPageSize || 6),
+      });
+      if (!recentOnly && els.searchGrnNo.value.trim()) params.set('grn_no', els.searchGrnNo.value.trim());
+      if (!recentOnly && els.searchSupplier.value.trim()) params.set('supplier_name', els.searchSupplier.value.trim());
+      const data = await apiJson(`/api/purchase/grn/list?${params.toString()}`);
+      clearChannelLoading('search');
+      renderSearchResults(data.items || [], data.pagination || {});
+      const totalCount = Number(data.pagination?.total_count || (data.items || []).length || 0);
+      const currentPage = Number(data.pagination?.page || page || 1);
+      const totalPages = Number(data.pagination?.total_pages || 1);
+      setChannelAlert(`Loaded ${totalCount} result(s). Page ${currentPage} of ${totalPages}.`, 'success', 'search');
+    } catch (error) {
+      clearChannelLoading('search');
+      setChannelAlert(error.message || 'Failed to search GRNs.', 'error', 'search');
+    }
+  };
+
+  const loadExistingGrn = async (grnId) => {
+    try {
+      setChannelAlert('Loading GRN...', 'loading', 'grn');
+      const data = await apiJson(`/api/purchase/grn/${grnId}`);
+      if (data.permissions) {
+        grnState.permissions = { ...grnState.permissions, ...data.permissions };
+        toggleAuthQueueButton();
+      }
+      grnState.currentGrnId = data.header?.grn_id || grnId;
+      grnState.currentStatusLabel = data.header?.status_label || (data.header?.authorise ? 'Authorized' : 'Pending Authorization');
+      fillHeader(data.header || {});
+      clearRows();
+      (data.items || []).forEach((item) => addRow(item, { focusRow: false }));
+      setReadOnly(Boolean(data.read_only), '');
+      await toggleTypeUi();
+      fillHeader(data.header || {});
+      clearRows();
+      (data.items || []).forEach((item) => addRow(item, { focusRow: false }));
+      const statusLabel = grnState.currentStatusLabel;
+      const bannerMessage = data.header?.authorise
+        ? `Viewing authorized GRN ${data.header?.grn_no || grnId}. Stock is already posted for this receipt.`
+        : data.read_only
+          ? `Viewing locked pending GRN ${data.header?.grn_no || grnId}. This receipt can no longer be edited from the workspace.`
+          : `Editing pending GRN ${data.header?.grn_no || grnId}. You can update this draft until it is authorized and stock is posted.`;
+      setReadOnly(Boolean(data.read_only), bannerMessage);
+      closeSearchModal();
+      clearChannelLoading('grn');
+      setChannelAlert(`GRN ${data.header?.grn_no || grnId} loaded. Status: ${statusLabel}.`, 'success', 'grn');
+    } catch (error) {
+      clearChannelLoading('grn');
+      setChannelAlert(error.message || 'Failed to load GRN.', 'error', 'grn');
+    }
+  };
+
+  const openPrintPdf = () => {
+    const grnId = Number(grnState.currentGrnId || 0);
+    if (!grnId) {
+      setChannelAlert('Save or open an existing GRN first to print its PDF.', 'warn', 'grn');
+      return;
+    }
+    const popup = window.open(`/api/purchase/grn/${grnId}/print`, '_blank', 'noopener');
+    if (!popup) {
+      setChannelAlert('Popup blocked. Allow popups for this app to open the printable GRN PDF.', 'warn', 'grn');
+      return;
+    }
+    setChannelAlert(`Opening printable PDF for ${els.grnNo.value || `GRN-${grnId}`}.`, 'success', 'grn');
+  };
+
+  const buildPayload = () => {
+    const items = [...els.rowsBody.querySelectorAll('tr')].map((tr) => collectRow(tr));
+    const totals = recalcTotals();
+    return {
+      header: {
+        grn_id: grnState.currentGrnId || 0,
+        grn_no: els.grnNo.value.trim(),
+        grn_date: els.grnDate.value,
+        grn_type_id: Number(els.grnType.value || 0),
+        supplier_id: Number(els.supplierId.value || 0),
+        store_id: Number(els.storeId.value || 0),
+        po_id: Number(els.poId.value || 0),
+        dc_no: els.dcNo.value.trim(),
+        dc_date: els.dcDate.value,
+        invoice_no: els.invoiceNo.value.trim(),
+        invoice_date: els.invoiceDate.value,
+        transporter: els.transporter.value.trim(),
+        vehicle_no: els.vehicleNo.value.trim(),
+        pur_reg_no: els.purRegNo.value.trim(),
+        prepared_by: els.preparedBy.value.trim(),
+        notes: els.notes.value.trim(),
+        totals,
+      },
+      items,
+    };
+  };
+
+  const validateBeforeSave = (payload) => {
+    if (!payload.header.grn_type_id) return 'Select a GRN type.';
+    if (!payload.header.supplier_id) return 'Select a supplier.';
+    if (!payload.header.store_id) return 'Select a store.';
+    if (isAgainstPo() && !payload.header.po_id) return 'Select and load an approved PO first.';
+    if (!payload.items.length) return 'Add at least one item row.';
+    return '';
+  };
+
+  const saveGrn = async () => {
+    if (grnState.readOnly) return;
+    const payload = buildPayload();
+    const validationMessage = validateBeforeSave(payload);
+    if (validationMessage) {
+      setChannelAlert(validationMessage, 'warn', 'grn');
+      return;
+    }
+    try {
+      setChannelAlert('Saving GRN...', 'loading', 'grn');
+      const data = await apiJson('/api/purchase/grn', {
+        method: 'POST',
+        body: JSON.stringify(payload),
+      });
+      clearChannelLoading('grn');
+      setChannelAlert(
+        data.authorization_pending
+          ? `GRN ${data.grn_no} ${data.updated ? 'updated and kept pending authorization' : 'saved and queued for authorization'}.`
+          : `GRN ${data.grn_no} saved successfully.`,
+        'success',
+        'grn'
+      );
+      if (data.grn_id) {
+        await loadExistingGrn(data.grn_id);
+      }
+    } catch (error) {
+      clearChannelLoading('grn');
+      setChannelAlert(error.message || 'Failed to save GRN.', 'error', 'grn');
+    }
+  };
+
+  const resetToNew = async () => {
+    grnState.currentGrnId = null;
+    grnState.currentStatusLabel = 'Draft';
+    els.grnNo.value = '';
+    els.grnDate.value = grnState.init?.today || '';
+    els.dcDate.value = grnState.init?.today || '';
+    els.invoiceDate.value = grnState.init?.today || '';
+    els.supplierId.value = '';
+    els.dcNo.value = '';
+    els.invoiceNo.value = '';
+    els.transporter.value = '';
+    els.vehicleNo.value = '';
+    els.purRegNo.value = '';
+    els.preparedBy.value = grnState.init?.prepared_by || '{{ prepared_by }}';
+    els.notes.value = '';
+    els.grnType.value = String((grnState.init?.grn_types || []).find((row) => Number(row.id) === 3)?.id || (grnState.init?.grn_types?.[0]?.id || ''));
+    const defaultStoreId = getDefaultStoreId();
+    if (defaultStoreId > 0) els.storeId.value = String(defaultStoreId);
+    clearPoSelection();
+    els.poMetaText.textContent = 'Search by PO number, choose the approved PO, then load pending lines.';
+    setReadOnly(false, '');
+    await toggleTypeUi();
+    syncPrimaryActionState();
+    syncSummaryMeta({ grnNo: '', statusLabel: 'Draft' });
+  };
+
+  const loadInit = async () => {
+    try {
+      setChannelAlert('Loading GRN workspace...', 'loading', 'grn');
+      const data = await apiJson('/api/purchase/grn/init');
+      grnState.init = data;
+      grnState.permissions = { ...grnState.permissions, ...(data.permissions || {}) };
+      toggleAuthQueueButton();
+      populateSelect(els.grnType, data.grn_types || [], 'Select GRN type', 'id', (row) => row.name);
+      populateSelect(els.supplierId, data.suppliers || [], 'Select supplier', 'id', (row) => row.code ? `${row.name} (${row.code})` : row.name);
+      populateSelect(els.storeId, data.stores || [], 'Select store', 'id', (row) => row.code ? `${row.name} (${row.code})` : row.name);
+      buildPoDatalist([]);
+      els.grnNo.value = '';
+      els.grnDate.value = data.today || '';
+      els.dcDate.value = data.today || '';
+      els.invoiceDate.value = data.today || '';
+      els.preparedBy.value = data.prepared_by || '{{ prepared_by }}';
+      const defaultStoreId = getDefaultStoreId();
+      if (defaultStoreId > 0) els.storeId.value = String(defaultStoreId);
+      const defaultType = (data.grn_types || []).find((row) => Number(row.id) === 3) || (data.grn_types || [])[0];
+      if (defaultType) els.grnType.value = String(defaultType.id);
+      grnState.currentStatusLabel = 'Draft';
+      await toggleTypeUi();
+      syncPrimaryActionState();
+      syncSummaryMeta({ grnNo: '', statusLabel: 'Draft' });
+      clearChannelLoading('grn');
+      setChannelAlert('GRN workspace is ready.', 'success', 'grn');
+    } catch (error) {
+      clearChannelLoading('grn');
+      setChannelAlert(error.message || 'Failed to load GRN workspace.', 'error', 'grn');
+    }
+  };
+
+  els.rowsBody.addEventListener('click', (event) => {
+    const removeBtn = event.target.closest('[data-row-action="remove"]');
+    if (!removeBtn || grnState.readOnly) return;
+    removeBtn.closest('tr')?.remove();
+    recalcTotals();
+    setReadOnly(grnState.readOnly, grnState.readOnly ? els.modeBanner.textContent : '');
+  });
+
+  els.rowsBody.addEventListener('change', (event) => {
+    const tr = event.target.closest('tr');
+    if (!tr) return;
+    if (event.target.dataset.field === 'item_label') {
+      const item = grnState.itemOptionMap.get(normalizeKey(event.target.value));
+      if (!item) {
+        setChannelAlert('Choose an item from the loaded list so the row keeps a valid item master reference.', 'warn', 'grn');
+      } else {
+        applyCatalogItemToRow(tr, item, false);
+      }
+    } else {
+      updateRowComputed(tr);
+      recalcTotals();
+    }
+  });
+
+  els.rowsBody.addEventListener('input', (event) => {
+    const tr = event.target.closest('tr');
+    if (!tr || event.target.dataset.field === 'item_label') return;
+    updateRowComputed(tr);
+    recalcTotals();
+  });
+
+  els.rowsBody.addEventListener('focusin', (event) => {
+    const cell = event.target.closest('td');
+    if (!cell) return;
+    cell.scrollIntoView({ block: 'nearest', inline: 'nearest' });
+  });
+
+  els.rowsBody.addEventListener('keydown', (event) => {
+    if (event.key !== 'Tab' || event.shiftKey || grnState.readOnly) return;
+    const tr = event.target.closest('tr');
+    if (!tr) return;
+    const editableControls = [...tr.querySelectorAll('input[data-field]:not([disabled]):not([readonly]), select[data-field]:not([disabled])')];
+    if (!editableControls.length) return;
+    const lastControl = editableControls[editableControls.length - 1];
+    const isLastRow = tr === els.rowsBody.lastElementChild;
+    if (event.target === lastControl && isLastRow) {
+      event.preventDefault();
+      addRow({}, { focusRow: true });
+    }
+  });
+
+  els.addItemBtn.addEventListener('click', async () => {
+    if (!grnState.itemsCatalog.length) {
+      await loadItemCatalog();
+    }
+    addRow();
+  });
+  els.clearRowsBtn.addEventListener('click', () => clearRows());
+  els.saveBtn.addEventListener('click', saveGrn);
+  els.newBtn.addEventListener('click', resetToNew);
+  els.searchModalBtn?.addEventListener('click', () => { void openSearchModal(); });
+  els.printBtn.addEventListener('click', openPrintPdf);
+  els.loadPoBtn.addEventListener('click', loadPoItems);
+  els.searchBtn.addEventListener('click', () => searchGrns({ recentOnly: false, page: 1 }));
+  els.recentBtn.addEventListener('click', () => searchGrns({ recentOnly: true, page: 1 }));
+  els.searchPrevBtn.addEventListener('click', () => {
+    if (grnState.searchPage > 1) {
+      searchGrns({ recentOnly: grnState.lastSearchMode === 'recent', page: grnState.searchPage - 1 });
+    }
+  });
+  els.searchNextBtn.addEventListener('click', () => {
+    searchGrns({ recentOnly: grnState.lastSearchMode === 'recent', page: grnState.searchPage + 1 });
+  });
+  els.searchResults.addEventListener('click', (event) => {
+    const card = event.target.closest('[data-grn-id]');
+    if (!card) return;
+    closeSearchModal();
+    loadExistingGrn(card.getAttribute('data-grn-id'));
+  });
+  els.searchModalCloseBtn?.addEventListener('click', closeSearchModal);
+  els.searchModal?.addEventListener('click', (event) => {
+    if (event.target?.dataset?.searchClose === '1') {
+      closeSearchModal();
+    }
+  });
+  els.authQueueBtn?.addEventListener('click', () => { void openAuthModal(); });
+  els.authModalCloseBtn?.addEventListener('click', closeAuthModal);
+  els.authModal?.addEventListener('click', (event) => {
+    if (event.target?.dataset?.authClose === '1') {
+      closeAuthModal();
+    }
+  });
+  els.authSearchBtn?.addEventListener('click', () => { void searchAuthorizationQueue({ recentOnly: false, page: 1 }); });
+  els.authRecentBtn?.addEventListener('click', () => { void searchAuthorizationQueue({ recentOnly: true, page: 1 }); });
+  els.authPrevBtn?.addEventListener('click', () => {
+    if (grnState.authSearchPage > 1) {
+      void searchAuthorizationQueue({ recentOnly: grnState.authLastSearchMode === 'recent', page: grnState.authSearchPage - 1 });
+    }
+  });
+  els.authNextBtn?.addEventListener('click', () => {
+    void searchAuthorizationQueue({ recentOnly: grnState.authLastSearchMode === 'recent', page: grnState.authSearchPage + 1 });
+  });
+  els.authResults?.addEventListener('click', (event) => {
+    const card = event.target.closest('[data-auth-grn-id]');
+    if (!card) return;
+    void loadAuthorizationPreview(card.getAttribute('data-auth-grn-id'));
+  });
+  els.authPreviewPanel?.addEventListener('click', (event) => {
+    const action = event.target.closest('[data-auth-action]')?.dataset?.authAction;
+    if (action === 'open-workspace') {
+      void openAuthorizationPreviewInWorkspace();
+    } else if (action === 'authorize') {
+      void authorizeSelectedGrn();
+    }
+  });
+  els.authSearchGrnNo?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void searchAuthorizationQueue({ recentOnly: false, page: 1 });
+    }
+  });
+  els.authSearchSupplier?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void searchAuthorizationQueue({ recentOnly: false, page: 1 });
+    }
+  });
+
+  els.grnType.addEventListener('change', async () => {
+    await toggleTypeUi();
+  });
+  els.poSearch.addEventListener('focus', () => {
+    if (!grnState.poList.length) {
+      void loadPoList();
+    }
+  });
+  els.poSearch.addEventListener('input', () => {
+    els.poId.value = '';
+    const query = String(els.poSearch.value || '').trim();
+    if (query.length < 2) {
+      if (!grnState.poList.length) void loadPoList();
+      return;
+    }
+    void loadPoList();
+  });
+  els.poSearch.addEventListener('change', () => {
+    syncPoSelection({ alertOnMiss: !!els.poSearch.value.trim() });
+  });
+  els.poSearch.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (syncPoSelection({ alertOnMiss: true })) {
+        void loadPoItems();
+      }
+    }
+  });
+  els.supplierId.addEventListener('change', async () => {
+    if (!isAgainstPo() && !grnState.readOnly) await loadItemCatalog();
+  });
+  els.storeId.addEventListener('change', async () => {
+    if (!grnState.readOnly) await loadItemCatalog();
+  });
+
+  window.addEventListener('keydown', (event) => {
+    if (event.key === 'Escape' && els.authModal && !els.authModal.hidden) {
+      closeAuthModal();
+    }
+  });
+  window.addEventListener('load', loadInit);
+</script>
+{% endblock %}

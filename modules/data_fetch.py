@@ -12,6 +12,27 @@ from threading import Lock
 # Keep IST for consistent formatting
 LOCAL_TZ = ZoneInfo("Asia/Kolkata")
 
+
+def _clean_utr_text(value) -> str:
+    if value is None:
+        return ""
+    try:
+        if pd.isna(value):
+            return ""
+    except Exception:
+        pass
+    if isinstance(value, bool):
+        txt = str(value).strip()
+    elif isinstance(value, int):
+        txt = str(int(value))
+    elif isinstance(value, float):
+        txt = str(int(value)) if value.is_integer() else format(value, "f").rstrip("0").rstrip(".")
+    elif isinstance(value, Decimal):
+        txt = format(value, "f").rstrip("0").rstrip(".")
+    else:
+        txt = str(value).strip()
+    return txt.replace(",", "")
+
 def fetch_revenue(unit, from_date, to_date):
     """
     Fetches revenue summary from a specific unit (AHL/ACI/BALLIA)
@@ -109,8 +130,18 @@ def _corp_bill_summary_parse_int(raw_value, default: int, minimum: int | None = 
 
 def _corp_bill_summary_norm_status_filter(status_filter: str) -> str:
     key = str(status_filter or "").strip().lower()
-    if key in {"final", "nonfinal"}:
-        return key
+    alias_map = {
+        "final": "final",
+        "nonfinal": "nonfinal",
+        "other": "nonfinal",
+        "other_status": "nonfinal",
+        "pending": "pending",
+        "submission_pending": "pending",
+        "notworked": "notworked",
+        "not_worked": "notworked",
+    }
+    if key in alias_map:
+        return alias_map[key]
     return "all"
 
 
@@ -125,6 +156,45 @@ def _corp_bill_summary_parse_date_or_none(raw_value):
         return None
 
 
+def _corp_bill_summary_date_scope_label(unit: str) -> str:
+    unit_key = str(unit or "").strip().upper()
+    if unit_key in {"AHL", "ACI"}:
+        return "Submit Date first; fallback to Bill Date when Submit Date is blank"
+    if unit_key == "SHARPSIGHT":
+        return "Submit Date first; fallback to legacy bill date fields when Submit Date is blank"
+    return "Bill Date"
+
+
+def _corp_bill_summary_status_counts_from_meta(raw_meta) -> dict:
+    meta = raw_meta if isinstance(raw_meta, dict) else {}
+    return {
+        "final_submitted": _corp_bill_summary_parse_int(
+            meta.get("final_submitted_count", meta.get("final_submitted")),
+            0,
+            0,
+            None,
+        ),
+        "submission_pending": _corp_bill_summary_parse_int(
+            meta.get("submission_pending_count", meta.get("submission_pending")),
+            0,
+            0,
+            None,
+        ),
+        "not_worked": _corp_bill_summary_parse_int(
+            meta.get("not_worked_count", meta.get("not_worked")),
+            0,
+            0,
+            None,
+        ),
+        "other_status": _corp_bill_summary_parse_int(
+            meta.get("other_status_count", meta.get("other_status")),
+            0,
+            0,
+            None,
+        ),
+    }
+
+
 def _is_sharpsight_unit(unit: str) -> bool:
     return str(unit or "").strip().upper() == "SHARPSIGHT"
 
@@ -137,6 +207,7 @@ SHARPSIGHT_RECEIPT_SOURCE_COL_CANDIDATES = [
 SHARPSIGHT_RECEIPT_SOURCE_OPENING = "OPENING"
 SHARPSIGHT_RECEIPT_SOURCE_AHL = "BILL_MST_AHL"
 SHARPSIGHT_RECEIPT_SOURCE_UNKNOWN = "UNKNOWN"
+CORP_RECEIPT_SOURCE_BILL_MST = "BILL_MST_POST"
 
 
 def _table_columns_map_conn(conn, table_name: str) -> dict:
@@ -177,7 +248,27 @@ def _pick_table_col_conn(conn, table_name: str, candidates: list[str]) -> str | 
     return None
 
 
-def _ensure_sharpsight_receipt_source_column_conn(conn) -> dict:
+def _corp_receipt_bill_source_key_for_unit(unit: str) -> str:
+    return SHARPSIGHT_RECEIPT_SOURCE_AHL if _is_sharpsight_unit(unit) else CORP_RECEIPT_SOURCE_BILL_MST
+
+
+def _corp_receipt_against_label(source_key: str | None) -> str:
+    return "Opening" if str(source_key or "").strip().upper() == SHARPSIGHT_RECEIPT_SOURCE_OPENING else "Bill"
+
+
+def _resolve_corporate_bill_table_conn(conn, unit: str) -> str | None:
+    if _is_sharpsight_unit(unit):
+        return "dbo.Corp_Bill_Mst_AHL"
+    for cand in ("dbo.Corp_Bill_Mst", "dbo.Corp_BillMst"):
+        try:
+            pd.read_sql(f"SELECT TOP 0 * FROM {cand}", conn)
+            return cand
+        except Exception:
+            continue
+    return None
+
+
+def _ensure_corporate_receipt_source_column_conn(conn) -> dict:
     result = {"column": None, "added": False}
     if not conn:
         return result
@@ -207,6 +298,10 @@ def _ensure_sharpsight_receipt_source_column_conn(conn) -> dict:
     return result
 
 
+def _ensure_sharpsight_receipt_source_column_conn(conn) -> dict:
+    return _ensure_corporate_receipt_source_column_conn(conn)
+
+
 def _backfill_sharpsight_receipt_source_conn(conn, source_col: str | None = None) -> dict:
     result = {
         "column": None,
@@ -227,6 +322,20 @@ def _backfill_sharpsight_receipt_source_conn(conn, source_col: str | None = None
     blank_expr = f"ISNULL(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(40), d.[{source_name}]))), ''), '') = ''"
     receipt_dt_expr = "COALESCE(d.ReceiptDate, m.Receipt_Date)"
     bill_dt_expr = "COALESCE(b.Submit_Date, b.CBill_Date, b.accUpdatedDate, b.visitDate, b.Updated_On)"
+
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            SELECT TOP 1 1
+            FROM dbo.Corp_Receipt_Dtl d WITH (NOLOCK)
+            WHERE {blank_expr}
+            """
+        )
+        if not cur.fetchone():
+            return result
+    except Exception:
+        pass
 
     statements = [
         (
@@ -337,6 +446,156 @@ def _backfill_sharpsight_receipt_source_conn(conn, source_col: str | None = None
     return result
 
 
+def _backfill_non_sharpsight_receipt_source_conn(conn, source_col: str | None = None) -> dict:
+    result = {
+        "column": None,
+        "opening_overlap_marked": 0,
+        "bill_overlap_marked": 0,
+        "opening_only_marked": 0,
+        "bill_only_marked": 0,
+        "unknown_marked": 0,
+    }
+    if not conn:
+        return result
+
+    source_name = str(source_col or "").strip() or (_ensure_corporate_receipt_source_column_conn(conn).get("column") or "")
+    if not source_name:
+        return result
+    result["column"] = source_name
+
+    blank_expr = f"ISNULL(NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(40), d.[{source_name}]))), ''), '') = ''"
+    receipt_dt_expr = "COALESCE(d.ReceiptDate, m.Receipt_Date)"
+    bill_dt_expr = "COALESCE(b.Submit_Date, b.CBill_Date, b.accUpdatedDate, b.visitDate, b.Updated_On)"
+
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            SELECT TOP 1 1
+            FROM dbo.Corp_Receipt_Dtl d WITH (NOLOCK)
+            WHERE {blank_expr}
+            """
+        )
+        if not cur.fetchone():
+            return result
+    except Exception:
+        pass
+
+    statements = [
+        (
+            "opening_overlap_marked",
+            f"""
+            UPDATE d
+            SET [{source_name}] = ?
+            FROM dbo.Corp_Receipt_Dtl d
+            LEFT JOIN dbo.Corp_Receipt_Mst m WITH (NOLOCK)
+                ON m.Receipt_ID = d.receiptId
+            INNER JOIN dbo.CorpOpening o WITH (NOLOCK)
+                ON o.OPId = d.billId
+            INNER JOIN dbo.Corp_Bill_Mst b WITH (NOLOCK)
+                ON b.CBill_ID = d.billId
+            WHERE {blank_expr}
+              AND (
+                    {receipt_dt_expr} IS NULL
+                    OR {bill_dt_expr} IS NULL
+                    OR CAST({receipt_dt_expr} AS DATETIME) < CAST({bill_dt_expr} AS DATETIME)
+                  )
+            """,
+            [SHARPSIGHT_RECEIPT_SOURCE_OPENING],
+        ),
+        (
+            "bill_overlap_marked",
+            f"""
+            UPDATE d
+            SET [{source_name}] = ?
+            FROM dbo.Corp_Receipt_Dtl d
+            LEFT JOIN dbo.Corp_Receipt_Mst m WITH (NOLOCK)
+                ON m.Receipt_ID = d.receiptId
+            INNER JOIN dbo.CorpOpening o WITH (NOLOCK)
+                ON o.OPId = d.billId
+            INNER JOIN dbo.Corp_Bill_Mst b WITH (NOLOCK)
+                ON b.CBill_ID = d.billId
+            WHERE {blank_expr}
+              AND {receipt_dt_expr} IS NOT NULL
+              AND {bill_dt_expr} IS NOT NULL
+              AND CAST({receipt_dt_expr} AS DATETIME) >= CAST({bill_dt_expr} AS DATETIME)
+            """,
+            [CORP_RECEIPT_SOURCE_BILL_MST],
+        ),
+        (
+            "opening_only_marked",
+            f"""
+            UPDATE d
+            SET [{source_name}] = ?
+            FROM dbo.Corp_Receipt_Dtl d
+            INNER JOIN dbo.CorpOpening o WITH (NOLOCK)
+                ON o.OPId = d.billId
+            LEFT JOIN dbo.Corp_Bill_Mst b WITH (NOLOCK)
+                ON b.CBill_ID = d.billId
+            WHERE {blank_expr}
+              AND b.CBill_ID IS NULL
+            """,
+            [SHARPSIGHT_RECEIPT_SOURCE_OPENING],
+        ),
+        (
+            "bill_only_marked",
+            f"""
+            UPDATE d
+            SET [{source_name}] = ?
+            FROM dbo.Corp_Receipt_Dtl d
+            INNER JOIN dbo.Corp_Bill_Mst b WITH (NOLOCK)
+                ON b.CBill_ID = d.billId
+            LEFT JOIN dbo.CorpOpening o WITH (NOLOCK)
+                ON o.OPId = d.billId
+            WHERE {blank_expr}
+              AND o.OPId IS NULL
+            """,
+            [CORP_RECEIPT_SOURCE_BILL_MST],
+        ),
+        (
+            "unknown_marked",
+            f"""
+            UPDATE d
+            SET [{source_name}] = ?
+            FROM dbo.Corp_Receipt_Dtl d
+            LEFT JOIN dbo.CorpOpening o WITH (NOLOCK)
+                ON o.OPId = d.billId
+            LEFT JOIN dbo.Corp_Bill_Mst b WITH (NOLOCK)
+                ON b.CBill_ID = d.billId
+            WHERE {blank_expr}
+              AND o.OPId IS NULL
+              AND b.CBill_ID IS NULL
+            """,
+            [SHARPSIGHT_RECEIPT_SOURCE_UNKNOWN],
+        ),
+    ]
+
+    cur = conn.cursor()
+    try:
+        for key, sql, params in statements:
+            cur.execute(sql, params)
+            try:
+                result[key] = int(cur.rowcount or 0)
+            except Exception:
+                result[key] = 0
+        try:
+            conn.commit()
+        except Exception:
+            pass
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+    return result
+
+
+def _backfill_corporate_receipt_source_conn(conn, unit: str, source_col: str | None = None) -> dict:
+    if _is_sharpsight_unit(unit):
+        return _backfill_sharpsight_receipt_source_conn(conn, source_col)
+    return _backfill_non_sharpsight_receipt_source_conn(conn, source_col)
+
+
 def _corp_bill_summary_dict_rows_from_cursor(cursor):
     if not cursor or not cursor.description:
         return []
@@ -445,6 +704,8 @@ def _fetch_corporate_bill_summary_page_sp(
             "total_rows": int(total_rows),
             "total_pages": int(total_pages),
             "query_engine": "sql_sp",
+            "date_scope_label": _corp_bill_summary_date_scope_label("AHL"),
+            "status_counts": _corp_bill_summary_status_counts_from_meta(meta),
             "available_patient_subtypes": available_subtypes,
             "timings": {"db_ms": float(db_ms), "total_ms": float(db_ms)},
         }
@@ -498,6 +759,7 @@ def _fetch_corporate_bill_summary_page_sql(
                 CAST(bm.BillDate AS DATETIME) AS BillDate,
                 CAST(cb.CBill_Date AS DATETIME) AS CBill_Date,
                 CAST(cb.Submit_Date AS DATETIME) AS Submit_Date,
+                CAST(COALESCE(cb.Submit_Date, bm.BillDate) AS DATETIME) AS FilterDate,
                 CAST(ISNULL(cb.CAmount, 0) AS FLOAT) AS CAmount,
                 CAST(ISNULL(cb.Due_Amt, ISNULL(cb.dueAmount, 0)) AS FLOAT) AS DueAmount,
                 CAST(
@@ -574,6 +836,7 @@ def _fetch_corporate_bill_summary_page_sql(
             b.BillDate,
             b.CBill_Date,
             b.Submit_Date,
+            b.FilterDate,
             b.CAmount,
             b.DueAmount,
             b.Old_Bill_Amt,
@@ -591,13 +854,19 @@ def _fetch_corporate_bill_summary_page_sql(
             b.DocInChargeID,
             b.DepartmentID,
             b.Registration_No,
-            b.PatientSubTypeName
-        INTO #corp_bill_filtered
+            b.PatientSubTypeName,
+            CASE
+                WHEN ISNULL(b.IsFinalStatus, 0) = 1 THEN N'Final Submitted'
+                WHEN UPPER(LTRIM(RTRIM(ISNULL(b.StatusRaw, N'')))) = N'N' THEN N'Submission Pending'
+                WHEN LTRIM(RTRIM(ISNULL(b.StatusRaw, N''))) = N'' THEN N'Not Worked'
+                ELSE N'Submission Pending'
+            END AS StatusLabel
+        INTO #corp_bill_scoped
         FROM base b
         WHERE
-            b.BillDate IS NOT NULL
-            AND (@FromDate IS NULL OR CAST(b.BillDate AS DATE) >= @FromDate)
-            AND (@ToDate IS NULL OR CAST(b.BillDate AS DATE) <= @ToDate)
+            b.FilterDate IS NOT NULL
+            AND (@FromDate IS NULL OR CAST(b.FilterDate AS DATE) >= @FromDate)
+            AND (@ToDate IS NULL OR CAST(b.FilterDate AS DATE) <= @ToDate)
             AND (
                 (@VisitType = 0 AND (
                     (ISNULL(b.IsIPDLike, 0) = 1 AND ISNULL(b.DischargeTypeID, 0) = 2 AND ISNULL(b.CancelStatusNorm, 0) = 0)
@@ -609,11 +878,6 @@ def _fetch_corporate_bill_summary_page_sql(
                 OR (@VisitType = 3 AND ISNULL(b.IsDPVLike, 0) = 1)
             )
             AND (
-                @StatusNorm = N'all'
-                OR (@StatusNorm = N'final' AND ISNULL(b.IsFinalStatus, 0) = 1)
-                OR (@StatusNorm = N'nonfinal' AND ISNULL(b.IsFinalStatus, 0) = 0)
-            )
-            AND (
                 @SubtypeNorm = N''
                 OR LOWER(ISNULL(b.PatientSubTypeName, N'')) = @SubtypeNorm
             )
@@ -623,6 +887,16 @@ def _fetch_corporate_bill_summary_page_sql(
                 OR LOWER(ISNULL(b.Registration_No, N'')) LIKE @SearchLike
                 OR LOWER(ISNULL(b.TypeOfVisit, N'')) LIKE @SearchLike
                 OR LOWER(ISNULL(b.PatientSubTypeName, N'')) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(10), CAST(b.FilterDate AS DATE), 23)) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(10), CAST(b.FilterDate AS DATE), 105)) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(10), CAST(b.FilterDate AS DATE), 103)) LIKE @SearchLike
+                OR LOWER(REPLACE(CONVERT(NVARCHAR(11), CAST(b.FilterDate AS DATE), 106), N' ', N'-')) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(19), CAST(b.FilterDate AS DATETIME), 120)) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(10), CAST(b.Submit_Date AS DATE), 23)) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(10), CAST(b.Submit_Date AS DATE), 105)) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(10), CAST(b.Submit_Date AS DATE), 103)) LIKE @SearchLike
+                OR LOWER(REPLACE(CONVERT(NVARCHAR(11), CAST(b.Submit_Date AS DATE), 106), N' ', N'-')) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(19), CAST(b.Submit_Date AS DATETIME), 120)) LIKE @SearchLike
                 OR LOWER(CONVERT(NVARCHAR(10), CAST(b.BillDate AS DATE), 23)) LIKE @SearchLike
                 OR LOWER(CONVERT(NVARCHAR(10), CAST(b.BillDate AS DATE), 105)) LIKE @SearchLike
                 OR LOWER(CONVERT(NVARCHAR(10), CAST(b.BillDate AS DATE), 103)) LIKE @SearchLike
@@ -640,12 +914,65 @@ def _fetch_corporate_bill_summary_page_sql(
                 ) LIKE @SearchLike
             );
 
-        SELECT COUNT(1) AS total_rows FROM #corp_bill_filtered;
+        SELECT
+            s.CBill_ID,
+            s.Visit_ID,
+            s.PatientID,
+            s.Bill_ID,
+            s.BillDate,
+            s.CBill_Date,
+            s.Submit_Date,
+            s.FilterDate,
+            s.CAmount,
+            s.DueAmount,
+            s.Old_Bill_Amt,
+            s.Old_Bill_Date,
+            s.StatusRaw,
+            s.IsFinalStatus,
+            s.BillNo,
+            s.VisitTypeID,
+            s.TypeOfVisit,
+            s.VisitDate,
+            s.DischargeDate,
+            s.VisitPatientID,
+            s.VisitPatientTypeID,
+            s.VisitPatientSubTypeID,
+            s.DocInChargeID,
+            s.DepartmentID,
+            s.Registration_No,
+            s.PatientSubTypeName,
+            s.StatusLabel
+        INTO #corp_bill_filtered
+        FROM #corp_bill_scoped s
+        WHERE
+            @StatusNorm = N'all'
+            OR (@StatusNorm = N'final' AND ISNULL(s.IsFinalStatus, 0) = 1)
+            OR (@StatusNorm = N'nonfinal' AND ISNULL(s.IsFinalStatus, 0) = 0)
+            OR (@StatusNorm = N'pending' AND LOWER(LTRIM(RTRIM(ISNULL(s.StatusLabel, N'')))) = N'submission pending')
+            OR (@StatusNorm = N'notworked' AND LOWER(LTRIM(RTRIM(ISNULL(s.StatusLabel, N'')))) = N'not worked');
+
+        SELECT
+            filtered.total_rows,
+            scoped.scoped_total_rows,
+            scoped.final_submitted_count,
+            scoped.submission_pending_count,
+            scoped.not_worked_count,
+            scoped.other_status_count
+        FROM (SELECT COUNT(1) AS total_rows FROM #corp_bill_filtered) filtered
+        CROSS JOIN (
+            SELECT
+                COUNT(1) AS scoped_total_rows,
+                SUM(CASE WHEN LOWER(LTRIM(RTRIM(ISNULL(StatusLabel, N'')))) = N'final submitted' THEN 1 ELSE 0 END) AS final_submitted_count,
+                SUM(CASE WHEN LOWER(LTRIM(RTRIM(ISNULL(StatusLabel, N'')))) = N'submission pending' THEN 1 ELSE 0 END) AS submission_pending_count,
+                SUM(CASE WHEN LOWER(LTRIM(RTRIM(ISNULL(StatusLabel, N'')))) = N'not worked' THEN 1 ELSE 0 END) AS not_worked_count,
+                SUM(CASE WHEN LOWER(LTRIM(RTRIM(ISNULL(StatusLabel, N'')))) <> N'final submitted' THEN 1 ELSE 0 END) AS other_status_count
+            FROM #corp_bill_scoped
+        ) scoped;
 
         ;WITH numbered AS (
             SELECT
                 f.*,
-                ROW_NUMBER() OVER (ORDER BY f.BillDate DESC, f.CBill_ID DESC, f.Bill_ID DESC) AS rn
+                ROW_NUMBER() OVER (ORDER BY f.FilterDate DESC, f.CBill_ID DESC, f.Bill_ID DESC) AS rn
             FROM #corp_bill_filtered f
         )
         SELECT
@@ -658,12 +985,7 @@ def _fetch_corporate_bill_summary_page_sql(
             CAST(ISNULL(n.DueAmount, 0) AS FLOAT) AS DueAmount,
             CAST(ISNULL(n.Old_Bill_Amt, 0) AS FLOAT) AS Old_Bill_Amt,
             n.Old_Bill_Date,
-            CASE
-                WHEN ISNULL(n.IsFinalStatus, 0) = 1 THEN N'Final Submitted'
-                WHEN UPPER(LTRIM(RTRIM(ISNULL(n.StatusRaw, N'')))) = N'N' THEN N'Submission Pending'
-                WHEN LTRIM(RTRIM(ISNULL(n.StatusRaw, N''))) = N'' THEN N'Not Worked'
-                ELSE N'Submission Pending'
-            END AS [Status],
+            ISNULL(NULLIF(n.StatusLabel, N''), N'Submission Pending') AS [Status],
             n.BillDate,
             n.CBill_Date,
             n.Submit_Date,
@@ -717,6 +1039,13 @@ def _fetch_corporate_bill_summary_page_sql(
         )
 
         total_rows = 0
+        scoped_total_rows = 0
+        status_counts = {
+            "final_submitted": 0,
+            "submission_pending": 0,
+            "not_worked": 0,
+            "other_status": 0,
+        }
         page_rows = []
         available_subtypes = []
         set_index = 0
@@ -725,7 +1054,10 @@ def _fetch_corporate_bill_summary_page_sql(
                 rows = _corp_bill_summary_dict_rows_from_cursor(cur)
                 if set_index == 0:
                     if rows:
-                        total_rows = _corp_bill_summary_parse_int(rows[0].get("total_rows"), 0, 0, None)
+                        first_meta = rows[0] or {}
+                        total_rows = _corp_bill_summary_parse_int(first_meta.get("total_rows"), 0, 0, None)
+                        scoped_total_rows = _corp_bill_summary_parse_int(first_meta.get("scoped_total_rows"), total_rows, 0, None)
+                        status_counts = _corp_bill_summary_status_counts_from_meta(first_meta)
                 elif set_index == 1:
                     page_rows = rows
                 elif set_index == 2:
@@ -757,8 +1089,11 @@ def _fetch_corporate_bill_summary_page_sql(
                 "page": int(page),
                 "page_size": int(page_size),
                 "total_rows": int(total_rows),
+                "scoped_total_rows": int(scoped_total_rows),
                 "total_pages": int(total_pages),
                 "query_engine": "python_sql",
+                "date_scope_label": _corp_bill_summary_date_scope_label("AHL"),
+                "status_counts": status_counts,
                 "available_patient_subtypes": available_subtypes,
                 "timings": {"db_ms": float(db_ms), "total_ms": float(db_ms)},
             },
@@ -812,6 +1147,7 @@ def _fetch_sharpsight_corporate_bill_summary_page_sql(
                 CAST(COALESCE(b.Old_Bill_Date, b.CBill_Date, b.visitDate, v.VisitDate) AS DATETIME) AS BillDate,
                 CAST(b.CBill_Date AS DATETIME) AS CBill_Date,
                 CAST(b.Submit_Date AS DATETIME) AS Submit_Date,
+                CAST(COALESCE(b.Submit_Date, b.Old_Bill_Date, b.CBill_Date, b.visitDate, v.VisitDate) AS DATETIME) AS FilterDate,
                 CAST(ISNULL(b.CAmount, 0) AS FLOAT) AS CAmount,
                 CAST(ISNULL(NULLIF(b.Due_Amt, 0), ISNULL(NULLIF(b.dueAmount, 0), ISNULL(b.CAmount, 0))) AS FLOAT) AS DueAmount,
                 CAST(
@@ -889,6 +1225,7 @@ def _fetch_sharpsight_corporate_bill_summary_page_sql(
             b.BillDate,
             b.CBill_Date,
             b.Submit_Date,
+            b.FilterDate,
             b.CAmount,
             b.DueAmount,
             b.Old_Bill_Amt,
@@ -907,13 +1244,19 @@ def _fetch_sharpsight_corporate_bill_summary_page_sql(
             b.DepartmentID,
             b.Registration_No,
             b.PatientSubTypeName,
-            b.DocNameRaw
-        INTO #corp_bill_filtered
+            b.DocNameRaw,
+            CASE
+                WHEN ISNULL(b.IsFinalStatus, 0) = 1 THEN N'Final Submitted'
+                WHEN UPPER(LTRIM(RTRIM(ISNULL(b.StatusRaw, N'')))) = N'N' THEN N'Submission Pending'
+                WHEN LTRIM(RTRIM(ISNULL(b.StatusRaw, N''))) = N'' THEN N'Not Worked'
+                ELSE N'Submission Pending'
+            END AS StatusLabel
+        INTO #corp_bill_scoped
         FROM base b
         WHERE
-            b.BillDate IS NOT NULL
-            AND (@FromDate IS NULL OR CAST(b.BillDate AS DATE) >= @FromDate)
-            AND (@ToDate IS NULL OR CAST(b.BillDate AS DATE) <= @ToDate)
+            b.FilterDate IS NOT NULL
+            AND (@FromDate IS NULL OR CAST(b.FilterDate AS DATE) >= @FromDate)
+            AND (@ToDate IS NULL OR CAST(b.FilterDate AS DATE) <= @ToDate)
             AND (
                 (@VisitType = 0 AND (
                     (ISNULL(b.IsIPDLike, 0) = 1 AND (ISNULL(b.DischargeTypeID, 0) = 2 OR b.DischargeDate IS NOT NULL) AND ISNULL(b.CancelStatusNorm, 0) = 0)
@@ -923,11 +1266,6 @@ def _fetch_sharpsight_corporate_bill_summary_page_sql(
                 OR (@VisitType = 1 AND ISNULL(b.IsIPDLike, 0) = 1 AND (ISNULL(b.DischargeTypeID, 0) = 2 OR b.DischargeDate IS NOT NULL) AND ISNULL(b.CancelStatusNorm, 0) = 0)
                 OR (@VisitType = 2 AND ISNULL(b.IsOPDLike, 0) = 1 AND ISNULL(b.CancelStatusNorm, 0) = 0)
                 OR (@VisitType = 3 AND ISNULL(b.IsDPVLike, 0) = 1)
-            )
-            AND (
-                @StatusNorm = N'all'
-                OR (@StatusNorm = N'final' AND ISNULL(b.IsFinalStatus, 0) = 1)
-                OR (@StatusNorm = N'nonfinal' AND ISNULL(b.IsFinalStatus, 0) = 0)
             )
             AND (
                 @SubtypeNorm = N''
@@ -940,6 +1278,16 @@ def _fetch_sharpsight_corporate_bill_summary_page_sql(
                 OR LOWER(ISNULL(b.TypeOfVisit, N'')) LIKE @SearchLike
                 OR LOWER(ISNULL(b.PatientSubTypeName, N'')) LIKE @SearchLike
                 OR LOWER(ISNULL(b.DocNameRaw, N'')) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(10), CAST(b.FilterDate AS DATE), 23)) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(10), CAST(b.FilterDate AS DATE), 105)) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(10), CAST(b.FilterDate AS DATE), 103)) LIKE @SearchLike
+                OR LOWER(REPLACE(CONVERT(NVARCHAR(11), CAST(b.FilterDate AS DATE), 106), N' ', N'-')) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(19), CAST(b.FilterDate AS DATETIME), 120)) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(10), CAST(b.Submit_Date AS DATE), 23)) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(10), CAST(b.Submit_Date AS DATE), 105)) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(10), CAST(b.Submit_Date AS DATE), 103)) LIKE @SearchLike
+                OR LOWER(REPLACE(CONVERT(NVARCHAR(11), CAST(b.Submit_Date AS DATE), 106), N' ', N'-')) LIKE @SearchLike
+                OR LOWER(CONVERT(NVARCHAR(19), CAST(b.Submit_Date AS DATETIME), 120)) LIKE @SearchLike
                 OR LOWER(CONVERT(NVARCHAR(10), CAST(b.BillDate AS DATE), 23)) LIKE @SearchLike
                 OR LOWER(CONVERT(NVARCHAR(10), CAST(b.BillDate AS DATE), 105)) LIKE @SearchLike
                 OR LOWER(CONVERT(NVARCHAR(10), CAST(b.BillDate AS DATE), 103)) LIKE @SearchLike
@@ -957,12 +1305,66 @@ def _fetch_sharpsight_corporate_bill_summary_page_sql(
                 ) LIKE @SearchLike
             );
 
-        SELECT COUNT(1) AS total_rows FROM #corp_bill_filtered;
+        SELECT
+            s.CBill_ID,
+            s.Visit_ID,
+            s.PatientID,
+            s.Bill_ID,
+            s.BillDate,
+            s.CBill_Date,
+            s.Submit_Date,
+            s.FilterDate,
+            s.CAmount,
+            s.DueAmount,
+            s.Old_Bill_Amt,
+            s.Old_Bill_Date,
+            s.StatusRaw,
+            s.IsFinalStatus,
+            s.BillNo,
+            s.VisitTypeID,
+            s.TypeOfVisit,
+            s.VisitDate,
+            s.DischargeDate,
+            s.VisitPatientID,
+            s.VisitPatientTypeID,
+            s.VisitPatientSubTypeID,
+            s.DocInChargeID,
+            s.DepartmentID,
+            s.Registration_No,
+            s.PatientSubTypeName,
+            s.DocNameRaw,
+            s.StatusLabel
+        INTO #corp_bill_filtered
+        FROM #corp_bill_scoped s
+        WHERE
+            @StatusNorm = N'all'
+            OR (@StatusNorm = N'final' AND ISNULL(s.IsFinalStatus, 0) = 1)
+            OR (@StatusNorm = N'nonfinal' AND ISNULL(s.IsFinalStatus, 0) = 0)
+            OR (@StatusNorm = N'pending' AND LOWER(LTRIM(RTRIM(ISNULL(s.StatusLabel, N'')))) = N'submission pending')
+            OR (@StatusNorm = N'notworked' AND LOWER(LTRIM(RTRIM(ISNULL(s.StatusLabel, N'')))) = N'not worked');
+
+        SELECT
+            filtered.total_rows,
+            scoped.scoped_total_rows,
+            scoped.final_submitted_count,
+            scoped.submission_pending_count,
+            scoped.not_worked_count,
+            scoped.other_status_count
+        FROM (SELECT COUNT(1) AS total_rows FROM #corp_bill_filtered) filtered
+        CROSS JOIN (
+            SELECT
+                COUNT(1) AS scoped_total_rows,
+                SUM(CASE WHEN LOWER(LTRIM(RTRIM(ISNULL(StatusLabel, N'')))) = N'final submitted' THEN 1 ELSE 0 END) AS final_submitted_count,
+                SUM(CASE WHEN LOWER(LTRIM(RTRIM(ISNULL(StatusLabel, N'')))) = N'submission pending' THEN 1 ELSE 0 END) AS submission_pending_count,
+                SUM(CASE WHEN LOWER(LTRIM(RTRIM(ISNULL(StatusLabel, N'')))) = N'not worked' THEN 1 ELSE 0 END) AS not_worked_count,
+                SUM(CASE WHEN LOWER(LTRIM(RTRIM(ISNULL(StatusLabel, N'')))) <> N'final submitted' THEN 1 ELSE 0 END) AS other_status_count
+            FROM #corp_bill_scoped
+        ) scoped;
 
         ;WITH numbered AS (
             SELECT
                 f.*,
-                ROW_NUMBER() OVER (ORDER BY f.BillDate DESC, f.CBill_ID DESC, f.Bill_ID DESC) AS rn
+                ROW_NUMBER() OVER (ORDER BY f.FilterDate DESC, f.CBill_ID DESC, f.Bill_ID DESC) AS rn
             FROM #corp_bill_filtered f
         )
         SELECT
@@ -975,12 +1377,7 @@ def _fetch_sharpsight_corporate_bill_summary_page_sql(
             CAST(ISNULL(n.DueAmount, 0) AS FLOAT) AS DueAmount,
             CAST(ISNULL(n.Old_Bill_Amt, 0) AS FLOAT) AS Old_Bill_Amt,
             n.Old_Bill_Date,
-            CASE
-                WHEN ISNULL(n.IsFinalStatus, 0) = 1 THEN N'Final Submitted'
-                WHEN UPPER(LTRIM(RTRIM(ISNULL(n.StatusRaw, N'')))) = N'N' THEN N'Submission Pending'
-                WHEN LTRIM(RTRIM(ISNULL(n.StatusRaw, N''))) = N'' THEN N'Not Worked'
-                ELSE N'Submission Pending'
-            END AS [Status],
+            ISNULL(NULLIF(n.StatusLabel, N''), N'Submission Pending') AS [Status],
             n.BillDate,
             n.CBill_Date,
             n.Submit_Date,
@@ -1034,6 +1431,13 @@ def _fetch_sharpsight_corporate_bill_summary_page_sql(
         )
 
         total_rows = 0
+        scoped_total_rows = 0
+        status_counts = {
+            "final_submitted": 0,
+            "submission_pending": 0,
+            "not_worked": 0,
+            "other_status": 0,
+        }
         page_rows = []
         available_subtypes = []
         set_index = 0
@@ -1042,7 +1446,10 @@ def _fetch_sharpsight_corporate_bill_summary_page_sql(
                 rows = _corp_bill_summary_dict_rows_from_cursor(cur)
                 if set_index == 0:
                     if rows:
-                        total_rows = _corp_bill_summary_parse_int(rows[0].get("total_rows"), 0, 0, None)
+                        first_meta = rows[0] or {}
+                        total_rows = _corp_bill_summary_parse_int(first_meta.get("total_rows"), 0, 0, None)
+                        scoped_total_rows = _corp_bill_summary_parse_int(first_meta.get("scoped_total_rows"), total_rows, 0, None)
+                        status_counts = _corp_bill_summary_status_counts_from_meta(first_meta)
                 elif set_index == 1:
                     page_rows = rows
                 elif set_index == 2:
@@ -1074,8 +1481,11 @@ def _fetch_sharpsight_corporate_bill_summary_page_sql(
                 "page": int(page),
                 "page_size": int(page_size),
                 "total_rows": int(total_rows),
+                "scoped_total_rows": int(scoped_total_rows),
                 "total_pages": int(total_pages),
                 "query_engine": "python_sql",
+                "date_scope_label": _corp_bill_summary_date_scope_label("SHARPSIGHT"),
+                "status_counts": status_counts,
                 "available_patient_subtypes": available_subtypes,
                 "timings": {"db_ms": float(db_ms), "total_ms": float(db_ms)},
             },
@@ -1126,7 +1536,7 @@ def fetch_corporate_bill_summary_page(
                 page_size=pg_size,
             )
 
-        if bool(prefer_sp):
+        if bool(prefer_sp) and sf in {"all", "final", "nonfinal"}:
             sp_payload = _fetch_corporate_bill_summary_page_sp(
                 conn,
                 from_date=from_iso,
@@ -1217,8 +1627,11 @@ def fetch_corporate_bill_summary_rows_for_export(
         "rows": all_rows,
         "meta": {
             "total_rows": int(len(all_rows)),
+            "scoped_total_rows": _corp_bill_summary_parse_int(aggregate_meta.get("scoped_total_rows"), len(all_rows), 0, None),
             "total_pages_fetched": int(max(1, page - 1)),
             "query_engine": str(aggregate_meta.get("query_engine") or ""),
+            "date_scope_label": str(aggregate_meta.get("date_scope_label") or _corp_bill_summary_date_scope_label(unit_key)),
+            "status_counts": _corp_bill_summary_status_counts_from_meta(aggregate_meta.get("status_counts") or aggregate_meta),
         },
     }
 
@@ -1242,6 +1655,10 @@ CORP_RECON_AUDITED_CANDIDATES = [
 _CORP_RECON_SCHEMA_READY_UNITS = set()
 _CORP_RECON_SCHEMA_READY_META = {}
 _CORP_RECON_SCHEMA_READY_LOCK = Lock()
+_CORP_RECON_PROC_META = {}
+_CORP_RECON_PROC_META_LOCK = Lock()
+_CORP_RECON_RECEIPT_SOURCE_READY = {}
+_CORP_RECON_RECEIPT_SOURCE_READY_LOCK = Lock()
 
 
 def _ensure_corporate_writeoff_columns_conn(conn) -> dict:
@@ -1261,11 +1678,7 @@ def _ensure_corporate_writeoff_columns_conn(conn) -> dict:
         return result
 
     def _table_cols_map(table_name: str) -> dict:
-        try:
-            preview_df = pd.read_sql(f"SELECT TOP 0 * FROM {table_name}", conn)
-            return {str(c).strip().lower(): str(c).strip() for c in preview_df.columns}
-        except Exception:
-            return {}
+        return _table_columns_map_conn(conn, table_name)
 
     def _pick_col(cols_map: dict) -> str | None:
         for cand in CORP_RECON_WRITEOFF_CANDIDATES:
@@ -1310,11 +1723,7 @@ def _ensure_corporate_bill_audited_column_conn(conn) -> dict:
         return result
 
     def _table_cols_map(table_name: str) -> dict:
-        try:
-            preview_df = pd.read_sql(f"SELECT TOP 0 * FROM {table_name}", conn)
-            return {str(c).strip().lower(): str(c).strip() for c in preview_df.columns}
-        except Exception:
-            return {}
+        return _table_columns_map_conn(conn, table_name)
 
     def _pick_col(cols_map: dict) -> str | None:
         for cand in CORP_RECON_AUDITED_CANDIDATES:
@@ -1374,6 +1783,87 @@ def _ensure_corporate_recon_schema_once(conn, unit: str):
     }
 
 
+def _ensure_corporate_receipt_source_ready_once(conn, unit: str) -> dict:
+    unit_key = str(unit or "").strip().upper() or "DEFAULT"
+    with _CORP_RECON_RECEIPT_SOURCE_READY_LOCK:
+        cached = _CORP_RECON_RECEIPT_SOURCE_READY.get(unit_key)
+        if isinstance(cached, dict):
+            return dict(cached)
+
+    info = _ensure_corporate_receipt_source_column_conn(conn) or {}
+    source_col = str(info.get("column") or "").strip() or None
+    if source_col:
+        _backfill_corporate_receipt_source_conn(conn, unit, source_col)
+
+    payload = {"column": source_col}
+    with _CORP_RECON_RECEIPT_SOURCE_READY_LOCK:
+        _CORP_RECON_RECEIPT_SOURCE_READY[unit_key] = dict(payload)
+    return dict(payload)
+
+
+def _get_corporate_recon_proc_meta(conn, unit: str) -> dict:
+    unit_key = str(unit or "").strip().upper() or "DEFAULT"
+    with _CORP_RECON_PROC_META_LOCK:
+        cached = _CORP_RECON_PROC_META.get(unit_key)
+        if isinstance(cached, dict):
+            return dict(cached)
+
+    schema_info = _ensure_corporate_recon_schema_once(conn, unit) or {}
+    writeoff_info = dict((schema_info or {}).get("writeoff") or {})
+    audited_info = dict((schema_info or {}).get("audited") or {})
+
+    bill_cols_map = _table_columns_map_conn(conn, "dbo.Corp_Bill_Mst")
+    mst_cols_map = _table_columns_map_conn(conn, "dbo.Corp_Receipt_Mst")
+    dtl_cols_map = _table_columns_map_conn(conn, "dbo.Corp_Receipt_Dtl")
+
+    def _pick_from_map(cols_map: dict, candidates: list[str]) -> str | None:
+        for cand in candidates or []:
+            key = str(cand or "").strip().lower()
+            if key and key in cols_map:
+                return cols_map[key]
+        return None
+
+    receipt_source_info = _ensure_corporate_receipt_source_ready_once(conn, unit) or {}
+    receipt_source_col = str(receipt_source_info.get("column") or "").strip() or _pick_from_map(dtl_cols_map, ["BillSourceKey"])
+    receipt_writeoff_col = (writeoff_info.get("receipt_column") or "").strip() or None
+    opening_writeoff_col = (writeoff_info.get("opening_column") or "").strip() or None
+    bill_audited_col = (audited_info.get("bill_audited_column") or "").strip() or None
+    bill_updated_by_col = _pick_from_map(bill_cols_map, ["Updated_By", "UpdatedBy", "updated_by"])
+    bill_updated_on_col = _pick_from_map(
+        bill_cols_map,
+        ["Updated_On", "UpdatedOn", "ModifiedOn", "accUpdatedDate", "AccUpdatedDate"],
+    )
+    dtl_receipt_date_col = _pick_from_map(dtl_cols_map, ["ReceiptDate"])
+    dtl_inserted_by_col = _pick_from_map(dtl_cols_map, ["insertedBy", "InsertedBy", "Inserted_By"])
+    rebate_col = _pick_from_map(mst_cols_map, ["rebateDiscountAmt", "RebateDiscountAmt"])
+    tds_col = _pick_from_map(mst_cols_map, ["TDSAmt", "TdsAmt", "tdsAmt", "TDS_AMT"])
+
+    payload = {
+        "receipt_source_col": receipt_source_col,
+        "receipt_writeoff_col": receipt_writeoff_col,
+        "opening_writeoff_col": opening_writeoff_col,
+        "bill_audited_col": bill_audited_col,
+        "bill_updated_by_col": bill_updated_by_col,
+        "bill_updated_on_col": bill_updated_on_col,
+        "dtl_receipt_date_col": dtl_receipt_date_col,
+        "dtl_inserted_by_col": dtl_inserted_by_col,
+        "rebate_col": rebate_col,
+        "tds_col": tds_col,
+        "canonical_required": {
+            "receipt_source_col": (receipt_source_col or "").strip().lower() == "billsourcekey",
+            "receipt_writeoff_col": (receipt_writeoff_col or "").strip().lower() == "writeoffamt",
+            "opening_writeoff_col": (opening_writeoff_col or "").strip().lower() == "writeoffamt",
+            "bill_audited_col": (bill_audited_col or "").strip().lower() == "audited",
+            "rebate_col": (rebate_col or "").strip().lower() == "rebatediscountamt",
+            "tds_col": (tds_col or "").strip().lower() == "tdsamt",
+        },
+    }
+
+    with _CORP_RECON_PROC_META_LOCK:
+        _CORP_RECON_PROC_META[unit_key] = dict(payload)
+    return dict(payload)
+
+
 def fetch_corporate_reconciliation_page(
     unit: str,
     *,
@@ -1404,54 +1894,95 @@ def fetch_corporate_reconciliation_page(
         return None
 
     try:
-        def _table_cols_map(table_name: str) -> dict:
-            if not table_name:
-                return {}
-            try:
-                preview_df = pd.read_sql(f"SELECT TOP 0 * FROM {table_name}", conn)
-                return {str(c).strip().lower(): str(c).strip() for c in preview_df.columns}
-            except Exception:
-                return {}
+        def _reconcile_active_writeoff_targets(rows_payload, details_payload):
+            if not isinstance(rows_payload, list) or not rows_payload:
+                return rows_payload
+            details_map = details_payload if isinstance(details_payload, dict) else {}
 
-        def _pick_col(cols_map: dict, candidates: list[str]) -> str | None:
-            for cand in candidates:
-                key = str(cand).strip().lower()
-                if key in cols_map:
-                    return cols_map[key]
-            return None
+            def _row_bill_key(row: dict) -> str:
+                bill_key = str((row or {}).get("bill_key") or "").strip()
+                if bill_key:
+                    return bill_key
+                source_key = str(
+                    (row or {}).get("bill_source_key")
+                    or (row or {}).get("bill_source")
+                    or ""
+                ).strip().upper()
+                bill_id_val = row.get("bill_id")
+                try:
+                    bill_id_int = int(float(bill_id_val))
+                except Exception:
+                    return ""
+                if source_key:
+                    return f"BILL-{source_key}-{bill_id_int}"
+                return f"BILL-{bill_id_int}"
 
-        schema_info = _ensure_corporate_recon_schema_once(conn, unit) or {}
-        writeoff_info = dict((schema_info or {}).get("writeoff") or {})
-        audited_info = dict((schema_info or {}).get("audited") or {})
+            def _best_active_receipt_id(detail_rows) -> int | None:
+                if not isinstance(detail_rows, list) or not detail_rows:
+                    return None
+                best_candidate = None
+                for rec in detail_rows:
+                    if not isinstance(rec, dict):
+                        continue
+                    try:
+                        cancel_status = int(float(rec.get("cancel_status") or 0))
+                    except Exception:
+                        cancel_status = 0
+                    if cancel_status == 1:
+                        continue
+                    try:
+                        receipt_id = int(float(rec.get("receipt_id") or 0))
+                    except Exception:
+                        receipt_id = 0
+                    if receipt_id <= 0:
+                        continue
+                    receipt_date = str(rec.get("receipt_date") or "").strip()
+                    candidate = (receipt_date, receipt_id)
+                    if best_candidate is None or candidate > best_candidate:
+                        best_candidate = candidate
+                return int(best_candidate[1]) if best_candidate else None
 
-        bill_cols_map = _table_cols_map("dbo.Corp_Bill_Mst")
-        mst_cols_map = _table_cols_map("dbo.Corp_Receipt_Mst")
-        dtl_cols_map = _table_cols_map("dbo.Corp_Receipt_Dtl")
+            for row in rows_payload:
+                if not isinstance(row, dict):
+                    continue
+                source_key = str(
+                    row.get("bill_source_key")
+                    or row.get("bill_source")
+                    or ""
+                ).strip().upper()
+                if source_key != "BILL_MST_POST":
+                    continue
+                row["writeoff_target_receipt_id"] = _best_active_receipt_id(
+                    details_map.get(_row_bill_key(row))
+                )
+            return rows_payload
 
-        receipt_writeoff_col = (writeoff_info.get("receipt_column") or "").strip() or None
-        opening_writeoff_col = (writeoff_info.get("opening_column") or "").strip() or None
-        bill_audited_col = (audited_info.get("bill_audited_column") or "").strip() or None
-        bill_updated_by_col = _pick_col(bill_cols_map, ["Updated_By", "UpdatedBy", "updated_by"])
-        bill_updated_on_col = _pick_col(
-            bill_cols_map,
-            ["Updated_On", "UpdatedOn", "ModifiedOn", "accUpdatedDate", "AccUpdatedDate"],
-        )
-        dtl_receipt_date_col = _pick_col(dtl_cols_map, ["ReceiptDate"])
-        dtl_inserted_by_col = _pick_col(dtl_cols_map, ["insertedBy", "InsertedBy", "Inserted_By"])
-        rebate_col = _pick_col(mst_cols_map, ["rebateDiscountAmt", "RebateDiscountAmt"])
-        tds_col = _pick_col(mst_cols_map, ["TDSAmt", "TdsAmt", "tdsAmt", "TDS_AMT"])
-
-        # The SQL proc currently targets canonical column names for the hot path.
-        # If the unit uses a schema variant, safely fall back to the Python path.
-        canonical_required = {
-            "receipt_writeoff_col": (receipt_writeoff_col or "").strip().lower() == "writeoffamt",
-            "opening_writeoff_col": (opening_writeoff_col or "").strip().lower() == "writeoffamt",
-            "bill_audited_col": (bill_audited_col or "").strip().lower() == "audited",
-            "rebate_col": (rebate_col or "").strip().lower() == "rebatediscountamt",
-            "tds_col": (tds_col or "").strip().lower() == "tdsamt",
-        }
-        if not all(canonical_required.values()):
-            return None
+        unit_key = str(unit or "").strip().upper()
+        if unit_key in {"AHL", "ACI"}:
+            receipt_writeoff_col = "WriteOffAmt"
+            opening_writeoff_col = "WriteOffAmt"
+            bill_audited_col = "Audited"
+            bill_updated_by_col = "Updated_By"
+            bill_updated_on_col = "Updated_On"
+            dtl_receipt_date_col = "ReceiptDate"
+            dtl_inserted_by_col = "insertedBy"
+            rebate_col = "rebateDiscountAmt"
+            tds_col = "TDSAmt"
+        else:
+            _ensure_corporate_receipt_source_ready_once(conn, unit)
+            proc_meta = _get_corporate_recon_proc_meta(conn, unit) or {}
+            receipt_writeoff_col = proc_meta.get("receipt_writeoff_col")
+            opening_writeoff_col = proc_meta.get("opening_writeoff_col")
+            bill_audited_col = proc_meta.get("bill_audited_col")
+            bill_updated_by_col = proc_meta.get("bill_updated_by_col")
+            bill_updated_on_col = proc_meta.get("bill_updated_on_col")
+            dtl_receipt_date_col = proc_meta.get("dtl_receipt_date_col")
+            dtl_inserted_by_col = proc_meta.get("dtl_inserted_by_col")
+            rebate_col = proc_meta.get("rebate_col")
+            tds_col = proc_meta.get("tds_col")
+            canonical_required = dict(proc_meta.get("canonical_required") or {})
+            if not all(canonical_required.values()):
+                return None
 
         kpi_filter_key = str(kpi_filter or "").strip().lower()
 
@@ -1563,8 +2094,16 @@ def fetch_corporate_reconciliation_page(
                     bill_key = str(rec.get("bill_key") or "").strip()
                     if not bill_key:
                         bill_id_val = rec.get("bill_id")
+                        source_key = str(
+                            rec.get("receipt_bill_source_key")
+                            or rec.get("bill_source_key")
+                            or ""
+                        ).strip().upper()
                         try:
-                            bill_key = f"BILL-{int(bill_id_val)}"
+                            if source_key:
+                                bill_key = f"BILL-{source_key}-{int(bill_id_val)}"
+                            else:
+                                bill_key = f"BILL-{int(bill_id_val)}"
                         except Exception:
                             bill_key = ""
                     if not bill_key:
@@ -1598,6 +2137,7 @@ def fetch_corporate_reconciliation_page(
             meta_payload.setdefault("has_opening_writeoff_column", bool(opening_writeoff_col))
             meta_payload.setdefault("has_bill_audited_column", bool(bill_audited_col))
             meta_payload.setdefault("used_sql_sp", True)
+            rows_payload = _reconcile_active_writeoff_targets(rows_payload, details_payload)
 
             out = {
                 "status": "success",
@@ -1640,8 +2180,16 @@ def fetch_corporate_reconciliation_page(
             bill_key = str(rec.get("bill_key") or "").strip()
             if not bill_key:
                 bill_id_val = rec.get("bill_id")
+                source_key = str(
+                    rec.get("receipt_bill_source_key")
+                    or rec.get("bill_source_key")
+                    or ""
+                ).strip().upper()
                 try:
-                    bill_key = f"BILL-{int(bill_id_val)}"
+                    if source_key:
+                        bill_key = f"BILL-{source_key}-{int(bill_id_val)}"
+                    else:
+                        bill_key = f"BILL-{int(bill_id_val)}"
                 except Exception:
                     bill_key = ""
             if not bill_key:
@@ -1803,6 +2351,7 @@ def fetch_corporate_reconciliation_page(
         meta_payload.setdefault("has_bill_audited_column", bool(bill_audited_col))
         meta_payload.setdefault("used_sql_sp", True)
         meta_payload.setdefault("suspense_count", int((suspense_row or {}).get("suspense_count") or 0))
+        rows_payload = _reconcile_active_writeoff_targets(rows_payload, details_payload)
 
         out = {
             "status": "success",
@@ -1823,6 +2372,106 @@ def fetch_corporate_reconciliation_page(
         return out
     except Exception:
         # Silent fallback to python path when proc is absent or incompatible.
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_corporate_reconciliation_action_page(
+    unit: str,
+    *,
+    action_mode: str,
+    q: str = "",
+    bill_source: str = "",
+    page: int = 1,
+    page_size: int = 25,
+):
+    """
+    Fast, paged lookup for reconciliation action desks.
+
+    Supported action_mode values:
+      - receipt
+      - unsubmit
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        return None
+
+    try:
+        action_key = str(action_mode or "").strip().lower()
+        proc_name = {
+            "receipt": "dbo.usp_CorpRecon_ReceiptAction_Page",
+            "unsubmit": "dbo.usp_CorpRecon_UnsubmitAction_Page",
+        }.get(action_key)
+        if not proc_name:
+            return None
+
+        if str(unit or "").strip().upper() not in {"AHL", "ACI"}:
+            _ensure_corporate_receipt_source_ready_once(conn, unit)
+
+        cur = conn.cursor()
+        cur.execute(
+            f"""
+            EXEC {proc_name}
+                 @Q = ?,
+                 @BillSource = ?,
+                 @Page = ?,
+                 @PageSize = ?
+            """,
+            [
+                str(q or ""),
+                str(bill_source or ""),
+                int(page or 1),
+                int(page_size or 25),
+            ],
+        )
+
+        result_sets = []
+        while True:
+            if cur.description:
+                cols = [str(c[0]).strip() for c in cur.description]
+                rows = cur.fetchall()
+                result_sets.append(
+                    [
+                        {cols[i]: row[i] for i in range(len(cols))}
+                        for row in rows
+                    ]
+                )
+            if not cur.nextset():
+                break
+
+        if not result_sets:
+            return None
+
+        rows_payload = result_sets[0] if isinstance(result_sets[0], list) else []
+        meta_payload = result_sets[1][0] if len(result_sets) > 1 and result_sets[1] else {}
+        sources_rows = result_sets[2] if len(result_sets) > 2 and isinstance(result_sets[2], list) else []
+
+        if not isinstance(meta_payload, dict):
+            meta_payload = {}
+
+        available_sources = [
+            str((r or {}).get("bill_source") or "").strip()
+            for r in sources_rows
+            if str((r or {}).get("bill_source") or "").strip()
+        ]
+        if action_key == "unsubmit" and not available_sources:
+            available_sources = ["Corporate Bill"]
+
+        meta_payload.setdefault("available_sources", available_sources)
+        meta_payload.setdefault("used_sql_sp", True)
+        meta_payload.setdefault("action_mode", action_key)
+
+        return {
+            "status": "success",
+            "unit": str(unit or "").upper(),
+            "rows": rows_payload if isinstance(rows_payload, list) else [],
+            "meta": meta_payload,
+        }
+    except Exception:
         return None
     finally:
         try:
@@ -1898,6 +2547,7 @@ def _fetch_sharpsight_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-
         rebate_discount_col = _pick_col(mst_cols_map, ["rebateDiscountAmt", "RebateDiscountAmt"])
         tds_amt_col = _pick_col(mst_cols_map, ["TDSAmt", "TdsAmt", "tdsAmt", "TDS_AMT"])
         dtl_inserted_by_col = _pick_col(dtl_cols_map, ["insertedBy", "InsertedBy", "Inserted_By"])
+        bill_reg_no_col = _pick_col(bill_cols_map, ["Registration_No", "RegistrationNo", "RegNo", "Reg_No"])
         bill_updated_by_col = _pick_col(bill_cols_map, ["accUserId", "Updated_By", "UpdatedBy", "updated_by"])
         bill_updated_on_col = _pick_col(bill_cols_map, ["accUpdatedDate", "Updated_On", "UpdatedOn", "ModifiedOn"])
 
@@ -1914,6 +2564,11 @@ def _fetch_sharpsight_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-
             f"CAST(ISNULL(m.[{tds_amt_col}], 0) AS FLOAT)"
             if tds_amt_col
             else "CAST(0 AS FLOAT)"
+        )
+        bill_reg_no_expr = (
+            f"CAST(ISNULL(CONVERT(NVARCHAR(80), b.[{bill_reg_no_col}]), '') AS NVARCHAR(80))"
+            if bill_reg_no_col
+            else "CAST('' AS NVARCHAR(80))"
         )
         bill_updated_on_expr = (
             "CAST(CASE "
@@ -2009,6 +2664,10 @@ def _fetch_sharpsight_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-
                             ISNULL(NULLIF(CONVERT(NVARCHAR(80), b.Bill_No), ''), CONVERT(NVARCHAR(80), b.CBill_ID))
                         ) AS NVARCHAR(80)
                     ) AS BillNo,
+                    CASE
+                        WHEN COALESCE(v.PatientID, b.PatientID) IS NULL THEN {bill_reg_no_expr}
+                        ELSE ISNULL(dbo.fn_regno(COALESCE(v.PatientID, b.PatientID)), '')
+                    END AS Registration_No,
                     CAST(NULLIF(COALESCE(v.PatientID, b.PatientID), 0) AS INT) AS PatientId,
                     CAST(NULLIF(COALESCE(v.PatientType_ID, b.PatientTypeId), 0) AS INT) AS PatientTypeId,
                     CAST(NULLIF(COALESCE(v.PatientSubType_ID, b.PatientTypeIdSrNo), 0) AS INT) AS PatientSubTypeId,
@@ -2055,6 +2714,11 @@ def _fetch_sharpsight_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-
                 c.BillDate,
                 c.BillAmount,
                 c.BillNo,
+                CASE
+                    WHEN c.PatientId IS NOT NULL THEN ISNULL(dbo.fn_regno(c.PatientId), '')
+                    WHEN NULLIF(LTRIM(RTRIM(ISNULL(c.RegistrationNoRaw, ''))), '') IS NOT NULL THEN LTRIM(RTRIM(ISNULL(c.RegistrationNoRaw, '')))
+                    ELSE ''
+                END AS Registration_No,
                 c.PatientId,
                 c.VisitId,
                 c.SubmitDateRaw,
@@ -2268,6 +2932,8 @@ def fetch_corporate_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-31
         tds_amt_col = _pick_col(mst_cols_map, ["TDSAmt", "TdsAmt", "tdsAmt", "TDS_AMT"])
         mst_writeoff_col = _pick_col(mst_cols_map, CORP_RECON_WRITEOFF_CANDIDATES)
         opening_writeoff_col = _pick_col(open_cols_map, CORP_RECON_WRITEOFF_CANDIDATES)
+        bill_reg_no_col = _pick_col(bill_cols_map, ["Registration_No", "RegistrationNo", "RegNo", "Reg_No"])
+        opening_reg_no_col = _pick_col(open_cols_map, ["Registration_No", "RegistrationNo", "RegNo", "Reg_No"])
         bill_audited_col = _pick_col(bill_cols_map, CORP_RECON_AUDITED_CANDIDATES) or (
             (audited_schema_info or {}).get("bill_audited_column")
         )
@@ -2304,6 +2970,16 @@ def fetch_corporate_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-31
             f"CAST(ISNULL(o.[{opening_writeoff_col}], 0) AS FLOAT)"
             if opening_writeoff_col
             else "CAST(0 AS FLOAT)"
+        )
+        bill_reg_no_expr = (
+            f"CAST(ISNULL(CONVERT(NVARCHAR(80), b.[{bill_reg_no_col}]), '') AS NVARCHAR(80))"
+            if bill_reg_no_col
+            else "CAST('' AS NVARCHAR(80))"
+        )
+        opening_reg_no_expr = (
+            f"CAST(ISNULL(CONVERT(NVARCHAR(80), o.[{opening_reg_no_col}]), '') AS NVARCHAR(80))"
+            if opening_reg_no_col
+            else "CAST('' AS NVARCHAR(80))"
         )
         bill_audited_expr = (
             "CAST(CASE "
@@ -2405,6 +3081,32 @@ def fetch_corporate_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-31
             bill_scope_clause = f" AND c.BillId IN ({placeholders})"
             bill_scope_params = list(normalized_bill_ids)
 
+        receipt_source_info = _ensure_corporate_receipt_source_column_conn(conn) or {}
+        receipt_source_col = str(receipt_source_info.get("column") or "").strip() or None
+        if not receipt_source_col:
+            receipt_source_col = _pick_col(dtl_cols_map, SHARPSIGHT_RECEIPT_SOURCE_COL_CANDIDATES)
+        receipt_source_backfill = (
+            _backfill_corporate_receipt_source_conn(conn, unit, receipt_source_col)
+            if receipt_source_col
+            else {}
+        )
+        stored_receipt_source_expr = (
+            f"NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(40), d.[{receipt_source_col}]))), '')"
+            if receipt_source_col
+            else "NULL"
+        )
+        bill_date_expr = "COALESCE(b.Submit_Date, b.CBill_Date, b.accUpdatedDate, b.visitDate, b.Updated_On)"
+        receipt_source_expr = (
+            "COALESCE("
+            f"{stored_receipt_source_expr}, "
+            "CASE "
+            f"WHEN o.OPId IS NOT NULL AND b.CBill_ID IS NOT NULL AND ({receipt_date_expr} IS NULL OR {bill_date_expr} IS NULL OR CAST({receipt_date_expr} AS DATETIME) < CAST({bill_date_expr} AS DATETIME)) THEN N'{SHARPSIGHT_RECEIPT_SOURCE_OPENING}' "
+            f"WHEN b.CBill_ID IS NOT NULL THEN N'{CORP_RECEIPT_SOURCE_BILL_MST}' "
+            f"WHEN o.OPId IS NOT NULL THEN N'{SHARPSIGHT_RECEIPT_SOURCE_OPENING}' "
+            f"ELSE N'{SHARPSIGHT_RECEIPT_SOURCE_UNKNOWN}' END"
+            ")"
+        )
+
         bills_sql = f"""
             ;WITH bill_mst AS (
                 SELECT
@@ -2421,6 +3123,7 @@ def fetch_corporate_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-31
                             NULLIF(CONVERT(NVARCHAR(80), b.Bill_No), '')
                         ) AS NVARCHAR(80)
                     ) AS BillNoMst,
+                    {bill_reg_no_expr} AS RegistrationNoMst,
                     CAST(NULLIF(b.PatientTypeId, 0) AS INT) AS BillPatientTypeId,
                     CAST(NULLIF(b.PatientTypeIdSrNo, 0) AS INT) AS BillPatientSubTypeId,
                     CAST(ISNULL(b.Due_Amt, ISNULL(b.dueAmount, 0)) AS FLOAT) AS DueAmountMst,
@@ -2438,6 +3141,7 @@ def fetch_corporate_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-31
                     CAST(o.DueDate AS DATETIME) AS DueDateOpening,
                     CAST(ISNULL(o.DueAmount, 0) AS FLOAT) AS BillAmountOpening,
                     CAST(ISNULL(o.RefNo, '') AS NVARCHAR(80)) AS BillNoOpening,
+                    {opening_reg_no_expr} AS OpenRegistrationNo,
                     CAST(ISNULL(o.PatientName, '') AS NVARCHAR(255)) AS OpenPatientName,
                     CAST(NULLIF(o.PatientTypeId, 0) AS INT) AS OpenPatientTypeId,
                     CAST(NULLIF(o.PatientSubTypeId, 0) AS INT) AS OpenPatientSubTypeId,
@@ -2449,6 +3153,7 @@ def fetch_corporate_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-31
             bill_mst_post AS (
                 SELECT
                     b.BillId,
+                    CAST('BILL_MST_POST' AS NVARCHAR(40)) AS BillSource,
                     b.BillVisitId,
                     b.BillPatientId,
                     b.SubmitDateMst,
@@ -2456,6 +3161,7 @@ def fetch_corporate_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-31
                     b.BillDateMst,
                     b.BillAmountMst,
                     b.BillNoMst,
+                    b.RegistrationNoMst,
                     b.BillPatientTypeId,
                     b.BillPatientSubTypeId,
                     b.DueAmountMst,
@@ -2468,44 +3174,69 @@ def fetch_corporate_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-31
             ),
             canonical AS (
                 SELECT
-                    COALESCE(b.BillId, o.BillId) AS BillId,
-                    CASE WHEN b.BillId IS NOT NULL THEN 'BILL_MST_POST' ELSE 'OPENING' END AS BillSource,
-                    CASE WHEN b.BillId IS NOT NULL THEN b.BillDateMst ELSE o.BillDateOpening END AS BillDate,
-                    CASE WHEN b.BillId IS NOT NULL THEN b.BillAmountMst ELSE o.BillAmountOpening END AS BillAmount,
-                    CASE WHEN b.BillId IS NOT NULL THEN b.BillNoMst ELSE o.BillNoOpening END AS BillNo,
-                    CASE WHEN b.BillId IS NOT NULL THEN b.BillPatientId ELSE o.OpenPatientId END AS PatientId,
-                    CASE WHEN b.BillId IS NOT NULL THEN b.BillPatientTypeId ELSE o.OpenPatientTypeId END AS PatientTypeId,
-                    CASE WHEN b.BillId IS NOT NULL THEN b.BillPatientSubTypeId ELSE o.OpenPatientSubTypeId END AS PatientSubTypeId,
-                    CASE WHEN b.BillId IS NOT NULL THEN b.BillVisitId ELSE CAST(NULL AS INT) END AS VisitId,
-                    CASE WHEN b.BillId IS NOT NULL THEN b.SubmitDateMst ELSE CAST(NULL AS DATETIME) END AS SubmitDateRaw,
-                    CASE WHEN b.BillId IS NOT NULL THEN b.CBillDateMst ELSE CAST(NULL AS DATETIME) END AS CBillDateRaw,
-                    CASE
-                        WHEN b.BillId IS NOT NULL THEN CAST(NULL AS DATETIME)
-                        ELSE o.DueDateOpening
-                    END AS DueDate,
+                    b.BillId,
+                    b.BillSource,
+                    b.BillDateMst AS BillDate,
+                    b.BillAmountMst AS BillAmount,
+                    b.BillNoMst AS BillNo,
+                    b.RegistrationNoMst AS RegistrationNoRaw,
+                    b.BillPatientId AS PatientId,
+                    b.BillPatientTypeId AS PatientTypeId,
+                    b.BillPatientSubTypeId AS PatientSubTypeId,
+                    b.BillVisitId AS VisitId,
+                    b.SubmitDateMst AS SubmitDateRaw,
+                    b.CBillDateMst AS CBillDateRaw,
+                    CAST(NULL AS DATETIME) AS DueDate,
+                    CAST(N'' AS NVARCHAR(255)) AS SourcePatientName,
+                    ISNULL(b.BillStatusMst, '') AS BillStatusRaw,
+                    ISNULL(b.DueAmountMst, 0) AS BillDueAmountRaw,
+                    ISNULL(b.BillAuditedFlag, 0) AS BillAuditedFlag,
+                    b.BillUpdatedOnRaw AS BillUpdatedOnRaw,
+                    b.BillUpdatedById AS BillUpdatedById,
+                    CAST(0 AS FLOAT) AS OpeningReceiptAmt,
+                    CAST(0 AS INT) AS OpeningReceiptId,
+                    CAST(0 AS FLOAT) AS OpeningWriteOffAmt
+                FROM bill_mst_post b
+                UNION ALL
+                SELECT
+                    o.BillId,
+                    CAST('OPENING' AS NVARCHAR(40)) AS BillSource,
+                    o.BillDateOpening AS BillDate,
+                    o.BillAmountOpening AS BillAmount,
+                    o.BillNoOpening AS BillNo,
+                    o.OpenRegistrationNo AS RegistrationNoRaw,
+                    o.OpenPatientId AS PatientId,
+                    o.OpenPatientTypeId AS PatientTypeId,
+                    o.OpenPatientSubTypeId AS PatientSubTypeId,
+                    CAST(NULL AS INT) AS VisitId,
+                    CAST(NULL AS DATETIME) AS SubmitDateRaw,
+                    CAST(NULL AS DATETIME) AS CBillDateRaw,
+                    o.DueDateOpening AS DueDate,
                     ISNULL(o.OpenPatientName, '') AS SourcePatientName,
-                    CASE WHEN b.BillId IS NOT NULL THEN ISNULL(b.BillStatusMst, '') ELSE '' END AS BillStatusRaw,
-                    CASE WHEN b.BillId IS NOT NULL THEN ISNULL(b.DueAmountMst, 0) ELSE 0 END AS BillDueAmountRaw,
-                    CASE WHEN b.BillId IS NOT NULL THEN ISNULL(b.BillAuditedFlag, 0) ELSE 0 END AS BillAuditedFlag,
-                    CASE WHEN b.BillId IS NOT NULL THEN b.BillUpdatedOnRaw ELSE CAST(NULL AS DATETIME) END AS BillUpdatedOnRaw,
-                    CASE WHEN b.BillId IS NOT NULL THEN b.BillUpdatedById ELSE CAST(NULL AS INT) END AS BillUpdatedById,
+                    CAST(N'' AS NVARCHAR(80)) AS BillStatusRaw,
+                    CAST(0 AS FLOAT) AS BillDueAmountRaw,
+                    CAST(0 AS INT) AS BillAuditedFlag,
+                    CAST(NULL AS DATETIME) AS BillUpdatedOnRaw,
+                    CAST(NULL AS INT) AS BillUpdatedById,
                     ISNULL(o.OpeningReceiptAmt, 0) AS OpeningReceiptAmt,
                     ISNULL(o.OpeningReceiptId, 0) AS OpeningReceiptId,
                     ISNULL(o.OpeningWriteOffAmt, 0) AS OpeningWriteOffAmt
-                FROM bill_mst_post b
-                FULL OUTER JOIN opening o
-                    ON b.BillId = o.BillId
-                WHERE b.BillId IS NOT NULL OR o.BillId IS NOT NULL
+                FROM opening o
             ),
             receipt_visit AS (
                 SELECT
                     CAST(d.billId AS INT) AS BillId,
+                    CAST({receipt_source_expr} AS NVARCHAR(40)) AS ReceiptBillSourceKey,
                     MAX(CASE WHEN ISNULL(d.visitId, 0) > 0 THEN CAST(d.visitId AS INT) ELSE CAST(ISNULL(m.VisitID, 0) AS INT) END) AS BestVisitId,
                     MAX(CASE WHEN ISNULL(d.PatientId, 0) > 0 THEN CAST(d.PatientId AS INT) ELSE CAST(ISNULL(m.PatientID, 0) AS INT) END) AS BestPatientId
                 FROM dbo.Corp_Receipt_Dtl d WITH (NOLOCK)
                 LEFT JOIN dbo.Corp_Receipt_Mst m WITH (NOLOCK)
                     ON d.receiptId = m.Receipt_ID
-                GROUP BY d.billId
+                LEFT JOIN dbo.Corp_Bill_Mst b WITH (NOLOCK)
+                    ON b.CBill_ID = d.billId
+                LEFT JOIN dbo.CorpOpening o WITH (NOLOCK)
+                    ON o.OPId = d.billId
+                GROUP BY d.billId, CAST({receipt_source_expr} AS NVARCHAR(40))
             ),
             canonical_enriched AS (
                 SELECT
@@ -2514,6 +3245,7 @@ def fetch_corporate_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-31
                     c.BillDate,
                     c.BillAmount,
                     c.BillNo,
+                    c.RegistrationNoRaw,
                     CAST(NULLIF(COALESCE(c.PatientId, rv.BestPatientId), 0) AS INT) AS PatientId,
                     CAST(NULLIF(COALESCE(c.VisitId, rv.BestVisitId), 0) AS INT) AS VisitId,
                     c.PatientTypeId,
@@ -2533,6 +3265,7 @@ def fetch_corporate_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-31
                 FROM canonical c
                 LEFT JOIN receipt_visit rv
                     ON rv.BillId = c.BillId
+                   AND UPPER(ISNULL(rv.ReceiptBillSourceKey, '')) = UPPER(ISNULL(c.BillSource, ''))
             )
             SELECT
                 c.BillId,
@@ -2540,6 +3273,11 @@ def fetch_corporate_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-31
                 c.BillDate,
                 c.BillAmount,
                 c.BillNo,
+                CASE
+                    WHEN c.PatientId IS NOT NULL THEN ISNULL(dbo.fn_regno(c.PatientId), '')
+                    WHEN NULLIF(LTRIM(RTRIM(ISNULL(c.RegistrationNoRaw, ''))), '') IS NOT NULL THEN LTRIM(RTRIM(ISNULL(c.RegistrationNoRaw, '')))
+                    ELSE ''
+                END AS Registration_No,
                 c.PatientId,
                 c.VisitId,
                 c.SubmitDateRaw,
@@ -2633,11 +3371,16 @@ def fetch_corporate_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-31
                 CAST(ISNULL(m.CPayment_Mode, 0) AS INT) AS PaymentModeId,
                 {payment_mode_expr} AS PaymentMode,
                 {rebate_discount_expr} AS RebateDiscountAmt,
+                CAST({receipt_source_expr} AS NVARCHAR(40)) AS ReceiptBillSourceKey,
                 CAST(NULLIF(m.VisitID, 0) AS INT) AS MstVisitId,
                 CAST(NULLIF(m.PatientID, 0) AS INT) AS MstPatientId
             FROM dbo.Corp_Receipt_Dtl d WITH (NOLOCK)
             LEFT JOIN dbo.Corp_Receipt_Mst m WITH (NOLOCK)
                 ON d.receiptId = m.Receipt_ID
+            LEFT JOIN dbo.Corp_Bill_Mst b WITH (NOLOCK)
+                ON b.CBill_ID = d.billId
+            LEFT JOIN dbo.CorpOpening o WITH (NOLOCK)
+                ON o.OPId = d.billId
             {payment_mode_join}
             {receipt_user_join}
             {receipt_scope_clause}
@@ -2672,6 +3415,8 @@ def fetch_corporate_reconciliation_raw(unit: str, cutoff_date: str = "2025-03-31
                 "receipt_writeoff_column": mst_writeoff_col,
                 "opening_writeoff_column": opening_writeoff_col,
                 "bill_audited_column": bill_audited_col,
+                "receipt_source_column": receipt_source_col,
+                "receipt_source_backfill": receipt_source_backfill,
                 "cutoff_date": cutoff_date,
             },
         }
@@ -3589,6 +4334,7 @@ def create_corporate_receipt(
     unit: str,
     *,
     bill_id: int,
+    bill_source_key: str | None = None,
     receipt_date,
     payment_mode: int,
     approved_amount: float,
@@ -3601,16 +4347,11 @@ def create_corporate_receipt(
     user_id: int | None = None,
 ):
     unit_key = str(unit or "").strip().upper()
-    if not _is_sharpsight_unit(unit_key):
-        return {"status": "error", "message": "Receipt posting is currently enabled only for SharpSight."}
-
     conn = get_sql_connection(unit_key)
     if not conn:
         return {"status": "error", "message": f"Could not connect to {unit_key}"}
-    receipt_source_info = _ensure_sharpsight_receipt_source_column_conn(conn) or {}
+    receipt_source_info = _ensure_corporate_receipt_source_column_conn(conn) or {}
     receipt_source_col = str(receipt_source_info.get("column") or "").strip() or None
-    if receipt_source_col:
-        _backfill_sharpsight_receipt_source_conn(conn, receipt_source_col)
 
     try:
         bill_id_int = int(bill_id)
@@ -3641,27 +4382,52 @@ def create_corporate_receipt(
     if payment_mode_int <= 0:
         payment_mode_int = 5
 
-    bill_df = pd.read_sql(
-        """
-        SELECT TOP 1
-            CAST(b.CBill_ID AS INT) AS BillId,
-            CAST(ISNULL(b.CAmount, 0) AS FLOAT) AS BillAmount,
-            CAST(NULLIF(COALESCE(v.Visit_ID, b.Visit_ID), 0) AS INT) AS VisitId,
-            CAST(NULLIF(COALESCE(v.PatientID, b.PatientID), 0) AS INT) AS PatientId,
-            ISNULL(
-                NULLIF(CONVERT(NVARCHAR(80), b.CBill_NO), ''),
-                ISNULL(NULLIF(CONVERT(NVARCHAR(80), b.Bill_No), ''), CONVERT(NVARCHAR(80), b.CBill_ID))
-            ) AS BillNo
-        FROM dbo.Corp_Bill_Mst_AHL b WITH (NOLOCK)
-        LEFT JOIN dbo.Visit v WITH (NOLOCK)
-            ON v.Visit_ID = b.Visit_ID
-        WHERE b.CBill_ID = ?
-        """,
-        conn,
-        params=[bill_id_int],
-    )
+    source_norm = str(bill_source_key or "").strip().upper() or _corp_receipt_bill_source_key_for_unit(unit_key)
+    allowed_sources = {SHARPSIGHT_RECEIPT_SOURCE_OPENING, _corp_receipt_bill_source_key_for_unit(unit_key)}
+    if source_norm not in allowed_sources:
+        return {"status": "error", "message": "Invalid bill source key"}
+
+    if source_norm == SHARPSIGHT_RECEIPT_SOURCE_OPENING:
+        bill_df = pd.read_sql(
+            """
+            SELECT TOP 1
+                CAST(o.OPId AS INT) AS BillId,
+                CAST(ISNULL(o.DueAmount, 0) AS FLOAT) AS BillAmount,
+                CAST(NULL AS INT) AS VisitId,
+                CAST(NULLIF(o.PatientId, 0) AS INT) AS PatientId,
+                ISNULL(NULLIF(CONVERT(NVARCHAR(80), o.RefNo), ''), CONVERT(NVARCHAR(80), o.OPId)) AS BillNo
+            FROM dbo.CorpOpening o WITH (NOLOCK)
+            WHERE o.OPId = ?
+            """,
+            conn,
+            params=[bill_id_int],
+        )
+    else:
+        bill_table = _resolve_corporate_bill_table_conn(conn, unit_key)
+        if not bill_table:
+            return {"status": "error", "message": f"Corporate bill table not found for {unit_key}"}
+        bill_df = pd.read_sql(
+            f"""
+            SELECT TOP 1
+                CAST(b.CBill_ID AS INT) AS BillId,
+                CAST(ISNULL(b.CAmount, 0) AS FLOAT) AS BillAmount,
+                CAST(NULLIF(COALESCE(v.Visit_ID, b.Visit_ID), 0) AS INT) AS VisitId,
+                CAST(NULLIF(COALESCE(v.PatientID, b.PatientID), 0) AS INT) AS PatientId,
+                ISNULL(
+                    NULLIF(CONVERT(NVARCHAR(80), b.CBill_NO), ''),
+                    ISNULL(NULLIF(CONVERT(NVARCHAR(80), b.Bill_No), ''), CONVERT(NVARCHAR(80), b.CBill_ID))
+                ) AS BillNo
+            FROM {bill_table} b WITH (NOLOCK)
+            LEFT JOIN dbo.Visit v WITH (NOLOCK)
+                ON v.Visit_ID = b.Visit_ID
+            WHERE b.CBill_ID = ?
+            """,
+            conn,
+            params=[bill_id_int],
+        )
     if bill_df is None or bill_df.empty:
-        return {"status": "error", "message": f"Bill {bill_id_int} was not found in SharpSight."}
+        target_label = "opening" if source_norm == SHARPSIGHT_RECEIPT_SOURCE_OPENING else "bill"
+        return {"status": "error", "message": f"Selected {target_label} {bill_id_int} was not found."}
 
     bill_row = bill_df.iloc[0]
     bill_amount_val = _to_float(bill_row.get("BillAmount"))
@@ -3689,6 +4455,7 @@ def create_corporate_receipt(
     if actor_id <= 0:
         actor_id = 0
 
+    dtl_has_receipt_date = bool(_pick_table_col_conn(conn, "dbo.Corp_Receipt_Dtl", ["ReceiptDate"]))
     cursor = conn.cursor()
     cursor.execute(
         """
@@ -3735,55 +4502,30 @@ def create_corporate_receipt(
         (receipt_no, receipt_id),
     )
 
+    dtl_columns = ["receiptId", "billId", "billAmt", "receiptAmt", "dueAmt", "visitId", "insertedBy", "insertedOn", "PatientId"]
+    dtl_values = [receipt_id, bill_id_int, bill_amount_val, received_amt, due_amount_val, visit_id_val, actor_id, patient_id_val]
+    if dtl_has_receipt_date:
+        dtl_columns.append("ReceiptDate")
+        dtl_values.append(receipt_dt_py)
     if receipt_source_col:
-        cursor.execute(
-            f"""
-            SET NOCOUNT ON;
-            DECLARE @new_receipt_dtl TABLE (ReceiptDetailId INT);
-            INSERT INTO dbo.Corp_Receipt_Dtl
-                (receiptId, billId, billAmt, receiptAmt, dueAmt, visitId, insertedBy, insertedOn, PatientId, ReceiptDate, [{receipt_source_col}])
-            OUTPUT INSERTED.recDtlId INTO @new_receipt_dtl(ReceiptDetailId)
-            VALUES
-                (?, ?, ?, ?, ?, ?, ?, GETDATE(), ?, ?, ?);
-            SELECT TOP 1 ReceiptDetailId FROM @new_receipt_dtl;
-            """,
-            (
-                receipt_id,
-                bill_id_int,
-                bill_amount_val,
-                received_amt,
-                due_amount_val,
-                visit_id_val,
-                actor_id,
-                patient_id_val,
-                receipt_dt_py,
-                SHARPSIGHT_RECEIPT_SOURCE_AHL,
-            ),
-        )
-    else:
-        cursor.execute(
-            """
-            SET NOCOUNT ON;
-            DECLARE @new_receipt_dtl TABLE (ReceiptDetailId INT);
-            INSERT INTO dbo.Corp_Receipt_Dtl
-                (receiptId, billId, billAmt, receiptAmt, dueAmt, visitId, insertedBy, insertedOn, PatientId, ReceiptDate)
-            OUTPUT INSERTED.recDtlId INTO @new_receipt_dtl(ReceiptDetailId)
-            VALUES
-                (?, ?, ?, ?, ?, ?, ?, GETDATE(), ?, ?);
-            SELECT TOP 1 ReceiptDetailId FROM @new_receipt_dtl;
-            """,
-            (
-                receipt_id,
-                bill_id_int,
-                bill_amount_val,
-                received_amt,
-                due_amount_val,
-                visit_id_val,
-                actor_id,
-                patient_id_val,
-                receipt_dt_py,
-            ),
-        )
+        dtl_columns.append(receipt_source_col)
+        dtl_values.append(source_norm)
+
+    dtl_insert_sql = ", ".join(f"[{col}]" for col in dtl_columns)
+    dtl_param_sql = ", ".join("GETDATE()" if str(col).strip().lower() == "insertedon" else "?" for col in dtl_columns)
+    cursor.execute(
+        f"""
+        SET NOCOUNT ON;
+        DECLARE @new_receipt_dtl TABLE (ReceiptDetailId INT);
+        INSERT INTO dbo.Corp_Receipt_Dtl
+            ({dtl_insert_sql})
+        OUTPUT INSERTED.recDtlId INTO @new_receipt_dtl(ReceiptDetailId)
+        VALUES
+            ({dtl_param_sql});
+        SELECT TOP 1 ReceiptDetailId FROM @new_receipt_dtl;
+        """,
+        tuple(dtl_values),
+    )
     while cursor.description is None:
         if not cursor.nextset():
             break
@@ -3816,6 +4558,8 @@ def create_corporate_receipt(
         "payment_mode": int(payment_mode_int),
         "patient_id": int(patient_id_val) if patient_id_val > 0 else None,
         "visit_id": int(visit_id_val) if visit_id_val > 0 else None,
+        "receipt_source_key": source_norm,
+        "receipt_against_source": _corp_receipt_against_label(source_norm),
     }
 
 
@@ -3843,19 +4587,29 @@ def _clean_receipt_user_label(value) -> str:
     return txt
 
 
-def fetch_corporate_receipt_for_print(unit: str, receipt_id: int):
+def fetch_corporate_receipts_day_print(unit: str, entry_date_from, entry_date_to=None, filter_by: str = "entry_date"):
     unit_key = str(unit or "").strip().upper()
-    if not _is_sharpsight_unit(unit_key):
-        return None
 
     conn = get_sql_connection(unit_key)
     if not conn:
         return None
     try:
-        receipt_source_info = _ensure_sharpsight_receipt_source_column_conn(conn) or {}
+        entry_from_dt = pd.to_datetime(entry_date_from, errors="coerce")
+        entry_to_dt = pd.to_datetime(entry_date_to if entry_date_to is not None else entry_date_from, errors="coerce")
+        filter_mode = "receipt_date" if str(filter_by or "").strip().lower() in {"receipt", "receipt_date", "receiptdate"} else "entry_date"
+        if pd.isna(entry_from_dt) or pd.isna(entry_to_dt):
+            return None
+        if entry_to_dt < entry_from_dt:
+            return None
+
+        bill_table = _resolve_corporate_bill_table_conn(conn, unit_key)
+        if not bill_table:
+            return None
+
+        receipt_source_info = _ensure_corporate_receipt_source_column_conn(conn) or {}
         receipt_source_col = str(receipt_source_info.get("column") or "").strip() or None
         if receipt_source_col:
-            _backfill_sharpsight_receipt_source_conn(conn, receipt_source_col)
+            _backfill_corporate_receipt_source_conn(conn, unit_key, receipt_source_col)
 
         pm_table = _resolve_sharpsight_payment_mode_table_conn(conn)
         pm_join = ""
@@ -3863,162 +4617,78 @@ def fetch_corporate_receipt_for_print(unit: str, receipt_id: int):
         if pm_table:
             pm_join = f"LEFT JOIN {pm_table} pm WITH (NOLOCK) ON pm.PModeId = m.CPayment_Mode"
             pm_name_expr = "LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(200), pm.PModeName), CONVERT(NVARCHAR(100), m.CPayment_Mode))))"
-        receipt_source_expr = _sharpsight_receipt_source_expr(receipt_source_col, alias="d")
 
-        sql = f"""
-            SELECT TOP 1
-                CAST(m.Receipt_ID AS INT) AS ReceiptId,
-                ISNULL(CONVERT(NVARCHAR(80), m.CReceipt_No), '') AS ReceiptNo,
-                CAST(m.Receipt_Date AS DATETIME) AS ReceiptDate,
-                CAST(ISNULL(m.GrossAmt, ISNULL(m.Amount, 0)) AS FLOAT) AS GrossAmt,
-                CAST(ISNULL(m.TDSAmt, 0) AS FLOAT) AS TDSAmt,
-                CAST(ISNULL(m.NetAmt, ISNULL(m.Amount, 0)) AS FLOAT) AS NetAmt,
-                CAST(ISNULL(m.Amount, 0) AS FLOAT) AS ReceiptAmount,
-                CAST(ISNULL(m.rebateDiscountAmt, 0) AS FLOAT) AS RebateAmt,
-                CAST(ISNULL(m.CPayment_Mode, 0) AS INT) AS PaymentModeId,
-                {pm_name_expr} AS PaymentMode,
-                ISNULL(CONVERT(NVARCHAR(200), m.UTRNo), '') AS UTRNo,
-                CAST(d.recDtlId AS INT) AS ReceiptDetailId,
-                CAST(d.billId AS INT) AS BillId,
-                CAST(ISNULL(d.billAmt, 0) AS FLOAT) AS BillAmt,
-                CAST(ISNULL(d.receiptAmt, 0) AS FLOAT) AS ReceiptAmtDtl,
-                CAST(
-                    CASE
-                        WHEN ABS(ROUND(ISNULL(d.billAmt, 0) - (ISNULL(d.receiptAmt, 0) + ISNULL(m.TDSAmt, 0) + ISNULL(m.rebateDiscountAmt, 0)), 2)) <= 0.01 THEN 0
-                        ELSE ROUND(ISNULL(d.billAmt, 0) - (ISNULL(d.receiptAmt, 0) + ISNULL(m.TDSAmt, 0) + ISNULL(m.rebateDiscountAmt, 0)), 2)
-                    END
-                    AS FLOAT
-                ) AS DueAmtDtl,
-                CAST(NULLIF(d.visitId, 0) AS INT) AS VisitId,
-                CAST(NULLIF(d.PatientId, 0) AS INT) AS PatientId,
-                CAST(d.ReceiptDate AS DATETIME) AS ReceiptDateDtl,
-                CAST(COALESCE(b.visitDate, v.VisitDate) AS DATETIME) AS VisitDate,
-                CAST(COALESCE(b.dischargeDate, v.DischargeDate) AS DATETIME) AS DischargeDate,
-                ISNULL(
-                    NULLIF(CONVERT(NVARCHAR(80), b.CBill_NO), ''),
-                    ISNULL(NULLIF(CONVERT(NVARCHAR(80), b.Bill_No), ''), CONVERT(NVARCHAR(80), b.CBill_ID))
-                ) AS BillNo,
-                CASE
-                    WHEN COALESCE(v.PatientID, b.PatientID, d.PatientId) IS NULL THEN ''
-                    ELSE ISNULL(dbo.fn_patientfullname(COALESCE(v.PatientID, b.PatientID, d.PatientId)), '')
-                END AS PatientName,
-                CASE
-                    WHEN COALESCE(v.PatientID, b.PatientID, d.PatientId) IS NULL THEN ''
-                    ELSE ISNULL(dbo.fn_regno(COALESCE(v.PatientID, b.PatientID, d.PatientId)), '')
-                END AS RegistrationNo,
-                CASE
-                    WHEN COALESCE(v.PatientType_ID, b.PatientTypeId) IS NULL THEN ''
-                    ELSE ISNULL(dbo.fn_pat_type(COALESCE(v.PatientType_ID, b.PatientTypeId)), '')
-                END AS PatientType,
-                CASE
-                    WHEN COALESCE(v.PatientSubType_ID, b.PatientTypeIdSrNo) IS NULL THEN ''
-                    ELSE ISNULL(dbo.fn_patsub_type(COALESCE(v.PatientSubType_ID, b.PatientTypeIdSrNo)), '')
-                END AS PatientSubType,
-                ISNULL(v.TypeOfVisit, '') AS TypeOfVisit,
-                ISNULL(CONVERT(NVARCHAR(200), u_upd.UserName), CONVERT(NVARCHAR(100), m.Updated_By)) AS UpdatedBy,
-                ISNULL(CONVERT(NVARCHAR(200), u_ins.UserName), CONVERT(NVARCHAR(100), d.insertedBy)) AS InsertedBy,
-                CAST(m.Updated_On AS DATETIME) AS UpdatedOn
-            FROM dbo.Corp_Receipt_Mst m WITH (NOLOCK)
-            INNER JOIN dbo.Corp_Receipt_Dtl d WITH (NOLOCK)
-                ON d.receiptId = m.Receipt_ID
-            INNER JOIN dbo.Corp_Bill_Mst_AHL b WITH (NOLOCK)
-                ON b.CBill_ID = d.billId
-            LEFT JOIN dbo.Visit v WITH (NOLOCK)
-                ON v.Visit_ID = COALESCE(NULLIF(d.visitId, 0), NULLIF(b.Visit_ID, 0))
-            LEFT JOIN dbo.User_Mst u_upd WITH (NOLOCK)
-                ON u_upd.UserID = m.Updated_By
-            LEFT JOIN dbo.User_Mst u_ins WITH (NOLOCK)
-                ON u_ins.UserID = d.insertedBy
-            {pm_join}
-            WHERE m.Receipt_ID = ?
-              AND {receipt_source_expr} = N'{SHARPSIGHT_RECEIPT_SOURCE_AHL}'
-            ORDER BY d.recDtlId DESC
-        """
-        df = pd.read_sql(sql, conn, params=[int(receipt_id)])
-        if df is None or df.empty:
-            return None
-        row = df.iloc[0].to_dict()
-
-        def _fmt_dt(value, with_time: bool = False):
-            dt = pd.to_datetime(value, errors="coerce")
-            if pd.isna(dt):
-                return ""
-            return dt.strftime("%Y-%m-%d %H:%M:%S" if with_time else "%Y-%m-%d")
-
-        return {
-            "unit": unit_key,
-            "receipt_id": int(row.get("ReceiptId") or 0),
-            "receipt_detail_id": int(row.get("ReceiptDetailId") or 0),
-            "receipt_no": str(row.get("ReceiptNo") or "").strip(),
-            "receipt_date": _fmt_dt(row.get("ReceiptDate")),
-            "gross_amount": float(row.get("GrossAmt") or 0.0),
-            "tds_amount": float(row.get("TDSAmt") or 0.0),
-            "net_amount": float(row.get("NetAmt") or 0.0),
-            "receipt_amount": float(row.get("ReceiptAmount") or 0.0),
-            "rebate_amount": float(row.get("RebateAmt") or 0.0),
-            "payment_mode_id": int(row.get("PaymentModeId") or 0),
-            "payment_mode": str(row.get("PaymentMode") or "").strip(),
-            "utr_no": str(row.get("UTRNo") or "").strip(),
-            "bill_id": int(row.get("BillId") or 0),
-            "bill_no": str(row.get("BillNo") or "").strip(),
-            "bill_amount": float(row.get("BillAmt") or 0.0),
-            "receipt_amount_dtl": float(row.get("ReceiptAmtDtl") or 0.0),
-            "due_amount": float(row.get("DueAmtDtl") or 0.0),
-            "visit_id": int(row.get("VisitId") or 0) if row.get("VisitId") not in (None, "") else None,
-            "patient_id": int(row.get("PatientId") or 0) if row.get("PatientId") not in (None, "") else None,
-            "patient_name": str(row.get("PatientName") or "").strip(),
-            "registration_no": str(row.get("RegistrationNo") or "").strip(),
-            "patient_type": str(row.get("PatientType") or "").strip(),
-            "patient_subtype": str(row.get("PatientSubType") or "").strip(),
-            "type_of_visit": str(row.get("TypeOfVisit") or "").strip(),
-            "visit_date": _fmt_dt(row.get("VisitDate")),
-            "discharge_date": _fmt_dt(row.get("DischargeDate")),
-            "updated_by": _clean_receipt_user_label(row.get("UpdatedBy")),
-            "inserted_by": _clean_receipt_user_label(row.get("InsertedBy")),
-            "updated_on": _fmt_dt(row.get("UpdatedOn"), with_time=True),
-        }
-    except Exception as e:
-        print(f"Error fetching SharpSight receipt print payload ({unit_key}, {receipt_id}): {e}")
-        return None
-    finally:
-        try:
-            conn.close()
-        except Exception:
-            pass
-
-
-def fetch_corporate_receipts_day_print(unit: str, entry_date):
-    unit_key = str(unit or "").strip().upper()
-    if not _is_sharpsight_unit(unit_key):
-        return None
-
-    conn = get_sql_connection(unit_key)
-    if not conn:
-        return None
-    try:
-        entry_dt = pd.to_datetime(entry_date, errors="coerce")
-        if pd.isna(entry_dt):
-            return None
-
-        receipt_source_info = _ensure_sharpsight_receipt_source_column_conn(conn) or {}
-        receipt_source_col = str(receipt_source_info.get("column") or "").strip() or None
-        if receipt_source_col:
-            _backfill_sharpsight_receipt_source_conn(conn, receipt_source_col)
-
-        pm_table = _resolve_sharpsight_payment_mode_table_conn(conn)
-        pm_join = ""
-        pm_name_expr = "CONVERT(NVARCHAR(100), m.CPayment_Mode)"
-        if pm_table:
-            pm_join = f"LEFT JOIN {pm_table} pm WITH (NOLOCK) ON pm.PModeId = m.CPayment_Mode"
-            pm_name_expr = "LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(200), pm.PModeName), CONVERT(NVARCHAR(100), m.CPayment_Mode))))"
-        receipt_source_expr = _sharpsight_receipt_source_expr(receipt_source_col, alias="d")
+        dtl_receipt_date_col = _pick_table_col_conn(conn, "dbo.Corp_Receipt_Dtl", ["ReceiptDate"])
+        dtl_inserted_on_col = _pick_table_col_conn(conn, "dbo.Corp_Receipt_Dtl", ["insertedOn", "InsertedOn", "Inserted_On"])
+        dtl_inserted_by_col = _pick_table_col_conn(conn, "dbo.Corp_Receipt_Dtl", ["insertedBy", "InsertedBy", "Inserted_By"])
+        bill_visit_col = _pick_table_col_conn(conn, bill_table, ["Visit_ID", "VisitID"])
+        bill_patient_col = _pick_table_col_conn(conn, bill_table, ["PatientID", "PatientId"])
+        bill_patient_type_col = _pick_table_col_conn(conn, bill_table, ["PatientTypeId", "PatientType_ID", "PatientTypeID"])
+        bill_patient_subtype_col = _pick_table_col_conn(conn, bill_table, ["PatientTypeIdSrNo", "PatientSubTypeId", "PatientSubType_ID", "PatientSubTypeID"])
+        bill_cbill_no_col = _pick_table_col_conn(conn, bill_table, ["CBill_NO", "CBillNo", "BillNo"])
+        bill_bill_no_col = _pick_table_col_conn(conn, bill_table, ["Bill_No", "BillNo"])
+        bill_date_parts = []
+        for cand in ["Submit_Date", "CBill_Date", "accUpdatedDate", "visitDate", "Updated_On"]:
+            picked = _pick_table_col_conn(conn, bill_table, [cand])
+            if picked:
+                bill_date_parts.append(f"b.[{picked}]")
+        bill_date_expr = f"COALESCE({', '.join(bill_date_parts)})" if bill_date_parts else "NULL"
+        receipt_dt_expr = f"COALESCE(d.[{dtl_receipt_date_col}], m.Receipt_Date)" if dtl_receipt_date_col else "m.Receipt_Date"
+        entry_dt_expr = f"COALESCE(d.[{dtl_inserted_on_col}], m.Updated_On, m.Receipt_Date)" if dtl_inserted_on_col else "COALESCE(m.Updated_On, m.Receipt_Date)"
+        filter_dt_expr = receipt_dt_expr if filter_mode == "receipt_date" else entry_dt_expr
+        inserted_by_id_expr = f"TRY_CAST(d.[{dtl_inserted_by_col}] AS INT)" if dtl_inserted_by_col else "CAST(NULL AS INT)"
+        inserted_by_expr = f"ISNULL(CONVERT(NVARCHAR(100), {inserted_by_id_expr}), N'')"
+        stored_source_expr = (
+            f"NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(40), d.[{receipt_source_col}]))), '')"
+            if receipt_source_col
+            else "NULL"
+        )
+        bill_source_key = _corp_receipt_bill_source_key_for_unit(unit_key)
+        opening_receipt_match_expr = (
+            "CASE "
+            "WHEN o.OPId IS NOT NULL AND ISNULL(o.ReceiptId, 0) > 0 AND ISNULL(o.ReceiptId, 0) = ISNULL(d.receiptId, 0) "
+            f"THEN N'{SHARPSIGHT_RECEIPT_SOURCE_OPENING}' "
+            "ELSE NULL END"
+        )
+        receipt_source_expr = (
+            "COALESCE("
+            f"{opening_receipt_match_expr}, "
+            f"{stored_source_expr}, "
+            "CASE "
+            f"WHEN o.OPId IS NOT NULL AND b.CBill_ID IS NOT NULL AND ({receipt_dt_expr} IS NULL OR {bill_date_expr} IS NULL OR CAST({receipt_dt_expr} AS DATETIME) < CAST({bill_date_expr} AS DATETIME)) THEN N'{SHARPSIGHT_RECEIPT_SOURCE_OPENING}' "
+            f"WHEN b.CBill_ID IS NOT NULL THEN N'{bill_source_key}' "
+            f"WHEN o.OPId IS NOT NULL THEN N'{SHARPSIGHT_RECEIPT_SOURCE_OPENING}' "
+            f"ELSE N'{SHARPSIGHT_RECEIPT_SOURCE_UNKNOWN}' END"
+            ")"
+        )
+        receipt_against_expr = (
+            "CASE "
+            f"WHEN {receipt_source_expr} = N'{SHARPSIGHT_RECEIPT_SOURCE_OPENING}' THEN N'Opening Balance' "
+            f"WHEN {receipt_source_expr} = N'{bill_source_key}' THEN N'Corporate Bill' "
+            "ELSE N'Unmapped' END"
+        )
+        bill_visit_expr = f"b.[{bill_visit_col}]" if bill_visit_col else "NULL"
+        bill_patient_expr = f"b.[{bill_patient_col}]" if bill_patient_col else "NULL"
+        bill_patient_type_expr = f"b.[{bill_patient_type_col}]" if bill_patient_type_col else "NULL"
+        bill_patient_subtype_expr = f"b.[{bill_patient_subtype_col}]" if bill_patient_subtype_col else "NULL"
+        bill_no_expr = (
+            "ISNULL("
+            + (f"NULLIF(CONVERT(NVARCHAR(80), b.[{bill_cbill_no_col}]), '')" if bill_cbill_no_col else "NULL")
+            + ", "
+            + (
+                f"ISNULL(NULLIF(CONVERT(NVARCHAR(80), b.[{bill_bill_no_col}]), ''), CONVERT(NVARCHAR(80), b.CBill_ID))"
+                if bill_bill_no_col
+                else "CONVERT(NVARCHAR(80), b.CBill_ID)"
+            )
+            + ")"
+        )
 
         sql = f"""
             SELECT
                 CAST(m.Receipt_ID AS INT) AS ReceiptId,
                 ISNULL(CONVERT(NVARCHAR(80), m.CReceipt_No), '') AS ReceiptNo,
                 CAST(m.Receipt_Date AS DATETIME) AS ReceiptDate,
-                CAST(COALESCE(d.insertedOn, m.Updated_On, m.Receipt_Date) AS DATETIME) AS EntryDateTime,
+                CAST({entry_dt_expr} AS DATETIME) AS EntryDateTime,
                 CAST(ISNULL(m.GrossAmt, ISNULL(m.Amount, 0)) AS FLOAT) AS GrossAmt,
                 CAST(ISNULL(m.TDSAmt, 0) AS FLOAT) AS TDSAmt,
                 CAST(ISNULL(m.NetAmt, ISNULL(m.Amount, 0)) AS FLOAT) AS NetAmt,
@@ -4033,43 +4703,68 @@ def fetch_corporate_receipts_day_print(unit: str, entry_date):
                     AS FLOAT
                 ) AS DueAmtDtl,
                 CAST(d.billId AS INT) AS BillId,
-                ISNULL(
-                    NULLIF(CONVERT(NVARCHAR(80), b.CBill_NO), ''),
-                    ISNULL(NULLIF(CONVERT(NVARCHAR(80), b.Bill_No), ''), CONVERT(NVARCHAR(80), b.CBill_ID))
-                ) AS BillNo,
+                CAST({receipt_source_expr} AS NVARCHAR(40)) AS ReceiptSourceKey,
+                {receipt_against_expr} AS ReceiptAgainstSource,
+                CASE
+                    WHEN {receipt_source_expr} = N'{SHARPSIGHT_RECEIPT_SOURCE_OPENING}'
+                        THEN ISNULL(NULLIF(CONVERT(NVARCHAR(80), o.RefNo), ''), CONVERT(NVARCHAR(80), o.OPId))
+                    ELSE {bill_no_expr}
+                END AS BillNo,
                 CAST(NULLIF(d.visitId, 0) AS INT) AS VisitId,
                 CAST(NULLIF(d.PatientId, 0) AS INT) AS PatientId,
                 CASE
-                    WHEN COALESCE(v.PatientID, b.PatientID, d.PatientId) IS NULL THEN ''
-                    ELSE ISNULL(dbo.fn_patientfullname(COALESCE(v.PatientID, b.PatientID, d.PatientId)), '')
+                    WHEN {receipt_source_expr} = N'{SHARPSIGHT_RECEIPT_SOURCE_OPENING}' AND ISNULL(CONVERT(NVARCHAR(255), o.PatientName), '') <> ''
+                        THEN ISNULL(CONVERT(NVARCHAR(255), o.PatientName), '')
+                    WHEN COALESCE(v.PatientID, {bill_patient_expr}, d.PatientId, m.PatientID, o.PatientId) IS NULL THEN ''
+                    ELSE ISNULL(dbo.fn_patientfullname(COALESCE(v.PatientID, {bill_patient_expr}, d.PatientId, m.PatientID, o.PatientId)), '')
                 END AS PatientName,
                 CASE
-                    WHEN COALESCE(v.PatientID, b.PatientID, d.PatientId) IS NULL THEN ''
-                    ELSE ISNULL(dbo.fn_regno(COALESCE(v.PatientID, b.PatientID, d.PatientId)), '')
+                    WHEN COALESCE(v.PatientID, {bill_patient_expr}, d.PatientId, m.PatientID, o.PatientId) IS NULL THEN ''
+                    ELSE ISNULL(dbo.fn_regno(COALESCE(v.PatientID, {bill_patient_expr}, d.PatientId, m.PatientID, o.PatientId)), '')
                 END AS RegistrationNo,
-                ISNULL(v.TypeOfVisit, '') AS TypeOfVisit,
+                CASE
+                    WHEN {receipt_source_expr} = N'{SHARPSIGHT_RECEIPT_SOURCE_OPENING}' AND o.PatientTypeId IS NOT NULL
+                        THEN ISNULL(dbo.fn_pat_type(o.PatientTypeId), '')
+                    WHEN COALESCE(v.PatientType_ID, {bill_patient_type_expr}) IS NULL THEN ''
+                    ELSE ISNULL(dbo.fn_pat_type(COALESCE(v.PatientType_ID, {bill_patient_type_expr})), '')
+                END AS PatientType,
+                CASE
+                    WHEN {receipt_source_expr} = N'{SHARPSIGHT_RECEIPT_SOURCE_OPENING}' AND o.PatientSubTypeId IS NOT NULL
+                        THEN ISNULL(dbo.fn_patsub_type(o.PatientSubTypeId), '')
+                    WHEN COALESCE(v.PatientSubType_ID, {bill_patient_subtype_expr}) IS NULL THEN ''
+                    ELSE ISNULL(dbo.fn_patsub_type(COALESCE(v.PatientSubType_ID, {bill_patient_subtype_expr})), '')
+                END AS PatientSubType,
+                CASE
+                    WHEN {receipt_source_expr} = N'{SHARPSIGHT_RECEIPT_SOURCE_OPENING}' THEN N'Opening Balance'
+                    ELSE ISNULL(v.TypeOfVisit, '')
+                END AS TypeOfVisit,
                 {pm_name_expr} AS PaymentMode,
                 ISNULL(CONVERT(NVARCHAR(200), m.UTRNo), '') AS UTRNo,
                 ISNULL(CONVERT(NVARCHAR(200), u_upd.UserName), CONVERT(NVARCHAR(100), m.Updated_By)) AS UpdatedBy,
-                ISNULL(CONVERT(NVARCHAR(200), u_ins.UserName), CONVERT(NVARCHAR(100), d.insertedBy)) AS InsertedBy,
+                ISNULL(CONVERT(NVARCHAR(200), u_ins.UserName), {inserted_by_expr}) AS InsertedBy,
                 CAST(m.Updated_On AS DATETIME) AS UpdatedOn
             FROM dbo.Corp_Receipt_Mst m WITH (NOLOCK)
             INNER JOIN dbo.Corp_Receipt_Dtl d WITH (NOLOCK)
                 ON d.receiptId = m.Receipt_ID
-            INNER JOIN dbo.Corp_Bill_Mst_AHL b WITH (NOLOCK)
+            LEFT JOIN {bill_table} b WITH (NOLOCK)
                 ON b.CBill_ID = d.billId
+            LEFT JOIN dbo.CorpOpening o WITH (NOLOCK)
+                ON o.OPId = d.billId
             LEFT JOIN dbo.Visit v WITH (NOLOCK)
-                ON v.Visit_ID = COALESCE(NULLIF(d.visitId, 0), NULLIF(b.Visit_ID, 0))
+                ON v.Visit_ID = COALESCE(NULLIF(d.visitId, 0), NULLIF(m.VisitID, 0), NULLIF({bill_visit_expr}, 0))
             LEFT JOIN dbo.User_Mst u_upd WITH (NOLOCK)
                 ON u_upd.UserID = m.Updated_By
             LEFT JOIN dbo.User_Mst u_ins WITH (NOLOCK)
-                ON u_ins.UserID = d.insertedBy
+                ON u_ins.UserID = {inserted_by_id_expr}
             {pm_join}
-            WHERE CAST(COALESCE(d.insertedOn, m.Updated_On, m.Receipt_Date) AS DATE) = ?
-              AND {receipt_source_expr} = N'{SHARPSIGHT_RECEIPT_SOURCE_AHL}'
-            ORDER BY COALESCE(d.insertedOn, m.Updated_On, m.Receipt_Date), m.Receipt_ID, d.recDtlId
+            WHERE CAST({filter_dt_expr} AS DATE) BETWEEN ? AND ?
+            ORDER BY {filter_dt_expr}, m.Receipt_ID, d.recDtlId
         """
-        df = pd.read_sql(sql, conn, params=[entry_dt.strftime("%Y-%m-%d")])
+        df = pd.read_sql(
+            sql,
+            conn,
+            params=[entry_from_dt.strftime("%Y-%m-%d"), entry_to_dt.strftime("%Y-%m-%d")],
+        )
         if df is None:
             return None
 
@@ -4082,6 +4777,41 @@ def fetch_corporate_receipts_day_print(unit: str, entry_date):
             if long_date:
                 return dt.strftime("%d %b %Y")
             return dt.strftime("%d-%m-%Y")
+
+        def _fmt_iso_date(value):
+            dt = pd.to_datetime(value, errors="coerce")
+            if pd.isna(dt):
+                return ""
+            return dt.strftime("%Y-%m-%d")
+
+        def _safe_int(value, default: int | None = None):
+            try:
+                if pd.isna(value):
+                    return default
+            except Exception:
+                pass
+            if value in (None, ""):
+                return default
+            try:
+                return int(value)
+            except Exception:
+                try:
+                    return int(float(value))
+                except Exception:
+                    return default
+
+        def _safe_float(value, default: float = 0.0) -> float:
+            try:
+                if pd.isna(value):
+                    return float(default)
+            except Exception:
+                pass
+            if value in (None, ""):
+                return float(default)
+            try:
+                return float(value)
+            except Exception:
+                return float(default)
 
         rows = []
         totals = {
@@ -4097,27 +4827,35 @@ def fetch_corporate_receipts_day_print(unit: str, entry_date):
         if not df.empty:
             for _, raw_row in df.iterrows():
                 row = raw_row.to_dict()
+                filter_date_raw = row.get("ReceiptDate") if filter_mode == "receipt_date" else row.get("EntryDateTime")
                 item = {
-                    "receipt_id": int(row.get("ReceiptId") or 0),
+                    "receipt_id": _safe_int(row.get("ReceiptId"), 0) or 0,
                     "receipt_no": str(row.get("ReceiptNo") or "").strip(),
                     "receipt_date": _fmt_dt(row.get("ReceiptDate")),
+                    "receipt_date_iso": _fmt_iso_date(row.get("ReceiptDate")),
                     "entry_datetime": _fmt_dt(row.get("EntryDateTime"), with_time=True),
-                    "gross_amount": float(row.get("GrossAmt") or 0.0),
-                    "tds_amount": float(row.get("TDSAmt") or 0.0),
-                    "net_amount": float(row.get("NetAmt") or 0.0),
-                    "rebate_amount": float(row.get("RebateAmt") or 0.0),
-                    "bill_amount": float(row.get("BillAmt") or 0.0),
-                    "receipt_amount": float(row.get("ReceiptAmtDtl") or 0.0),
-                    "due_amount": float(row.get("DueAmtDtl") or 0.0),
-                    "bill_id": int(row.get("BillId") or 0),
+                    "entry_date_iso": _fmt_iso_date(row.get("EntryDateTime")),
+                    "filter_date_iso": _fmt_iso_date(filter_date_raw),
+                    "gross_amount": _safe_float(row.get("GrossAmt"), 0.0),
+                    "tds_amount": _safe_float(row.get("TDSAmt"), 0.0),
+                    "net_amount": _safe_float(row.get("NetAmt"), 0.0),
+                    "rebate_amount": _safe_float(row.get("RebateAmt"), 0.0),
+                    "bill_amount": _safe_float(row.get("BillAmt"), 0.0),
+                    "receipt_amount": _safe_float(row.get("ReceiptAmtDtl"), 0.0),
+                    "due_amount": _safe_float(row.get("DueAmtDtl"), 0.0),
+                    "receipt_source_key": str(row.get("ReceiptSourceKey") or "").strip(),
+                    "receipt_against_source": str(row.get("ReceiptAgainstSource") or "").strip(),
+                    "bill_id": _safe_int(row.get("BillId"), 0) or 0,
                     "bill_no": str(row.get("BillNo") or "").strip(),
-                    "visit_id": int(row.get("VisitId") or 0) if row.get("VisitId") not in (None, "") else None,
-                    "patient_id": int(row.get("PatientId") or 0) if row.get("PatientId") not in (None, "") else None,
+                    "visit_id": _safe_int(row.get("VisitId"), None),
+                    "patient_id": _safe_int(row.get("PatientId"), None),
                     "patient_name": str(row.get("PatientName") or "").strip(),
                     "registration_no": str(row.get("RegistrationNo") or "").strip(),
+                    "patient_type": str(row.get("PatientType") or "").strip(),
+                    "patient_subtype": str(row.get("PatientSubType") or "").strip(),
                     "type_of_visit": str(row.get("TypeOfVisit") or "").strip(),
                     "payment_mode": str(row.get("PaymentMode") or "").strip(),
-                    "utr_no": str(row.get("UTRNo") or "").strip(),
+                    "utr_no": _clean_utr_text(row.get("UTRNo")),
                     "updated_by": _clean_receipt_user_label(row.get("UpdatedBy")),
                     "inserted_by": _clean_receipt_user_label(row.get("InsertedBy")),
                     "updated_on": _fmt_dt(row.get("UpdatedOn"), with_time=True),
@@ -4135,16 +4873,323 @@ def fetch_corporate_receipts_day_print(unit: str, entry_date):
         for key in ("gross_amount", "tds_amount", "net_amount", "rebate_amount", "receipt_amount", "bill_amount", "due_amount"):
             totals[key] = float(round(totals[key], 2))
 
+        is_single_day = entry_from_dt.date() == entry_to_dt.date()
+        entry_from_label = _fmt_dt(entry_from_dt, long_date=True)
+        entry_to_label = _fmt_dt(entry_to_dt, long_date=True)
+        entry_period_label = entry_from_label if is_single_day else f"{entry_from_label} to {entry_to_label}"
+        date_filter_base_label = "Receipt Date" if filter_mode == "receipt_date" else "Entry Date"
+        date_filter_label = date_filter_base_label if is_single_day else f"{date_filter_base_label} Range"
+
         return {
             "unit": unit_key,
-            "entry_date": entry_dt.strftime("%Y-%m-%d"),
-            "entry_date_label": _fmt_dt(entry_dt, long_date=True),
+            "entry_date": entry_from_dt.strftime("%Y-%m-%d"),
+            "entry_from": entry_from_dt.strftime("%Y-%m-%d"),
+            "entry_to": entry_to_dt.strftime("%Y-%m-%d"),
+            "entry_date_label": entry_period_label,
+            "entry_from_label": entry_from_label,
+            "entry_to_label": entry_to_label,
+            "entry_period_label": entry_period_label,
+            "entry_meta_label": date_filter_label,
+            "date_filter_mode": filter_mode,
+            "date_filter_base_label": date_filter_base_label,
+            "date_filter_label": date_filter_label,
+            "is_single_day": is_single_day,
             "rows": rows,
             "summary": totals,
         }
     except Exception as e:
-        print(f"Error fetching SharpSight daily receipt print payload ({unit_key}, {entry_date}): {e}")
+        print(f"Error fetching corporate receipt register payload ({unit_key}, {entry_date_from}, {entry_date_to}): {e}")
         return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def unsubmit_corporate_reconciliation_bill(
+    unit: str,
+    *,
+    bill_id: int,
+    source_key: str | None = None,
+    updated_by_id: int | None = None,
+):
+    unit_key = str(unit or "").strip().upper()
+    expected_source_key = _corp_receipt_bill_source_key_for_unit(unit_key)
+    source_norm = str(source_key or expected_source_key).strip().upper() or expected_source_key
+    if source_norm != expected_source_key:
+        return {
+            "status": "error",
+            "message": f"Unsubmit is supported only for {expected_source_key} rows in {unit_key}.",
+        }
+
+    try:
+        bill_id_int = int(str(bill_id).strip())
+    except Exception:
+        bill_id_int = 0
+    if bill_id_int <= 0:
+        return {"status": "error", "message": "Invalid bill id supplied."}
+
+    actor_id = None
+    if updated_by_id not in (None, "", " "):
+        try:
+            actor_id = int(str(updated_by_id).strip())
+        except Exception:
+            actor_id = None
+        if actor_id is not None and actor_id <= 0:
+            actor_id = None
+
+    conn = get_sql_connection(unit_key)
+    if not conn:
+        return {"status": "error", "message": f"Unable to connect to unit {unit_key}."}
+
+    def _fmt_iso(value):
+        dt = pd.to_datetime(value, errors="coerce")
+        if pd.isna(dt):
+            return ""
+        return dt.strftime("%Y-%m-%d")
+
+    def _row_to_dict(cursor, row):
+        out = {}
+        if row is None:
+            return out
+        columns = [str(col[0] or "").strip() for col in (cursor.description or [])]
+        for idx, col_name in enumerate(columns):
+            if not col_name:
+                continue
+            out[col_name] = row[idx]
+        return out
+
+    try:
+        conn.autocommit = False
+        bill_table = _resolve_corporate_bill_table_conn(conn, unit_key)
+        if not bill_table:
+            conn.rollback()
+            return {"status": "error", "message": f"Corporate bill table not found for unit {unit_key}."}
+
+        bill_id_col = _pick_table_col_conn(conn, bill_table, ["CBill_ID", "CBillId", "Bill_ID", "BillId"])
+        status_col = _pick_table_col_conn(conn, bill_table, ["Status", "status"])
+        submit_date_col = _pick_table_col_conn(conn, bill_table, ["Submit_Date", "SubmitDate", "SubmittedOn", "Submitted_Date"])
+        bill_no_col = _pick_table_col_conn(conn, bill_table, ["CBill_NO", "CBillNo", "Bill_No", "BillNo"])
+        patient_id_col = _pick_table_col_conn(conn, bill_table, ["PatientID", "PatientId", "patientid"])
+        visit_id_col = _pick_table_col_conn(conn, bill_table, ["Visit_ID", "VisitID", "visitId", "visitID"])
+        updated_by_col = _pick_table_col_conn(
+            conn,
+            bill_table,
+            ["Updated_By", "UpdatedBy", "updated_by", "accUserId"],
+        )
+        updated_on_col = _pick_table_col_conn(
+            conn,
+            bill_table,
+            ["Updated_On", "UpdatedOn", "ModifiedOn", "accUpdatedDate", "AccUpdatedDate", "LastUpdatedOn"],
+        )
+        if not bill_id_col or not status_col or not submit_date_col:
+            conn.rollback()
+            return {
+                "status": "error",
+                "message": "Corporate bill schema is missing the required status or submit date columns.",
+            }
+
+        bill_no_expr = (
+            f"CONVERT(NVARCHAR(80), [{bill_no_col}]) AS BillNo"
+            if bill_no_col
+            else "CAST(NULL AS NVARCHAR(80)) AS BillNo"
+        )
+        patient_id_expr = (
+            f"CAST([{patient_id_col}] AS INT) AS PatientId"
+            if patient_id_col
+            else "CAST(NULL AS INT) AS PatientId"
+        )
+        visit_id_expr = (
+            f"CAST([{visit_id_col}] AS INT) AS VisitId"
+            if visit_id_col
+            else "CAST(NULL AS INT) AS VisitId"
+        )
+        select_sql = f"""
+            SELECT TOP 1
+                CAST([{bill_id_col}] AS INT) AS BillId,
+                {bill_no_expr},
+                {patient_id_expr},
+                {visit_id_expr},
+                CONVERT(NVARCHAR(20), [{status_col}]) AS StatusRaw,
+                CAST([{submit_date_col}] AS DATETIME) AS SubmitDateRaw
+            FROM {bill_table} WITH (ROWLOCK, UPDLOCK, HOLDLOCK)
+            WHERE [{bill_id_col}] = ?
+        """
+
+        cursor = conn.cursor()
+        cursor.execute(select_sql, (bill_id_int,))
+        before_row = cursor.fetchone()
+        before_data = _row_to_dict(cursor, before_row)
+        if not before_data:
+            conn.rollback()
+            return {"status": "error", "message": f"Bill {bill_id_int} not found in {bill_table}."}
+
+        before_status = str(before_data.get("StatusRaw") or "").strip().upper()
+        before_submit_date = _fmt_iso(before_data.get("SubmitDateRaw"))
+        if before_status == "N" and not before_submit_date:
+            conn.rollback()
+            return {"status": "error", "message": f"Bill {bill_id_int} is already not submitted."}
+
+        set_clauses = [f"[{status_col}] = ?", f"[{submit_date_col}] = NULL"]
+        params: list = ["N"]
+        if updated_by_col and actor_id is not None:
+            set_clauses.append(f"[{updated_by_col}] = ?")
+            params.append(actor_id)
+        if updated_on_col:
+            set_clauses.append(f"[{updated_on_col}] = GETDATE()")
+        params.append(bill_id_int)
+        cursor.execute(
+            f"UPDATE {bill_table} SET {', '.join(set_clauses)} WHERE [{bill_id_col}] = ?",
+            tuple(params),
+        )
+        if int(cursor.rowcount or 0) == 0:
+            conn.rollback()
+            return {"status": "error", "message": f"Bill {bill_id_int} could not be updated."}
+
+        cursor.execute(select_sql, (bill_id_int,))
+        after_row = cursor.fetchone()
+        after_data = _row_to_dict(cursor, after_row)
+        conn.commit()
+
+        after_status = str(after_data.get("StatusRaw") or "").strip().upper()
+        after_submit_date = _fmt_iso(after_data.get("SubmitDateRaw"))
+        return {
+            "status": "success",
+            "unit": unit_key,
+            "table_name": bill_table,
+            "source_key": expected_source_key,
+            "bill_id": int(before_data.get("BillId") or bill_id_int),
+            "bill_no": str(before_data.get("BillNo") or "").strip(),
+            "patient_id": before_data.get("PatientId"),
+            "visit_id": before_data.get("VisitId"),
+            "before_status": before_status,
+            "after_status": after_status,
+            "before_submit_date": before_submit_date,
+            "after_submit_date": after_submit_date,
+            "updated_by_column": updated_by_col,
+            "updated_on_column": updated_on_col,
+        }
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"status": "error", "message": str(e)}
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def bulk_update_corporate_receipt_dates(unit: str, receipt_ids, new_receipt_date):
+    unit_key = str(unit or "").strip().upper()
+    unique_receipt_ids = []
+    seen_ids = set()
+    for raw_val in (receipt_ids or []):
+        try:
+            parsed = int(str(raw_val).strip())
+        except Exception:
+            continue
+        if parsed <= 0 or parsed in seen_ids:
+            continue
+        seen_ids.add(parsed)
+        unique_receipt_ids.append(parsed)
+    if not unique_receipt_ids:
+        return {"status": "error", "message": "No valid receipt ids supplied."}
+
+    new_receipt_dt = pd.to_datetime(new_receipt_date, errors="coerce")
+    if pd.isna(new_receipt_dt):
+        return {"status": "error", "message": "Invalid receipt date supplied."}
+    new_receipt_date_py = new_receipt_dt.date()
+
+    conn = get_sql_connection(unit_key)
+    if not conn:
+        return {"status": "error", "message": f"Unable to connect to unit {unit_key}."}
+    try:
+        conn.autocommit = False
+        mst_receipt_id_col = _pick_table_col_conn(conn, "dbo.Corp_Receipt_Mst", ["Receipt_ID", "ReceiptId", "ReceiptID"])
+        mst_receipt_no_col = _pick_table_col_conn(conn, "dbo.Corp_Receipt_Mst", ["CReceipt_No", "Receipt_No", "ReceiptNo", "CReceiptNo"])
+        mst_receipt_date_col = _pick_table_col_conn(conn, "dbo.Corp_Receipt_Mst", ["Receipt_Date", "ReceiptDate"])
+        dtl_receipt_id_col = _pick_table_col_conn(conn, "dbo.Corp_Receipt_Dtl", ["receiptId", "ReceiptId", "Receipt_ID", "ReceiptID"])
+        dtl_receipt_date_col = _pick_table_col_conn(conn, "dbo.Corp_Receipt_Dtl", ["ReceiptDate"])
+        if not mst_receipt_id_col or not mst_receipt_date_col:
+            conn.rollback()
+            return {"status": "error", "message": "Corporate receipt master schema is missing required receipt date columns."}
+        if not dtl_receipt_id_col:
+            conn.rollback()
+            return {"status": "error", "message": "Corporate receipt detail schema is missing the receipt id column."}
+
+        cursor = conn.cursor()
+        placeholders = ",".join(["?"] * len(unique_receipt_ids))
+        receipt_no_expr = (
+            f"ISNULL(CONVERT(NVARCHAR(80), m.[{mst_receipt_no_col}]), '')"
+            if mst_receipt_no_col
+            else "CONVERT(NVARCHAR(80), m.[{mst_receipt_id_col}])"
+        )
+        old_receipt_expr = (
+            f"COALESCE(MIN(CAST(d.[{dtl_receipt_date_col}] AS DATE)), CAST(m.[{mst_receipt_date_col}] AS DATE))"
+            if dtl_receipt_date_col
+            else f"CAST(m.[{mst_receipt_date_col}] AS DATE)"
+        )
+        cursor.execute(
+            f"""
+            SELECT
+                m.[{mst_receipt_id_col}] AS ReceiptId,
+                {receipt_no_expr} AS ReceiptNo,
+                {old_receipt_expr} AS OldReceiptDate
+            FROM dbo.Corp_Receipt_Mst m WITH (ROWLOCK, UPDLOCK, HOLDLOCK)
+            LEFT JOIN dbo.Corp_Receipt_Dtl d WITH (ROWLOCK, UPDLOCK, HOLDLOCK)
+                ON d.[{dtl_receipt_id_col}] = m.[{mst_receipt_id_col}]
+            WHERE m.[{mst_receipt_id_col}] IN ({placeholders})
+            GROUP BY m.[{mst_receipt_id_col}], {receipt_no_expr}, CAST(m.[{mst_receipt_date_col}] AS DATE)
+            """,
+            tuple(unique_receipt_ids),
+        )
+        rows = cursor.fetchall() or []
+        found_ids = {int(getattr(row, "ReceiptId", 0) or 0) for row in rows}
+        missing_ids = [rid for rid in unique_receipt_ids if rid not in found_ids]
+        if missing_ids:
+            conn.rollback()
+            return {"status": "error", "message": f"Some receipts were not found: {', '.join(str(x) for x in missing_ids[:10])}"}
+
+        cursor.execute(
+            f"UPDATE dbo.Corp_Receipt_Mst SET [{mst_receipt_date_col}] = ? WHERE [{mst_receipt_id_col}] IN ({placeholders})",
+            tuple([new_receipt_date_py] + unique_receipt_ids),
+        )
+        if dtl_receipt_date_col:
+            cursor.execute(
+                f"UPDATE dbo.Corp_Receipt_Dtl SET [{dtl_receipt_date_col}] = ? WHERE [{dtl_receipt_id_col}] IN ({placeholders})",
+                tuple([new_receipt_date_py] + unique_receipt_ids),
+            )
+
+        conn.commit()
+
+        def _fmt_iso(value):
+            dt = pd.to_datetime(value, errors="coerce")
+            if pd.isna(dt):
+                return ""
+            return dt.strftime("%Y-%m-%d")
+
+        updated_receipts = []
+        for row in rows:
+            receipt_id_val = int(getattr(row, "ReceiptId", 0) or 0)
+            updated_receipts.append(
+                {
+                    "receipt_id": receipt_id_val,
+                    "receipt_no": str(getattr(row, "ReceiptNo", "") or "").strip(),
+                    "old_receipt_date": _fmt_iso(getattr(row, "OldReceiptDate", None)),
+                    "new_receipt_date": new_receipt_dt.strftime("%Y-%m-%d"),
+                }
+            )
+        return {"status": "success", "updated_receipts": updated_receipts}
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"status": "error", "message": str(e)}
     finally:
         try:
             conn.close()
@@ -6746,6 +7791,7 @@ _PO_MST_TEXT_PARAM_MAP = {
     "pOtherterms": "OtherTerms",
     "pNotes": "Notes",
     "pSpecialNotes": "SpecialNotes",
+    "pCmcAmcWarrantyNotes": "CmcAmcWarrantyNotes",
     "pPreparedby": "Preparedby",
     "pCustom1": "Custom1",
     "pCustom2": "Custom2",
@@ -6952,6 +7998,83 @@ def _update_iv_po_mst_special_notes_conn(conn, po_id: int, special_notes: str | 
     note_val = str(special_notes or "").strip() or None
     if note_val and len(note_val) > 1000:
         note_val = note_val[:1000]
+    try:
+        cur = conn.cursor()
+        cur.execute(
+            f"UPDATE dbo.{table_name} SET [{note_col}] = ? WHERE [{id_col}] = ?",
+            (note_val, po_id),
+        )
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return False
+
+
+def _ensure_iv_po_mst_cmc_amc_warranty_column_conn(conn) -> bool:
+    """
+    Ensure IVPoMst has CmcAmcWarrantyNotes column for long-form CMC/AMC warranty narration.
+    Backfill legacy OtherTerms values into the new column when possible.
+    """
+    if not conn:
+        return False
+    table_name = _resolve_table_name(conn, ["IVPoMst", "IvPoMst", "IVPO_MST", "IV_Po_Mst"])
+    if not table_name:
+        return False
+    note_candidates = ["CmcAmcWarrantyNotes", "CMCAMCWarrantyNotes", "CmcAmcWarranty", "CMCAMCWarranty"]
+    note_col = _resolve_column(conn, table_name, note_candidates)
+    try:
+        if not note_col:
+            cur = conn.cursor()
+            cur.execute(f"ALTER TABLE dbo.{table_name} ADD CmcAmcWarrantyNotes NVARCHAR(MAX) NULL")
+            conn.commit()
+            note_col = _resolve_column(conn, table_name, note_candidates) or "CmcAmcWarrantyNotes"
+        other_terms_col = _resolve_column(conn, table_name, ["OtherTerms", "OtherTerm"])
+        if note_col and other_terms_col:
+            cur = conn.cursor()
+            cur.execute(
+                f"""
+                UPDATE dbo.[{table_name}]
+                SET [{note_col}] = CAST([{other_terms_col}] AS NVARCHAR(MAX))
+                WHERE NULLIF(LTRIM(RTRIM(CAST([{note_col}] AS NVARCHAR(MAX)))), '') IS NULL
+                  AND NULLIF(LTRIM(RTRIM(CAST([{other_terms_col}] AS NVARCHAR(MAX)))), '') IS NOT NULL
+                """
+            )
+            conn.commit()
+        return bool(note_col)
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return bool(_resolve_column(conn, table_name, note_candidates))
+
+
+def _update_iv_po_mst_cmc_amc_warranty_conn(conn, po_id: int, cmc_amc_warranty_notes: str | None) -> bool:
+    """
+    Persist long-form CMC/AMC warranty notes in IVPoMst. Safe no-op if column unavailable.
+    """
+    if not conn:
+        return False
+    try:
+        po_id = int(po_id or 0)
+    except Exception:
+        return False
+    if po_id <= 0:
+        return False
+    table_name = _resolve_table_name(conn, ["IVPoMst", "IvPoMst", "IVPO_MST", "IV_Po_Mst"])
+    if not table_name:
+        return False
+    note_candidates = ["CmcAmcWarrantyNotes", "CMCAMCWarrantyNotes", "CmcAmcWarranty", "CMCAMCWarranty"]
+    note_col = _resolve_column(conn, table_name, note_candidates)
+    if not note_col and not _ensure_iv_po_mst_cmc_amc_warranty_column_conn(conn):
+        return False
+    note_col = _resolve_column(conn, table_name, note_candidates) or "CmcAmcWarrantyNotes"
+    id_col = _resolve_column(conn, table_name, ["ID", "Id"]) or "ID"
+    note_val = str(cmc_amc_warranty_notes or "").strip() or None
     try:
         cur = conn.cursor()
         cur.execute(
@@ -7526,6 +8649,1156 @@ def ensure_iv_item_technical_specs_column(unit: str) -> bool:
             pass
 
 
+def _grn_round_money(value, places: str = "0.01") -> float:
+    try:
+        return float(Decimal(str(value or 0)).quantize(Decimal(places)))
+    except Exception:
+        return 0.0
+
+
+def _grn_normalize_number_preview(raw_value) -> str | None:
+    text = str(raw_value or "").strip()
+    if not text:
+        return None
+    match = re.search(r"(\d+)\s*$", text)
+    if not match:
+        return text
+    try:
+        next_no = int(match.group(1)) + 1
+    except Exception:
+        return text
+    prefix = text[:match.start(1)]
+    return f"{prefix}{next_no}"
+
+
+def fetch_purchase_grn_types(unit: str):
+    """
+    Calls dbo.usp_getIvGrnType to fetch active GRN types.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for GRN types")
+        return None
+    try:
+        df = pd.read_sql("EXEC dbo.usp_getIvGrnType", conn)
+        if df is None or df.empty:
+            return df
+        df.columns = [c.strip() for c in df.columns]
+        return df
+    except Exception as e:
+        print(f"Error fetching GRN types ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_purchase_grn_stores(unit: str, user_id: int = 0):
+    """
+    Calls dbo.usp_getIvSmStore to fetch GRN-eligible stores.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for GRN stores")
+        return None
+    try:
+        df = pd.read_sql("EXEC dbo.usp_getIvSmStore ?", conn, params=[int(user_id or 0)])
+        if df is None or df.empty:
+            return df
+        df.columns = [c.strip() for c in df.columns]
+        return df
+    except Exception as e:
+        print(f"Error fetching GRN stores ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_purchase_grn_suppliers(unit: str):
+    """
+    Calls dbo.usp_getIvSupp to fetch GRN suppliers.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for GRN suppliers")
+        return None
+    try:
+        df = pd.read_sql("EXEC dbo.usp_getIvSupp", conn)
+        if df is None or df.empty:
+            return df
+        df.columns = [c.strip() for c in df.columns]
+        return df
+    except Exception as e:
+        print(f"Error fetching GRN suppliers ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_purchase_grn_number_preview(unit: str):
+    """
+    Returns a best-effort preview number for the next GRN.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for GRN number preview")
+        return None
+    try:
+        cur = conn.cursor()
+        cur.execute("EXEC dbo.usp_GetIvGrnNo")
+        row = cur.fetchone()
+        preview = _grn_normalize_number_preview(row[0] if row and row[0] is not None else None)
+        if preview:
+            return preview
+        return "GRN-1"
+    except Exception as e:
+        print(f"Error fetching GRN number preview ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_purchase_grn_po_list(unit: str):
+    """
+    Calls dbo.usp_GetIvPoNoforGrn to fetch approved PO references.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for GRN PO list")
+        return None
+    try:
+        df = pd.read_sql("EXEC dbo.usp_GetIvPoNoforGrn", conn)
+        if df is None or df.empty:
+            return df
+        df.columns = [c.strip() for c in df.columns]
+        return df
+    except Exception as e:
+        print(f"Error fetching GRN PO list ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_purchase_grn_items(unit: str, supplier_id: int = 0, store_id: int | None = None):
+    """
+    Fetch GRN item options, enriched with GST and optional store-wise stock.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for GRN items")
+        return None
+    try:
+        df = pd.read_sql("EXEC dbo.usp_GetIvItems ?", conn, params=[int(supplier_id or 0)])
+        if df is None or df.empty:
+            return df
+        df.columns = [c.strip() for c in df.columns]
+
+        id_col = next((c for c in df.columns if str(c).strip().lower() in {"id", "itemid", "item_id"}), None)
+        if id_col:
+            item_ids = []
+            for value in df[id_col].tolist():
+                try:
+                    item_ids.append(int(value))
+                except Exception:
+                    continue
+            rate_mrp_df = fetch_item_master_rate_mrp(unit, item_ids)
+            rate_map = {}
+            if rate_mrp_df is not None and not rate_mrp_df.empty:
+                rate_mrp_df.columns = [c.strip() for c in rate_mrp_df.columns]
+                for _, row in rate_mrp_df.iterrows():
+                    try:
+                        item_id = int(row.get("ItemID"))
+                    except Exception:
+                        continue
+                    rate_map[item_id] = {
+                        "rate": row.get("StandardRate"),
+                        "mrp": row.get("SalesPrice"),
+                        "gst_pct": row.get("SalesTax"),
+                    }
+            gst_vals = []
+            rate_vals = []
+            mrp_vals = []
+            for _, row in df.iterrows():
+                try:
+                    item_id = int(row.get(id_col))
+                except Exception:
+                    item_id = 0
+                extra = rate_map.get(item_id, {})
+                rate_vals.append(row.get("Rate") if row.get("Rate") not in (None, "") else extra.get("rate"))
+                mrp_vals.append(row.get("MRP") if row.get("MRP") not in (None, "") else extra.get("mrp"))
+                gst_vals.append(extra.get("gst_pct") or 0)
+            df["Rate"] = rate_vals
+            df["MRP"] = mrp_vals
+            df["GSTPct"] = gst_vals
+
+        if store_id:
+            stock_df = fetch_store_stock_summary(unit, [int(store_id)])
+            stock_map = {}
+            if stock_df is not None and not stock_df.empty:
+                stock_df.columns = [c.strip() for c in stock_df.columns]
+                item_col = next((c for c in stock_df.columns if str(c).strip().lower() == "itemid"), None)
+                qty_col = next((c for c in stock_df.columns if str(c).strip().lower() == "currentstock"), None)
+                if item_col and qty_col:
+                    for _, row in stock_df.iterrows():
+                        try:
+                            stock_map[int(row.get(item_col))] = float(row.get(qty_col) or 0)
+                        except Exception:
+                            continue
+            if id_col:
+                df["StoreStock"] = df[id_col].map(lambda value: stock_map.get(int(value), 0.0) if pd.notna(value) else 0.0)
+
+        return df
+    except Exception as e:
+        print(f"Error fetching GRN items ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_purchase_grn_po_items(unit: str, po_id: int, store_id: int | None = None):
+    """
+    Fetch PO-linked GRN rows with pending-balance and GST enrichment.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for GRN PO items")
+        return None
+    try:
+        df = pd.read_sql("EXEC dbo.usp_getIvPodtlforGrn ?", conn, params=[int(po_id)])
+        if df is None or df.empty:
+            return df
+        df.columns = [c.strip() for c in df.columns]
+
+        po_items_df = fetch_purchase_po_items(unit, po_id)
+        po_item_map = {}
+        if po_items_df is not None and not po_items_df.empty:
+            po_items_df.columns = [c.strip() for c in po_items_df.columns]
+            for _, row in po_items_df.iterrows():
+                detail_id = row.get("DetailID")
+                if detail_id in (None, ""):
+                    continue
+                po_item_map[int(detail_id)] = {
+                    "cgst_pct": float(row.get("Excisetax") or 0),
+                    "sgst_pct": float(row.get("Tax") or 0),
+                    "cgst_amt": float(row.get("ExciseTaxamt") or 0),
+                    "sgst_amt": float(row.get("TaxAmount") or 0),
+                    "for_amt": float(row.get("Fore") or 0),
+                    "net_amt": float(row.get("NetAmount") or 0),
+                    "store_name": row.get("StoreName"),
+                }
+
+        id_col = next((c for c in df.columns if str(c).strip().lower() in {"itemid", "id"}), None)
+        detail_col = next((c for c in df.columns if str(c).strip().lower() in {"dtlid", "detailid"}), None)
+        if store_id and id_col:
+            stock_df = fetch_store_stock_summary(unit, [int(store_id)])
+            stock_map = {}
+            if stock_df is not None and not stock_df.empty:
+                stock_df.columns = [c.strip() for c in stock_df.columns]
+                stock_item_col = next((c for c in stock_df.columns if str(c).strip().lower() == "itemid"), None)
+                stock_qty_col = next((c for c in stock_df.columns if str(c).strip().lower() == "currentstock"), None)
+                if stock_item_col and stock_qty_col:
+                    for _, row in stock_df.iterrows():
+                        try:
+                            stock_map[int(row.get(stock_item_col))] = float(row.get(stock_qty_col) or 0)
+                        except Exception:
+                            continue
+            df["StoreStock"] = df[id_col].map(lambda value: stock_map.get(int(value), 0.0) if pd.notna(value) else 0.0)
+
+        outstanding_vals = []
+        cgst_pct_vals = []
+        sgst_pct_vals = []
+        cgst_amt_vals = []
+        sgst_amt_vals = []
+        gst_pct_vals = []
+        gst_amt_vals = []
+        for_vals = []
+        net_vals = []
+        for _, row in df.iterrows():
+            po_os_bal = float(row.get("PoOsBal") or 0)
+            po_qty = float(row.get("Poqty") or row.get("Qty") or 0)
+            outstanding = po_os_bal if po_os_bal > 0 else po_qty
+            outstanding_vals.append(outstanding)
+
+            detail_meta = {}
+            try:
+                detail_meta = po_item_map.get(int(row.get(detail_col))) if detail_col and row.get(detail_col) not in (None, "") else {}
+            except Exception:
+                detail_meta = {}
+
+            if detail_meta:
+                cgst_pct = float(detail_meta.get("cgst_pct") or 0)
+                sgst_pct = float(detail_meta.get("sgst_pct") or 0)
+                cgst_amt = float(detail_meta.get("cgst_amt") or 0)
+                sgst_amt = float(detail_meta.get("sgst_amt") or 0)
+                for_amt = float(detail_meta.get("for_amt") or 0)
+                net_amt = float(detail_meta.get("net_amt") or 0)
+            else:
+                sgst_pct = float(row.get("TaxRate") or 0)
+                sgst_amt = float(row.get("TaxAmount") or 0)
+                cgst_pct = sgst_pct
+                cgst_amt = sgst_amt
+                for_amt = 0.0
+                base_amt = outstanding * float(row.get("Rate") or 0)
+                net_amt = _grn_round_money(base_amt + (cgst_amt + sgst_amt) + for_amt)
+
+            if (cgst_pct > 0 and sgst_pct <= 0) or (sgst_pct > 0 and cgst_pct <= 0):
+                total_pct = cgst_pct + sgst_pct
+                cgst_pct = _grn_round_money(total_pct / 2.0, "0.0001")
+                sgst_pct = _grn_round_money(total_pct - cgst_pct, "0.0001")
+            if (cgst_amt > 0 and sgst_amt <= 0) or (sgst_amt > 0 and cgst_amt <= 0):
+                total_amt = cgst_amt + sgst_amt
+                cgst_amt = _grn_round_money(total_amt / 2.0)
+                sgst_amt = _grn_round_money(total_amt - cgst_amt)
+
+            cgst_pct_vals.append(cgst_pct)
+            sgst_pct_vals.append(sgst_pct)
+            cgst_amt_vals.append(cgst_amt)
+            sgst_amt_vals.append(sgst_amt)
+            gst_pct_vals.append(cgst_pct + sgst_pct)
+            gst_amt_vals.append(cgst_amt + sgst_amt)
+            for_vals.append(for_amt)
+            net_vals.append(net_amt)
+
+        df["OutstandingQty"] = outstanding_vals
+        df["CGSTPct"] = cgst_pct_vals
+        df["SGSTPct"] = sgst_pct_vals
+        df["CGSTAmt"] = cgst_amt_vals
+        df["SGSTAmt"] = sgst_amt_vals
+        df["GSTPct"] = gst_pct_vals
+        df["GSTAmt"] = gst_amt_vals
+        df["ForAmt"] = for_vals
+        df["NetAmt"] = net_vals
+        return df
+    except Exception as e:
+        print(f"Error fetching GRN PO items ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_purchase_grn_list(unit: str, grn_no: str | None = None, supplier_name: str | None = None):
+    """
+    Fetch latest/searchable GRN headers for lookup.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for GRN list")
+        return None
+    try:
+        grn_no = str(grn_no or "").strip()
+        supplier_name = str(supplier_name or "").strip()
+        if grn_no or supplier_name:
+            df = pd.read_sql("EXEC dbo.GetSearchGRNList ?, ?", conn, params=[grn_no, supplier_name])
+        else:
+            df = pd.read_sql("EXEC dbo.usp_GetGRNList", conn)
+        if df is None or df.empty:
+            return df
+        df.columns = [c.strip() for c in df.columns]
+        return df
+    except Exception as e:
+        print(f"Error fetching GRN list ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_purchase_grn_header(unit: str, grn_id: int):
+    """
+    Fetch a GRN header with supplier/store/type metadata.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for GRN header")
+        return None
+    try:
+        sql = """
+            SET NOCOUNT ON;
+            SELECT
+                gm.ID,
+                gm.GrnTypeID,
+                gt.Name AS GrnTypeName,
+                gm.PoID,
+                gm.PrID,
+                gm.StoreID,
+                st.Name AS StoreName,
+                st.Code AS StoreCode,
+                gm.SupplierID,
+                sup.Name AS SupplierName,
+                sup.Code AS SupplierCode,
+                gm.DCNo,
+                gm.DCDate,
+                gm.GRNNo,
+                gm.GRNDate,
+                gm.InvoiceNo,
+                gm.InvoiceDate,
+                gm.Amount,
+                gm.Transporter,
+                gm.VehicleNo,
+                gm.OctoriAmount,
+                gm.Preparedby,
+                gm.PurRegNo,
+                gm.Notes,
+                gm.TotalTaxamt,
+                gm.TotalFORE,
+                gm.TotalExciseAmt,
+                gm.TotalDisc,
+                gm.UpdatedBy,
+                gm.UpdatedOn,
+                gm.UpdatedIPAddress,
+                gm.InsertedByUserID,
+                gm.InsertedON,
+                gm.InsertedIPAddress,
+                gm.Status,
+                gm.Authorise,
+                gm.AuthorizedBy,
+                gm.AuthorizedDate,
+                gm.Canceled,
+                (
+                    SELECT COUNT(1)
+                    FROM dbo.IVStockRegister AS sr WITH (NOLOCK)
+                    WHERE sr.DocID = gm.ID
+                      AND sr.DocType = 'GRN'
+                ) AS StockPostingCount,
+                pom.PONo
+            FROM dbo.IVGrnMst AS gm
+            LEFT JOIN dbo.IVGRNType AS gt
+                ON gm.GrnTypeID = gt.ID
+            LEFT JOIN dbo.Store AS st
+                ON gm.StoreID = st.ID
+            LEFT JOIN dbo.IVSupplier AS sup
+                ON gm.SupplierID = sup.ID
+            LEFT JOIN dbo.IVPoMst AS pom
+                ON gm.PoID = pom.ID
+            WHERE gm.ID = ?
+        """
+        df = pd.read_sql(sql, conn, params=[int(grn_id)])
+        if df is None or df.empty:
+            return df
+        df.columns = [c.strip() for c in df.columns]
+        return df
+    except Exception as e:
+        print(f"Error fetching GRN header ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_purchase_grn_detail(unit: str, grn_id: int):
+    """
+    Fetch GRN detail rows.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for GRN detail")
+        return None
+    try:
+        df = pd.read_sql("EXEC dbo.Usp_GetIvGrnDetail ?", conn, params=[int(grn_id)])
+        if df is None or df.empty:
+            return df
+        df.columns = [c.strip() for c in df.columns]
+        return df
+    except Exception as e:
+        print(f"Error fetching GRN detail ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _compute_purchase_grn_totals(items: list[dict]) -> dict:
+    rows = []
+    gross_total = 0.0
+    discount_total = 0.0
+    taxable_total = 0.0
+    cgst_total = 0.0
+    sgst_total = 0.0
+    for_total = 0.0
+    grand_total = 0.0
+
+    for index, item in enumerate(items or [], start=1):
+        qty = max(0.0, float(item.get("qty") or 0))
+        free_qty = max(0.0, float(item.get("free_qty") or 0))
+        rate = max(0.0, float(item.get("rate") or 0))
+        mrp = max(0.0, float(item.get("mrp") or 0))
+        gst_pct = max(0.0, float(item.get("gst_pct") or 0))
+        discount_pct = max(0.0, float(item.get("discount_pct") or item.get("discount") or 0))
+        for_amt = max(0.0, float(item.get("for_amt") or item.get("fore") or 0))
+
+        gross = _grn_round_money(qty * rate)
+        discount_amt = _grn_round_money(min(gross, (gross * discount_pct) / 100.0))
+        taxable = _grn_round_money(max(gross - discount_amt, 0.0))
+        gst_amt = _grn_round_money((taxable * gst_pct) / 100.0)
+        cgst_pct = _grn_round_money(gst_pct / 2.0, "0.0001")
+        sgst_pct = _grn_round_money(gst_pct - cgst_pct, "0.0001")
+        cgst_amt = _grn_round_money(gst_amt / 2.0)
+        sgst_amt = _grn_round_money(gst_amt - cgst_amt)
+        net_amt = _grn_round_money(taxable + gst_amt + for_amt)
+        lending_rate = _grn_round_money((net_amt / qty) if qty > 0 else 0.0, "0.0001")
+        unit_for = _grn_round_money((for_amt / qty) if qty > 0 else 0.0, "0.0001")
+        unit_discount = _grn_round_money((discount_amt / qty) if qty > 0 else 0.0, "0.0001")
+
+        rows.append(
+            {
+                "row_no": index,
+                "item_id": int(item.get("item_id") or 0),
+                "pack_size_id": int(item.get("pack_size_id") or 0),
+                "qty": qty,
+                "free_qty": free_qty,
+                "rate": rate,
+                "mrp": mrp,
+                "gst_pct": gst_pct,
+                "gst_amt": gst_amt,
+                "cgst_pct": cgst_pct,
+                "sgst_pct": sgst_pct,
+                "cgst_amt": cgst_amt,
+                "sgst_amt": sgst_amt,
+                "discount_pct": discount_pct,
+                "discount_amt": discount_amt,
+                "taxable_amt": taxable,
+                "for_amt": for_amt,
+                "net_amt": net_amt,
+                "lending_rate": lending_rate,
+                "unit_for": unit_for,
+                "unit_discount": unit_discount,
+            }
+        )
+        gross_total += gross
+        discount_total += discount_amt
+        taxable_total += taxable
+        cgst_total += cgst_amt
+        sgst_total += sgst_amt
+        for_total += for_amt
+        grand_total += net_amt
+
+    tax_total = _grn_round_money(cgst_total + sgst_total)
+    return {
+        "rows": rows,
+        "gross_total": _grn_round_money(gross_total),
+        "discount_total": _grn_round_money(discount_total),
+        "taxable_total": _grn_round_money(taxable_total),
+        "cgst_total": _grn_round_money(cgst_total),
+        "sgst_total": _grn_round_money(sgst_total),
+        "tax_total": tax_total,
+        "for_total": _grn_round_money(for_total),
+        "grand_total": _grn_round_money(grand_total),
+    }
+
+
+def save_purchase_grn(unit: str, header: dict, items: list[dict], lock_timeout_ms: int = 15000):
+    """
+    Create or update a pending GRN using a single transactional connection.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        return {"error": f"Could not connect to {unit} for GRN save"}
+
+    cursor = None
+    lock_resource = f"IVGRN_SAVE_{(unit or '').strip().upper()}"
+    try:
+        conn.autocommit = False
+    except Exception:
+        pass
+
+    try:
+        cursor = conn.cursor()
+        lock_result = _get_app_lock(cursor, lock_resource, lock_timeout_ms)
+        if lock_result.get("error"):
+            return lock_result
+
+        requested_grn_id = int(header.get("grn_id") or 0)
+        operation = "create"
+        existing_grn_no = ""
+        inserted_by_value = str(header.get("inserted_by") or "").strip()
+        inserted_on_value = header.get("inserted_on")
+        inserted_mac_name_value = str(header.get("inserted_mac_name") or "").strip()
+        inserted_mac_id_value = str(header.get("inserted_mac_id") or "").strip()
+        inserted_ip_value = str(header.get("inserted_ip") or "").strip()
+
+        if requested_grn_id > 0:
+            cursor.execute(
+                """
+                SELECT
+                    gm.ID,
+                    gm.GRNNo,
+                    gm.Authorise,
+                    gm.Canceled,
+                    gm.InsertedByUserID,
+                    gm.InsertedON,
+                    gm.InsertedMacName,
+                    gm.InsertedMacID,
+                    gm.InsertedIPAddress
+                FROM dbo.IVGrnMst AS gm
+                WHERE gm.ID = ?
+                """,
+                (requested_grn_id,),
+            )
+            existing_row = cursor.fetchone()
+            if not existing_row:
+                raise RuntimeError("GRN not found.")
+            existing_cols = [str(col[0]).strip().lower() for col in (cursor.description or [])]
+            existing = {existing_cols[idx]: value for idx, value in enumerate(existing_row)}
+
+            if bool(existing.get("canceled")):
+                raise RuntimeError("Cancelled GRNs cannot be edited.")
+            if bool(existing.get("authorise")):
+                raise RuntimeError("Authorized GRNs cannot be edited.")
+
+            cursor.execute(
+                "SELECT COUNT(1) FROM dbo.IVStockRegister WHERE DocID = ? AND DocType = 'GRN'",
+                (requested_grn_id,),
+            )
+            stock_row = cursor.fetchone()
+            if stock_row and int(stock_row[0] or 0) > 0:
+                raise RuntimeError("This GRN already has stock posted and can no longer be edited.")
+
+            operation = "update"
+            existing_grn_no = str(existing.get("grnno") or "").strip()
+            inserted_by_value = str(existing.get("insertedbyuserid") or inserted_by_value or "").strip()
+            inserted_on_value = existing.get("insertedon") or inserted_on_value
+            inserted_mac_name_value = str(existing.get("insertedmacname") or inserted_mac_name_value or "").strip()
+            inserted_mac_id_value = str(existing.get("insertedmacid") or inserted_mac_id_value or "").strip()
+            inserted_ip_value = str(existing.get("insertedipaddress") or inserted_ip_value or "").strip()
+
+        totals = _compute_purchase_grn_totals(items)
+        row_totals = totals.get("rows") or []
+
+        sql_mst = """
+            EXEC dbo.usp_addIVGrnMst
+                @pId=?,
+                @pGrntypeid=?,
+                @pPoid=?,
+                @pPrid=?,
+                @pSupplierid=?,
+                @pDcno=?,
+                @pDcdate=?,
+                @pGrnno=?,
+                @pGrndate=?,
+                @pInvoiceno=?,
+                @pInvoicedate=?,
+                @pAmount=?,
+                @pTransporter=?,
+                @pVehicleno=?,
+                @pOctoriamount=?,
+                @pPreparedby=?,
+                @pPurregno=?,
+                @pNotes=?,
+                @pUpdatedby=?,
+                @pUpdatedon=?,
+                @pInsertedByUserID=?,
+                @pInsertedON=?,
+                @pInsertedMacName=?,
+                @pInsertedMacID=?,
+                @pInsertedIPAddress=?,
+                @pStoreid=?,
+                @pDayBookId=?,
+                @pRCId=?,
+                @pTotalTaxamt=?,
+                @pTotalFORE=?,
+                @pTotalExciseAmt=?,
+                @pTotalDisc=?,
+                @pStatus=?
+        """
+
+        updated_on = header.get("updated_on") or datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
+        inserted_on = inserted_on_value or updated_on
+        mst_values = [
+            requested_grn_id if requested_grn_id > 0 else 0,
+            int(header.get("grn_type_id") or 0),
+            int(header.get("po_id") or 0),
+            int(header.get("pr_id") or 0),
+            int(header.get("supplier_id") or 0),
+            str(header.get("dc_no") or "").strip(),
+            header.get("dc_date"),
+            existing_grn_no,
+            header.get("grn_date"),
+            str(header.get("invoice_no") or "").strip(),
+            header.get("invoice_date"),
+            float(totals.get("grand_total") or 0),
+            str(header.get("transporter") or "").strip(),
+            str(header.get("vehicle_no") or "").strip(),
+            float(header.get("octroi_amount") or 0),
+            str(header.get("prepared_by") or "").strip(),
+            str(header.get("pur_reg_no") or "").strip(),
+            str(header.get("notes") or "").strip(),
+            int(header.get("updated_by") or 0),
+            updated_on,
+            inserted_by_value,
+            inserted_on,
+            inserted_mac_name_value,
+            inserted_mac_id_value,
+            inserted_ip_value,
+            int(header.get("store_id") or 0),
+            int(header.get("day_book_id") or 0),
+            int(header.get("rc_id") or 0),
+            float(totals.get("sgst_total") or 0),
+            float(totals.get("for_total") or 0),
+            float(totals.get("cgst_total") or 0),
+            float(totals.get("discount_total") or 0),
+            str(header.get("status") or "PA").strip()[:2] or "PA",
+        ]
+        cursor.execute(sql_mst, mst_values)
+        mst_row = cursor.fetchone()
+        grn_id = int(mst_row[0]) if mst_row and mst_row[0] is not None else requested_grn_id
+        if grn_id <= 0:
+            raise RuntimeError("GRN master save did not return a GRN ID")
+
+        cursor.execute("SELECT TOP 1 GRNNo FROM dbo.IVGrnMst WHERE ID = ?", (grn_id,))
+        grn_row = cursor.fetchone()
+        grn_no = str(grn_row[0] or "").strip() if grn_row else ""
+
+        if requested_grn_id > 0:
+            cursor.execute("DELETE FROM dbo.IVGrnDtl WHERE GrnID = ?", (grn_id,))
+
+        sql_dtl = """
+            EXEC dbo.usp_addIVGrnDtl
+                @pId=?,
+                @pGrnid=?,
+                @pItemid=?,
+                @pQty=?,
+                @pPackSizeId=?,
+                @pFreeqty=?,
+                @pRate=?,
+                @pBatchid=?,
+                @pPoosbal=?,
+                @pTaxrate=?,
+                @pTaxamount=?,
+                @pDiscount=?,
+                @pStoreID=?,
+                @pMRP=?,
+                @pVATOn=?,
+                @pVAT=?,
+                @pInsertedByUserID=?,
+                @pInsertedON=?,
+                @pInsertedMacName=?,
+                @pInsertedMacID=?,
+                @pInsertedIPAddress=?,
+                @pBatchName=?,
+                @pExpiryDate=?,
+                @pAmount=?,
+                @pFore=?,
+                @pexcise=?,
+                @pexciseamt=?,
+                @ppodtlid=?,
+                @lendingRate=?,
+                @UnitFor=?,
+                @UnitDiscount=?,
+                @Status=?,
+                @Actuallendingrate=?
+        """
+        detail_ids = []
+        for item_index, item in enumerate(items or []):
+            row_calc = row_totals[item_index] if item_index < len(row_totals) else {}
+            item_id = int(item.get("item_id") or 0)
+            pack_size_id = int(item.get("pack_size_id") or 0)
+            qty = float(row_calc.get("qty") or 0)
+            if item_id <= 0 or qty <= 0 or pack_size_id <= 0:
+                raise RuntimeError(f"Row {item_index + 1} is missing item, pack size, or quantity")
+
+            expiry_date = item.get("expiry_date") or header.get("default_expiry_date") or "1900-01-01"
+            batch_name = str(item.get("batch_name") or "").strip()
+            if not batch_name:
+                raise RuntimeError(f"Row {item_index + 1} batch name is required")
+
+            po_os_bal = float(item.get("po_os_bal") or item.get("outstanding_qty") or 0)
+            detail_values = [
+                0,
+                grn_id,
+                item_id,
+                qty,
+                pack_size_id,
+                float(row_calc.get("free_qty") or 0),
+                float(row_calc.get("rate") or 0),
+                0,
+                po_os_bal,
+                float(row_calc.get("sgst_pct") or 0),
+                float(row_calc.get("sgst_amt") or 0),
+                float(row_calc.get("discount_pct") or 0),
+                int(header.get("store_id") or 0),
+                float(row_calc.get("mrp") or 0),
+                "P",
+                "E",
+                str(header.get("inserted_by") or "").strip(),
+                inserted_on,
+                str(header.get("inserted_mac_name") or "").strip(),
+                str(header.get("inserted_mac_id") or "").strip(),
+                str(header.get("inserted_ip") or "").strip(),
+                batch_name[:100],
+                expiry_date,
+                float(row_calc.get("net_amt") or 0),
+                float(row_calc.get("for_amt") or 0),
+                float(row_calc.get("cgst_pct") or 0),
+                float(row_calc.get("cgst_amt") or 0),
+                int(item.get("po_detail_id") or 0),
+                float(row_calc.get("lending_rate") or 0),
+                float(row_calc.get("unit_for") or 0),
+                float(row_calc.get("unit_discount") or 0),
+                str(header.get("status") or "PA").strip()[:2] or "PA",
+                float(row_calc.get("lending_rate") or 0),
+            ]
+            cursor.execute(sql_dtl, detail_values)
+            detail_row = cursor.fetchone()
+            detail_id = int(detail_row[0]) if detail_row and detail_row[0] is not None else 0
+            if detail_id <= 0:
+                raise RuntimeError(f"Row {item_index + 1} detail insert did not return a detail ID")
+
+            detail_ids.append(detail_id)
+
+        conn.commit()
+        return {
+            "status": "success",
+            "grn_id": grn_id,
+            "grn_no": grn_no or f"GRN-{grn_id}",
+            "operation": operation,
+            "detail_ids": detail_ids,
+            "batch_ids": [],
+            "totals": totals,
+        }
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"error": str(e)}
+    finally:
+        _release_app_lock(cursor, lock_resource)
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def authorize_purchase_grn(
+    unit: str,
+    grn_id: int,
+    *,
+    actor_user_id: int = 0,
+    actor_username: str = "",
+    actor_ip: str = "",
+    acted_on: str | None = None,
+    lock_timeout_ms: int = 15000,
+):
+    """
+    Authorize a pending GRN, create any missing batches, and post stock.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        return {"error": f"Could not connect to {unit} for GRN authorization"}
+
+    cursor = None
+    lock_resource = f"IVGRN_AUTH_{(unit or '').strip().upper()}"
+    try:
+        conn.autocommit = False
+    except Exception:
+        pass
+
+    try:
+        cursor = conn.cursor()
+        lock_result = _get_app_lock(cursor, lock_resource, lock_timeout_ms)
+        if lock_result.get("error"):
+            return lock_result
+
+        actor_user_id = int(actor_user_id or 0)
+        if actor_user_id <= 0:
+            actor_user_id = 1
+        actor_username = str(actor_username or actor_user_id or "web").strip() or "web"
+        actor_ip = str(actor_ip or "").strip()
+        acted_on = acted_on or datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
+
+        cursor.execute(
+            """
+            SELECT
+                gm.ID,
+                gm.GRNNo,
+                gm.GRNDate,
+                gm.StoreID,
+                gm.Amount,
+                gm.Status,
+                gm.Authorise,
+                gm.Canceled
+            FROM dbo.IVGrnMst AS gm
+            WHERE gm.ID = ?
+            """,
+            (int(grn_id),),
+        )
+        header_row = cursor.fetchone()
+        if not header_row:
+            raise RuntimeError("GRN not found.")
+        header_cols = [str(col[0]).strip().lower() for col in (cursor.description or [])]
+        header = {header_cols[idx]: value for idx, value in enumerate(header_row)}
+
+        if bool(header.get("canceled")):
+            raise RuntimeError("Cancelled GRN cannot be authorized.")
+        if bool(header.get("authorise")):
+            raise RuntimeError("GRN is already authorized.")
+        if int(header.get("storeid") or 0) <= 0:
+            raise RuntimeError("GRN store is missing.")
+
+        cursor.execute(
+            "SELECT COUNT(1) FROM dbo.IVStockRegister WHERE DocID = ? AND DocType = 'GRN'",
+            (int(grn_id),),
+        )
+        stock_row = cursor.fetchone()
+        if stock_row and int(stock_row[0] or 0) > 0:
+            raise RuntimeError("Stock is already posted for this GRN.")
+
+        cursor.execute(
+            """
+            SELECT
+                d.ID,
+                d.ItemID,
+                d.Qty AS QtyRaw,
+                d.FreeQty AS FreeQtyRaw,
+                CAST(d.Qty / NULLIF(dbo.fn_GetStripQty(d.PackSizeId), 0) AS float) AS Qty,
+                CAST(d.FreeQty / NULLIF(dbo.fn_GetStripQty(d.PackSizeId), 0) AS float) AS FreeQty,
+                d.PacksizeRate AS Rate,
+                d.BatchID,
+                d.PackSizeId,
+                d.BatchName,
+                d.ExpiryDate,
+                d.PacksizeMrp AS MRP,
+                d.Amount,
+                d.PackedLendingrate,
+                d.PackedActuallendingrate
+            FROM dbo.IVGrnDtl AS d
+            WHERE d.GrnID = ?
+            ORDER BY d.ID
+            """,
+            (int(grn_id),),
+        )
+        detail_rows = cursor.fetchall()
+        if not detail_rows:
+            raise RuntimeError("GRN has no item rows to authorize.")
+        detail_cols = [str(col[0]).strip().lower() for col in (cursor.description or [])]
+
+        sql_batch = """
+            EXEC dbo.usp_addIVBatch
+                @pId=?,
+                @pItemid=?,
+                @pName=?,
+                @pOpeningbal=?,
+                @pCurrentbal=?,
+                @pExpirydate=?,
+                @pRate=?,
+                @pInsertedByUserID=?,
+                @pInsertedON=?,
+                @pInsertedMacName=?,
+                @pInsertedMacID=?,
+                @pInsertedIPAddress=?,
+                @pPackSizeId=?,
+                @pMRP=?,
+                @lendingrate=?,
+                @actuallendingrate=?
+        """
+        sql_stock = """
+            EXEC dbo.usp_IvInsertInStockRegister
+                @pDocID=?,
+                @pDocType=?,
+                @pDocDate=?,
+                @pItemID=?,
+                @pQty=?,
+                @pBatchId=?,
+                @pExpiryDate=?,
+                @pBatchName=?,
+                @pStore=?,
+                @pRate=?,
+                @pPackSizeId=?,
+                @pAmount=?
+        """
+
+        detail_ids = []
+        batch_ids = []
+        posted_rows = 0
+        store_id = int(header.get("storeid") or 0)
+        grn_date = header.get("grndate")
+        grn_amount = float(header.get("amount") or 0)
+        for raw_row in detail_rows:
+            row = {detail_cols[idx]: value for idx, value in enumerate(raw_row)}
+            detail_id = int(row.get("id") or 0)
+            item_id = int(row.get("itemid") or 0)
+            pack_size_id = int(row.get("packsizeid") or 0)
+            qty = float(row.get("qty") or 0)
+            free_qty = float(row.get("freeqty") or 0)
+            raw_qty = float(row.get("qtyraw") or 0)
+            total_qty = float(qty + free_qty)
+            if detail_id <= 0 or item_id <= 0 or pack_size_id <= 0 or total_qty <= 0:
+                raise RuntimeError("GRN contains invalid detail rows and cannot be authorized.")
+
+            batch_id = int(row.get("batchid") or 0)
+            batch_name = str(row.get("batchname") or "").strip()
+            if not batch_name:
+                raise RuntimeError(f"Batch name is missing for GRN item {item_id}.")
+            expiry_date = row.get("expirydate") or "1900-01-01"
+            rate = float(row.get("rate") or 0)
+            mrp = float(row.get("mrp") or 0)
+            packed_lending_rate = float(row.get("packedlendingrate") or 0)
+            packed_actual_lending_rate = float(row.get("packedactuallendingrate") or packed_lending_rate or 0)
+
+            if batch_id > 0:
+                cursor.execute("SELECT TOP 1 ID FROM dbo.IVBatch WHERE ID = ?", (batch_id,))
+                batch_exists = cursor.fetchone()
+                if not batch_exists:
+                    batch_id = 0
+
+            if batch_id <= 0:
+                batch_values = [
+                    0,
+                    item_id,
+                    batch_name[:50],
+                    0,
+                    total_qty,
+                    expiry_date,
+                    rate,
+                    actor_username,
+                    acted_on,
+                    "",
+                    "WEB",
+                    actor_ip,
+                    pack_size_id,
+                    mrp,
+                    packed_lending_rate,
+                    packed_actual_lending_rate,
+                ]
+                cursor.execute(sql_batch, batch_values)
+                batch_row = cursor.fetchone()
+                batch_id = int(batch_row[0]) if batch_row and batch_row[0] is not None else 0
+                if batch_id <= 0:
+                    raise RuntimeError(f"Batch creation failed for GRN detail {detail_id}.")
+
+            cursor.execute(
+                """
+                UPDATE dbo.IVGrnDtl
+                SET
+                    BatchID = ?,
+                    UpdatedBy = ?,
+                    UpdatedON = ?,
+                    UpdatedMacID = ?,
+                    UpdatedIPAddress = ?,
+                    Authorised = ?,
+                    AuthorisedQuantity = ?,
+                    AuthorisedAmt = ?,
+                    Status = ?
+                WHERE ID = ?
+                """,
+                (
+                    batch_id,
+                    actor_user_id,
+                    acted_on,
+                    "WEB",
+                    actor_ip,
+                    1,
+                    raw_qty,
+                    float(row.get("amount") or 0),
+                    "A",
+                    detail_id,
+                ),
+            )
+
+            stock_values = [
+                int(grn_id),
+                "GRN",
+                grn_date,
+                item_id,
+                total_qty,
+                batch_id,
+                expiry_date,
+                batch_name[:50],
+                store_id,
+                rate,
+                pack_size_id,
+                float(row.get("amount") or 0),
+            ]
+            cursor.execute(sql_stock, stock_values)
+            while True:
+                try:
+                    if not cursor.nextset():
+                        break
+                except Exception:
+                    break
+
+            detail_ids.append(detail_id)
+            batch_ids.append(batch_id)
+            posted_rows += 1
+
+        cursor.execute(
+            """
+            UPDATE dbo.IVGrnMst
+            SET
+                Authorise = ?,
+                AuthorizedBy = ?,
+                AuthorizedDate = ?,
+                AuthorisedAmt = ?,
+                UpdatedBy = ?,
+                UpdatedOn = ?,
+                UpdatedMacID = ?,
+                UpdatedIPAddress = ?,
+                Status = ?
+            WHERE ID = ?
+            """,
+            (
+                1,
+                actor_user_id,
+                acted_on,
+                grn_amount,
+                actor_user_id,
+                acted_on,
+                "WEB",
+                actor_ip,
+                "A",
+                int(grn_id),
+            ),
+        )
+
+        conn.commit()
+        return {
+            "status": "success",
+            "grn_id": int(grn_id),
+            "grn_no": str(header.get("grnno") or f"GRN-{int(grn_id)}").strip(),
+            "detail_ids": detail_ids,
+            "batch_ids": batch_ids,
+            "posted_rows": posted_rows,
+        }
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return {"error": str(e)}
+    finally:
+        _release_app_lock(cursor, lock_resource)
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def ensure_po_purchasing_dept_column(unit: str) -> bool:
     """
     Public helper to create IVPoMst.PurchasingDeptId if missing.
@@ -7551,6 +9824,54 @@ def ensure_po_special_notes_column(unit: str) -> bool:
         return False
     try:
         return _ensure_iv_po_mst_special_notes_column_conn(conn)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def ensure_po_cmc_amc_warranty_column(unit: str) -> bool:
+    """
+    Public helper to create IVPoMst.CmcAmcWarrantyNotes if missing.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        return False
+    try:
+        return _ensure_iv_po_mst_cmc_amc_warranty_column_conn(conn)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def ensure_po_overall_discount_mode_column(unit: str) -> bool:
+    """
+    Public helper to create IVPoMst.OverallDiscountMode if missing.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        return False
+    try:
+        return _ensure_iv_po_mst_overall_discount_mode_column_conn(conn)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def ensure_po_overall_discount_value_column(unit: str) -> bool:
+    """
+    Public helper to create IVPoMst.OverallDiscountValue if missing.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        return False
+    try:
+        return _ensure_iv_po_mst_overall_discount_value_column_conn(conn)
     finally:
         try:
             conn.close()
@@ -7785,6 +10106,8 @@ def upsert_purchase_unit_master(
     if not unit_name_clean:
         return {"error": "Unit name is required.", "code": "required"}
     unit_code_clean = _sanitize_unit_code(unit_code or "")
+    cursor = None
+    lock_resource = None
 
     try:
         try:
@@ -7805,6 +10128,26 @@ def upsert_purchase_unit_master(
 
         cursor = conn.cursor()
         id_match_expr = f"LTRIM(RTRIM(CAST([{id_col}] AS NVARCHAR(50))))"
+        id_is_identity = False
+        id_has_default = False
+        try:
+            cursor.execute(
+                """
+                SELECT
+                    CAST(c.is_identity AS INT) AS IsIdentity,
+                    CASE WHEN c.default_object_id = 0 THEN 0 ELSE 1 END AS HasDefault
+                FROM sys.columns AS c
+                WHERE c.object_id = OBJECT_ID(?) AND c.name = ?
+                """,
+                (f"dbo.{table_name}", str(id_col)),
+            )
+            id_meta_row = cursor.fetchone()
+            if id_meta_row:
+                id_is_identity = bool(id_meta_row[0])
+                id_has_default = bool(id_meta_row[1])
+        except Exception:
+            id_is_identity = False
+            id_has_default = False
 
         def _row_to_dict(row_obj, has_code: bool, has_deactive: bool):
             if not row_obj:
@@ -7898,9 +10241,12 @@ def upsert_purchase_unit_master(
                     return candidate
             return base
 
-        def _build_insert_columns(final_code: str, include_fallback_meta: bool = False):
+        def _build_insert_columns(final_code: str, include_fallback_meta: bool = False, explicit_unit_id: int = 0):
             cols = []
             vals = []
+            if explicit_unit_id > 0:
+                cols.append(id_col)
+                vals.append(int(explicit_unit_id))
             if code_col:
                 cols.append(code_col)
                 vals.append(final_code)
@@ -8039,7 +10385,23 @@ def upsert_purchase_unit_master(
         final_code = ""
         if code_col:
             final_code = _next_available_code(unit_name_clean, unit_code_clean)
-        insert_cols, insert_vals = _build_insert_columns(final_code, include_fallback_meta=False)
+        generated_unit_id = 0
+        if not id_is_identity and not id_has_default:
+            lock_resource = f"IVUNIT_ID_{(unit or '').strip().upper()}"
+            lock_result = _get_app_lock(cursor, lock_resource, 10000)
+            if lock_result.get("error"):
+                return lock_result
+            cursor.execute(
+                f"SELECT ISNULL(MAX(CAST([{id_col}] AS INT)), 0) + 1 FROM dbo.[{table_name}] WITH (UPDLOCK, HOLDLOCK)"
+            )
+            next_row = cursor.fetchone()
+            generated_unit_id = int(next_row[0]) if next_row and next_row[0] is not None else 1
+
+        insert_cols, insert_vals = _build_insert_columns(
+            final_code,
+            include_fallback_meta=False,
+            explicit_unit_id=generated_unit_id,
+        )
         quoted_cols = ", ".join(f"[{c}]" for c in insert_cols)
         placeholders = ", ".join("?" for _ in insert_vals)
         insert_sql = f"INSERT INTO dbo.[{table_name}] ({quoted_cols}) VALUES ({placeholders})"
@@ -8050,16 +10412,36 @@ def upsert_purchase_unit_master(
                 conn.rollback()
             except Exception:
                 pass
-            insert_cols, insert_vals = _build_insert_columns(final_code, include_fallback_meta=True)
+            insert_cols, insert_vals = _build_insert_columns(
+                final_code,
+                include_fallback_meta=True,
+                explicit_unit_id=generated_unit_id,
+            )
             quoted_cols = ", ".join(f"[{c}]" for c in insert_cols)
             placeholders = ", ".join("?" for _ in insert_vals)
             insert_sql = f"INSERT INTO dbo.[{table_name}] ({quoted_cols}) VALUES ({placeholders})"
             cursor.execute(insert_sql, insert_vals)
 
-        cursor.execute("SELECT CAST(SCOPE_IDENTITY() AS INT)")
-        row = cursor.fetchone()
+        new_id = int(generated_unit_id or 0)
+        if new_id <= 0 and id_is_identity:
+            cursor.execute("SELECT CAST(SCOPE_IDENTITY() AS INT)")
+            row = cursor.fetchone()
+            new_id = int(row[0]) if row and row[0] is not None else 0
+        if new_id <= 0:
+            lookup_params = [unit_name_clean]
+            lookup_sql = f"""
+                SELECT TOP 1 [{id_col}]
+                FROM dbo.[{table_name}]
+                WHERE UPPER(LTRIM(RTRIM([{name_col}]))) = UPPER(LTRIM(RTRIM(?)))
+            """
+            if code_col and final_code:
+                lookup_sql += f" OR UPPER(LTRIM(RTRIM([{code_col}]))) = UPPER(LTRIM(RTRIM(?)))"
+                lookup_params.append(final_code)
+            lookup_sql += f" ORDER BY CAST([{id_col}] AS INT) DESC"
+            cursor.execute(lookup_sql, lookup_params)
+            row = cursor.fetchone()
+            new_id = int(row[0]) if row and row[0] is not None else 0
         conn.commit()
-        new_id = int(row[0]) if row and row[0] is not None else 0
         return {
             "status": "success",
             "mode": "add",
@@ -8074,6 +10456,7 @@ def upsert_purchase_unit_master(
             pass
         return {"error": str(e)}
     finally:
+        _release_app_lock(cursor, lock_resource)
         try:
             conn.close()
         except Exception:
@@ -8466,6 +10849,7 @@ def fetch_purchase_po_header(
         custom2_col = pick_col(["Custom2"])
         purchasing_dept_col = pick_col(["PurchasingDeptId", "PurchasingDeptID", "PurchaseDeptId", "PurchaseDeptID"])
         special_notes_col = pick_col(["SpecialNotes", "SpecialNote"])
+        cmc_amc_warranty_col = pick_col(["CmcAmcWarrantyNotes", "CMCAMCWarrantyNotes", "CmcAmcWarranty", "CMCAMCWarranty"])
         overall_discount_mode_col = pick_col(["OverallDiscountMode", "POOverallDiscountMode"])
         overall_discount_value_col = pick_col(["OverallDiscountValue", "POOverallDiscountValue"])
         po_print_format_col = pick_col(["POPrintFormat", "PrintFormat", "PurchaseOrderPrintFormat"])
@@ -8497,6 +10881,11 @@ def fetch_purchase_po_header(
             f"mst.[{special_notes_col}] AS SpecialNotes"
             if special_notes_col
             else "CAST(NULL AS NVARCHAR(1000)) AS SpecialNotes"
+        )
+        cmc_amc_warranty_select = (
+            f"mst.[{cmc_amc_warranty_col}] AS CmcAmcWarrantyNotes"
+            if cmc_amc_warranty_col
+            else "CAST(NULL AS NVARCHAR(MAX)) AS CmcAmcWarrantyNotes"
         )
         overall_discount_mode_select = (
             f"mst.[{overall_discount_mode_col}] AS OverallDiscountMode"
@@ -8587,6 +10976,7 @@ def fetch_purchase_po_header(
                 mst.DeliveryTerms,
                 mst.PaymentsTerms,
                 mst.OtherTerms,
+                {cmc_amc_warranty_select},
                 mst.Against,
                 mst.AgainstId,
                 mst.PurchaseIndentId,
@@ -8640,8 +11030,9 @@ def fetch_purchase_po_header(
                 approver_designation_select=approver_designation_select,
                 approver_phone_select=approver_phone_select,
                 approver_signature_select=approver_signature_select,
-            special_notes_select=special_notes_select,
-            overall_discount_mode_select=overall_discount_mode_select,
+                special_notes_select=special_notes_select,
+                cmc_amc_warranty_select=cmc_amc_warranty_select,
+                overall_discount_mode_select=overall_discount_mode_select,
             overall_discount_value_select=overall_discount_value_select,
             po_print_format_select=po_print_format_select,
                 work_order_body_html_select=work_order_body_html_select,
@@ -9325,6 +11716,7 @@ def update_iv_po_mst(unit: str, params: dict):
         conn.commit()
         _update_iv_po_mst_purchasing_dept_conn(conn, params.get("pId"), params.get("PurchasingDeptId"))
         _update_iv_po_mst_special_notes_conn(conn, params.get("pId"), params.get("pSpecialNotes"))
+        _update_iv_po_mst_cmc_amc_warranty_conn(conn, params.get("pId"), params.get("pCmcAmcWarrantyNotes"))
         if "OverallDiscountMode" in params:
             _update_iv_po_mst_overall_discount_mode_conn(conn, params.get("pId"), params.get("OverallDiscountMode"))
         if "OverallDiscountValue" in params:
@@ -9487,9 +11879,12 @@ def fetch_purchase_po_list(
             "pending": "P",
             "pending approval": "P",
             "approved": "A",
+            "cancelled": "C",
+            "canceled": "C",
             "d": "D",
             "p": "P",
             "a": "A",
+            "c": "C",
             "open": "D,P",
             "draft_pending": "D,P",
         }
@@ -9659,9 +12054,12 @@ def fetch_work_order_list(
             "pending": "P",
             "pending approval": "P",
             "approved": "A",
+            "cancelled": "C",
+            "canceled": "C",
             "d": "D",
             "p": "P",
             "a": "A",
+            "c": "C",
             "open": "D,P",
             "draft_pending": "D,P",
         }
@@ -11277,6 +13675,116 @@ def fetch_items_last_po_rate(unit: str):
             pass
 
 
+def fetch_latest_po_rate_map(unit: str, item_ids: list[int]) -> dict[int, float]:
+    """
+    Fetch the latest non-cancelled PO rate for the requested items.
+    """
+    normalized_ids = []
+    seen_ids = set()
+    for raw_item_id in item_ids or []:
+        try:
+            item_id = int(raw_item_id)
+        except Exception:
+            continue
+        if item_id <= 0 or item_id in seen_ids:
+            continue
+        seen_ids.add(item_id)
+        normalized_ids.append(item_id)
+    if not normalized_ids:
+        return {}
+
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for latest PO rates")
+        return {}
+
+    try:
+        po_mst_table = _resolve_table_name(conn, ["IVPoMst", "IvPoMst", "IVPO_MST", "IV_Po_Mst"])
+        po_dtl_table = _resolve_table_name(conn, ["IVPoDtl", "IvPoDtl", "IVPO_DTL", "IV_Po_Dtl"])
+        if not po_mst_table or not po_dtl_table:
+            return {}
+
+        po_mst_id_col = _resolve_column(conn, po_mst_table, ["ID", "Id"]) or "ID"
+        po_mst_date_col = _resolve_column(conn, po_mst_table, ["PODate", "PoDate", "PO_Date"]) or "PODate"
+        po_mst_status_col = _resolve_column(conn, po_mst_table, ["Status", "status"])
+        po_mst_doc_type_col = _resolve_column(conn, po_mst_table, ["DocumentType", "DocType", "Document_Type"])
+        po_dtl_id_col = _resolve_column(conn, po_dtl_table, ["ID", "Id"])
+        po_dtl_po_col = _resolve_column(conn, po_dtl_table, ["POID", "PoID", "PoId", "Poid"]) or "POID"
+        po_dtl_item_col = _resolve_column(conn, po_dtl_table, ["ItemID", "ItemId", "itemid"]) or "ItemID"
+        po_dtl_rate_col = _resolve_column(conn, po_dtl_table, ["Rate", "rate"]) or "Rate"
+
+        cursor = conn.cursor()
+        cursor.execute("CREATE TABLE #LatestPoRateItemIds (ItemID INT NOT NULL PRIMARY KEY)")
+        try:
+            cursor.fast_executemany = True
+        except Exception:
+            pass
+
+        for start in range(0, len(normalized_ids), 500):
+            chunk = [(item_id,) for item_id in normalized_ids[start:start + 500]]
+            cursor.executemany("INSERT INTO #LatestPoRateItemIds (ItemID) VALUES (?)", chunk)
+
+        where_parts = [f"ISNULL(CAST(d.[{po_dtl_rate_col}] AS FLOAT), 0) > 0"]
+        if po_mst_status_col:
+            where_parts.append(
+                f"ISNULL(NULLIF(UPPER(LTRIM(RTRIM(CAST(m.[{po_mst_status_col}] AS NVARCHAR(20))))), ''), 'D') <> 'C'"
+            )
+        if po_mst_doc_type_col:
+            where_parts.append(
+                f"ISNULL(NULLIF(UPPER(LTRIM(RTRIM(CAST(m.[{po_mst_doc_type_col}] AS NVARCHAR(20))))), ''), 'PO') = 'PO'"
+            )
+
+        order_parts = [
+            f"CASE WHEN m.[{po_mst_date_col}] IS NULL THEN 1 ELSE 0 END",
+            f"m.[{po_mst_date_col}] DESC",
+            f"m.[{po_mst_id_col}] DESC",
+        ]
+        if po_dtl_id_col:
+            order_parts.append(f"d.[{po_dtl_id_col}] DESC")
+
+        sql = f"""
+            SET NOCOUNT ON;
+            WITH latest_po AS (
+                SELECT
+                    CAST(d.[{po_dtl_item_col}] AS INT) AS ItemID,
+                    CAST(d.[{po_dtl_rate_col}] AS FLOAT) AS Rate,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY d.[{po_dtl_item_col}]
+                        ORDER BY {", ".join(order_parts)}
+                    ) AS rn
+                FROM dbo.[{po_dtl_table}] AS d WITH (NOLOCK)
+                INNER JOIN dbo.[{po_mst_table}] AS m WITH (NOLOCK)
+                    ON d.[{po_dtl_po_col}] = m.[{po_mst_id_col}]
+                INNER JOIN #LatestPoRateItemIds AS ids
+                    ON ids.ItemID = d.[{po_dtl_item_col}]
+                WHERE {" AND ".join(where_parts)}
+            )
+            SELECT ItemID, Rate
+            FROM latest_po
+            WHERE rn = 1
+        """
+        cursor.execute(sql)
+        rows = cursor.fetchall()
+        rate_map = {}
+        for row in rows or []:
+            try:
+                item_id = int(row[0])
+                rate = float(row[1] or 0)
+            except Exception:
+                continue
+            if item_id > 0 and rate > 0:
+                rate_map[item_id] = rate
+        return rate_map
+    except Exception as e:
+        print(f"Error fetching latest PO rates ({unit}): {e}")
+        return {}
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def add_iv_item(unit: str, params: dict):
     """
     Executes dbo.usp_addIVItem to create a new item master.
@@ -12289,6 +14797,7 @@ def add_iv_po_mst(unit: str, params: dict):
         if po_id:
             _update_iv_po_mst_purchasing_dept_conn(conn, int(po_id), params.get("PurchasingDeptId"))
             _update_iv_po_mst_special_notes_conn(conn, int(po_id), params.get("pSpecialNotes"))
+            _update_iv_po_mst_cmc_amc_warranty_conn(conn, int(po_id), params.get("pCmcAmcWarrantyNotes"))
             if "POPrintFormat" in params:
                 _update_iv_po_mst_print_format_conn(conn, int(po_id), params.get("POPrintFormat"))
             if "WorkOrderBodyHtml" in params:
@@ -12841,6 +15350,175 @@ def fetch_pharmacy_ward_medicine_tat(unit: str, from_date: str, to_date: str):
             pass
 
 
+# ===================== Pharmacy: Departmental Issue =====================
+def fetch_pharmacy_departmental_issue_rows(
+    unit: str,
+    from_date: str,
+    to_date: str,
+    store_id: int | None = None,
+):
+    """
+    Fetch departmental issue / return rows at Department + Item + Batch + Store grain.
+    Uses lower-level stock movement rows (ISD/RFD) and resolves department from
+    patient issue / material return context when available.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Pharmacy departmental issue: could not connect to {unit}")
+        return None
+
+    def _q_ident(name: str) -> str:
+        return "[" + str(name or "").replace("]", "]]") + "]"
+
+    try:
+        issue_table = _resolve_table_name(conn, ["SMUser_Issue"])
+        issue_dtl_table = _resolve_table_name(conn, ["SMUser_Issue_Details"])
+        store_table = _resolve_table_name(conn, ["Store", "store"])
+        item_table = _resolve_table_name(conn, ["IVItem", "IvItem"])
+        batch_table = _resolve_table_name(conn, ["IVBatch", "IvBatch"])
+        department_table = _resolve_table_name(conn, ["Department_mst", "Department_Mst", "department_mst"])
+
+        if not issue_table or not issue_dtl_table or not store_table or not item_table:
+            print(
+                "Pharmacy departmental issue: missing required tables "
+                f"(issue={issue_table}, issue_dtl={issue_dtl_table}, store={store_table}, item={item_table})"
+            )
+            return None
+
+        issue_id_col = _resolve_column(conn, issue_table, ["Issue_Id", "IssueId", "IssueID", "ID", "Id"])
+        issue_number_col = _resolve_column(conn, issue_table, ["Issue_Number", "IssueNo", "IssueNO"])
+        issue_date_col = _resolve_column(conn, issue_table, ["IssueDate", "Issue_Date"])
+        issue_to_store_col = _resolve_column(conn, issue_table, ["StoreId", "StoreID", "Store_Id"])
+        issue_from_store_col = _resolve_column(conn, issue_table, ["FromStoreId", "FromStoreID", "FromStore_Id"])
+
+        dtl_issue_id_col = _resolve_column(conn, issue_dtl_table, ["Issue_Id", "IssueId", "IssueID"])
+        dtl_item_col = _resolve_column(conn, issue_dtl_table, ["Itemid", "ItemID", "ItemId"])
+        dtl_batch_col = _resolve_column(conn, issue_dtl_table, ["Batchid", "BatchID", "BatchId"])
+        dtl_qty_col = _resolve_column(conn, issue_dtl_table, ["IssuedQuantity", "IssueQty", "Qty", "Quantity"])
+        dtl_rate_col = _resolve_column(conn, issue_dtl_table, ["Rate"])
+
+        store_id_col = _resolve_column(conn, store_table, ["ID", "Id", "StoreID", "StoreId"])
+        store_name_col = _resolve_column(conn, store_table, ["Name", "StoreName"])
+        store_dept_col = _resolve_column(conn, store_table, ["DepartmentID", "DepartmentId", "Department_Id", "DeptID", "DeptId"])
+
+        item_id_col = _resolve_column(conn, item_table, ["ID", "Id", "ItemID", "ItemId"])
+        item_name_col = _resolve_column(conn, item_table, ["Name", "ItemName", "DescriptiveName"])
+
+        batch_id_col = _resolve_column(conn, batch_table, ["ID", "Id", "BatchID", "BatchId"]) if batch_table else None
+        batch_name_col = _resolve_column(conn, batch_table, ["Name", "BatchName"]) if batch_table else None
+        batch_mrp_col = _resolve_column(conn, batch_table, ["MRP", "Mrp"]) if batch_table else None
+
+        department_id_col = _resolve_column(conn, department_table, ["Department_ID", "DepartmentID", "DepartmentId", "DeptID", "DeptId", "ID", "Id"]) if department_table else None
+        department_name_col = _resolve_column(conn, department_table, ["Department_Name", "DepartmentName", "Department", "DeptName", "Dept", "Name"]) if department_table else None
+
+        if not all([issue_id_col, issue_date_col, issue_to_store_col, issue_from_store_col, dtl_issue_id_col, dtl_item_col, dtl_batch_col, dtl_qty_col, store_id_col, store_name_col, item_id_col, item_name_col]):
+            print("Pharmacy departmental issue: missing required columns in SM issue/store/item tables")
+            return None
+
+        try:
+            store_id_val = int(store_id) if store_id is not None and str(store_id).strip() else None
+        except Exception:
+            store_id_val = None
+        if store_id_val not in {None, 2, 3}:
+            store_id_val = None
+
+        issue_number_expr = f"s.{_q_ident(issue_number_col)}" if issue_number_col else f"CONVERT(NVARCHAR(50), s.{_q_ident(issue_id_col)})"
+        rate_expr = f"ISNULL(d.{_q_ident(dtl_rate_col)}, 0)" if dtl_rate_col else "0"
+        mrp_expr = f"ISNULL(b.{_q_ident(batch_mrp_col)}, 0)" if batch_table and batch_mrp_col else "0"
+        batch_name_expr = f"LTRIM(RTRIM(CONVERT(NVARCHAR(80), ISNULL(b.{_q_ident(batch_name_col)}, N''))))" if batch_table and batch_name_col else "N''"
+        if department_table and department_id_col and department_name_col and store_dept_col:
+            dept_name_expr = (
+                f"COALESCE("
+                f"NULLIF(CASE "
+                f"WHEN dept.{_q_ident(department_name_col)} IS NULL THEN NULL "
+                f"WHEN LOWER(LTRIM(RTRIM(CAST(dept.{_q_ident(department_name_col)} AS NVARCHAR(200))))) LIKE N'%pharmacy%' THEN NULL "
+                f"ELSE LTRIM(RTRIM(CAST(dept.{_q_ident(department_name_col)} AS NVARCHAR(200)))) END, N''), "
+                f"NULLIF(LTRIM(RTRIM(CAST(st_to.{_q_ident(store_name_col)} AS NVARCHAR(200)))), N''), "
+                f"N'Unknown Department')"
+            )
+        else:
+            dept_name_expr = f"COALESCE(NULLIF(LTRIM(RTRIM(CAST(st_to.{_q_ident(store_name_col)} AS NVARCHAR(200)))), N''), N'Unknown Department')"
+        dept_id_expr = (
+            f"ISNULL(st_to.{_q_ident(store_dept_col)}, 0)"
+            if store_dept_col
+            else "0"
+        )
+
+        sql = f"""
+            SET NOCOUNT ON;
+
+            SELECT
+                CAST({dept_id_expr} AS INT) AS DepartmentID,
+                CAST({dept_name_expr} AS NVARCHAR(200)) AS DepartmentName,
+                CAST(s.{_q_ident(issue_to_store_col)} AS INT) AS IssuedToStoreID,
+                CAST(LTRIM(RTRIM(ISNULL(st_to.{_q_ident(store_name_col)}, N''))) AS NVARCHAR(120)) AS IssuedToStoreName,
+                CAST(s.{_q_ident(issue_from_store_col)} AS INT) AS IssuedFromStoreID,
+                CAST(LTRIM(RTRIM(ISNULL(st_from.{_q_ident(store_name_col)}, N''))) AS NVARCHAR(120)) AS IssuedFromStoreName,
+                CAST(i.{_q_ident(item_id_col)} AS INT) AS ItemID,
+                CAST(LTRIM(RTRIM(ISNULL(i.{_q_ident(item_name_col)}, N''))) AS NVARCHAR(200)) AS ItemName,
+                CAST(ISNULL(d.{_q_ident(dtl_batch_col)}, 0) AS INT) AS BatchID,
+                CAST({batch_name_expr} AS NVARCHAR(80)) AS BatchName,
+                CAST(MAX(ISNULL({rate_expr}, 0)) AS DECIMAL(18, 4)) AS Rate,
+                CAST(MAX(ISNULL({mrp_expr}, 0)) AS DECIMAL(18, 4)) AS MRP,
+                CAST(SUM(ISNULL(d.{_q_ident(dtl_qty_col)}, 0)) AS DECIMAL(18, 3)) AS IssuedQty,
+                CAST(0 AS DECIMAL(18, 3)) AS ReturnedQty,
+                CAST(SUM(ISNULL(d.{_q_ident(dtl_qty_col)}, 0)) AS DECIMAL(18, 3)) AS NetIssuedQty,
+                CAST(SUM(ISNULL(d.{_q_ident(dtl_qty_col)}, 0) * ISNULL({rate_expr}, 0)) AS DECIMAL(18, 2)) AS IssuedValueRate,
+                CAST(0 AS DECIMAL(18, 2)) AS ReturnedValueRate,
+                CAST(SUM(ISNULL(d.{_q_ident(dtl_qty_col)}, 0) * ISNULL({rate_expr}, 0)) AS DECIMAL(18, 2)) AS NetValueRate,
+                CAST(MAX(s.{_q_ident(issue_date_col)}) AS DATETIME) AS LastMovementDate,
+                CAST(MAX({issue_number_expr}) AS NVARCHAR(60)) AS IssueNumber
+            FROM dbo.{_q_ident(issue_table)} s WITH (NOLOCK)
+            INNER JOIN dbo.{_q_ident(issue_dtl_table)} d WITH (NOLOCK)
+                ON d.{_q_ident(dtl_issue_id_col)} = s.{_q_ident(issue_id_col)}
+            LEFT JOIN dbo.{_q_ident(store_table)} st_to WITH (NOLOCK)
+                ON st_to.{_q_ident(store_id_col)} = s.{_q_ident(issue_to_store_col)}
+            LEFT JOIN dbo.{_q_ident(store_table)} st_from WITH (NOLOCK)
+                ON st_from.{_q_ident(store_id_col)} = s.{_q_ident(issue_from_store_col)}
+            LEFT JOIN dbo.{_q_ident(item_table)} i WITH (NOLOCK)
+                ON i.{_q_ident(item_id_col)} = d.{_q_ident(dtl_item_col)}
+            {"LEFT JOIN dbo." + _q_ident(batch_table) + " b WITH (NOLOCK) ON b." + _q_ident(batch_id_col) + " = d." + _q_ident(dtl_batch_col) if batch_table and batch_id_col else ""}
+            {"LEFT JOIN dbo." + _q_ident(department_table) + " dept WITH (NOLOCK) ON dept." + _q_ident(department_id_col) + " = st_to." + _q_ident(store_dept_col) if department_table and department_id_col and department_name_col and store_dept_col else ""}
+            WHERE
+                s.{_q_ident(issue_date_col)} >= ?
+                AND s.{_q_ident(issue_date_col)} < DATEADD(DAY, 1, ?)
+                AND s.{_q_ident(issue_from_store_col)} IN (2, 3)
+                AND (? IS NULL OR s.{_q_ident(issue_from_store_col)} = ?)
+            GROUP BY
+                {dept_id_expr},
+                {dept_name_expr},
+                s.{_q_ident(issue_to_store_col)},
+                st_to.{_q_ident(store_name_col)},
+                s.{_q_ident(issue_from_store_col)},
+                st_from.{_q_ident(store_name_col)},
+                i.{_q_ident(item_id_col)},
+                i.{_q_ident(item_name_col)},
+                d.{_q_ident(dtl_batch_col)},
+                {batch_name_expr}
+            ORDER BY
+                s.{_q_ident(issue_from_store_col)},
+                {dept_name_expr},
+                st_to.{_q_ident(store_name_col)},
+                i.{_q_ident(item_name_col)},
+                {batch_name_expr};
+        """
+
+        df = pd.read_sql(sql, conn, params=[from_date, to_date, store_id_val, store_id_val])
+        if df is None or df.empty:
+            return df
+        df.columns = [str(c).strip() for c in df.columns]
+        df["Unit"] = (unit or "").upper()
+        return df
+    except Exception as e:
+        print(f"Pharmacy departmental issue fetch failed for {unit}: {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def add_iv_po_mst_with_autonumber(unit: str, params: dict, lock_timeout_ms: int = 10000):
     """
     Generates a new PO number under an app lock, then creates PO master.
@@ -13019,6 +15697,7 @@ def add_iv_po_mst_with_autonumber(unit: str, params: dict, lock_timeout_ms: int 
             final_po_no = str(saved_po_no or po_no or "").strip()
             _update_iv_po_mst_purchasing_dept_conn(conn, int(po_id), params.get("PurchasingDeptId"))
             _update_iv_po_mst_special_notes_conn(conn, int(po_id), params.get("pSpecialNotes"))
+            _update_iv_po_mst_cmc_amc_warranty_conn(conn, int(po_id), params.get("pCmcAmcWarrantyNotes"))
             if "OverallDiscountMode" in params:
                 _update_iv_po_mst_overall_discount_mode_conn(conn, int(po_id), params.get("OverallDiscountMode"))
             if "OverallDiscountValue" in params:
@@ -13273,6 +15952,1712 @@ def fetch_pharmacy_non_moving_items(unit: str, store_id: int):
         return df
     except Exception as e:
         print(f"Pharmacy non-moving items fetch failed for {unit}: {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+# ===================== Pharmacy: Stock Ledger =====================
+PHARMACY_STOCK_LEDGER_INBOUND_DOC_TYPES = {"GRN", "OPB", "RCD", "RTD", "DRT", "RFD", "SAI"}
+PHARMACY_STOCK_LEDGER_OUTBOUND_DOC_TYPES = {"ROT", "PIS", "ISD", "PUR", "SAD", "ISS", "DIS"}
+PHARMACY_STOCK_LEDGER_DOC_TYPES = PHARMACY_STOCK_LEDGER_INBOUND_DOC_TYPES | PHARMACY_STOCK_LEDGER_OUTBOUND_DOC_TYPES
+PHARMACY_STOCK_LEDGER_MOVEMENT_FAMILIES = {
+    "",
+    "opening",
+    "inbound",
+    "outbound",
+    "return",
+    "transfer",
+    "adjustment",
+    "other",
+}
+
+
+def _pharmacy_stock_ledger_parse_int(
+    raw_value,
+    default: int,
+    minimum: int | None = None,
+    maximum: int | None = None,
+) -> int:
+    try:
+        value = int(float(raw_value))
+    except Exception:
+        value = int(default)
+    if minimum is not None:
+        value = max(int(minimum), value)
+    if maximum is not None:
+        value = min(int(maximum), value)
+    return value
+
+
+def _pharmacy_stock_ledger_norm_doc_type(raw_value) -> str:
+    return str(raw_value or "").strip().upper()
+
+
+def _pharmacy_stock_ledger_norm_movement_family(raw_value) -> str:
+    family = str(raw_value or "").strip().lower()
+    return family if family in PHARMACY_STOCK_LEDGER_MOVEMENT_FAMILIES else ""
+
+
+def _pharmacy_stock_ledger_search_candidates(conn, search_text: str, limit: int = 200) -> dict:
+    query = str(search_text or "").strip().lower()
+    if not conn or not query:
+        return {"item_ids": [], "batch_ids": []}
+
+    max_rows = _pharmacy_stock_ledger_parse_int(limit, 200, 1, 500)
+    item_ids: list[int] = []
+    batch_ids: list[int] = []
+    cursor = None
+    try:
+        cursor = conn.cursor()
+        cursor.execute(
+            f"""
+            SET NOCOUNT ON;
+            SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+            SELECT TOP {max_rows}
+                CAST(i.ID AS INT) AS ItemID
+            FROM dbo.ivitem i WITH (NOLOCK)
+            WHERE
+                CHARINDEX(?, LOWER(ISNULL(i.Name, N''))) > 0
+                OR CHARINDEX(?, LOWER(ISNULL(i.Code, N''))) > 0
+            ORDER BY
+                CASE
+                    WHEN LOWER(ISNULL(i.Name, N'')) = ? THEN 0
+                    WHEN CHARINDEX(?, LOWER(ISNULL(i.Name, N''))) > 0 THEN 1
+                    ELSE 2
+                END,
+                i.ID;
+            """,
+            [query, query, query, query],
+        )
+        item_ids = [
+            _pharmacy_stock_ledger_parse_int(row[0], 0, 1, None)
+            for row in cursor.fetchall()
+            if row and _pharmacy_stock_ledger_parse_int(row[0], 0, 1, None) > 0
+        ]
+
+        cursor.execute(
+            f"""
+            SET NOCOUNT ON;
+            SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+            SELECT TOP {max_rows}
+                CAST(b.ID AS INT) AS BatchID
+            FROM dbo.ivbatch b WITH (NOLOCK)
+            WHERE CHARINDEX(?, LOWER(CONVERT(NVARCHAR(80), ISNULL(b.Name, N'')))) > 0
+            ORDER BY
+                CASE
+                    WHEN LOWER(CONVERT(NVARCHAR(80), ISNULL(b.Name, N''))) = ? THEN 0
+                    ELSE 1
+                END,
+                b.ID;
+            """,
+            [query, query],
+        )
+        batch_ids = [
+            _pharmacy_stock_ledger_parse_int(row[0], 0, 1, None)
+            for row in cursor.fetchall()
+            if row and _pharmacy_stock_ledger_parse_int(row[0], 0, 1, None) > 0
+        ]
+    except Exception:
+        item_ids = []
+        batch_ids = []
+    finally:
+        try:
+            if cursor is not None:
+                cursor.close()
+        except Exception:
+            pass
+
+    return {
+        "item_ids": list(dict.fromkeys(item_ids)),
+        "batch_ids": list(dict.fromkeys(batch_ids)),
+    }
+
+
+def _pharmacy_stock_ledger_resolve_page_details(conn, row_ids) -> pd.DataFrame:
+    ids = [
+        _pharmacy_stock_ledger_parse_int(v, 0, 1, None)
+        for v in list(row_ids or [])
+        if _pharmacy_stock_ledger_parse_int(v, 0, 1, None) > 0
+    ]
+    ids = list(dict.fromkeys(ids))
+    if not conn or not ids:
+        return pd.DataFrame(columns=["ID", "ResolvedDocId", "ReferenceNo", "CounterpartyStoreID", "CounterpartyStoreName"])
+
+    id_list_sql = ",".join(str(int(v)) for v in ids[:500])
+    sql = f"""
+    SET NOCOUNT ON;
+    SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+    WITH page_rows AS (
+        SELECT
+            CAST(sr.ID AS INT) AS ID,
+            CAST(UPPER(LTRIM(RTRIM(ISNULL(sr.DocType, N'')))) AS NVARCHAR(10)) AS DocType,
+            CAST(ISNULL(sr.DocId, 0) AS INT) AS DocId,
+            CAST(ISNULL(sr.StoreID, 0) AS INT) AS StoreID,
+            CAST(ISNULL(sr.ItemID, 0) AS INT) AS ItemID,
+            CAST(ISNULL(sr.BatchID, 0) AS INT) AS BatchID,
+            CAST(ISNULL(sr.Qty, 0) AS DECIMAL(18, 3)) AS Qty,
+            CAST(sr.DocDate AS DATETIME) AS DocDate,
+            CAST(ISNULL(sr.Amount, 0) AS DECIMAL(18, 2)) AS Amount
+        FROM dbo.ivstockregister sr WITH (NOLOCK)
+        WHERE sr.ID IN ({id_list_sql})
+    ),
+    grn_ranked AS (
+        SELECT
+            pr.ID,
+            CAST(m.ID AS INT) AS LinkedDocID,
+            CAST(LTRIM(RTRIM(ISNULL(m.GRNNo, N''))) AS NVARCHAR(60)) AS LinkedRefNo,
+            ROW_NUMBER() OVER (
+                PARTITION BY pr.ID
+                ORDER BY
+                    ABS(DATEDIFF(SECOND, m.GRNDate, pr.DocDate)),
+                    ABS(CAST(ISNULL(d.Amount, 0) AS DECIMAL(18, 2)) - pr.Amount),
+                    m.ID DESC
+            ) AS rn
+        FROM page_rows pr
+        INNER JOIN dbo.IVGrnDtl d WITH (NOLOCK)
+            ON pr.DocType = N'GRN'
+           AND d.ItemID = pr.ItemID
+           AND ISNULL(d.BatchID, 0) = ISNULL(pr.BatchID, 0)
+           AND ABS(CAST(ISNULL(d.Qty, 0) AS DECIMAL(18, 3)) - ABS(pr.Qty)) <= 0.0005
+        INNER JOIN dbo.IVGrnMst m WITH (NOLOCK)
+            ON m.ID = d.GrnID
+           AND m.Storeid = pr.StoreID
+    ),
+    cp_ranked AS (
+        SELECT
+            pr.ID,
+            CAST(rcd.StoreID AS INT) AS CounterpartyStoreID,
+            CAST(LTRIM(RTRIM(ISNULL(st2.Name, N''))) AS NVARCHAR(120)) AS CounterpartyStoreName,
+            ROW_NUMBER() OVER (
+                PARTITION BY pr.ID
+                ORDER BY
+                    CASE WHEN rcd.DocDate >= pr.DocDate THEN 0 ELSE 1 END,
+                    ABS(DATEDIFF(SECOND, rcd.DocDate, pr.DocDate)),
+                    rcd.ID ASC
+            ) AS rn
+        FROM page_rows pr
+        INNER JOIN dbo.ivstockregister rcd WITH (NOLOCK)
+            ON pr.DocType = N'ISD'
+           AND UPPER(LTRIM(RTRIM(ISNULL(rcd.DocType, N'')))) = N'RCD'
+           AND ISNULL(rcd.DocId, 0) = ISNULL(pr.DocId, 0)
+           AND ISNULL(rcd.ItemID, 0) = ISNULL(pr.ItemID, 0)
+           AND ISNULL(rcd.BatchID, 0) = ISNULL(pr.BatchID, 0)
+           AND ABS(CAST(ISNULL(rcd.Qty, 0) AS DECIMAL(18, 3)) - ABS(pr.Qty)) <= 0.0005
+           AND ISNULL(rcd.StoreID, 0) <> ISNULL(pr.StoreID, 0)
+        LEFT JOIN dbo.Store st2 WITH (NOLOCK)
+            ON st2.ID = rcd.StoreID
+    )
+    SELECT
+        pr.ID,
+        CAST(
+            CASE
+                WHEN pr.DocType = N'GRN' AND ISNULL(pr.DocId, 0) = 0 AND ISNULL(gr.LinkedDocID, 0) > 0 THEN gr.LinkedDocID
+                ELSE pr.DocId
+            END
+            AS INT
+        ) AS ResolvedDocId,
+        CAST(
+            CASE
+                WHEN pr.DocType = N'GRN' AND NULLIF(LTRIM(RTRIM(ISNULL(gr.LinkedRefNo, N''))), N'') IS NOT NULL THEN gr.LinkedRefNo
+                WHEN ISNULL(pr.DocId, 0) > 0 THEN pr.DocType + N'-' + CONVERT(NVARCHAR(50), pr.DocId)
+                ELSE pr.DocType
+            END
+            AS NVARCHAR(60)
+        ) AS ReferenceNo,
+        CAST(ISNULL(cp.CounterpartyStoreID, 0) AS INT) AS CounterpartyStoreID,
+        CAST(ISNULL(cp.CounterpartyStoreName, N'') AS NVARCHAR(120)) AS CounterpartyStoreName
+    FROM page_rows pr
+    LEFT JOIN grn_ranked gr
+        ON gr.ID = pr.ID
+       AND gr.rn = 1
+    LEFT JOIN cp_ranked cp
+        ON cp.ID = pr.ID
+       AND cp.rn = 1;
+    """
+    try:
+        df = pd.read_sql(sql, conn)
+        if df is not None and not df.empty:
+            df.columns = [str(c).strip() for c in df.columns]
+            return df
+    except Exception:
+        pass
+    return pd.DataFrame(columns=["ID", "ResolvedDocId", "ReferenceNo", "CounterpartyStoreID", "CounterpartyStoreName"])
+
+
+def fetch_pharmacy_stock_ledger_page(
+    unit: str,
+    store_id: int,
+    from_date: str,
+    to_date: str,
+    page: int = 1,
+    page_size: int = 100,
+    search_text: str = "",
+    batch_id: int = 0,
+    movement_family: str = "",
+    doc_type: str = "",
+    mismatch_only: bool = False,
+):
+    """
+    Fetch a single server-side page of batch-wise pharmacy stock ledger rows.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Pharmacy stock ledger: could not connect to {unit}")
+        return None
+    try:
+        store_id = _pharmacy_stock_ledger_parse_int(store_id, 0, 0, None)
+        batch_id = _pharmacy_stock_ledger_parse_int(batch_id, 0, 0, None)
+        page = _pharmacy_stock_ledger_parse_int(page, 1, 1, None)
+        page_size = _pharmacy_stock_ledger_parse_int(page_size, 100, 1, 100000)
+        search_text = str(search_text or "").strip().lower()
+        movement_family = _pharmacy_stock_ledger_norm_movement_family(movement_family)
+        doc_type = _pharmacy_stock_ledger_norm_doc_type(doc_type)
+        if doc_type and doc_type not in PHARMACY_STOCK_LEDGER_DOC_TYPES:
+            doc_type = ""
+        mismatch_flag = 1 if bool(mismatch_only) else 0
+        search_candidates = _pharmacy_stock_ledger_search_candidates(conn, search_text) if search_text else {"item_ids": [], "batch_ids": []}
+        search_item_ids = [
+            _pharmacy_stock_ledger_parse_int(v, 0, 1, None)
+            for v in list(search_candidates.get("item_ids") or [])
+            if _pharmacy_stock_ledger_parse_int(v, 0, 1, None) > 0
+        ]
+        search_batch_ids = [
+            _pharmacy_stock_ledger_parse_int(v, 0, 1, None)
+            for v in list(search_candidates.get("batch_ids") or [])
+            if _pharmacy_stock_ledger_parse_int(v, 0, 1, None) > 0
+        ]
+
+        search_filter_sql = ""
+        if search_item_ids or search_batch_ids:
+            search_clauses = []
+            if search_item_ids:
+                search_clauses.append(
+                    "ISNULL(sr.ItemID, 0) IN (" + ",".join(str(int(v)) for v in search_item_ids[:200]) + ")"
+                )
+            if search_batch_ids:
+                search_clauses.append(
+                    "ISNULL(sr.BatchID, 0) IN (" + ",".join(str(int(v)) for v in search_batch_ids[:200]) + ")"
+                )
+            search_filter_sql = "\n            AND (\n                " + "\n                OR ".join(search_clauses) + "\n            )"
+        elif search_text:
+            search_filter_sql = """
+            AND (
+                CHARINDEX(@SearchText, LOWER(calc.DocType)) > 0
+                OR CHARINDEX(
+                    @SearchText,
+                    LOWER(
+                        CASE
+                            WHEN ISNULL(sr.DocId, 0) > 0 THEN calc.DocType + N'-' + CONVERT(NVARCHAR(50), ISNULL(sr.DocId, 0))
+                            ELSE calc.DocType
+                        END
+                    )
+                ) > 0
+                OR CHARINDEX(@SearchText, LOWER(CONVERT(NVARCHAR(50), ISNULL(sr.ItemID, 0)))) > 0
+                OR CHARINDEX(@SearchText, LOWER(CONVERT(NVARCHAR(50), ISNULL(sr.BatchID, 0)))) > 0
+            )
+            """
+
+        direct_scope_row_count = None
+        direct_scope_limit = 5000
+        try:
+            count_sql = f"""
+            SET NOCOUNT ON;
+            SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+            DECLARE @StoreID INT = ?;
+            DECLARE @FromDate DATETIME = ?;
+            DECLARE @ToDate DATETIME = ?;
+            DECLARE @DocType NVARCHAR(12) = UPPER(LTRIM(RTRIM(ISNULL(?, N''))));
+            DECLARE @SearchText NVARCHAR(200) = LOWER(LTRIM(RTRIM(ISNULL(?, N''))));
+
+            IF @FromDate > @ToDate
+            BEGIN
+                DECLARE @SwapDate DATETIME = @FromDate;
+                SET @FromDate = @ToDate;
+                SET @ToDate = @SwapDate;
+            END;
+
+            SET @FromDate = DATEADD(DAY, DATEDIFF(DAY, 0, @FromDate), 0);
+            SET @ToDate = DATEADD(DAY, DATEDIFF(DAY, 0, @ToDate), 0);
+
+            SELECT COUNT(1) AS RowCount
+            FROM dbo.ivstockregister sr WITH (NOLOCK)
+            CROSS APPLY (
+                SELECT UPPER(LTRIM(RTRIM(ISNULL(sr.DocType, N'')))) AS DocType
+            ) calc
+            WHERE
+                sr.StoreID = @StoreID
+                AND sr.DocDate >= @FromDate
+                AND sr.DocDate < DATEADD(DAY, 1, @ToDate)
+                {search_filter_sql}
+                AND (@DocType = N'' OR calc.DocType = @DocType);
+            """
+            count_cursor = conn.cursor()
+            count_cursor.execute(count_sql, [int(store_id), from_date, to_date, doc_type, search_text])
+            count_row = count_cursor.fetchone()
+            if count_row:
+                direct_scope_row_count = _pharmacy_stock_ledger_parse_int(count_row[0], 0, 0, None)
+            try:
+                count_cursor.close()
+            except Exception:
+                pass
+        except Exception:
+            direct_scope_row_count = None
+
+        use_direct_scope = bool(search_item_ids or search_batch_ids)
+        if not use_direct_scope:
+            try:
+                from_dt_obj = datetime.strptime(str(from_date)[:10], "%Y-%m-%d").date()
+                to_dt_obj = datetime.strptime(str(to_date)[:10], "%Y-%m-%d").date()
+                if abs((to_dt_obj - from_dt_obj).days) <= 3 and not search_text:
+                    use_direct_scope = True
+            except Exception:
+                pass
+        if not use_direct_scope and direct_scope_row_count is not None and direct_scope_row_count <= direct_scope_limit:
+            use_direct_scope = True
+
+        if use_direct_scope:
+            try:
+                targeted_sql = f"""
+                SET NOCOUNT ON;
+                SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+                DECLARE @StoreID INT = ?;
+                DECLARE @FromDate DATETIME = ?;
+                DECLARE @ToDate DATETIME = ?;
+                DECLARE @DocType NVARCHAR(12) = UPPER(LTRIM(RTRIM(ISNULL(?, N''))));
+                DECLARE @SearchText NVARCHAR(200) = LOWER(LTRIM(RTRIM(ISNULL(?, N''))));
+
+                IF @FromDate > @ToDate
+                BEGIN
+                    DECLARE @SwapDate DATETIME = @FromDate;
+                    SET @FromDate = @ToDate;
+                    SET @ToDate = @SwapDate;
+                END;
+
+                SET @FromDate = DATEADD(DAY, DATEDIFF(DAY, 0, @FromDate), 0);
+                SET @ToDate = DATEADD(DAY, DATEDIFF(DAY, 0, @ToDate), 0);
+
+                SELECT
+                    CAST(sr.ID AS INT) AS ID,
+                    CAST(sr.DocDate AS DATETIME) AS DocDate,
+                    calc.DocType AS DocType,
+                    CAST(ISNULL(sr.DocId, 0) AS INT) AS DocId,
+                    CAST(
+                        CASE
+                            WHEN ISNULL(sr.DocId, 0) > 0 THEN calc.DocType + N'-' + CONVERT(NVARCHAR(50), ISNULL(sr.DocId, 0))
+                            ELSE calc.DocType
+                        END
+                        AS NVARCHAR(60)
+                    ) AS ReferenceNo,
+                    CAST(ISNULL(sr.StoreID, 0) AS INT) AS StoreID,
+                    CAST(LTRIM(RTRIM(ISNULL(st.Name, N''))) AS NVARCHAR(120)) AS StoreName,
+                    CAST(0 AS INT) AS CounterpartyStoreID,
+                    CAST(N'' AS NVARCHAR(120)) AS CounterpartyStoreName,
+                    CAST(ISNULL(sr.ItemID, 0) AS INT) AS ItemID,
+                    CAST(LTRIM(RTRIM(ISNULL(i.Code, N''))) AS NVARCHAR(100)) AS ItemCode,
+                    CAST(LTRIM(RTRIM(ISNULL(i.Name, N''))) AS NVARCHAR(200)) AS ItemName,
+                    CAST(ISNULL(sr.BatchID, 0) AS INT) AS BatchID,
+                    CAST(LTRIM(RTRIM(CONVERT(NVARCHAR(80), ISNULL(b.Name, N'')))) AS NVARCHAR(80)) AS BatchName,
+                    CAST(b.ExpiryDate AS DATE) AS ExpiryDate,
+                    CAST(ISNULL(sr.Qty, 0) AS DECIMAL(18, 3)) AS Qty,
+                    CAST(CASE WHEN calc.DocType IN (N'OPB', N'GRN', N'RCD', N'RTD', N'DRT', N'RFD', N'SAI') THEN calc.QtyAbs ELSE 0 END AS DECIMAL(18, 3)) AS QtyIn,
+                    CAST(CASE WHEN calc.DocType IN (N'ROT', N'PIS', N'ISD', N'PUR', N'SAD', N'ISS', N'DIS') THEN calc.QtyAbs ELSE 0 END AS DECIMAL(18, 3)) AS QtyOut,
+                    CAST(
+                        CASE
+                            WHEN calc.DocType IN (N'OPB', N'GRN', N'RCD', N'RTD', N'DRT', N'RFD', N'SAI') THEN calc.QtyAbs
+                            WHEN calc.DocType IN (N'ROT', N'PIS', N'ISD', N'PUR', N'SAD', N'ISS', N'DIS') THEN -calc.QtyAbs
+                            ELSE 0
+                        END
+                        AS DECIMAL(18, 3)
+                    ) AS MovementQty,
+                    CAST(CAST(ISNULL(sr.SubStorePLB, ISNULL(sr.RunningBalQty, 0)) AS DECIMAL(18, 3)) - CASE WHEN calc.DocType IN (N'OPB', N'GRN', N'RCD', N'RTD', N'DRT', N'RFD', N'SAI') THEN calc.QtyAbs ELSE 0 END + CASE WHEN calc.DocType IN (N'ROT', N'PIS', N'ISD', N'PUR', N'SAD', N'ISS', N'DIS') THEN calc.QtyAbs ELSE 0 END AS DECIMAL(18, 3)) AS BalanceBefore,
+                    CAST(ISNULL(sr.SubStorePLB, ISNULL(sr.RunningBalQty, 0)) AS DECIMAL(18, 3)) AS BalanceAfter,
+                    CAST(ISNULL(sc.CurrentQty, 0) AS DECIMAL(18, 3)) AS CurrentQty,
+                    CAST(ISNULL(sc.CurrentQty, 0) - ISNULL(sr.SubStorePLB, ISNULL(sr.RunningBalQty, 0)) AS DECIMAL(18, 3)) AS ReconciliationDelta,
+                    CAST(ISNULL(b.Rate, 0) AS DECIMAL(18, 4)) AS Rate,
+                    CAST(ISNULL(COALESCE(b.mrp, sr.Mrp), 0) AS DECIMAL(18, 4)) AS MRP,
+                    CAST(ISNULL(sr.Amount, 0) AS DECIMAL(18, 2)) AS Amount,
+                    CAST(
+                        CASE
+                            WHEN calc.DocType = N'OPB' THEN N'opening'
+                            WHEN calc.DocType = N'GRN' THEN N'inbound'
+                            WHEN calc.DocType = N'RCD' THEN N'transfer'
+                            WHEN calc.DocType IN (N'RTD', N'DRT', N'RFD') THEN N'return'
+                            WHEN calc.DocType IN (N'SAI', N'SAD') THEN N'adjustment'
+                            WHEN calc.DocType IN (N'ROT', N'PIS', N'ISD', N'PUR', N'ISS', N'DIS') THEN N'outbound'
+                            ELSE N'other'
+                        END
+                        AS NVARCHAR(30)
+                    ) AS MovementFamily,
+                    CAST(
+                        CASE
+                            WHEN calc.DocType = N'OPB' THEN N'Opening Balance'
+                            WHEN calc.DocType = N'GRN' THEN N'GRN Receipt'
+                            WHEN calc.DocType = N'RCD' THEN N'Store Receipt'
+                            WHEN calc.DocType = N'RTD' THEN N'Material Return Receipt'
+                            WHEN calc.DocType = N'DRT' THEN N'OPD Return'
+                            WHEN calc.DocType = N'RFD' THEN N'IPD Return'
+                            WHEN calc.DocType = N'SAI' THEN N'Stock Adjustment In'
+                            WHEN calc.DocType = N'ROT' THEN N'OPD Sale'
+                            WHEN calc.DocType = N'PIS' THEN N'Patient Issue'
+                            WHEN calc.DocType = N'ISD' THEN N'Departmental Issue'
+                            WHEN calc.DocType = N'PUR' THEN N'Purchase Return'
+                            WHEN calc.DocType = N'SAD' THEN N'Stock Adjustment Out'
+                            WHEN calc.DocType = N'ISS' THEN N'Issue'
+                            WHEN calc.DocType = N'DIS' THEN N'Disposal'
+                            ELSE N'Other'
+                        END
+                        AS NVARCHAR(80)
+                    ) AS MovementLabel,
+                    CAST(
+                        COALESCE(
+                            NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(50), sr.UpdatedBy))), N''),
+                            NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(50), sr.InsertedByUserID))), N''),
+                            N''
+                        )
+                        AS NVARCHAR(50)
+                    ) AS AuditUserID,
+                    CAST(COALESCE(sr.UpdatedON, sr.InsertedON, sr.DocDate) AS DATETIME) AS AuditTime
+                FROM dbo.ivstockregister sr WITH (NOLOCK)
+                CROSS APPLY (
+                    SELECT
+                        UPPER(LTRIM(RTRIM(ISNULL(sr.DocType, N'')))) AS DocType,
+                        ABS(CAST(ISNULL(sr.Qty, 0) AS DECIMAL(18, 3))) AS QtyAbs
+                ) calc
+                LEFT JOIN dbo.ivitem i WITH (NOLOCK)
+                    ON i.ID = sr.ItemID
+                LEFT JOIN dbo.ivbatch b WITH (NOLOCK)
+                    ON b.ID = sr.BatchID
+                LEFT JOIN dbo.Store st WITH (NOLOCK)
+                    ON st.ID = sr.StoreID
+                LEFT JOIN (
+                    SELECT
+                        ss.StoreID,
+                        ss.ItemID,
+                        SUM(CAST(ISNULL(ss.Qty, 0) AS DECIMAL(18, 3))) AS CurrentQty
+                    FROM dbo.storestock ss WITH (NOLOCK)
+                    WHERE ss.StoreID = @StoreID
+                    GROUP BY ss.StoreID, ss.ItemID
+                ) sc
+                    ON sc.StoreID = sr.StoreID
+                   AND sc.ItemID = sr.ItemID
+                WHERE
+                    sr.StoreID = @StoreID
+                    AND sr.DocDate >= @FromDate
+                    AND sr.DocDate < DATEADD(DAY, 1, @ToDate)
+                    {search_filter_sql}
+                    AND (@DocType = N'' OR calc.DocType = @DocType)
+                ORDER BY sr.DocDate DESC, sr.ID DESC;
+                """
+
+                scope_df = pd.read_sql(
+                    targeted_sql,
+                    conn,
+                    params=[int(store_id), from_date, to_date, doc_type, search_text],
+                )
+                if scope_df is None:
+                    scope_df = pd.DataFrame()
+                if not scope_df.empty:
+                    scope_df.columns = [str(c).strip() for c in scope_df.columns]
+                    scope_df["Unit"] = (unit or "").upper()
+                    scope_df["DocDate"] = pd.to_datetime(scope_df["DocDate"], errors="coerce")
+                    scope_df["AuditTime"] = pd.to_datetime(scope_df["AuditTime"], errors="coerce")
+                    for num_col in [
+                        "ID",
+                        "DocId",
+                        "StoreID",
+                        "CounterpartyStoreID",
+                        "ItemID",
+                        "BatchID",
+                        "Qty",
+                        "QtyIn",
+                        "QtyOut",
+                        "MovementQty",
+                        "BalanceBefore",
+                        "BalanceAfter",
+                        "CurrentQty",
+                        "ReconciliationDelta",
+                        "Rate",
+                        "MRP",
+                        "Amount",
+                    ]:
+                        if num_col in scope_df.columns:
+                            scope_df[num_col] = pd.to_numeric(scope_df[num_col], errors="coerce")
+
+                fast_scope_df = scope_df.copy()
+                if movement_family and not fast_scope_df.empty and "MovementFamily" in fast_scope_df.columns:
+                    fast_scope_df = fast_scope_df[
+                        fast_scope_df["MovementFamily"].astype(str).str.lower() == movement_family
+                    ].copy()
+
+                if mismatch_flag and not fast_scope_df.empty and "ReconciliationDelta" in fast_scope_df.columns:
+                    fast_scope_df = fast_scope_df[
+                        pd.to_numeric(fast_scope_df["ReconciliationDelta"], errors="coerce").fillna(0.0).abs() > 0.0005
+                    ].copy()
+
+                batch_scope_df = fast_scope_df.copy()
+                filtered_df = fast_scope_df.copy()
+                if batch_id > 0 and not filtered_df.empty and "BatchID" in filtered_df.columns:
+                    filtered_df = filtered_df[
+                        pd.to_numeric(filtered_df["BatchID"], errors="coerce").fillna(0).astype(int) == int(batch_id)
+                    ].copy()
+
+                if not filtered_df.empty:
+                    filtered_df = filtered_df.sort_values(
+                        ["DocDate", "ID"],
+                        ascending=[False, False],
+                        kind="mergesort",
+                    ).reset_index(drop=True)
+
+                total_rows = int(len(filtered_df.index)) if filtered_df is not None else 0
+                total_pages = max(1, (total_rows + page_size - 1) // page_size)
+                if page > total_pages:
+                    page = total_pages
+                page = max(1, page)
+                start_idx = (page - 1) * page_size
+                end_idx = start_idx + page_size
+                page_df = filtered_df.iloc[start_idx:end_idx].copy() if total_rows > 0 else pd.DataFrame(columns=list(filtered_df.columns))
+
+                if not page_df.empty and "ID" in page_df.columns:
+                    detail_df = _pharmacy_stock_ledger_resolve_page_details(conn, page_df["ID"].tolist())
+                    if detail_df is not None and not detail_df.empty:
+                        detail_df = detail_df.rename(columns={"ReferenceNo": "ResolvedReferenceNo"})
+                        page_df = page_df.merge(detail_df, on="ID", how="left")
+                        if "ResolvedDocId" in page_df.columns:
+                            page_df["DocId"] = page_df["ResolvedDocId"].fillna(page_df["DocId"])
+                            page_df = page_df.drop(columns=["ResolvedDocId"])
+                        if "ResolvedReferenceNo" in page_df.columns:
+                            page_df["ReferenceNo"] = page_df["ResolvedReferenceNo"].fillna(page_df["ReferenceNo"])
+                            page_df = page_df.drop(columns=["ResolvedReferenceNo"])
+                        if "CounterpartyStoreID_y" in page_df.columns:
+                            page_df["CounterpartyStoreID"] = page_df["CounterpartyStoreID_y"].fillna(page_df.get("CounterpartyStoreID_x"))
+                            page_df = page_df.drop(columns=[c for c in ["CounterpartyStoreID_x", "CounterpartyStoreID_y"] if c in page_df.columns])
+                        if "CounterpartyStoreName_y" in page_df.columns:
+                            page_df["CounterpartyStoreName"] = page_df["CounterpartyStoreName_y"].fillna(page_df.get("CounterpartyStoreName_x"))
+                            page_df = page_df.drop(columns=[c for c in ["CounterpartyStoreName_x", "CounterpartyStoreName_y"] if c in page_df.columns])
+
+                if page_df is None or page_df.empty:
+                    page_df = pd.DataFrame(columns=list(filtered_df.columns))
+
+                doc_types = []
+                if filtered_df is not None and not filtered_df.empty:
+                    doc_type_frame = (
+                        filtered_df.groupby(["DocType", "MovementFamily", "MovementLabel"], dropna=False)
+                        .size()
+                        .reset_index(name="RowCount")
+                        .sort_values(["RowCount", "DocType"], ascending=[False, True], kind="mergesort")
+                    )
+                    doc_types = [dict(rec) for rec in doc_type_frame.to_dict(orient="records")]
+
+                batch_options = []
+                if batch_scope_df is not None and not batch_scope_df.empty and "BatchID" in batch_scope_df.columns:
+                    batch_option_frame = batch_scope_df[
+                        pd.to_numeric(batch_scope_df["BatchID"], errors="coerce").fillna(0).astype(int) > 0
+                    ].copy()
+                    if not batch_option_frame.empty:
+                        batch_option_frame = (
+                            batch_option_frame.groupby("BatchID", dropna=False)
+                            .agg(
+                                BatchName=("BatchName", "max"),
+                                ExpiryDate=("ExpiryDate", "max"),
+                                ItemID=("ItemID", "max"),
+                                ItemName=("ItemName", "max"),
+                                RowCount=("BatchID", "size"),
+                            )
+                            .reset_index()
+                            .sort_values(["RowCount", "BatchName", "BatchID"], ascending=[False, True, True], kind="mergesort")
+                            .head(200)
+                        )
+                        batch_options = [
+                            {
+                                "batch_id": _pharmacy_stock_ledger_parse_int(rec.get("BatchID"), 0, 0, None),
+                                "batch_name": str(rec.get("BatchName") or "").strip(),
+                                "expiry_date": pd.to_datetime(rec.get("ExpiryDate"), errors="coerce").date().isoformat() if pd.notna(pd.to_datetime(rec.get("ExpiryDate"), errors="coerce")) else None,
+                                "item_id": _pharmacy_stock_ledger_parse_int(rec.get("ItemID"), 0, 0, None),
+                                "item_name": str(rec.get("ItemName") or "").strip(),
+                                "row_count": _pharmacy_stock_ledger_parse_int(rec.get("RowCount"), 0, 0, None),
+                            }
+                            for rec in batch_option_frame.to_dict(orient="records")
+                        ]
+
+                opening_qty = inward_qty = outward_qty = closing_qty = live_current_qty = 0.0
+                delta_row_count = mismatch_count = 0
+                store_name = ""
+                if filtered_df is not None and not filtered_df.empty:
+                    summary_df = filtered_df.sort_values(
+                        ["StoreID", "ItemID", "DocDate", "ID"],
+                        ascending=[True, True, True, True],
+                        kind="mergesort",
+                    )
+                    grouped = summary_df.groupby(["StoreID", "ItemID"], dropna=False, sort=False)
+                    first_rows = grouped.first().reset_index()
+                    last_rows = grouped.last().reset_index()
+                    opening_qty = float(pd.to_numeric(first_rows.get("BalanceBefore"), errors="coerce").fillna(0.0).sum())
+                    inward_qty = float(pd.to_numeric(filtered_df.get("QtyIn"), errors="coerce").fillna(0.0).sum())
+                    outward_qty = float(pd.to_numeric(filtered_df.get("QtyOut"), errors="coerce").fillna(0.0).sum())
+                    closing_qty = float(pd.to_numeric(last_rows.get("BalanceAfter"), errors="coerce").fillna(0.0).sum())
+                    live_current_qty = float(pd.to_numeric(last_rows.get("CurrentQty"), errors="coerce").fillna(0.0).sum())
+                    delta_row_count = int(pd.to_numeric(filtered_df.get("ReconciliationDelta"), errors="coerce").fillna(0.0).abs().gt(0.0005).sum())
+                    mismatch_count = int(pd.to_numeric(last_rows.get("ReconciliationDelta"), errors="coerce").fillna(0.0).abs().gt(0.0005).sum())
+                    store_name = str(filtered_df.get("StoreName").dropna().iloc[0] if "StoreName" in filtered_df.columns and filtered_df["StoreName"].dropna().shape[0] else "").strip()
+
+                meta = {
+                    "page": int(page),
+                    "page_size": int(page_size),
+                    "total_rows": int(total_rows),
+                    "total_pages": int(total_pages),
+                    "opening_qty": float(opening_qty),
+                    "inward_qty": float(inward_qty),
+                    "outward_qty": float(outward_qty),
+                    "closing_qty": float(closing_qty),
+                    "live_current_qty": float(live_current_qty),
+                    "delta_row_count": int(delta_row_count),
+                    "mismatch_count": int(mismatch_count),
+                    "store_name": store_name,
+                    "query_engine": "sql_direct_scope" if not (search_item_ids or search_batch_ids) else "sql_targeted_search",
+                }
+
+                if not page_df.empty:
+                    page_df.columns = [str(c).strip() for c in page_df.columns]
+
+                return {"df": page_df, "meta": meta, "doc_types": doc_types, "batch_options": batch_options}
+            except Exception as fast_err:
+                print(f"Pharmacy stock ledger targeted fetch fallback for {unit}: {fast_err}")
+
+        sql = f"""
+        SET NOCOUNT ON;
+        SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+        DECLARE @StoreID INT = ?;
+        DECLARE @FromDate DATETIME = ?;
+        DECLARE @ToDate DATETIME = ?;
+        DECLARE @Page INT = ?;
+        DECLARE @PageSize INT = ?;
+        DECLARE @SearchText NVARCHAR(200) = LOWER(LTRIM(RTRIM(ISNULL(?, N''))));
+        DECLARE @BatchID INT = CASE WHEN ISNULL(?, 0) > 0 THEN ISNULL(?, 0) ELSE 0 END;
+        DECLARE @MovementFamily NVARCHAR(30) = LOWER(LTRIM(RTRIM(ISNULL(?, N''))));
+        DECLARE @DocType NVARCHAR(12) = UPPER(LTRIM(RTRIM(ISNULL(?, N''))));
+        DECLARE @MismatchOnly BIT = CASE WHEN ISNULL(?, 0) <> 0 THEN 1 ELSE 0 END;
+
+        IF @StoreID IS NULL OR @StoreID <= 0 OR @FromDate IS NULL OR @ToDate IS NULL
+        BEGIN
+            SELECT TOP 0
+                CAST(NULL AS INT) AS ID,
+                CAST(NULL AS DATETIME) AS DocDate,
+                CAST(NULL AS NVARCHAR(10)) AS DocType,
+                CAST(NULL AS INT) AS DocId,
+                CAST(NULL AS NVARCHAR(60)) AS ReferenceNo,
+                CAST(NULL AS INT) AS StoreID,
+                CAST(NULL AS NVARCHAR(120)) AS StoreName,
+                CAST(NULL AS INT) AS CounterpartyStoreID,
+                CAST(NULL AS NVARCHAR(120)) AS CounterpartyStoreName,
+                CAST(NULL AS INT) AS ItemID,
+                CAST(NULL AS NVARCHAR(100)) AS ItemCode,
+                CAST(NULL AS NVARCHAR(200)) AS ItemName,
+                CAST(NULL AS INT) AS BatchID,
+                CAST(NULL AS NVARCHAR(80)) AS BatchName,
+                CAST(NULL AS DATE) AS ExpiryDate,
+                CAST(NULL AS DECIMAL(18, 3)) AS Qty,
+                CAST(NULL AS DECIMAL(18, 3)) AS QtyIn,
+                CAST(NULL AS DECIMAL(18, 3)) AS QtyOut,
+                CAST(NULL AS DECIMAL(18, 3)) AS BalanceBefore,
+                CAST(NULL AS DECIMAL(18, 3)) AS BalanceAfter,
+                CAST(NULL AS DECIMAL(18, 3)) AS CurrentQty,
+                CAST(NULL AS DECIMAL(18, 3)) AS ReconciliationDelta,
+                CAST(NULL AS DECIMAL(18, 4)) AS Rate,
+                CAST(NULL AS DECIMAL(18, 4)) AS MRP,
+                CAST(NULL AS DECIMAL(18, 2)) AS Amount,
+                CAST(NULL AS NVARCHAR(30)) AS MovementFamily,
+                CAST(NULL AS NVARCHAR(80)) AS MovementLabel,
+                CAST(NULL AS NVARCHAR(50)) AS AuditUserID,
+                CAST(NULL AS DATETIME) AS AuditTime;
+
+            SELECT
+                CAST(1 AS INT) AS page,
+                CAST(ISNULL(@PageSize, 100) AS INT) AS page_size,
+                CAST(0 AS INT) AS total_rows,
+                CAST(1 AS INT) AS total_pages,
+                CAST(0 AS DECIMAL(18, 3)) AS opening_qty,
+                CAST(0 AS DECIMAL(18, 3)) AS inward_qty,
+                CAST(0 AS DECIMAL(18, 3)) AS outward_qty,
+                CAST(0 AS DECIMAL(18, 3)) AS closing_qty,
+                CAST(0 AS DECIMAL(18, 3)) AS live_current_qty,
+                CAST(0 AS INT) AS delta_row_count,
+                CAST(0 AS INT) AS mismatch_count,
+                CAST(N'' AS NVARCHAR(120)) AS store_name,
+                CAST(N'sql_paged' AS NVARCHAR(30)) AS query_engine;
+
+            SELECT TOP 0
+                CAST(NULL AS NVARCHAR(10)) AS DocType,
+                CAST(NULL AS NVARCHAR(30)) AS MovementFamily,
+                CAST(NULL AS NVARCHAR(80)) AS MovementLabel,
+                CAST(NULL AS INT) AS [RowCount];
+
+            SELECT TOP 0
+                CAST(NULL AS INT) AS BatchID,
+                CAST(NULL AS NVARCHAR(80)) AS BatchName,
+                CAST(NULL AS DATE) AS ExpiryDate,
+                CAST(NULL AS INT) AS ItemID,
+                CAST(NULL AS NVARCHAR(200)) AS ItemName,
+                CAST(NULL AS INT) AS [RowCount];
+            RETURN;
+        END;
+
+        IF @FromDate > @ToDate
+        BEGIN
+            DECLARE @SwapDate DATETIME = @FromDate;
+            SET @FromDate = @ToDate;
+            SET @ToDate = @SwapDate;
+        END;
+
+        SET @FromDate = DATEADD(DAY, DATEDIFF(DAY, 0, @FromDate), 0);
+        SET @ToDate = DATEADD(DAY, DATEDIFF(DAY, 0, @ToDate), 0);
+        SET @Page = CASE WHEN ISNULL(@Page, 1) < 1 THEN 1 ELSE @Page END;
+        SET @PageSize = CASE
+            WHEN ISNULL(@PageSize, 100) < 1 THEN 100
+            WHEN @PageSize > 100000 THEN 100000
+            ELSE @PageSize
+        END;
+
+        IF @MovementFamily NOT IN (N'', N'opening', N'inbound', N'outbound', N'return', N'transfer', N'adjustment', N'other')
+            SET @MovementFamily = N'';
+
+        IF OBJECT_ID('tempdb..#store_item_current') IS NOT NULL DROP TABLE #store_item_current;
+        SELECT
+            ss.StoreID,
+            ss.ItemID,
+            SUM(CAST(ISNULL(ss.Qty, 0) AS DECIMAL(18, 3))) AS CurrentQty
+        INTO #store_item_current
+        FROM dbo.storestock ss WITH (NOLOCK)
+        WHERE ss.StoreID = @StoreID
+        GROUP BY ss.StoreID, ss.ItemID;
+
+        IF EXISTS (SELECT 1 FROM #store_item_current)
+        BEGIN
+            CREATE CLUSTERED INDEX IX_PhLedger_StoreItemCurrent
+                ON #store_item_current (StoreID, ItemID);
+        END;
+
+        IF OBJECT_ID('tempdb..#ledger_base') IS NOT NULL DROP TABLE #ledger_base;
+        SELECT
+            CAST(sr.ID AS INT) AS ID,
+            CAST(sr.DocDate AS DATETIME) AS DocDate,
+            calc.DocType AS DocType,
+            CAST(ISNULL(sr.DocId, 0) AS INT) AS DocId,
+            CAST(
+                CASE
+                    WHEN ISNULL(sr.DocId, 0) > 0 THEN calc.DocType + N'-' + CONVERT(NVARCHAR(50), ISNULL(sr.DocId, 0))
+                    ELSE calc.DocType
+                END
+                AS NVARCHAR(60)
+            ) AS ReferenceNo,
+            CAST(ISNULL(sr.StoreID, 0) AS INT) AS StoreID,
+            CAST(LTRIM(RTRIM(ISNULL(st.Name, N''))) AS NVARCHAR(120)) AS StoreName,
+            CAST(0 AS INT) AS CounterpartyStoreID,
+            CAST(N'' AS NVARCHAR(120)) AS CounterpartyStoreName,
+            CAST(sr.ItemID AS INT) AS ItemID,
+            CAST(LTRIM(RTRIM(ISNULL(i.Code, N''))) AS NVARCHAR(100)) AS ItemCode,
+            CAST(LTRIM(RTRIM(ISNULL(i.Name, N''))) AS NVARCHAR(200)) AS ItemName,
+            CAST(sr.BatchID AS INT) AS BatchID,
+            CAST(LTRIM(RTRIM(CONVERT(NVARCHAR(80), ISNULL(b.Name, N'')))) AS NVARCHAR(80)) AS BatchName,
+            CAST(b.ExpiryDate AS DATE) AS ExpiryDate,
+            calc.QtyRaw AS Qty,
+            CAST(CASE WHEN calc.DocType IN (N'OPB', N'GRN', N'RCD', N'RTD', N'DRT', N'RFD', N'SAI') THEN calc.QtyAbs ELSE 0 END AS DECIMAL(18, 3)) AS QtyIn,
+            CAST(CASE WHEN calc.DocType IN (N'ROT', N'PIS', N'ISD', N'PUR', N'SAD', N'ISS', N'DIS') THEN calc.QtyAbs ELSE 0 END AS DECIMAL(18, 3)) AS QtyOut,
+            CAST(
+                CASE
+                    WHEN calc.DocType IN (N'OPB', N'GRN', N'RCD', N'RTD', N'DRT', N'RFD', N'SAI') THEN calc.QtyAbs
+                    WHEN calc.DocType IN (N'ROT', N'PIS', N'ISD', N'PUR', N'SAD', N'ISS', N'DIS') THEN -calc.QtyAbs
+                    ELSE 0
+                END
+                AS DECIMAL(18, 3)
+            ) AS MovementQty,
+            CAST(
+                CAST(ISNULL(sr.SubStorePLB, ISNULL(sr.RunningBalQty, 0)) AS DECIMAL(18, 3))
+                - CASE WHEN calc.DocType IN (N'OPB', N'GRN', N'RCD', N'RTD', N'DRT', N'RFD', N'SAI') THEN calc.QtyAbs ELSE 0 END
+                + CASE WHEN calc.DocType IN (N'ROT', N'PIS', N'ISD', N'PUR', N'SAD', N'ISS', N'DIS') THEN calc.QtyAbs ELSE 0 END
+                AS DECIMAL(18, 3)
+            ) AS BalanceBefore,
+            CAST(ISNULL(sr.SubStorePLB, ISNULL(sr.RunningBalQty, 0)) AS DECIMAL(18, 3)) AS BalanceAfter,
+            CAST(ISNULL(sc.CurrentQty, 0) AS DECIMAL(18, 3)) AS CurrentQty,
+            CAST(ISNULL(sc.CurrentQty, 0) - ISNULL(sr.SubStorePLB, ISNULL(sr.RunningBalQty, 0)) AS DECIMAL(18, 3)) AS ReconciliationDelta,
+            CAST(ISNULL(b.Rate, 0) AS DECIMAL(18, 4)) AS Rate,
+            CAST(ISNULL(COALESCE(b.mrp, sr.Mrp), 0) AS DECIMAL(18, 4)) AS MRP,
+            CAST(ISNULL(sr.Amount, 0) AS DECIMAL(18, 2)) AS Amount,
+            CAST(
+                CASE
+                    WHEN calc.DocType = N'OPB' THEN N'opening'
+                    WHEN calc.DocType = N'GRN' THEN N'inbound'
+                    WHEN calc.DocType = N'RCD' THEN N'transfer'
+                    WHEN calc.DocType IN (N'RTD', N'DRT', N'RFD') THEN N'return'
+                    WHEN calc.DocType IN (N'SAI', N'SAD') THEN N'adjustment'
+                    WHEN calc.DocType IN (N'ROT', N'PIS', N'ISD', N'PUR', N'ISS', N'DIS') THEN N'outbound'
+                    ELSE N'other'
+                END
+                AS NVARCHAR(30)
+            ) AS MovementFamily,
+            CAST(
+                CASE
+                    WHEN calc.DocType = N'OPB' THEN N'Opening Balance'
+                    WHEN calc.DocType = N'GRN' THEN N'GRN Receipt'
+                    WHEN calc.DocType = N'RCD' THEN N'Store Receipt'
+                    WHEN calc.DocType = N'RTD' THEN N'Material Return Receipt'
+                    WHEN calc.DocType = N'DRT' THEN N'OPD Return'
+                    WHEN calc.DocType = N'RFD' THEN N'IPD Return'
+                    WHEN calc.DocType = N'SAI' THEN N'Stock Adjustment In'
+                    WHEN calc.DocType = N'ROT' THEN N'OPD Sale'
+                    WHEN calc.DocType = N'PIS' THEN N'Patient Issue'
+                    WHEN calc.DocType = N'ISD' THEN N'Departmental Issue'
+                    WHEN calc.DocType = N'PUR' THEN N'Purchase Return'
+                    WHEN calc.DocType = N'SAD' THEN N'Stock Adjustment Out'
+                    WHEN calc.DocType = N'ISS' THEN N'Issue'
+                    WHEN calc.DocType = N'DIS' THEN N'Disposal'
+                    ELSE N'Other'
+                END
+                AS NVARCHAR(80)
+            ) AS MovementLabel,
+            CAST(
+                COALESCE(
+                    NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(50), sr.UpdatedBy))), N''),
+                    NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(50), sr.InsertedByUserID))), N''),
+                    N''
+                )
+                AS NVARCHAR(50)
+            ) AS AuditUserID,
+            CAST(COALESCE(sr.UpdatedON, sr.InsertedON, sr.DocDate) AS DATETIME) AS AuditTime
+        INTO #ledger_base
+        FROM dbo.ivstockregister sr WITH (NOLOCK)
+        CROSS APPLY (
+            SELECT
+                UPPER(LTRIM(RTRIM(ISNULL(sr.DocType, N'')))) AS DocType,
+                CAST(ISNULL(sr.Qty, 0) AS DECIMAL(18, 3)) AS QtyRaw,
+                ABS(CAST(ISNULL(sr.Qty, 0) AS DECIMAL(18, 3))) AS QtyAbs
+        ) calc
+        LEFT JOIN dbo.ivitem i WITH (NOLOCK)
+            ON i.ID = sr.ItemID
+        LEFT JOIN dbo.ivbatch b WITH (NOLOCK)
+            ON b.ID = sr.BatchID
+        LEFT JOIN #store_item_current sc
+            ON sc.StoreID = sr.StoreID
+            AND ISNULL(sc.ItemID, -1) = ISNULL(sr.ItemID, -1)
+        LEFT JOIN dbo.Store st WITH (NOLOCK)
+            ON st.ID = sr.StoreID
+        WHERE
+            sr.StoreID = @StoreID
+            AND sr.DocDate >= @FromDate
+            AND sr.DocDate < DATEADD(DAY, 1, @ToDate)
+            {search_filter_sql}
+            AND (@DocType = N'' OR calc.DocType = @DocType);
+
+        IF EXISTS (SELECT 1 FROM #ledger_base)
+        BEGIN
+            CREATE CLUSTERED INDEX IX_PhLedger_BasePartition
+                ON #ledger_base (StoreID, ItemID, BatchID, DocDate, ID);
+        END;
+
+        IF OBJECT_ID('tempdb..#ledger_scope') IS NOT NULL DROP TABLE #ledger_scope;
+        SELECT
+            lb.*
+        INTO #ledger_scope
+        FROM #ledger_base lb
+        WHERE
+            (@MovementFamily = N'' OR lb.MovementFamily = @MovementFamily)
+            AND (@MismatchOnly = 0 OR ABS(ISNULL(lb.ReconciliationDelta, 0)) > 0.0005);
+
+        IF EXISTS (SELECT 1 FROM #ledger_scope)
+        BEGIN
+            CREATE CLUSTERED INDEX IX_PhLedger_ScopePartition
+                ON #ledger_scope (StoreID, ItemID, BatchID, DocDate, ID);
+            CREATE NONCLUSTERED INDEX IX_PhLedger_ScopePage
+                ON #ledger_scope (DocDate, ID);
+        END;
+
+        IF OBJECT_ID('tempdb..#ledger_filtered') IS NOT NULL DROP TABLE #ledger_filtered;
+        SELECT
+            ls.*
+        INTO #ledger_filtered
+        FROM #ledger_scope ls
+        WHERE (@BatchID <= 0 OR ISNULL(ls.BatchID, 0) = @BatchID);
+
+        IF EXISTS (SELECT 1 FROM #ledger_filtered)
+        BEGIN
+            CREATE CLUSTERED INDEX IX_PhLedger_FilteredPartition
+                ON #ledger_filtered (StoreID, ItemID, BatchID, DocDate, ID);
+            CREATE NONCLUSTERED INDEX IX_PhLedger_FilteredPage
+                ON #ledger_filtered (DocDate, ID);
+        END;
+
+        DECLARE @TotalRows INT = (SELECT COUNT(1) FROM #ledger_filtered);
+        DECLARE @TotalPages INT = CASE
+            WHEN @TotalRows <= 0 THEN 1
+            ELSE CEILING(@TotalRows * 1.0 / @PageSize)
+        END;
+        IF @Page > @TotalPages SET @Page = @TotalPages;
+        DECLARE @Offset INT = (@Page - 1) * @PageSize;
+
+        ;WITH paged AS (
+            SELECT
+                lf.*,
+                ROW_NUMBER() OVER (ORDER BY lf.DocDate DESC, lf.ID DESC) AS RowNum
+            FROM #ledger_filtered lf
+        ),
+        current_page AS (
+            SELECT *
+            FROM paged
+            WHERE RowNum > @Offset
+              AND RowNum <= (@Offset + @PageSize)
+        )
+        SELECT
+            p.ID,
+            p.DocDate,
+            p.DocType,
+            CAST(
+                CASE
+                    WHEN p.DocType = N'GRN' AND ISNULL(p.DocId, 0) = 0 AND ISNULL(grnref.LinkedDocID, 0) > 0 THEN grnref.LinkedDocID
+                    ELSE ISNULL(p.DocId, 0)
+                END
+                AS INT
+            ) AS DocId,
+            CAST(
+                CASE
+                    WHEN p.DocType = N'GRN' AND NULLIF(LTRIM(RTRIM(ISNULL(grnref.LinkedRefNo, N''))), N'') IS NOT NULL THEN grnref.LinkedRefNo
+                    WHEN ISNULL(p.DocId, 0) > 0 THEN p.DocType + N'-' + CONVERT(NVARCHAR(50), ISNULL(p.DocId, 0))
+                    ELSE p.DocType
+                END
+                AS NVARCHAR(60)
+            ) AS ReferenceNo,
+            p.StoreID,
+            p.StoreName,
+            CAST(ISNULL(cp.CounterpartyStoreID, 0) AS INT) AS CounterpartyStoreID,
+            CAST(ISNULL(cp.CounterpartyStoreName, N'') AS NVARCHAR(120)) AS CounterpartyStoreName,
+            p.ItemID,
+            p.ItemCode,
+            p.ItemName,
+            p.BatchID,
+            p.BatchName,
+            p.ExpiryDate,
+            p.Qty,
+            p.QtyIn,
+            p.QtyOut,
+            p.MovementQty,
+            p.BalanceBefore,
+            p.BalanceAfter,
+            p.CurrentQty,
+            p.ReconciliationDelta,
+            p.Rate,
+            p.MRP,
+            p.Amount,
+            p.MovementFamily,
+            p.MovementLabel,
+            p.AuditUserID,
+            p.AuditTime
+        FROM current_page p
+        OUTER APPLY (
+            SELECT TOP 1
+                CAST(m.ID AS INT) AS LinkedDocID,
+                CAST(LTRIM(RTRIM(ISNULL(m.GRNNo, N''))) AS NVARCHAR(60)) AS LinkedRefNo
+            FROM dbo.IVGrnDtl d WITH (NOLOCK)
+            INNER JOIN dbo.IVGrnMst m WITH (NOLOCK)
+                ON m.ID = d.GrnID
+            WHERE
+                p.DocType = N'GRN'
+                AND m.Storeid = p.StoreID
+                AND d.ItemID = p.ItemID
+                AND ISNULL(d.BatchID, 0) = ISNULL(p.BatchID, 0)
+                AND ABS(CAST(ISNULL(d.Qty, 0) AS DECIMAL(18, 3)) - ABS(CAST(ISNULL(p.Qty, 0) AS DECIMAL(18, 3)))) <= 0.0005
+            ORDER BY
+                ABS(DATEDIFF(SECOND, m.GRNDate, p.DocDate)),
+                ABS(CAST(ISNULL(d.Amount, 0) AS DECIMAL(18, 2)) - CAST(ISNULL(p.Amount, 0) AS DECIMAL(18, 2))),
+                m.ID DESC
+        ) grnref
+        OUTER APPLY (
+            SELECT TOP 1
+                CAST(rcd.StoreID AS INT) AS CounterpartyStoreID,
+                CAST(LTRIM(RTRIM(ISNULL(st2.Name, N''))) AS NVARCHAR(120)) AS CounterpartyStoreName
+            FROM dbo.ivstockregister rcd WITH (NOLOCK)
+            LEFT JOIN dbo.Store st2 WITH (NOLOCK)
+                ON st2.ID = rcd.StoreID
+            WHERE
+                p.DocType = N'ISD'
+                AND UPPER(LTRIM(RTRIM(ISNULL(rcd.DocType, N'')))) = N'RCD'
+                AND ISNULL(rcd.DocId, 0) = ISNULL(p.DocId, 0)
+                AND ISNULL(rcd.ItemID, 0) = ISNULL(p.ItemID, 0)
+                AND ISNULL(rcd.BatchID, 0) = ISNULL(p.BatchID, 0)
+                AND ABS(CAST(ISNULL(rcd.Qty, 0) AS DECIMAL(18, 3)) - ABS(CAST(ISNULL(p.Qty, 0) AS DECIMAL(18, 3)))) <= 0.0005
+                AND ISNULL(rcd.StoreID, 0) <> ISNULL(p.StoreID, 0)
+            ORDER BY
+                CASE WHEN rcd.DocDate >= p.DocDate THEN 0 ELSE 1 END,
+                ABS(DATEDIFF(SECOND, rcd.DocDate, p.DocDate)),
+                rcd.ID ASC
+        ) cp
+        ORDER BY p.RowNum;
+
+        ;WITH ranked AS (
+            SELECT
+                lf.*,
+                ROW_NUMBER() OVER (
+                    PARTITION BY lf.StoreID, lf.ItemID
+                    ORDER BY lf.DocDate ASC, lf.ID ASC
+                ) AS FirstSeq,
+                ROW_NUMBER() OVER (
+                    PARTITION BY lf.StoreID, lf.ItemID
+                    ORDER BY lf.DocDate DESC, lf.ID DESC
+                ) AS LastSeq
+            FROM #ledger_filtered lf
+        )
+        SELECT
+            @Page AS page,
+            @PageSize AS page_size,
+            @TotalRows AS total_rows,
+            @TotalPages AS total_pages,
+            CAST(ISNULL(SUM(CASE WHEN ranked.FirstSeq = 1 THEN ranked.BalanceBefore ELSE 0 END), 0) AS DECIMAL(18, 3)) AS opening_qty,
+            CAST(ISNULL(SUM(ranked.QtyIn), 0) AS DECIMAL(18, 3)) AS inward_qty,
+            CAST(ISNULL(SUM(ranked.QtyOut), 0) AS DECIMAL(18, 3)) AS outward_qty,
+            CAST(ISNULL(SUM(CASE WHEN ranked.LastSeq = 1 THEN ranked.BalanceAfter ELSE 0 END), 0) AS DECIMAL(18, 3)) AS closing_qty,
+            CAST(ISNULL(SUM(CASE WHEN ranked.LastSeq = 1 THEN ranked.CurrentQty ELSE 0 END), 0) AS DECIMAL(18, 3)) AS live_current_qty,
+            CAST(ISNULL(SUM(CASE WHEN ABS(ISNULL(ranked.ReconciliationDelta, 0)) > 0.0005 THEN 1 ELSE 0 END), 0) AS INT) AS delta_row_count,
+            CAST(ISNULL(SUM(CASE WHEN ranked.LastSeq = 1 AND ABS(ISNULL(ranked.ReconciliationDelta, 0)) > 0.0005 THEN 1 ELSE 0 END), 0) AS INT) AS mismatch_count,
+            CAST(ISNULL(MAX(ranked.StoreName), N'') AS NVARCHAR(120)) AS store_name,
+            CAST(N'sql_paged' AS NVARCHAR(30)) AS query_engine
+        FROM ranked;
+
+        SELECT
+            DocType,
+            MovementFamily,
+            MovementLabel,
+            COUNT(1) AS [RowCount]
+        FROM #ledger_filtered
+        GROUP BY DocType, MovementFamily, MovementLabel
+        ORDER BY COUNT(1) DESC, DocType;
+
+        SELECT TOP 200
+            CAST(ISNULL(ls.BatchID, 0) AS INT) AS BatchID,
+            CAST(ISNULL(MAX(ls.BatchName), N'') AS NVARCHAR(80)) AS BatchName,
+            CAST(MAX(ls.ExpiryDate) AS DATE) AS ExpiryDate,
+            CAST(ISNULL(MAX(ls.ItemID), 0) AS INT) AS ItemID,
+            CAST(ISNULL(MAX(ls.ItemName), N'') AS NVARCHAR(200)) AS ItemName,
+            COUNT(1) AS [RowCount]
+        FROM #ledger_scope ls
+        WHERE ISNULL(ls.BatchID, 0) > 0
+        GROUP BY ls.BatchID
+        ORDER BY COUNT(1) DESC, MAX(ls.BatchName), ls.BatchID;
+        """
+
+        cursor = conn.cursor()
+        cursor.execute(
+            sql,
+            [
+                int(store_id),
+                from_date,
+                to_date,
+                int(page),
+                int(page_size),
+                search_text,
+                int(batch_id),
+                int(batch_id),
+                movement_family,
+                doc_type,
+                int(mismatch_flag),
+            ],
+        )
+
+        result_sets = []
+        while True:
+            if cursor.description:
+                result_sets.append(_corp_bill_summary_dict_rows_from_cursor(cursor))
+            if not cursor.nextset():
+                break
+
+        try:
+            cursor.close()
+        except Exception:
+            pass
+
+        if not result_sets:
+            return None
+
+        rows = list(result_sets[0] or [])
+        meta_rec = dict(result_sets[1][0] or {}) if len(result_sets) > 1 and result_sets[1] else {}
+        doc_type_rows = list(result_sets[2] or []) if len(result_sets) > 2 else []
+        batch_option_rows = list(result_sets[3] or []) if len(result_sets) > 3 else []
+        df = pd.DataFrame(rows)
+        if not df.empty:
+            df.columns = [str(c).strip() for c in df.columns]
+            df["Unit"] = (unit or "").upper()
+
+        meta = {
+            "page": _pharmacy_stock_ledger_parse_int(meta_rec.get("page"), page, 1, None),
+            "page_size": _pharmacy_stock_ledger_parse_int(meta_rec.get("page_size"), page_size, 1, 100000),
+            "total_rows": _pharmacy_stock_ledger_parse_int(meta_rec.get("total_rows"), len(df.index), 0, None),
+            "total_pages": _pharmacy_stock_ledger_parse_int(meta_rec.get("total_pages"), 1, 1, None),
+            "opening_qty": float(meta_rec.get("opening_qty") or 0),
+            "inward_qty": float(meta_rec.get("inward_qty") or 0),
+            "outward_qty": float(meta_rec.get("outward_qty") or 0),
+            "closing_qty": float(meta_rec.get("closing_qty") or 0),
+            "live_current_qty": float(meta_rec.get("live_current_qty") or 0),
+            "delta_row_count": _pharmacy_stock_ledger_parse_int(meta_rec.get("delta_row_count"), 0, 0, None),
+            "mismatch_count": _pharmacy_stock_ledger_parse_int(meta_rec.get("mismatch_count"), 0, 0, None),
+            "store_name": str(meta_rec.get("store_name") or "").strip(),
+            "query_engine": str(meta_rec.get("query_engine") or "sql_inline"),
+        }
+        doc_types = []
+        for row in doc_type_rows:
+            doc_types.append({
+                "doc_type": str(row.get("DocType") or "").strip().upper(),
+                "movement_family": str(row.get("MovementFamily") or "").strip().lower(),
+                "movement_label": str(row.get("MovementLabel") or "").strip(),
+                "row_count": _pharmacy_stock_ledger_parse_int(row.get("RowCount"), 0, 0, None),
+            })
+        batch_options = []
+        for row in batch_option_rows:
+            batch_options.append({
+                "batch_id": _pharmacy_stock_ledger_parse_int(row.get("BatchID"), 0, 0, None),
+                "batch_name": str(row.get("BatchName") or "").strip(),
+                "expiry_date": row.get("ExpiryDate"),
+                "item_id": _pharmacy_stock_ledger_parse_int(row.get("ItemID"), 0, 0, None),
+                "item_name": str(row.get("ItemName") or "").strip(),
+                "row_count": _pharmacy_stock_ledger_parse_int(row.get("RowCount"), 0, 0, None),
+            })
+        return {"df": df, "meta": meta, "doc_types": doc_types, "batch_options": batch_options}
+    except Exception as e:
+        print(f"Pharmacy stock ledger fetch failed for {unit}: {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def fetch_pharmacy_stock_ledger_trace(
+    unit: str,
+    store_id: int,
+    item_id: int,
+    batch_id: int,
+    doc_date,
+    doc_id: int,
+    doc_type: str,
+    qty,
+    ledger_id: int = 0,
+):
+    """
+    Fetch user-facing trace data for a ledger row, with storestockup as a fallback trace source.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Pharmacy stock ledger trace: could not connect to {unit}")
+        return None
+    try:
+        store_id = _pharmacy_stock_ledger_parse_int(store_id, 0, 0, None)
+        item_id = _pharmacy_stock_ledger_parse_int(item_id, 0, 0, None)
+        batch_id = _pharmacy_stock_ledger_parse_int(batch_id, 0, 0, None)
+        doc_id = _pharmacy_stock_ledger_parse_int(doc_id, 0, 0, None)
+        ledger_id = _pharmacy_stock_ledger_parse_int(ledger_id, 0, 0, None)
+        doc_type = _pharmacy_stock_ledger_norm_doc_type(doc_type)
+        try:
+            qty_val = float(qty or 0)
+        except Exception:
+            qty_val = 0.0
+
+        if store_id <= 0 or item_id <= 0 or (ledger_id <= 0 and (not doc_type or doc_id <= 0)):
+            return {
+                "ledger_row": pd.DataFrame(),
+                "current_stock": pd.DataFrame(),
+                "timeline_rows": pd.DataFrame(),
+                "fallback_rows": pd.DataFrame(),
+            }
+
+        row_sql = """
+        SET NOCOUNT ON;
+        SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+        DECLARE @StoreID INT = ?;
+        DECLARE @ItemID INT = ?;
+        DECLARE @BatchID INT = ?;
+        DECLARE @DocDate DATETIME = ?;
+        DECLARE @DocID INT = ?;
+        DECLARE @DocType NVARCHAR(10) = UPPER(LTRIM(RTRIM(ISNULL(?, N''))));
+        DECLARE @Qty FLOAT = ?;
+        DECLARE @LedgerID INT = ?;
+
+        SELECT TOP 1
+            CAST(sr.ID AS INT) AS ID,
+            CAST(sr.DocDate AS DATETIME) AS DocDate,
+            calc.DocType AS DocType,
+            CAST(
+                CASE
+                    WHEN calc.DocType = N'GRN' AND ISNULL(sr.DocId, 0) = 0 AND ISNULL(grnref.LinkedDocID, 0) > 0 THEN grnref.LinkedDocID
+                    ELSE ISNULL(sr.DocId, 0)
+                END
+                AS INT
+            ) AS DocId,
+            CAST(
+                CASE
+                    WHEN calc.DocType = N'GRN' AND NULLIF(LTRIM(RTRIM(ISNULL(grnref.LinkedRefNo, N''))), N'') IS NOT NULL THEN grnref.LinkedRefNo
+                    WHEN ISNULL(sr.DocId, 0) > 0 THEN calc.DocType + N'-' + CONVERT(NVARCHAR(50), ISNULL(sr.DocId, 0))
+                    ELSE calc.DocType
+                END
+                AS NVARCHAR(60)
+            ) AS ReferenceNo,
+            CAST(sr.StoreID AS INT) AS StoreID,
+            CAST(LTRIM(RTRIM(ISNULL(st.Name, N''))) AS NVARCHAR(120)) AS StoreName,
+            CAST(ISNULL(cp.CounterpartyStoreID, 0) AS INT) AS CounterpartyStoreID,
+            CAST(ISNULL(cp.CounterpartyStoreName, N'') AS NVARCHAR(120)) AS CounterpartyStoreName,
+            CAST(sr.ItemID AS INT) AS ItemID,
+            CAST(LTRIM(RTRIM(ISNULL(i.Code, N''))) AS NVARCHAR(100)) AS ItemCode,
+            CAST(LTRIM(RTRIM(ISNULL(i.Name, N''))) AS NVARCHAR(200)) AS ItemName,
+            CAST(sr.BatchID AS INT) AS BatchID,
+            CAST(LTRIM(RTRIM(CONVERT(NVARCHAR(80), ISNULL(b.Name, N'')))) AS NVARCHAR(80)) AS BatchName,
+            CAST(b.ExpiryDate AS DATE) AS ExpiryDate,
+            CAST(ISNULL(b.Rate, 0) AS DECIMAL(18, 4)) AS Rate,
+            CAST(ISNULL(COALESCE(b.mrp, sr.Mrp), 0) AS DECIMAL(18, 4)) AS MRP,
+            calc.QtyRaw AS Qty,
+            move.QtyIn AS QtyIn,
+            move.QtyOut AS QtyOut,
+            CAST(CASE WHEN move.QtyIn > 0 THEN move.QtyIn ELSE -move.QtyOut END AS DECIMAL(18, 3)) AS MovementQty,
+            CAST(ISNULL(sr.Amount, 0) AS DECIMAL(18, 2)) AS Amount,
+            CAST(ISNULL(sr.SubStorePLB, ISNULL(sr.RunningBalQty, 0)) AS DECIMAL(18, 3)) AS BalanceAfter,
+            CAST(CAST(ISNULL(sr.SubStorePLB, ISNULL(sr.RunningBalQty, 0)) AS DECIMAL(18, 3)) - move.QtyIn + move.QtyOut AS DECIMAL(18, 3)) AS BalanceBefore,
+            move.MovementFamily AS MovementFamily,
+            move.MovementLabel AS MovementLabel,
+            CAST(
+                COALESCE(
+                    NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(50), sr.UpdatedBy))), N''),
+                    NULLIF(LTRIM(RTRIM(CONVERT(NVARCHAR(50), sr.InsertedByUserID))), N''),
+                    N''
+                )
+                AS NVARCHAR(50)
+            ) AS AuditUserID,
+            CAST(COALESCE(sr.UpdatedON, sr.InsertedON, sr.DocDate) AS DATETIME) AS AuditTime,
+            CAST(sr.UpdatedBy AS NVARCHAR(50)) AS UpdatedBy,
+            CAST(sr.UpdatedON AS DATETIME) AS UpdatedON,
+            CAST(sr.UpdatedMacName AS NVARCHAR(100)) AS UpdatedMacName,
+            CAST(sr.UpdatedMacID AS NVARCHAR(50)) AS UpdatedMacID,
+            CAST(sr.UpdatedIPAddress AS NVARCHAR(50)) AS UpdatedIPAddress,
+            CAST(sr.InsertedByUserID AS NVARCHAR(50)) AS InsertedByUserID,
+            CAST(sr.InsertedON AS DATETIME) AS InsertedON,
+            CAST(sr.InsertedMacName AS NVARCHAR(100)) AS InsertedMacName,
+            CAST(sr.InsertedMacID AS NVARCHAR(50)) AS InsertedMacID,
+            CAST(sr.InsertedIPAddress AS NVARCHAR(50)) AS InsertedIPAddress
+        FROM dbo.ivstockregister sr WITH (NOLOCK)
+        CROSS APPLY (
+            SELECT
+                UPPER(LTRIM(RTRIM(ISNULL(sr.DocType, N'')))) AS DocType,
+                CAST(ISNULL(sr.Qty, 0) AS DECIMAL(18, 3)) AS QtyRaw,
+                ABS(CAST(ISNULL(sr.Qty, 0) AS DECIMAL(18, 3))) AS QtyAbs
+        ) calc
+        CROSS APPLY (
+            SELECT
+                CAST(CASE WHEN calc.DocType IN (N'OPB', N'GRN', N'RCD', N'RTD', N'DRT', N'RFD', N'SAI') THEN calc.QtyAbs ELSE 0 END AS DECIMAL(18, 3)) AS QtyIn,
+                CAST(CASE WHEN calc.DocType IN (N'ROT', N'PIS', N'ISD', N'PUR', N'SAD', N'ISS', N'DIS') THEN calc.QtyAbs ELSE 0 END AS DECIMAL(18, 3)) AS QtyOut,
+                CAST(
+                    CASE
+                        WHEN calc.DocType = N'OPB' THEN N'opening'
+                        WHEN calc.DocType = N'GRN' THEN N'inbound'
+                        WHEN calc.DocType = N'RCD' THEN N'transfer'
+                        WHEN calc.DocType IN (N'RTD', N'DRT', N'RFD') THEN N'return'
+                        WHEN calc.DocType IN (N'SAI', N'SAD') THEN N'adjustment'
+                        WHEN calc.DocType IN (N'ROT', N'PIS', N'ISD', N'PUR', N'ISS', N'DIS') THEN N'outbound'
+                        ELSE N'other'
+                    END
+                    AS NVARCHAR(30)
+                ) AS MovementFamily,
+                CAST(
+                    CASE
+                        WHEN calc.DocType = N'OPB' THEN N'Opening Balance'
+                        WHEN calc.DocType = N'GRN' THEN N'GRN Receipt'
+                        WHEN calc.DocType = N'RCD' THEN N'Store Receipt'
+                        WHEN calc.DocType = N'RTD' THEN N'Material Return Receipt'
+                        WHEN calc.DocType = N'DRT' THEN N'OPD Return'
+                        WHEN calc.DocType = N'RFD' THEN N'IPD Return'
+                        WHEN calc.DocType = N'SAI' THEN N'Stock Adjustment In'
+                        WHEN calc.DocType = N'ROT' THEN N'OPD Sale'
+                        WHEN calc.DocType = N'PIS' THEN N'Patient Issue'
+                        WHEN calc.DocType = N'ISD' THEN N'Departmental Issue'
+                        WHEN calc.DocType = N'PUR' THEN N'Purchase Return'
+                        WHEN calc.DocType = N'SAD' THEN N'Stock Adjustment Out'
+                        WHEN calc.DocType = N'ISS' THEN N'Issue'
+                        WHEN calc.DocType = N'DIS' THEN N'Disposal'
+                        ELSE N'Other'
+                    END
+                    AS NVARCHAR(80)
+                ) AS MovementLabel
+        ) move
+        OUTER APPLY (
+            SELECT TOP 1
+                CAST(m.ID AS INT) AS LinkedDocID,
+                CAST(LTRIM(RTRIM(ISNULL(m.GRNNo, N''))) AS NVARCHAR(60)) AS LinkedRefNo
+            FROM dbo.IVGrnDtl d WITH (NOLOCK)
+            INNER JOIN dbo.IVGrnMst m WITH (NOLOCK)
+                ON m.ID = d.GrnID
+            WHERE
+                calc.DocType = N'GRN'
+                AND m.Storeid = sr.StoreID
+                AND d.ItemID = sr.ItemID
+                AND ISNULL(d.BatchID, 0) = ISNULL(sr.BatchID, 0)
+                AND ABS(CAST(ISNULL(d.Qty, 0) AS DECIMAL(18, 3)) - calc.QtyAbs) <= 0.0005
+            ORDER BY
+                ABS(DATEDIFF(SECOND, m.GRNDate, sr.DocDate)),
+                ABS(CAST(ISNULL(d.Amount, 0) AS DECIMAL(18, 2)) - CAST(ISNULL(sr.Amount, 0) AS DECIMAL(18, 2))),
+                m.ID DESC
+        ) grnref
+        OUTER APPLY (
+            SELECT TOP 1
+                CAST(rcd.StoreID AS INT) AS CounterpartyStoreID,
+                CAST(LTRIM(RTRIM(ISNULL(st2.Name, N''))) AS NVARCHAR(120)) AS CounterpartyStoreName
+            FROM dbo.ivstockregister rcd WITH (NOLOCK)
+            LEFT JOIN dbo.Store st2 WITH (NOLOCK)
+                ON st2.ID = rcd.StoreID
+            WHERE
+                calc.DocType = N'ISD'
+                AND UPPER(LTRIM(RTRIM(ISNULL(rcd.DocType, N'')))) = N'RCD'
+                AND ISNULL(rcd.DocId, 0) = ISNULL(sr.DocId, 0)
+                AND ISNULL(rcd.ItemID, 0) = ISNULL(sr.ItemID, 0)
+                AND ISNULL(rcd.BatchID, 0) = ISNULL(sr.BatchID, 0)
+                AND ABS(CAST(ISNULL(rcd.Qty, 0) AS DECIMAL(18, 3)) - calc.QtyAbs) <= 0.0005
+                AND ISNULL(rcd.StoreID, 0) <> ISNULL(sr.StoreID, 0)
+            ORDER BY
+                CASE WHEN rcd.DocDate >= sr.DocDate THEN 0 ELSE 1 END,
+                ABS(DATEDIFF(SECOND, rcd.DocDate, sr.DocDate)),
+                rcd.ID ASC
+        ) cp
+        LEFT JOIN dbo.ivitem i WITH (NOLOCK)
+            ON i.ID = sr.ItemID
+        LEFT JOIN dbo.ivbatch b WITH (NOLOCK)
+            ON b.ID = sr.BatchID
+        LEFT JOIN dbo.Store st WITH (NOLOCK)
+            ON st.ID = sr.StoreID
+        WHERE
+            (
+                (@LedgerID > 0 AND sr.ID = @LedgerID)
+                OR (
+                    @LedgerID <= 0
+                    AND sr.StoreID = @StoreID
+                    AND sr.ItemID = @ItemID
+                    AND (@BatchID = 0 OR ISNULL(sr.BatchID, 0) = @BatchID)
+                    AND ISNULL(sr.DocId, 0) = @DocID
+                    AND UPPER(LTRIM(RTRIM(ISNULL(sr.DocType, N'')))) = @DocType
+                )
+            )
+        ORDER BY
+            CASE WHEN @LedgerID > 0 AND sr.ID = @LedgerID THEN 0 ELSE 1 END,
+            CASE
+                WHEN @DocDate IS NULL THEN 0
+                ELSE ABS(DATEDIFF(SECOND, sr.DocDate, @DocDate))
+            END,
+            ABS(ISNULL(sr.Qty, 0) - ISNULL(@Qty, 0)),
+            sr.ID DESC;
+        """
+        ledger_df = pd.read_sql(
+            row_sql,
+            conn,
+            params=[int(store_id), int(item_id), int(batch_id), doc_date, int(doc_id), doc_type, float(qty_val), int(ledger_id)],
+        )
+        if ledger_df is not None and not ledger_df.empty:
+            ledger_df.columns = [str(c).strip() for c in ledger_df.columns]
+
+        current_sql = """
+        SET NOCOUNT ON;
+        SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+        DECLARE @StoreID INT = ?;
+        DECLARE @ItemID INT = ?;
+        DECLARE @BatchID INT = ?;
+
+        SELECT
+            CAST(@StoreID AS INT) AS StoreID,
+            CAST(LTRIM(RTRIM(ISNULL(st.Name, N''))) AS NVARCHAR(120)) AS StoreName,
+            CAST(@ItemID AS INT) AS ItemID,
+            CAST(LTRIM(RTRIM(ISNULL(i.Code, N''))) AS NVARCHAR(100)) AS ItemCode,
+            CAST(LTRIM(RTRIM(ISNULL(i.Name, N''))) AS NVARCHAR(200)) AS ItemName,
+            CAST(SUM(CAST(ISNULL(ss.Qty, 0) AS DECIMAL(18, 3))) AS DECIMAL(18, 3)) AS CurrentQty,
+            CAST(SUM(CAST(ISNULL(ss.OpeningQty, 0) AS DECIMAL(18, 3))) AS DECIMAL(18, 3)) AS OpeningQty,
+            CAST(SUM(CASE WHEN @BatchID > 0 AND ISNULL(ss.BatchID, 0) = @BatchID THEN CAST(ISNULL(ss.Qty, 0) AS DECIMAL(18, 3)) ELSE 0 END) AS DECIMAL(18, 3)) AS SelectedBatchQty,
+            CAST(ISNULL(MAX(COALESCE(ss.UpdatedON, ss.InsertedON)), NULL) AS DATETIME) AS UpdatedON
+        FROM dbo.storestock ss WITH (NOLOCK)
+        CROSS JOIN (SELECT @StoreID AS StoreID, @ItemID AS ItemID, @BatchID AS BatchID) p
+        LEFT JOIN dbo.ivitem i WITH (NOLOCK)
+            ON i.ID = p.ItemID
+        LEFT JOIN dbo.Store st WITH (NOLOCK)
+            ON st.ID = p.StoreID
+        WHERE
+            ss.StoreID = @StoreID
+            AND ss.ItemID = @ItemID
+        GROUP BY
+            st.Name,
+            i.Code,
+            i.Name;
+        """
+        current_df = pd.read_sql(
+            current_sql,
+            conn,
+            params=[int(store_id), int(item_id), int(batch_id)],
+        )
+        if current_df is not None and not current_df.empty:
+            current_df.columns = [str(c).strip() for c in current_df.columns]
+
+        timeline_df = pd.DataFrame()
+        ledger_id = 0
+        if ledger_df is not None and not ledger_df.empty:
+            try:
+                ledger_id = int(float(ledger_df.iloc[0].get("ID") or 0))
+            except Exception:
+                ledger_id = 0
+
+        if ledger_id > 0:
+            timeline_sql = """
+            SET NOCOUNT ON;
+            SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+            DECLARE @StoreID INT = ?;
+            DECLARE @ItemID INT = ?;
+            DECLARE @LedgerID INT = ?;
+
+            ;WITH base AS (
+                SELECT
+                    CAST(sr.ID AS INT) AS ID,
+                    CAST(sr.DocDate AS DATETIME) AS DocDate,
+                    calc.DocType AS DocType,
+                    CAST(ISNULL(sr.DocId, 0) AS INT) AS DocId,
+                    CAST(calc.DocType + N'-' + CONVERT(NVARCHAR(50), ISNULL(sr.DocId, 0)) AS NVARCHAR(60)) AS ReferenceNo,
+                    CAST(ISNULL(sr.BatchID, 0) AS INT) AS BatchID,
+                    CAST(LTRIM(RTRIM(CONVERT(NVARCHAR(80), ISNULL(b.Name, N'')))) AS NVARCHAR(80)) AS BatchName,
+                    move.MovementFamily AS MovementFamily,
+                    move.MovementLabel AS MovementLabel,
+                    CAST(CASE WHEN move.QtyIn > 0 THEN move.QtyIn ELSE -move.QtyOut END AS DECIMAL(18, 3)) AS MovementQty,
+                    CAST(CAST(ISNULL(sr.SubStorePLB, ISNULL(sr.RunningBalQty, 0)) AS DECIMAL(18, 3)) - move.QtyIn + move.QtyOut AS DECIMAL(18, 3)) AS StockBefore,
+                    CAST(ISNULL(sr.SubStorePLB, ISNULL(sr.RunningBalQty, 0)) AS DECIMAL(18, 3)) AS StockAfter
+                FROM dbo.ivstockregister sr WITH (NOLOCK)
+                CROSS APPLY (
+                    SELECT
+                        UPPER(LTRIM(RTRIM(ISNULL(sr.DocType, N'')))) AS DocType,
+                        ABS(CAST(ISNULL(sr.Qty, 0) AS DECIMAL(18, 3))) AS QtyAbs
+                ) calc
+                CROSS APPLY (
+                    SELECT
+                        CAST(CASE WHEN calc.DocType IN (N'OPB', N'GRN', N'RCD', N'RTD', N'DRT', N'RFD', N'SAI') THEN calc.QtyAbs ELSE 0 END AS DECIMAL(18, 3)) AS QtyIn,
+                        CAST(CASE WHEN calc.DocType IN (N'ROT', N'PIS', N'ISD', N'PUR', N'SAD', N'ISS', N'DIS') THEN calc.QtyAbs ELSE 0 END AS DECIMAL(18, 3)) AS QtyOut,
+                        CAST(
+                            CASE
+                                WHEN calc.DocType = N'OPB' THEN N'opening'
+                                WHEN calc.DocType = N'GRN' THEN N'inbound'
+                                WHEN calc.DocType = N'RCD' THEN N'transfer'
+                                WHEN calc.DocType IN (N'RTD', N'DRT', N'RFD') THEN N'return'
+                                WHEN calc.DocType IN (N'SAI', N'SAD') THEN N'adjustment'
+                                WHEN calc.DocType IN (N'ROT', N'PIS', N'ISD', N'PUR', N'ISS', N'DIS') THEN N'outbound'
+                                ELSE N'other'
+                            END
+                            AS NVARCHAR(30)
+                        ) AS MovementFamily,
+                        CAST(
+                            CASE
+                                WHEN calc.DocType = N'OPB' THEN N'Opening Balance'
+                                WHEN calc.DocType = N'GRN' THEN N'GRN Receipt'
+                                WHEN calc.DocType = N'RCD' THEN N'Store Receipt'
+                                WHEN calc.DocType = N'RTD' THEN N'Material Return Receipt'
+                                WHEN calc.DocType = N'DRT' THEN N'OPD Return'
+                                WHEN calc.DocType = N'RFD' THEN N'IPD Return'
+                                WHEN calc.DocType = N'SAI' THEN N'Stock Adjustment In'
+                                WHEN calc.DocType = N'ROT' THEN N'OPD Sale'
+                                WHEN calc.DocType = N'PIS' THEN N'Patient Issue'
+                                WHEN calc.DocType = N'ISD' THEN N'Departmental Issue'
+                                WHEN calc.DocType = N'PUR' THEN N'Purchase Return'
+                                WHEN calc.DocType = N'SAD' THEN N'Stock Adjustment Out'
+                                WHEN calc.DocType = N'ISS' THEN N'Issue'
+                                WHEN calc.DocType = N'DIS' THEN N'Disposal'
+                                ELSE N'Other'
+                            END
+                            AS NVARCHAR(80)
+                        ) AS MovementLabel
+                ) move
+                LEFT JOIN dbo.ivbatch b WITH (NOLOCK)
+                    ON b.ID = sr.BatchID
+                WHERE
+                    sr.StoreID = @StoreID
+                    AND sr.ItemID = @ItemID
+            ),
+            anchor AS (
+                SELECT TOP 1
+                    b.ID,
+                    b.DocDate
+                FROM base b
+                WHERE b.ID = @LedgerID
+            ),
+            prev_rows AS (
+                SELECT TOP 4
+                    CAST(0 AS INT) AS SortBand,
+                    CAST(0 AS BIT) AS IsSelected,
+                    b.*
+                FROM base b
+                CROSS JOIN anchor a
+                WHERE
+                    b.DocDate < a.DocDate
+                    OR (b.DocDate = a.DocDate AND b.ID < a.ID)
+                ORDER BY b.DocDate DESC, b.ID DESC
+            ),
+            anchor_row AS (
+                SELECT
+                    CAST(1 AS INT) AS SortBand,
+                    CAST(1 AS BIT) AS IsSelected,
+                    b.*
+                FROM base b
+                WHERE b.ID = @LedgerID
+            ),
+            next_rows AS (
+                SELECT TOP 8
+                    CAST(2 AS INT) AS SortBand,
+                    CAST(0 AS BIT) AS IsSelected,
+                    b.*
+                FROM base b
+                CROSS JOIN anchor a
+                WHERE
+                    b.DocDate > a.DocDate
+                    OR (b.DocDate = a.DocDate AND b.ID > a.ID)
+                ORDER BY b.DocDate ASC, b.ID ASC
+            )
+            SELECT
+                ID,
+                DocDate,
+                DocType,
+                DocId,
+                ReferenceNo,
+                BatchID,
+                BatchName,
+                MovementFamily,
+                MovementLabel,
+                MovementQty,
+                StockBefore,
+                StockAfter,
+                IsSelected
+            FROM (
+                SELECT * FROM prev_rows
+                UNION ALL
+                SELECT * FROM anchor_row
+                UNION ALL
+                SELECT * FROM next_rows
+            ) t
+            ORDER BY DocDate ASC, ID ASC;
+            """
+            timeline_df = pd.read_sql(
+                timeline_sql,
+                conn,
+                params=[int(store_id), int(item_id), int(ledger_id)],
+            )
+            if timeline_df is not None and not timeline_df.empty:
+                timeline_df.columns = [str(c).strip() for c in timeline_df.columns]
+
+        stockup_cols = _table_columns_map_conn(conn, "dbo.storestockup")
+        fallback_df = pd.DataFrame()
+        if stockup_cols:
+            fallback_select = []
+            desired_cols = [
+                ("EffectON", ["EffectON"]),
+                ("Qty", ["Qty"]),
+                ("SaleQty", ["SaleQty"]),
+                ("GRNQty", ["GRNQty"]),
+                ("RETQty", ["RETQty"]),
+                ("ISSQty", ["ISSQty"]),
+                ("PURQty", ["PURQty"]),
+                ("SRQty", ["SRQty"]),
+                ("AdjQty", ["AdjQty"]),
+                ("ShortQty", ["ShortQty"]),
+                ("ClosingQty", ["ClosingQty"]),
+                ("Rate", ["Rate"]),
+                ("MRP", ["MRP"]),
+                ("SaleValue", ["SaleValue"]),
+                ("PurchaseValue", ["PurchaseValue"]),
+                ("IssuedValue", ["IssuedValue"]),
+                ("SaleRetValue", ["SaleRetValue"]),
+                ("IssueRetValue", ["IssueRetValue"]),
+                ("PurRetValue", ["PurRetValue"]),
+                ("AdjValue", ["AdjValue"]),
+                ("GST", ["GST"]),
+                ("OpeningQty", ["OpeningQty"]),
+                ("DcrpQty", ["DcrpQty"]),
+                ("UpdatedBy", ["UpdatedBy"]),
+                ("UpdatedON", ["UpdatedON"]),
+                ("UpdatedMacName", ["UpdatedMacName"]),
+                ("UpdatedMacID", ["UpdatedMacID"]),
+                ("UpdatedIPAddress", ["UpdatedIPAddress"]),
+                ("InsertedByUserID", ["InsertedByUserID"]),
+                ("InsertedON", ["InsertedON"]),
+                ("InsertedMacName", ["InsertedMacName"]),
+                ("InsertedMacID", ["InsertedMacID"]),
+                ("InsertedIPAddress", ["InsertedIPAddress"]),
+                ("categoryid", ["categoryid"]),
+            ]
+            for alias, candidates in desired_cols:
+                col_name = _pick_table_col_conn(conn, "dbo.storestockup", candidates)
+                if col_name:
+                    fallback_select.append(f"su.[{col_name}] AS [{alias}]")
+
+            if fallback_select:
+                fallback_sql = f"""
+                SET NOCOUNT ON;
+                SET TRANSACTION ISOLATION LEVEL READ UNCOMMITTED;
+
+                DECLARE @StoreID INT = ?;
+                DECLARE @ItemID INT = ?;
+                DECLARE @AnchorDate DATETIME = ?;
+
+                ;WITH prev_rows AS (
+                    SELECT TOP 5
+                        0 AS SortGroup,
+                        {", ".join(fallback_select)}
+                    FROM dbo.storestockup su WITH (NOLOCK)
+                    WHERE
+                        su.StoreID = @StoreID
+                        AND su.ItemID = @ItemID
+                        AND (@AnchorDate IS NULL OR su.EffectON <= @AnchorDate)
+                    ORDER BY su.EffectON DESC, ISNULL(su.UpdatedON, su.InsertedON) DESC
+                ),
+                next_rows AS (
+                    SELECT TOP 5
+                        1 AS SortGroup,
+                        {", ".join(fallback_select)}
+                    FROM dbo.storestockup su WITH (NOLOCK)
+                    WHERE
+                        su.StoreID = @StoreID
+                        AND su.ItemID = @ItemID
+                        AND (@AnchorDate IS NULL OR su.EffectON > @AnchorDate)
+                    ORDER BY su.EffectON ASC, ISNULL(su.UpdatedON, su.InsertedON) ASC
+                )
+                SELECT *
+                FROM (
+                    SELECT * FROM prev_rows
+                    UNION ALL
+                    SELECT * FROM next_rows
+                ) X
+                ORDER BY
+                    CASE WHEN X.SortGroup = 0 THEN 0 ELSE 1 END,
+                    X.EffectON DESC;
+                """
+                fallback_df = pd.read_sql(
+                    fallback_sql,
+                    conn,
+                    params=[int(store_id), int(item_id), doc_date],
+                )
+                if fallback_df is not None and not fallback_df.empty:
+                    fallback_df.columns = [str(c).strip() for c in fallback_df.columns]
+                    if "SortGroup" in fallback_df.columns:
+                        fallback_df = fallback_df.drop(columns=["SortGroup"])
+
+        return {
+            "ledger_row": ledger_df if ledger_df is not None else pd.DataFrame(),
+            "current_stock": current_df if current_df is not None else pd.DataFrame(),
+            "timeline_rows": timeline_df if timeline_df is not None else pd.DataFrame(),
+            "fallback_rows": fallback_df if fallback_df is not None else pd.DataFrame(),
+        }
+    except Exception as e:
+        print(f"Pharmacy stock ledger trace fetch failed for {unit}: {e}")
         return None
     finally:
         try:

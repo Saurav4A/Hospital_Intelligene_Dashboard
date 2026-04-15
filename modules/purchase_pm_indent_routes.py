@@ -193,7 +193,6 @@ def register_purchase_pm_indent_routes(
         rate_col = cols.get("lastporate") or cols.get("rate")
         mrp_col = cols.get("mrp")
         vat_col = cols.get("vat")
-        consumption_col = cols.get("code")
         stock_col = cols.get("unitname")
         unit_id_col = cols.get("unitid")
 
@@ -248,7 +247,7 @@ def register_purchase_pm_indent_routes(
                 "last_po_rate": rate_val or 0,
                 "mrp": mrp_val or 0,
                 "vat": vat_val or 0,
-                "last_15_days": consumption_map.get(item_id, row.get(consumption_col)),
+                "last_15_days": consumption_map.get(item_id, 0.0),
                 "current_stock": row.get(stock_col),
                 "unit_id": row.get(unit_id_col),
             })
@@ -1192,6 +1191,7 @@ def register_purchase_pm_indent_routes(
                     item_ids.append(int(val))
                 except Exception:
                     continue
+            latest_po_rate_map = data_fetch.fetch_latest_po_rate_map(unit, item_ids)
             item_master_map = _get_item_master_rate_mrp_map(unit, item_ids)
             rate_cols = [
                 cols.get("lastporate"),
@@ -1220,7 +1220,9 @@ def register_purchase_pm_indent_routes(
                 except Exception:
                     item_id = None
                 fallback = item_master_map.get(item_id or -1, {})
-                rate_val = _first_numeric_value(row, rate_cols)
+                rate_val = latest_po_rate_map.get(item_id or -1)
+                if rate_val is None or rate_val <= 0:
+                    rate_val = _first_numeric_value(row, rate_cols)
                 if rate_val is None or rate_val <= 0:
                     rate_val = fallback.get("rate")
                 if rate_val is None:

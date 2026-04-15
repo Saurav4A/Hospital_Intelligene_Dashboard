@@ -502,8 +502,8 @@
             <input type="checkbox" name="purchase_unit_option" value="*">
             <span>All Units</span>
           </label>
-          {% if allowed_units %}
-            {% for u in allowed_units %}
+          {% if purchase_scope_units %}
+            {% for u in purchase_scope_units %}
               <label class="um-chip">
                 <input type="checkbox" name="purchase_unit_option" value="{{ u }}">
                 <span>{{ u }}</span>
@@ -591,6 +591,10 @@
                     {% set label = 'Service Addition - IP Package' %}
                   {% elif sec == 'corporate_writeoff' %}
                     {% set label = 'Corporate - Write-off Permission' %}
+                  {% elif sec == 'corporate_receipt_date_edit' %}
+                    {% set label = 'Corporate - Receipt Date Change Permission' %}
+                  {% elif sec == 'corporate_bill_unsubmit' %}
+                    {% set label = 'Corporate - Bill Unsubmit Permission' %}
                   {% endif %}
                   <label class="um-chip">
                     <input type="checkbox" name="section_option" value="{{ sec }}" {% if sec in _pre or '*' in _pre %}checked{% endif %}>
@@ -892,8 +896,8 @@
                       <input type="checkbox" name="purchase_unit_option_edit" value="*">
                       <span>All Units</span>
                     </label>
-                    {% if allowed_units %}
-                      {% for u in allowed_units %}
+                    {% if purchase_scope_units %}
+                      {% for u in purchase_scope_units %}
                         <label class="um-chip">
                           <input type="checkbox" name="purchase_unit_option_edit" value="{{ u }}">
                           <span>{{ u }}</span>
@@ -997,6 +1001,10 @@
                     {% set label = 'Service Addition - IP Package' %}
                   {% elif sec == 'corporate_writeoff' %}
                     {% set label = 'Corporate - Write-off Permission' %}
+                  {% elif sec == 'corporate_receipt_date_edit' %}
+                    {% set label = 'Corporate - Receipt Date Change Permission' %}
+                  {% elif sec == 'corporate_bill_unsubmit' %}
+                    {% set label = 'Corporate - Bill Unsubmit Permission' %}
                   {% endif %}
                       <label class="um-chip">
                         <input type="checkbox" name="section_option_edit" value="{{ sec }}">
@@ -1175,7 +1183,7 @@
                         <input type="checkbox" value="*">
                         <span>All Units</span>
                       </label>
-                      {% for u in allowed_units or [] %}
+                      {% for u in purchase_scope_units or [] %}
                         <label class="um-chip">
                           <input type="checkbox" value="{{ (u or '')|upper }}">
                           <span>{{ u }}</span>
@@ -1262,6 +1270,10 @@
                                   {% set label = 'Service Addition - IP Package' %}
                                 {% elif sec == 'corporate_writeoff' %}
                                   {% set label = 'Corporate - Write-off Permission' %}
+                                {% elif sec == 'corporate_receipt_date_edit' %}
+                                  {% set label = 'Corporate - Receipt Date Change Permission' %}
+                                {% elif sec == 'corporate_bill_unsubmit' %}
+                                  {% set label = 'Corporate - Bill Unsubmit Permission' %}
                                 {% endif %}
                                 <label class="um-chip">
                                   <input type="checkbox" value="{{ sec }}">

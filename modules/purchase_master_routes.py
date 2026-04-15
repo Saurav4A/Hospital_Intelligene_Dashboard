@@ -11,6 +11,7 @@ def register_purchase_master_routes(
     allowed_purchase_units_for_session,
     role_base,
     can_use_def_po_print_format,
+    can_use_trust_po_print_format,
     get_purchase_unit,
     build_purchase_department_payload,
     clean_df_columns,
@@ -47,6 +48,7 @@ def register_purchase_master_routes(
     _allowed_purchase_units_for_session = allowed_purchase_units_for_session
     _role_base = role_base
     _can_use_def_po_print_format = can_use_def_po_print_format
+    _can_use_trust_po_print_format = can_use_trust_po_print_format
     _get_purchase_unit = get_purchase_unit
     _build_purchase_department_payload = build_purchase_department_payload
     _clean_df_columns = clean_df_columns
@@ -89,6 +91,7 @@ def register_purchase_master_routes(
                 allowed_units=allowed_units,
                 is_executive=_role_base(role) == "Executive",
                 can_use_po_def_format=_can_use_def_po_print_format("AHLSTORE"),
+                can_use_po_trust_format=_can_use_trust_po_print_format("AHLSTORE"),
             ),
             200,
             {
@@ -115,6 +118,18 @@ def register_purchase_master_routes(
             pass
         try:
             data_fetch.ensure_po_special_notes_column(unit)
+        except Exception:
+            pass
+        try:
+            data_fetch.ensure_po_cmc_amc_warranty_column(unit)
+        except Exception:
+            pass
+        try:
+            data_fetch.ensure_po_overall_discount_mode_column(unit)
+        except Exception:
+            pass
+        try:
+            data_fetch.ensure_po_overall_discount_value_column(unit)
         except Exception:
             pass
         try:

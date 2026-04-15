@@ -9,6 +9,7 @@
     position: sticky;
     top: 88px;
     align-self:flex-start;
+    max-height: calc(100vh - 104px);
   }
   .mis-side-card{
     background:#fff;
@@ -16,6 +17,10 @@
     border-radius:12px;
     box-shadow: var(--shadow);
     padding:12px;
+    display:flex;
+    flex-direction:column;
+    max-height: calc(100vh - 104px);
+    overflow:hidden;
   }
   .mis-side-title{
     font-size:12px;
@@ -25,7 +30,23 @@
     text-transform:uppercase;
     margin-bottom:10px;
   }
-  .side-nav{ display:flex; flex-direction:column; gap:8px; }
+  .side-nav{
+    display:flex;
+    flex-direction:column;
+    gap:8px;
+    min-height:0;
+    overflow-y:auto;
+    padding-right:4px;
+    scrollbar-width:thin;
+    scrollbar-color:#cbd5e1 transparent;
+  }
+  .side-nav::-webkit-scrollbar{ width:8px; }
+  .side-nav::-webkit-scrollbar-track{ background:transparent; }
+  .side-nav::-webkit-scrollbar-thumb{
+    background:#cbd5e1;
+    border-radius:999px;
+  }
+  .side-nav::-webkit-scrollbar-thumb:hover{ background:#94a3b8; }
   .side-nav a{
     text-decoration:none;
     padding:8px 10px;
@@ -295,6 +316,517 @@
     opacity:0.5;
     cursor:default;
   }
+  .ledger-controls-shell{
+    padding:14px;
+    border:1px solid #dbe5f3;
+    border-radius:12px;
+    background:linear-gradient(180deg, #f8fbff 0%, #f2f7ff 100%);
+    margin-bottom:12px;
+  }
+  .ledger-controls{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(min(100%, 210px), 1fr));
+    gap:12px 14px;
+    align-items:start;
+  }
+  .ledger-controls .filter-group{
+    min-width:0;
+  }
+  .ledger-controls .form-control{
+    width:100%;
+    min-width:0;
+    max-width:100%;
+  }
+  .ledger-controls select.form-control{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+  }
+  .ledger-footer-controls{
+    display:grid;
+    grid-template-columns:minmax(320px, 1fr) auto;
+    align-items:stretch;
+    gap:12px 14px;
+    margin-top:14px;
+    padding-top:14px;
+    border-top:1px solid rgba(191, 219, 254, 0.75);
+  }
+  .ledger-toggle{
+    display:flex;
+    align-items:center;
+    gap:10px;
+    min-height:48px;
+    padding:0 12px;
+    border:1px solid #dbeafe;
+    border-radius:10px;
+    background:#fff;
+    color:#334155;
+    font-size:13px;
+    font-weight:700;
+    cursor:pointer;
+    align-self:stretch;
+    width:100%;
+    min-width:0;
+  }
+  .ledger-toggle input{
+    width:16px;
+    height:16px;
+    accent-color:#1e3a8a;
+  }
+  .ledger-toggle span{
+    min-width:0;
+    line-height:1.4;
+  }
+  .ledger-action-group{
+    display:grid;
+    grid-auto-flow:column;
+    grid-auto-columns:minmax(148px, auto);
+    gap:10px;
+    align-items:stretch;
+    justify-content:end;
+    justify-self:end;
+    max-width:100%;
+  }
+  .ledger-action-group .inline-btn{
+    padding:8px 12px;
+    border-radius:8px;
+    border:1px solid #dbeafe;
+    background:#eff6ff;
+    color:var(--primary);
+    font-weight:600;
+    cursor:pointer;
+    min-height:44px;
+    min-width:148px;
+    width:100%;
+  }
+  #loadStockLedgerBtn{
+    min-height:44px;
+    min-width:164px;
+    width:100%;
+    box-shadow:0 8px 18px rgba(37,99,235,.18);
+  }
+  .ledger-meta-row{
+    display:flex;
+    gap:12px;
+    justify-content:space-between;
+    align-items:flex-start;
+    flex-wrap:wrap;
+    margin:8px 0 12px;
+  }
+  .ledger-legend{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+  .ledger-comparison-note{
+    font-size:12px;
+    color:#475569;
+    max-width:520px;
+    line-height:1.45;
+  }
+  .ledger-kpi-grid{
+    margin-top:0;
+  }
+  .ledger-kpi-card-delta{
+    border-left:4px solid #1e3a8a;
+  }
+  .ledger-table{
+    min-width:1480px;
+  }
+  .ledger-table td.num,
+  .ledger-table th.num{
+    text-align:right;
+  }
+  .ledger-table td.center,
+  .ledger-table th.center{
+    text-align:center;
+  }
+  .ledger-table tbody tr:hover{
+    background:#f8fbff;
+  }
+  .ledger-item-name{
+    font-weight:700;
+    color:#0f172a;
+  }
+  .ledger-ref-main{
+    font-weight:700;
+    color:#0f172a;
+  }
+  .ledger-ref-sub{
+    font-size:11px;
+    color:#64748b;
+    margin-top:3px;
+    line-height:1.3;
+  }
+  .ledger-item-sub,
+  .ledger-batch-sub{
+    font-size:11px;
+    color:#64748b;
+    margin-top:3px;
+    line-height:1.3;
+  }
+  .ledger-movement-chip{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding:4px 10px;
+    border-radius:999px;
+    font-size:11px;
+    font-weight:800;
+    letter-spacing:0.2px;
+    border:1px solid transparent;
+    white-space:nowrap;
+  }
+  .ledger-movement-chip.opening{
+    background:#e0f2fe;
+    color:#075985;
+    border-color:#7dd3fc;
+  }
+  .ledger-movement-chip.inbound{
+    background:#dcfce7;
+    color:#065f46;
+    border-color:#86efac;
+  }
+  .ledger-movement-chip.outbound{
+    background:#ffe4e6;
+    color:#9f1239;
+    border-color:#fda4af;
+  }
+  .ledger-movement-chip.return{
+    background:#fef3c7;
+    color:#92400e;
+    border-color:#fcd34d;
+  }
+  .ledger-movement-chip.transfer{
+    background:#e0e7ff;
+    color:#3730a3;
+    border-color:#a5b4fc;
+  }
+  .ledger-movement-chip.adjustment{
+    background:#e2e8f0;
+    color:#334155;
+    border-color:#cbd5e1;
+  }
+  .ledger-movement-chip.other{
+    background:#f8fafc;
+    color:#475569;
+    border-color:#cbd5e1;
+  }
+  .ledger-delta-positive{
+    color:#047857;
+    font-weight:800;
+  }
+  .ledger-delta-negative{
+    color:#b91c1c;
+    font-weight:800;
+  }
+  .ledger-delta-zero{
+    color:#475569;
+    font-weight:700;
+  }
+  .ledger-moved-pill{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-width:84px;
+    padding:5px 10px;
+    border-radius:999px;
+    font-size:12px;
+    font-weight:800;
+    letter-spacing:0.2px;
+    border:1px solid transparent;
+    white-space:nowrap;
+  }
+  .ledger-moved-pill.inbound{
+    background:#dcfce7;
+    color:#166534;
+    border-color:#86efac;
+  }
+  .ledger-moved-pill.outbound{
+    background:#ffe4e6;
+    color:#9f1239;
+    border-color:#fda4af;
+  }
+  .ledger-moved-pill.neutral{
+    background:#f8fafc;
+    color:#475569;
+    border-color:#cbd5e1;
+  }
+  .ledger-trace-btn{
+    border:1px solid #bfdbfe;
+    background:#eff6ff;
+    color:#1d4ed8;
+    border-radius:8px;
+    padding:6px 10px;
+    font-weight:700;
+    cursor:pointer;
+  }
+  .ledger-trace-backdrop{
+    position:fixed;
+    inset:0;
+    background:rgba(15,23,42,0.5);
+    z-index:9999;
+    display:flex;
+    align-items:stretch;
+    justify-content:flex-end;
+  }
+  .ledger-trace-backdrop[hidden]{
+    display:none;
+  }
+  .ledger-trace-panel{
+    width:min(860px, 96vw);
+    height:100%;
+    background:#f3f8ff;
+    border-left:1px solid #dbeafe;
+    box-shadow:-14px 0 36px rgba(15,23,42,0.22);
+    display:flex;
+    flex-direction:column;
+  }
+  .ledger-trace-header{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:12px;
+    padding:18px 20px 14px;
+    border-bottom:1px solid #dbeafe;
+    background:#fff;
+  }
+  .ledger-trace-header h4{
+    margin:0;
+    font-size:18px;
+    color:var(--primary);
+  }
+  .ledger-trace-sub{
+    margin-top:4px;
+    font-size:12px;
+    color:#64748b;
+  }
+  .ledger-trace-body{
+    padding:20px 22px 28px;
+    overflow:auto;
+    display:flex;
+    flex-direction:column;
+    gap:18px;
+  }
+  .ledger-trace-section{
+    background:#fff;
+    border:1px solid #e2e8f0;
+    border-radius:18px;
+    padding:18px;
+    box-shadow:0 14px 28px rgba(15,23,42,0.08);
+  }
+  .ledger-trace-section h5{
+    margin:0 0 10px;
+    font-size:14px;
+    color:#0f172a;
+  }
+  .ledger-trace-hero{
+    background:
+      radial-gradient(circle at top right, rgba(191,219,254,0.9), transparent 38%),
+      linear-gradient(135deg, #ffffff 0%, #eff6ff 100%);
+    border:1px solid #cfe0ff;
+    border-radius:22px;
+    padding:22px;
+    box-shadow:0 18px 36px rgba(30,58,138,0.10);
+  }
+  .ledger-trace-chip-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:10px;
+    align-items:center;
+  }
+  .ledger-trace-ref-chip{
+    display:inline-flex;
+    align-items:center;
+    padding:6px 12px;
+    border-radius:999px;
+    background:#ffffff;
+    border:1px solid #cbd5e1;
+    color:#1e293b;
+    font-size:12px;
+    font-weight:700;
+  }
+  .ledger-trace-story{
+    margin:14px 0 0;
+    font-size:15px;
+    line-height:1.7;
+    color:#0f172a;
+  }
+  .ledger-trace-story-note{
+    margin-top:10px;
+    font-size:13px;
+    color:#475569;
+  }
+  .ledger-trace-flow{
+    display:grid;
+    grid-template-columns:repeat(5, minmax(0, 1fr));
+    gap:12px;
+  }
+  .ledger-trace-flow-card{
+    background:#fff;
+    border:1px solid #dbeafe;
+    border-radius:18px;
+    padding:16px;
+    box-shadow:0 10px 24px rgba(15,23,42,0.06);
+  }
+  .ledger-trace-flow-k{
+    font-size:11px;
+    color:#64748b;
+    font-weight:800;
+    text-transform:uppercase;
+    letter-spacing:0.45px;
+  }
+  .ledger-trace-flow-v{
+    margin-top:8px;
+    font-size:24px;
+    line-height:1.1;
+    font-weight:800;
+    color:#0f172a;
+  }
+  .ledger-trace-flow-v.inbound{
+    color:#166534;
+  }
+  .ledger-trace-flow-v.outbound{
+    color:#9f1239;
+  }
+  .ledger-trace-flow-v.neutral{
+    color:#334155;
+  }
+  .ledger-trace-flow-sub{
+    margin-top:8px;
+    font-size:12px;
+    color:#64748b;
+    line-height:1.45;
+  }
+  .ledger-trace-context{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));
+    gap:12px;
+  }
+  .ledger-trace-context-card{
+    background:#f8fbff;
+    border:1px solid #dbeafe;
+    border-radius:16px;
+    padding:14px 15px;
+  }
+  .ledger-trace-context-k{
+    font-size:11px;
+    color:#64748b;
+    font-weight:800;
+    text-transform:uppercase;
+    letter-spacing:0.4px;
+  }
+  .ledger-trace-context-v{
+    margin-top:6px;
+    font-size:14px;
+    line-height:1.5;
+    color:#0f172a;
+    word-break:break-word;
+  }
+  .ledger-trace-section-head{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:12px;
+    margin-bottom:12px;
+  }
+  .ledger-trace-section-sub{
+    font-size:12px;
+    color:#64748b;
+    line-height:1.45;
+    max-width:420px;
+  }
+  .ledger-trace-grid{
+    display:grid;
+    grid-template-columns:repeat(auto-fit, minmax(180px, 1fr));
+    gap:10px;
+  }
+  .ledger-trace-kv{
+    background:#f8fafc;
+    border:1px solid #e2e8f0;
+    border-radius:10px;
+    padding:10px;
+  }
+  .ledger-trace-k{
+    font-size:11px;
+    color:#64748b;
+    font-weight:800;
+    text-transform:uppercase;
+    letter-spacing:0.35px;
+  }
+  .ledger-trace-v{
+    margin-top:4px;
+    font-size:13px;
+    color:#0f172a;
+    line-height:1.4;
+    word-break:break-word;
+  }
+  .ledger-trace-table{
+    min-width:760px;
+  }
+  .ledger-trace-table tbody tr.ledger-trace-row-selected{
+    background:#eff6ff;
+  }
+  .ledger-trace-table tbody tr.ledger-trace-row-selected td{
+    border-top:1px solid #bfdbfe;
+    border-bottom:1px solid #bfdbfe;
+  }
+  .ledger-trace-timeline-note{
+    margin-top:10px;
+    font-size:12px;
+    color:#64748b;
+    line-height:1.5;
+  }
+  .ledger-empty{
+    color:#64748b;
+    font-size:13px;
+    line-height:1.5;
+  }
+  @media (max-width: 1380px){
+    .ledger-controls{
+      grid-template-columns:repeat(3, minmax(220px, 1fr));
+    }
+    .ledger-footer-controls{
+      grid-template-columns:1fr;
+    }
+    .ledger-action-group{
+      justify-content:end;
+      justify-self:end;
+    }
+  }
+  @media (max-width: 860px){
+    .ledger-controls-shell{
+      padding:12px;
+    }
+    .ledger-controls{
+      grid-template-columns:1fr;
+    }
+    .ledger-footer-controls{
+      grid-template-columns:1fr;
+    }
+    .ledger-toggle{
+      min-width:0;
+    }
+    .ledger-action-group{
+      width:100%;
+      grid-auto-flow:row;
+      grid-auto-columns:auto;
+      justify-content:stretch;
+      justify-self:stretch;
+    }
+    .ledger-action-group .inline-btn,
+    #loadStockLedgerBtn{
+      width:100%;
+      min-width:0;
+    }
+    .ledger-trace-flow{
+      grid-template-columns:repeat(2, minmax(0, 1fr));
+    }
+    .ledger-trace-panel{
+      width:100vw;
+    }
+  }
   .expiry-controls{ display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
   .expiry-legend{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; margin:6px 0 12px; font-size:12px; color:#475569; }
   .expiry-pill{
@@ -489,6 +1021,134 @@
   .tat-pill.warn{ background:#fef3c7; color:#92400e; border-color:#fcd34d; }
   .tat-pill.danger{ background:#fee2e2; color:#991b1b; border-color:#fca5a5; }
   .tat-pill.pending{ background:#e2e8f0; color:#1e293b; border-color:#cbd5e1; }
+  .deptissue-controls{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:flex-end;
+  }
+  .deptissue-store-chips{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin:12px 0 10px;
+  }
+  .deptissue-chip{
+    border:1px solid #dbeafe;
+    background:#eff6ff;
+    color:var(--primary);
+    font-weight:700;
+    padding:7px 12px;
+    border-radius:999px;
+    cursor:pointer;
+    transition:all .15s ease;
+  }
+  .deptissue-chip.active{
+    background:#1e3a8a;
+    color:#fff;
+    border-color:#1e3a8a;
+    box-shadow:0 8px 18px rgba(30,58,138,0.18);
+  }
+  .deptissue-chip:hover{ transform:translateY(-1px); }
+  .deptissue-kpi-grid{
+    display:grid;
+    grid-template-columns: repeat(auto-fit, minmax(200px, 1fr));
+    gap:12px;
+    margin:8px 0 14px;
+  }
+  .deptissue-kpi{
+    background:linear-gradient(180deg, #f8fbff 0%, #f8fafc 100%);
+    border:1px solid #dbe5f3;
+    border-radius:12px;
+    padding:12px 14px;
+    box-shadow: inset 0 0 0 1px rgba(255,255,255,0.55);
+  }
+  .deptissue-kpi .label{
+    font-size:12px;
+    color:#64748b;
+    font-weight:800;
+    text-transform:uppercase;
+    letter-spacing:0.3px;
+  }
+  .deptissue-kpi .value{
+    font-size:22px;
+    font-weight:800;
+    color:#0f172a;
+    margin-top:5px;
+  }
+  .deptissue-kpi .sub{
+    font-size:11px;
+    color:#475569;
+    margin-top:4px;
+    font-weight:600;
+  }
+  .deptissue-kpi.issue{ border-left:4px solid #2563eb; }
+  .deptissue-kpi.return{ border-left:4px solid #ef4444; }
+  .deptissue-kpi.net{ border-left:4px solid #16a34a; }
+  .deptissue-kpi.opd{ border-left:4px solid #0ea5e9; }
+  .deptissue-kpi.ipd{ border-left:4px solid #7c3aed; }
+  .deptissue-kpi.meta{ border-left:4px solid #64748b; }
+  .deptissue-toolbar-note{
+    font-size:12px;
+    color:#64748b;
+    margin-left:auto;
+  }
+  .deptissue-table th.num, .deptissue-table td.num{ text-align:right; }
+  .deptissue-table th.center, .deptissue-table td.center{ text-align:center; }
+  .deptissue-table .issue-cell{
+    background:#eff6ff;
+    color:#1d4ed8;
+    font-weight:700;
+  }
+  .deptissue-table .return-cell{
+    background:#fff1f2;
+    color:#b91c1c;
+    font-weight:700;
+  }
+  .deptissue-table .net-cell{
+    background:#f0fdf4;
+    color:#166534;
+    font-weight:800;
+  }
+  .deptissue-table .rate-cell{
+    color:#0f172a;
+    font-weight:700;
+  }
+  .deptissue-mix{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-width:94px;
+    white-space:nowrap;
+    padding:3px 9px;
+    border-radius:999px;
+    font-size:11px;
+    font-weight:700;
+    letter-spacing:0.2px;
+    border:1px solid transparent;
+  }
+  .deptissue-mix.issue-only{ background:#dbeafe; color:#1e3a8a; border-color:#bfdbfe; }
+  .deptissue-mix.return-only{ background:#fee2e2; color:#991b1b; border-color:#fecaca; }
+  .deptissue-mix.issue-return{ background:#fef3c7; color:#92400e; border-color:#fde68a; }
+  .deptissue-pager{
+    display:flex;
+    gap:10px;
+    align-items:center;
+    justify-content:flex-end;
+    margin-top:10px;
+  }
+  .deptissue-pager button{
+    padding:6px 10px;
+    border-radius:8px;
+    border:1px solid #dbeafe;
+    background:#eff6ff;
+    color:var(--primary);
+    cursor:pointer;
+  }
+  .deptissue-pager button:disabled{
+    opacity:0.5;
+    cursor:default;
+  }
   .consumption-controls{ display:flex; gap:10px; flex-wrap:wrap; align-items:flex-end; }
   .consumption-status{ font-size:12px; color:#475569; margin:6px 0 0; }
   .consumption-kpi-block{ margin-top:12px; }
@@ -781,8 +1441,9 @@
   }
   @media (max-width: 1100px){
     .mis-layout{ flex-direction:column; }
-    .mis-side{ width:100%; position: static; }
-    .side-nav{ flex-direction:row; flex-wrap:wrap; }
+    .mis-side{ width:100%; position: static; max-height:none; }
+    .mis-side-card{ max-height:none; overflow:visible; }
+    .side-nav{ flex-direction:row; flex-wrap:wrap; overflow:visible; padding-right:0; }
     .side-nav a{ flex:1 1 180px; }
   }
 </style>
@@ -814,11 +1475,13 @@
           <a href="#section-kpis">KPIs<span class="nav-sub">Sales and returns</span></a>
           <a href="#section-margin" data-expand="marginBody">Product Margin</a>
           <a href="#section-stock" data-expand="stockBody">Current Stock</a>
+          <a href="#section-stock-ledger" data-expand="stockLedgerBody">Pharmacy Stock Ledger</a>
           <a href="#section-expiry" data-expand="expiryBody">Expiry Report</a>
           <a href="#section-nonmoving" data-expand="nonMovingBody">Non-Moving Items</a>
           <a href="#section-gst" data-expand="gstBody">GST Compliance</a>
           <a href="#section-gss" data-expand="gssBody">Issue Register</a>
           <a href="#section-ward-tat" data-expand="wardTatBody">Ward Medicine TAT</a>
+          <a href="#section-departmental-issue" data-expand="deptIssueBody">Departmental Issue</a>
           <a href="#section-consumption" data-expand="consumptionBody">Itemwise Consumption</a>
         </nav>
       </div>
@@ -1067,6 +1730,8 @@
         </div>
       </div>
     </div>
+
+    {% include "_mis_pharmacy_stock_ledger.html" %}
 
     <div class="collapsible-card mis-section" id="section-expiry">
       <div class="collapsible-header">
@@ -1514,6 +2179,65 @@
       </div>
     </div>
 
+    <div class="collapsible-card mis-section" id="section-departmental-issue">
+      <div class="collapsible-header">
+        <div class="collapsible-title">
+          <h3>Departmental Issue</h3>
+          <div class="stock-note" id="deptIssueStatus">Use the date range above and click Load.</div>
+        </div>
+        <button class="collapse-btn" data-target="deptIssueBody">Collapse</button>
+      </div>
+      <div class="collapsible-body collapsed" id="deptIssueBody">
+        <div class="deptissue-controls">
+          <button class="btn-primary" id="loadDeptIssueBtn">Load Report</button>
+          <button class="inline-btn" id="exportDeptIssueExcel">Export Excel</button>
+          <div class="filter-group" style="min-width:280px;">
+            <label>Search</label>
+            <input type="text" id="deptIssueSearch" class="form-control" placeholder="Department, medicine, batch, store...">
+          </div>
+          <div class="deptissue-toolbar-note" id="deptIssueToolbarNote">Batch-level issue and return movements from OPD/IPD pharmacies.</div>
+        </div>
+        <div class="deptissue-store-chips" id="deptIssueStoreChips">
+          <button class="deptissue-chip active" type="button" data-store="all">All Stores</button>
+          <button class="deptissue-chip" type="button" data-store="2">OPD Pharmacy (2)</button>
+          <button class="deptissue-chip" type="button" data-store="3">IPD Pharmacy (3)</button>
+        </div>
+        <div class="deptissue-kpi-grid" id="deptIssueKpiGrid">
+          <div class="deptissue-kpi meta"><div class="label">No data</div><div class="value">-</div><div class="sub">Load report to view KPIs.</div></div>
+        </div>
+        <div class="data-table-wrap">
+          <table class="deptissue-table">
+            <thead>
+              <tr>
+                <th>Issued To Department/Store</th>
+                <th>Issued To Store</th>
+                <th>Issued From Store</th>
+                <th>Medicine Name</th>
+                <th>Batch</th>
+                <th class="num">Rate</th>
+                <th class="num">MRP</th>
+                <th class="num">Issued Qty</th>
+                <th class="num">Returned Qty</th>
+                <th class="num">Net Issued Qty</th>
+                <th class="num">Issued Value (Rate)</th>
+                <th class="num">Returned Value (Rate)</th>
+                <th class="num">Net Value (Rate)</th>
+                <th class="center">Movement Mix</th>
+              </tr>
+            </thead>
+            <tbody id="deptIssueTableBody">
+              <tr><td colspan="14" style="text-align:center; color:#94a3b8; padding:30px;">No data loaded yet.</td></tr>
+            </tbody>
+          </table>
+        </div>
+        <div class="deptissue-pager">
+          <span id="deptIssuePageInfo" style="margin-right:auto;font-size:12px;color:#475569;"></span>
+          <button id="deptIssuePrev">Prev</button>
+          <button id="deptIssueNext">Next</button>
+        </div>
+      </div>
+    </div>
+
     <div class="collapsible-card mis-section" id="section-consumption">
       <div class="collapsible-header">
         <div class="collapsible-title">
@@ -1691,6 +2415,35 @@
   const stockSaleTotal = document.getElementById('stockSaleTotal');
   const stockPurchaseScope = document.getElementById('stockPurchaseScope');
   const stockSaleScope = document.getElementById('stockSaleScope');
+  const ledgerStoreSelect = document.getElementById('ledgerStoreSelect');
+  const ledgerSearch = document.getElementById('ledgerSearch');
+  const ledgerMovementFamily = document.getElementById('ledgerMovementFamily');
+  const ledgerDocType = document.getElementById('ledgerDocType');
+  const ledgerBatchFilterGroup = document.getElementById('ledgerBatchFilterGroup');
+  const ledgerBatchSelect = document.getElementById('ledgerBatchSelect');
+  const ledgerMismatchOnly = document.getElementById('ledgerMismatchOnly');
+  const loadStockLedgerBtn = document.getElementById('loadStockLedgerBtn');
+  const exportStockLedgerExcel = document.getElementById('exportStockLedgerExcel');
+  const stockLedgerStatus = document.getElementById('stockLedgerStatus');
+  const stockLedgerComparisonNote = document.getElementById('stockLedgerComparisonNote');
+  const stockLedgerTableBody = document.getElementById('stockLedgerTableBody');
+  const stockLedgerPageInfo = document.getElementById('stockLedgerPageInfo');
+  const stockLedgerPrev = document.getElementById('stockLedgerPrev');
+  const stockLedgerNext = document.getElementById('stockLedgerNext');
+  const ledgerOpeningQty = document.getElementById('ledgerOpeningQty');
+  const ledgerInwardQty = document.getElementById('ledgerInwardQty');
+  const ledgerOutwardQty = document.getElementById('ledgerOutwardQty');
+  const ledgerClosingQty = document.getElementById('ledgerClosingQty');
+  const ledgerCurrentQty = document.getElementById('ledgerCurrentQty');
+  const ledgerDeltaTitle = document.getElementById('ledgerDeltaTitle');
+  const ledgerDeltaSummary = document.getElementById('ledgerDeltaSummary');
+  const ledgerDeltaSub = document.getElementById('ledgerDeltaSub');
+  const ledgerDeltaColumnTitle = document.getElementById('ledgerDeltaColumnTitle');
+  const ledgerTraceBackdrop = document.getElementById('ledgerTraceBackdrop');
+  const ledgerTraceTitle = document.getElementById('ledgerTraceTitle');
+  const ledgerTraceSubtitle = document.getElementById('ledgerTraceSubtitle');
+  const ledgerTraceBody = document.getElementById('ledgerTraceBody');
+  const ledgerTraceCloseBtn = document.getElementById('ledgerTraceCloseBtn');
   const expiryStatus = document.getElementById('expiryStatus');
   const expiryLoadBtn = document.getElementById('expiryLoadBtn');
   const expiryExportExcel = document.getElementById('expiryExportExcel');
@@ -1731,6 +2484,17 @@
   const wardTatAvgIndentIssue = document.getElementById('wardTatAvgIndentIssue');
   const wardTatAvgIssueAck = document.getElementById('wardTatAvgIssueAck');
   const wardTatAvgEndToEnd = document.getElementById('wardTatAvgEndToEnd');
+  const deptIssueStatus = document.getElementById('deptIssueStatus');
+  const loadDeptIssueBtn = document.getElementById('loadDeptIssueBtn');
+  const exportDeptIssueExcel = document.getElementById('exportDeptIssueExcel');
+  const deptIssueSearch = document.getElementById('deptIssueSearch');
+  const deptIssueToolbarNote = document.getElementById('deptIssueToolbarNote');
+  const deptIssueKpiGrid = document.getElementById('deptIssueKpiGrid');
+  const deptIssueTableBody = document.getElementById('deptIssueTableBody');
+  const deptIssuePageInfo = document.getElementById('deptIssuePageInfo');
+  const deptIssuePrev = document.getElementById('deptIssuePrev');
+  const deptIssueNext = document.getElementById('deptIssueNext');
+  const deptIssueStoreChips = document.getElementById('deptIssueStoreChips');
   const consumptionStatus = document.getElementById('consumptionStatus');
   const loadConsumptionBtn = document.getElementById('loadConsumptionBtn');
   const exportConsumptionExcel = document.getElementById('exportConsumptionExcel');
@@ -1843,6 +2607,12 @@
   let wardTatPage = 1;
   let wardTatTotalPages = 1;
   let wardTatTotalRows = 0;
+  let deptIssueRows = [];
+  let deptIssueFilteredRows = [];
+  let deptIssuePage = 1;
+  let deptIssueStoreScope = 'all';
+  let deptIssueExportPoller = null;
+  const DEPT_ISSUE_PAGE_SIZE = 20;
   let consumptionRows = [];
   let consumptionAllRows = [];
   let consumptionBuckets = { Cash: [], Cashless: [], Departmental: [] };
@@ -1851,6 +2621,7 @@
   const GSS_PAGE_SIZE = 20;
   const WARD_TAT_PAGE_SIZE = 25;
   const MARGIN_PAGE_SIZE = 20;
+  const LEDGER_PAGE_SIZE = 100;
   let marginPage = 1;
   let marginTotalPages = 1;
   let marginTotalCount = 0;
@@ -1861,6 +2632,15 @@
   const marginQtyTouched = new Set();
   const marginManufacturerLabelById = new Map();
   const marginManufacturerLookup = new Map();
+  let ledgerRows = [];
+  let ledgerPage = 1;
+  let ledgerTotalPages = 1;
+  let ledgerTotalRows = 0;
+  let ledgerComparisonLabel = 'Changed Since';
+  let ledgerHasLoaded = false;
+  let ledgerExportPoller = null;
+  let ledgerSearchTimer = null;
+  let ledgerBatchOptions = [];
 
   function escapeHtml(value){
     return String(value || '')
@@ -1893,6 +2673,13 @@
   function safeNum(val){
     const num = Number(val || 0);
     return Number.isFinite(num) ? num : 0;
+  }
+
+  function fmtSignedNum(val, digits=3){
+    const num = safeNum(val);
+    const formatted = fmtNum(Math.abs(num), digits);
+    if(Math.abs(num) < 0.0005) return fmtNum(0, digits);
+    return `${num > 0 ? '+' : '-'}${formatted}`;
   }
 
   function _normKey(val){
@@ -3310,6 +4097,279 @@
     setWardTatStatus('Use the date range above and click Load.');
   }
 
+  function setDeptIssueStatus(message, loading){
+    if(!deptIssueStatus) return;
+    if(loading){
+      deptIssueStatus.innerHTML = `<span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px;"></span>${escapeHtml(message)}`;
+    }else{
+      deptIssueStatus.textContent = message;
+    }
+  }
+
+  function deptIssueStoreLabel(storeId){
+    const key = String(storeId ?? '').trim();
+    if(key === '2') return 'OPD Pharmacy (2)';
+    if(key === '3') return 'IPD Pharmacy (3)';
+    return 'All Stores';
+  }
+
+  function deptIssueMixClass(label){
+    const val = String(label || '').toLowerCase();
+    if(val.includes('return') && val.includes('issue')) return 'issue-return';
+    if(val.includes('return')) return 'return-only';
+    return 'issue-only';
+  }
+
+  function deptIssueScopedRows(rows){
+    if(String(deptIssueStoreScope) === 'all') return (rows || []).slice();
+    return (rows || []).filter(r => String(r.issued_from_store_id ?? '') === String(deptIssueStoreScope));
+  }
+
+  function deptIssueFilteredDataset(){
+    const scoped = deptIssueScopedRows(deptIssueRows);
+    const needle = (deptIssueSearch?.value || '').trim().toLowerCase();
+    if(!needle) return scoped;
+    return scoped.filter((r) => {
+      const values = [
+        r.department_name,
+        r.issued_to_store_name,
+        r.issued_from_store_name,
+        r.item_name,
+        r.batch_name,
+        r.movement_mix,
+        r.issue_number,
+        r.rate,
+        r.mrp,
+      ];
+      return values.some(val => String(val ?? '').toLowerCase().includes(needle));
+    });
+  }
+
+  function renderDeptIssueKpis(rows){
+    if(!deptIssueKpiGrid) return;
+    const list = rows || [];
+    if(!list.length){
+      deptIssueKpiGrid.innerHTML = '<div class="deptissue-kpi meta"><div class="label">No data</div><div class="value">-</div><div class="sub">Load report to view KPIs.</div></div>';
+      return;
+    }
+    const totals = list.reduce((acc, r) => {
+      acc.issuedQty += safeNum(r.issued_qty);
+      acc.returnedQty += safeNum(r.returned_qty);
+      acc.netQty += safeNum(r.net_issued_qty);
+      acc.netValue += safeNum(r.net_value_rate);
+      if(String(r.issued_from_store_id ?? '') === '2'){
+        acc.opdNetQty += safeNum(r.net_issued_qty);
+        acc.opdNetValue += safeNum(r.net_value_rate);
+      }else if(String(r.issued_from_store_id ?? '') === '3'){
+        acc.ipdNetQty += safeNum(r.net_issued_qty);
+        acc.ipdNetValue += safeNum(r.net_value_rate);
+      }
+      const dept = String(r.department_name || '').trim();
+      if(dept) acc.departments.add(dept);
+      return acc;
+    }, {
+      issuedQty: 0, returnedQty: 0, netQty: 0, netValue: 0,
+      opdNetQty: 0, opdNetValue: 0, ipdNetQty: 0, ipdNetValue: 0,
+      departments: new Set(),
+    });
+    const cards = [
+      { cls: 'meta', label: 'Departments', value: fmtNum(totals.departments.size, 0), sub: 'Unique receiving departments' },
+      { cls: 'issue', label: 'Issued Qty', value: fmtNum(totals.issuedQty, 3), sub: 'Medicine issued to departments' },
+      { cls: 'return', label: 'Returned Qty', value: fmtNum(totals.returnedQty, 3), sub: 'Medicine returned from departments' },
+      { cls: 'net', label: 'Net Qty', value: fmtNum(totals.netQty, 3), sub: 'Issued minus returned quantity' },
+      { cls: 'net', label: 'Net Value', value: formatINR(totals.netValue), sub: 'Net value at issue rate' },
+      { cls: 'opd', label: 'OPD Net Qty', value: fmtNum(totals.opdNetQty, 3), sub: 'Store 2 movement net' },
+      { cls: 'ipd', label: 'IPD Net Qty', value: fmtNum(totals.ipdNetQty, 3), sub: 'Store 3 movement net' },
+      { cls: 'meta', label: 'Rows', value: fmtNum(list.length, 0), sub: `${deptIssueStoreLabel(deptIssueStoreScope)} in current view` },
+    ];
+    deptIssueKpiGrid.innerHTML = cards.map(card => `
+      <div class="deptissue-kpi ${card.cls}">
+        <div class="label">${escapeHtml(card.label)}</div>
+        <div class="value">${escapeHtml(card.value)}</div>
+        <div class="sub">${escapeHtml(card.sub)}</div>
+      </div>
+    `).join('');
+  }
+
+  function renderDeptIssueTable(){
+    if(!deptIssueTableBody) return;
+    deptIssueFilteredRows = deptIssueFilteredDataset();
+    renderDeptIssueKpis(deptIssueFilteredRows);
+    const totalRows = deptIssueFilteredRows.length;
+    if(!totalRows){
+      deptIssueTableBody.innerHTML = '<tr><td colspan="14" style="text-align:center; color:#94a3b8; padding:30px;">No departmental issue rows found for the current filters.</td></tr>';
+      if(deptIssuePageInfo) deptIssuePageInfo.textContent = '';
+      if(deptIssuePrev) deptIssuePrev.disabled = true;
+      if(deptIssueNext) deptIssueNext.disabled = true;
+      if(deptIssueToolbarNote) deptIssueToolbarNote.textContent = `${deptIssueStoreLabel(deptIssueStoreScope)} | 0 rows in view`;
+      return;
+    }
+    const totalPages = Math.max(1, Math.ceil(totalRows / DEPT_ISSUE_PAGE_SIZE));
+    deptIssuePage = Math.min(Math.max(1, deptIssuePage), totalPages);
+    const start = (deptIssuePage - 1) * DEPT_ISSUE_PAGE_SIZE;
+    const slice = deptIssueFilteredRows.slice(start, start + DEPT_ISSUE_PAGE_SIZE);
+    deptIssueTableBody.innerHTML = slice.map((r) => `
+      <tr>
+        <td>${escapeHtml(r.department_name || '')}</td>
+        <td>${escapeHtml(r.issued_to_store_name || '')}</td>
+        <td>${escapeHtml(r.issued_from_store_name || '')}</td>
+        <td>${escapeHtml(r.item_name || '')}</td>
+        <td>${escapeHtml(r.batch_name || '')}</td>
+        <td class="num rate-cell">${fmtNum(r.rate, 2)}</td>
+        <td class="num rate-cell">${fmtNum(r.mrp, 2)}</td>
+        <td class="num issue-cell">${fmtNum(r.issued_qty, 3)}</td>
+        <td class="num return-cell">${fmtNum(r.returned_qty, 3)}</td>
+        <td class="num net-cell">${fmtNum(r.net_issued_qty, 3)}</td>
+        <td class="num issue-cell">${fmtNum(r.issued_value_rate, 2)}</td>
+        <td class="num return-cell">${fmtNum(r.returned_value_rate, 2)}</td>
+        <td class="num net-cell">${fmtNum(r.net_value_rate, 2)}</td>
+        <td class="center"><span class="deptissue-mix ${deptIssueMixClass(r.movement_mix)}">${escapeHtml(r.movement_mix || 'Issue Only')}</span></td>
+      </tr>
+    `).join('');
+    if(deptIssuePageInfo) deptIssuePageInfo.textContent = `Page ${deptIssuePage} of ${totalPages} (${totalRows} rows)`;
+    if(deptIssuePrev) deptIssuePrev.disabled = deptIssuePage <= 1;
+    if(deptIssueNext) deptIssueNext.disabled = deptIssuePage >= totalPages;
+    if(deptIssueToolbarNote){
+      const query = (deptIssueSearch?.value || '').trim();
+      deptIssueToolbarNote.textContent = `${deptIssueStoreLabel(deptIssueStoreScope)} | ${totalRows} rows in view${query ? ` | Search: ${query}` : ''}`;
+    }
+  }
+
+  function setDeptIssueStoreScope(scope){
+    deptIssueStoreScope = String(scope || 'all');
+    deptIssuePage = 1;
+    deptIssueStoreChips?.querySelectorAll('.deptissue-chip').forEach((btn) => {
+      btn.classList.toggle('active', String(btn.getAttribute('data-store') || 'all') === deptIssueStoreScope);
+    });
+    renderDeptIssueTable();
+  }
+
+  function resetDepartmentalIssueState(message='Use the date range above and click Load.'){
+    stopDeptIssueExportPolling();
+    deptIssueRows = [];
+    deptIssueFilteredRows = [];
+    deptIssuePage = 1;
+    deptIssueStoreScope = 'all';
+    if(deptIssueTableBody){
+      deptIssueTableBody.innerHTML = '<tr><td colspan="14" style="text-align:center; color:#94a3b8; padding:30px;">No data loaded yet.</td></tr>';
+    }
+    if(deptIssueKpiGrid){
+      deptIssueKpiGrid.innerHTML = '<div class="deptissue-kpi meta"><div class="label">No data</div><div class="value">-</div><div class="sub">Load report to view KPIs.</div></div>';
+    }
+    if(deptIssuePageInfo) deptIssuePageInfo.textContent = '';
+    if(deptIssuePrev) deptIssuePrev.disabled = true;
+    if(deptIssueNext) deptIssueNext.disabled = true;
+    if(deptIssueToolbarNote) deptIssueToolbarNote.textContent = 'Batch-level issue and return movements from OPD/IPD pharmacies.';
+    deptIssueStoreChips?.querySelectorAll('.deptissue-chip').forEach((btn) => {
+      btn.classList.toggle('active', String(btn.getAttribute('data-store') || 'all') === 'all');
+    });
+    setDeptIssueStatus(message);
+  }
+
+  async function loadDepartmentalIssueReport(){
+    const unit = unitSelectEl?.value || '';
+    const fromDate = document.getElementById('fromDate')?.value || '';
+    const toDate = document.getElementById('toDate')?.value || '';
+    if(!unit || !fromDate || !toDate){
+      setDeptIssueStatus('Select unit and date range to load the report.');
+      return;
+    }
+    if(loadDeptIssueBtn) loadDeptIssueBtn.disabled = true;
+    if(exportDeptIssueExcel) exportDeptIssueExcel.disabled = true;
+    setDeptIssueStatus('Loading departmental issue movements...', true);
+    if(deptIssueTableBody){
+      deptIssueTableBody.innerHTML = '<tr><td colspan="14" style="text-align:center; color:#94a3b8; padding:30px;"><span class="spinner" style="width:16px;height:16px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px;"></span>Loading...</td></tr>';
+    }
+    try{
+      const params = new URLSearchParams({ unit, from: fromDate, to: toDate });
+      const res = await fetch(`/api/mis/pharmacy/departmental_issue?${params.toString()}`);
+      const data = await res.json();
+      if(!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to load departmental issue report');
+      deptIssueRows = data.rows || [];
+      deptIssuePage = 1;
+      setDeptIssueStoreScope(deptIssueStoreScope || 'all');
+      if(deptIssueRows.length){
+        setDeptIssueStatus(`Loaded ${deptIssueRows.length} departmental issue rows.`);
+      }else{
+        setDeptIssueStatus('No departmental issue data found for the selected range.');
+      }
+    }catch(err){
+      resetDepartmentalIssueState(`Failed to load report: ${err.message}`);
+    }finally{
+      if(loadDeptIssueBtn) loadDeptIssueBtn.disabled = false;
+      if(exportDeptIssueExcel) exportDeptIssueExcel.disabled = false;
+    }
+  }
+
+  function stopDeptIssueExportPolling(){
+    if(deptIssueExportPoller){
+      clearInterval(deptIssueExportPoller);
+      deptIssueExportPoller = null;
+    }
+  }
+
+  async function queueDepartmentalIssueExcelExport(){
+    const unit = unitSelectEl?.value || '';
+    const fromDate = document.getElementById('fromDate')?.value || '';
+    const toDate = document.getElementById('toDate')?.value || '';
+    if(!unit || !fromDate || !toDate){
+      setDeptIssueStatus('Select unit and date range before exporting.');
+      return;
+    }
+    if(exportDeptIssueExcel) exportDeptIssueExcel.disabled = true;
+    setDeptIssueStatus('Queuing Excel export...', true);
+    stopDeptIssueExportPolling();
+    try{
+      const payload = {
+        unit,
+        from: fromDate,
+        to: toDate,
+        store_id: deptIssueStoreScope === 'all' ? null : deptIssueStoreScope,
+      };
+      const res = await fetch('/api/mis/pharmacy/departmental_issue/export_excel_job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      const data = await res.json();
+      if(!res.ok || data.status !== 'queued') throw new Error(data.message || 'Failed to queue export');
+      const jobId = data.job_id;
+      if(!jobId) throw new Error('Missing job id');
+      const poll = async () => {
+        try{
+          const statusRes = await fetch(`/api/mis/pharmacy/departmental_issue/export_excel_job_status?job_id=${encodeURIComponent(jobId)}`);
+          const statusData = await statusRes.json();
+          if(!statusRes.ok || statusData.status !== 'success') throw new Error(statusData.message || 'Status check failed');
+          const state = String(statusData.state || '').toLowerCase();
+          if(state === 'done'){
+            stopDeptIssueExportPolling();
+            setDeptIssueStatus('Excel ready. Downloading...', true);
+            window.location.href = `/api/mis/pharmacy/departmental_issue/export_excel_job_result?job_id=${encodeURIComponent(jobId)}`;
+            if(exportDeptIssueExcel) exportDeptIssueExcel.disabled = false;
+            setTimeout(() => setDeptIssueStatus('Export complete.'), 1400);
+            return;
+          }
+          if(state === 'error'){
+            stopDeptIssueExportPolling();
+            if(exportDeptIssueExcel) exportDeptIssueExcel.disabled = false;
+            setDeptIssueStatus(`Export failed: ${statusData.error || 'Unknown error'}`);
+            return;
+          }
+          setDeptIssueStatus(`Excel export ${state || 'running'}...`, true);
+        }catch(err){
+          stopDeptIssueExportPolling();
+          if(exportDeptIssueExcel) exportDeptIssueExcel.disabled = false;
+          setDeptIssueStatus(`Export failed: ${err.message}`);
+        }
+      };
+      deptIssueExportPoller = setInterval(poll, 2000);
+      poll();
+    }catch(err){
+      if(exportDeptIssueExcel) exportDeptIssueExcel.disabled = false;
+      setDeptIssueStatus(`Export failed: ${err.message}`);
+    }
+  }
+
   function setConsumptionStatus(message, loading){
     if(!consumptionStatus) return;
     if(loading){
@@ -4022,6 +5082,744 @@
     setTimeout(() => setNonMovingStatus('PDF export opened.'), 800);
   }
 
+  function formatLedgerDateTime(value){
+    const text = cleanCellValue(value);
+    if(!text) return '';
+    const parsed = new Date(text.includes('T') ? text : text.replace(' ', 'T'));
+    if(!Number.isNaN(parsed.getTime())){
+      return parsed.toLocaleString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+        hour: '2-digit',
+        minute: '2-digit',
+      });
+    }
+    return text;
+  }
+
+  function formatLedgerDateOnly(value){
+    const text = cleanCellValue(value);
+    if(!text) return '';
+    const parsed = new Date(text);
+    if(!Number.isNaN(parsed.getTime())){
+      return parsed.toLocaleDateString('en-IN', {
+        day: '2-digit',
+        month: 'short',
+        year: 'numeric',
+      });
+    }
+    return text;
+  }
+
+  function ledgerFieldLabel(key){
+    const text = String(key || '')
+      .replace(/_/g, ' ')
+      .replace(/([a-z0-9])([A-Z])/g, '$1 $2')
+      .trim();
+    if(!text) return '';
+    return text.split(/\s+/).map((part) => {
+      const low = part.toLowerCase();
+      if(low === 'id') return 'ID';
+      if(low === 'mrp') return 'MRP';
+      if(low === 'gst') return 'GST';
+      if(low === 'qty') return 'Qty';
+      if(low === 'ip') return 'IP';
+      return part.charAt(0).toUpperCase() + part.slice(1);
+    }).join(' ');
+  }
+
+  function formatLedgerFieldValue(key, value){
+    if(value === null || value === undefined) return '—';
+    const raw = cleanCellValue(value);
+    if(raw === '') return '—';
+    const low = String(key || '').trim().toLowerCase();
+    if(low.includes('expiry')){
+      return formatLedgerDateOnly(value) || raw;
+    }
+    if(low.includes('date') || low.endsWith('time') || low.endsWith('on') || low.includes('effecton')){
+      return formatLedgerDateTime(value) || raw;
+    }
+    if(typeof value === 'number'){
+      if(low.includes('rate') || low.includes('mrp') || low.includes('amount') || low.includes('value')){
+        return fmtNum(value, 2);
+      }
+      return fmtNum(value, 3);
+    }
+    const maybeNum = Number(value);
+    if(
+      Number.isFinite(maybeNum)
+      && !/(^|_)(id|code)($|_)/.test(low)
+      && !/(doctype|doctype|batchname|itemname|storename|mach|ipaddress)/.test(low)
+    ){
+      if(low.includes('rate') || low.includes('mrp') || low.includes('amount') || low.includes('value')){
+        return fmtNum(maybeNum, 2);
+      }
+      return fmtNum(maybeNum, 3);
+    }
+    return raw;
+  }
+
+  function setLedgerStatus(message, isLoading=false){
+    if(!stockLedgerStatus) return;
+    if(isLoading){
+      stockLedgerStatus.innerHTML = `<span class="spinner" style="width:14px;height:14px;border-width:2px;display:inline-block;vertical-align:middle;margin-right:6px;"></span>${escapeHtml(message)}`;
+    } else {
+      stockLedgerStatus.textContent = message;
+    }
+  }
+
+  function stopLedgerExportPolling(){
+    if(ledgerExportPoller){
+      clearInterval(ledgerExportPoller);
+      ledgerExportPoller = null;
+    }
+  }
+
+  function ledgerEmptyRow(message){
+    return `<tr><td colspan="11" style="text-align:center; color:#94a3b8; padding:30px;">${escapeHtml(message)}</td></tr>`;
+  }
+
+  function renderLedgerDocTypeOptions(docTypes, selectedValue=''){
+    if(!ledgerDocType) return;
+    const selected = String(selectedValue || '').trim().toUpperCase();
+    const options = ['<option value="">All doc types</option>'];
+    (docTypes || []).forEach((entry) => {
+      const docType = String(entry?.doc_type || '').trim().toUpperCase();
+      if(!docType) return;
+      const movementLabel = cleanCellValue(entry?.movement_label);
+      const count = Number(entry?.row_count || 0);
+      const label = movementLabel
+        ? `${docType} - ${movementLabel}${count ? ` (${count})` : ''}`
+        : `${docType}${count ? ` (${count})` : ''}`;
+      options.push(`<option value="${escapeHtml(docType)}">${escapeHtml(label)}</option>`);
+    });
+    ledgerDocType.innerHTML = options.join('');
+    if(selected && Array.from(ledgerDocType.options || []).some((opt) => opt.value === selected)){
+      ledgerDocType.value = selected;
+    }
+  }
+
+  function renderLedgerBatchOptions(batchOptions, selectedValue='', searchText=''){
+    ledgerBatchOptions = Array.isArray(batchOptions) ? batchOptions.slice() : [];
+    const activeSearch = String(searchText ?? (ledgerSearch?.value || '')).trim();
+    if(!ledgerBatchFilterGroup || !ledgerBatchSelect){
+      return;
+    }
+    if(!activeSearch){
+      ledgerBatchFilterGroup.hidden = true;
+      ledgerBatchSelect.innerHTML = '<option value="">All batches</option>';
+      ledgerBatchSelect.value = '';
+      ledgerBatchSelect.disabled = true;
+      return;
+    }
+
+    ledgerBatchFilterGroup.hidden = false;
+    const selected = String(selectedValue || '').trim();
+    const options = ['<option value="">All batches</option>'];
+    (ledgerBatchOptions || []).forEach((entry) => {
+      const batchId = String(entry?.batch_id || '').trim();
+      if(!batchId) return;
+      const batchName = cleanCellValue(entry?.batch_name) || `Batch ${batchId}`;
+      const itemName = cleanCellValue(entry?.item_name);
+      const expiryText = formatLedgerDateOnly(entry?.expiry_date);
+      const rowCount = Number(entry?.row_count || 0);
+      const labelParts = [batchName];
+      if(itemName) labelParts.push(itemName);
+      if(expiryText) labelParts.push(`Exp ${expiryText}`);
+      const label = `${labelParts.join(' | ')}${rowCount ? ` (${rowCount})` : ''}`;
+      options.push(`<option value="${escapeHtml(batchId)}">${escapeHtml(label)}</option>`);
+    });
+    ledgerBatchSelect.innerHTML = options.join('');
+    ledgerBatchSelect.disabled = ledgerBatchOptions.length === 0;
+    if(selected && Array.from(ledgerBatchSelect.options || []).some((opt) => opt.value === selected)){
+      ledgerBatchSelect.value = selected;
+    } else {
+      ledgerBatchSelect.value = '';
+    }
+  }
+
+  function renderLedgerSummary(summary, comparisonLabel){
+    const data = summary || {};
+    if(ledgerOpeningQty) ledgerOpeningQty.textContent = fmtNum(data.opening_qty, 3);
+    if(ledgerInwardQty) ledgerInwardQty.textContent = fmtNum(data.inward_qty, 3);
+    if(ledgerOutwardQty) ledgerOutwardQty.textContent = fmtNum(data.outward_qty, 3);
+    if(ledgerClosingQty) ledgerClosingQty.textContent = fmtNum(data.closing_qty, 3);
+    if(ledgerCurrentQty) ledgerCurrentQty.textContent = fmtNum(data.live_current_qty, 3);
+    if(ledgerDeltaTitle) ledgerDeltaTitle.textContent = comparisonLabel || 'Changed Since';
+    if(ledgerDeltaSummary){
+      const mismatchCount = Number(data.mismatch_count || 0);
+      ledgerDeltaSummary.textContent = `${fmtNum(mismatchCount, 0)} item${mismatchCount === 1 ? '' : 's'}`;
+    }
+    if(ledgerDeltaSub){
+      const deltaRows = Number(data.delta_row_count || 0);
+      ledgerDeltaSub.textContent = `${fmtNum(deltaRows, 0)} row${deltaRows === 1 ? '' : 's'} changed after the selected movement`;
+    }
+  }
+
+  function closeLedgerTrace(){
+    if(ledgerTraceBackdrop){
+      ledgerTraceBackdrop.hidden = true;
+    }
+    if(ledgerTraceBody){
+      ledgerTraceBody.innerHTML = '<div class="ledger-empty">Trace details will appear here.</div>';
+    }
+    if(ledgerTraceTitle){
+      ledgerTraceTitle.textContent = 'Movement Trace';
+    }
+    if(ledgerTraceSubtitle){
+      ledgerTraceSubtitle.textContent = 'Select a row to inspect how stock moved before, during, and after the transaction.';
+    }
+  }
+
+  function resetLedgerState(message='Select store, date range, and click Load.'){
+    stopLedgerExportPolling();
+    ledgerRows = [];
+    ledgerPage = 1;
+    ledgerTotalPages = 1;
+    ledgerTotalRows = 0;
+    ledgerBatchOptions = [];
+    ledgerComparisonLabel = 'Changed Since';
+    ledgerHasLoaded = false;
+    if(stockLedgerTableBody){
+      stockLedgerTableBody.innerHTML = ledgerEmptyRow('No ledger data loaded yet.');
+    }
+    if(stockLedgerPageInfo) stockLedgerPageInfo.textContent = '';
+    if(stockLedgerPrev) stockLedgerPrev.disabled = true;
+    if(stockLedgerNext) stockLedgerNext.disabled = true;
+    if(ledgerDeltaColumnTitle) ledgerDeltaColumnTitle.textContent = 'Changed Since';
+    if(stockLedgerComparisonNote){
+      stockLedgerComparisonNote.textContent = 'This column shows how stock now compares with the stock immediately after each movement.';
+    }
+    renderLedgerDocTypeOptions([], '');
+    renderLedgerBatchOptions([], '', ledgerSearch?.value || '');
+    renderLedgerSummary({}, 'Changed Since');
+    setLedgerStatus(message);
+    closeLedgerTrace();
+  }
+
+  function ledgerMovementChipClass(row){
+    const family = String(row?.movement_family || '').trim().toLowerCase();
+    if(['opening', 'inbound', 'outbound', 'return', 'transfer', 'adjustment'].includes(family)){
+      return family;
+    }
+    return 'other';
+  }
+
+  function renderLedgerPager(){
+    if(stockLedgerPageInfo){
+      stockLedgerPageInfo.textContent = ledgerTotalRows
+        ? `Page ${ledgerPage} of ${ledgerTotalPages} (${ledgerTotalRows} rows)`
+        : '';
+    }
+    if(stockLedgerPrev) stockLedgerPrev.disabled = ledgerPage <= 1;
+    if(stockLedgerNext) stockLedgerNext.disabled = ledgerPage >= ledgerTotalPages;
+  }
+
+  function ledgerMovedClass(value){
+    const num = safeNum(value);
+    if(num > 0) return 'inbound';
+    if(num < 0) return 'outbound';
+    return 'neutral';
+  }
+
+  function renderLedgerRows(rows){
+    if(!stockLedgerTableBody) return;
+    if(!(rows || []).length){
+      stockLedgerTableBody.innerHTML = ledgerEmptyRow('No ledger rows found for the selected filters.');
+      return;
+    }
+    const bodyHtml = rows.map((row, index) => {
+      const movedQty = safeNum(row.moved_qty);
+      const delta = safeNum(row.change_since);
+      const deltaClass = delta > 0 ? 'ledger-delta-positive' : (delta < 0 ? 'ledger-delta-negative' : 'ledger-delta-zero');
+      const movementContext = cleanCellValue(row.doc_type) === 'ISD' && cleanCellValue(row.counterparty_store_name)
+        ? `To ${cleanCellValue(row.counterparty_store_name)}`
+        : (movedQty > 0 ? 'Stock came in' : (movedQty < 0 ? 'Stock went out' : 'No quantity change'));
+      const itemCode = cleanCellValue(row.item_code);
+      const itemMeta = [
+        cleanCellValue(row.item_id) ? `Item ID ${cleanCellValue(row.item_id)}` : '',
+        itemCode ? `Code ${itemCode}` : '',
+      ].filter(Boolean).join(' | ');
+      const batchMeta = [
+        cleanCellValue(row.batch_id) ? `Batch ID ${cleanCellValue(row.batch_id)}` : '',
+        formatLedgerDateOnly(row.expiry_date) ? `Expiry ${formatLedgerDateOnly(row.expiry_date)}` : '',
+      ].filter(Boolean).join(' | ');
+      return `
+        <tr>
+          <td>
+            <div>${escapeHtml(formatLedgerDateTime(row.doc_date) || '—')}</div>
+            <div class="ledger-item-sub">${escapeHtml(cleanCellValue(row.store_name) || '—')}</div>
+          </td>
+          <td>
+            <span class="ledger-movement-chip ${ledgerMovementChipClass(row)}">${escapeHtml(cleanCellValue(row.movement_label) || cleanCellValue(row.doc_type) || 'Other')}</span>
+            <div class="ledger-item-sub">${escapeHtml(movementContext)}</div>
+          </td>
+          <td>
+            <div class="ledger-ref-main">${escapeHtml(cleanCellValue(row.reference_no) || '—')}</div>
+            <div class="ledger-ref-sub">${escapeHtml(cleanCellValue(row.doc_type) || '—')}</div>
+          </td>
+          <td>
+            <div class="ledger-item-name">${escapeHtml(cleanCellValue(row.item_name) || 'Unknown item')}</div>
+            <div class="ledger-item-sub">${escapeHtml(itemMeta || 'No item code')}</div>
+          </td>
+          <td>
+            <div class="ledger-ref-main">${escapeHtml(cleanCellValue(row.batch_name) || 'No batch')}</div>
+            <div class="ledger-batch-sub">${escapeHtml(batchMeta || 'No metadata')}</div>
+          </td>
+          <td class="num">${fmtNum(row.stock_before, 3)}</td>
+          <td class="num"><span class="ledger-moved-pill ${ledgerMovedClass(movedQty)}">${escapeHtml(fmtSignedNum(movedQty, 3))}</span></td>
+          <td class="num">${fmtNum(row.stock_after, 3)}</td>
+          <td class="num">${fmtNum(row.stock_now, 3)}</td>
+          <td class="num ${deltaClass}">${escapeHtml(fmtSignedNum(delta, 3))}</td>
+          <td class="center"><button type="button" class="ledger-trace-btn" data-row-index="${index}">View Trace</button></td>
+        </tr>
+      `;
+    }).join('');
+    stockLedgerTableBody.innerHTML = bodyHtml;
+  }
+
+  function buildLedgerQueryParams(pageNumber){
+    const unit = unitSelectEl?.value || '';
+    const storeId = ledgerStoreSelect?.value || '';
+    const fromDate = document.getElementById('fromDate')?.value || '';
+    const toDate = document.getElementById('toDate')?.value || '';
+    const searchText = (ledgerSearch?.value || '').trim();
+    const batchId = ledgerBatchSelect?.value || '';
+    const movementFamily = ledgerMovementFamily?.value || '';
+    const docType = ledgerDocType?.value || '';
+    const mismatchOnly = !!ledgerMismatchOnly?.checked;
+    if(!unit || !storeId || !fromDate || !toDate){
+      setLedgerStatus('Select store and date range to load the stock ledger.');
+      return null;
+    }
+    const params = new URLSearchParams({
+      unit,
+      store_id: String(storeId),
+      from: fromDate,
+      to: toDate,
+      page: String(pageNumber || 1),
+      page_size: String(LEDGER_PAGE_SIZE),
+    });
+    if(searchText) params.set('search', searchText);
+    if(batchId) params.set('batch_id', batchId);
+    if(movementFamily) params.set('movement_family', movementFamily);
+    if(docType) params.set('doc_type', docType);
+    if(mismatchOnly) params.set('mismatch_only', '1');
+    return {
+      unit,
+      storeId,
+      fromDate,
+      toDate,
+      searchText,
+      batchId,
+      movementFamily,
+      docType,
+      mismatchOnly,
+      params,
+    };
+  }
+
+  async function fetchStockLedger(pageNumber=1){
+    const query = buildLedgerQueryParams(pageNumber);
+    if(!query) return;
+    const selectedDocType = ledgerDocType?.value || '';
+    const selectedBatchId = ledgerBatchSelect?.value || '';
+    setLedgerStatus('Loading stock ledger...', true);
+    if(loadStockLedgerBtn) loadStockLedgerBtn.disabled = true;
+    if(exportStockLedgerExcel) exportStockLedgerExcel.disabled = true;
+    if(stockLedgerTableBody){
+      stockLedgerTableBody.innerHTML = ledgerEmptyRow('Loading stock ledger...');
+    }
+    closeLedgerTrace();
+    try{
+      const res = await fetch(`/api/mis/pharmacy/stock_ledger?${query.params.toString()}`);
+      const data = await res.json();
+      if(!res.ok || data.status !== 'success'){
+        throw new Error(data.message || 'Failed to load stock ledger');
+      }
+      ledgerRows = data.rows || [];
+      ledgerPage = Math.max(1, Number(data.page || pageNumber || 1));
+      ledgerTotalPages = Math.max(1, Number(data.total_pages || 1));
+      ledgerTotalRows = Math.max(0, Number(data.total_rows || ledgerRows.length));
+      ledgerComparisonLabel = cleanCellValue(data.comparison_label) || 'Changed Since';
+      ledgerHasLoaded = true;
+      if(ledgerDeltaColumnTitle) ledgerDeltaColumnTitle.textContent = ledgerComparisonLabel;
+      if(stockLedgerComparisonNote){
+        stockLedgerComparisonNote.textContent = cleanCellValue(data.comparison_note) || 'Shows how stock now compares with the stock immediately after each movement.';
+      }
+      renderLedgerSummary(data.summary || {}, ledgerComparisonLabel);
+      renderLedgerDocTypeOptions(data.doc_types || [], selectedDocType);
+      renderLedgerBatchOptions(data.batch_options || [], selectedBatchId || data.selected_batch_id || '', query.searchText);
+      renderLedgerRows(ledgerRows);
+      renderLedgerPager();
+      const storeName = cleanCellValue(data.store_name) || `Store ${query.storeId}`;
+      setLedgerStatus(
+        ledgerRows.length
+          ? `Loaded ${ledgerRows.length} of ${ledgerTotalRows} rows for ${storeName}.`
+          : `No ledger rows found for ${storeName}.`
+      );
+    }catch(err){
+      ledgerRows = [];
+      ledgerHasLoaded = false;
+      if(stockLedgerTableBody){
+        stockLedgerTableBody.innerHTML = ledgerEmptyRow('Failed to load stock ledger.');
+      }
+      ledgerTotalRows = 0;
+      ledgerPage = 1;
+      ledgerTotalPages = 1;
+      renderLedgerPager();
+      setLedgerStatus(`Failed to load stock ledger: ${err.message}`);
+    }finally{
+      if(loadStockLedgerBtn) loadStockLedgerBtn.disabled = false;
+      if(exportStockLedgerExcel) exportStockLedgerExcel.disabled = false;
+    }
+  }
+
+  function scheduleLedgerReload(){
+    if(!ledgerHasLoaded) return;
+    if(ledgerSearchTimer) clearTimeout(ledgerSearchTimer);
+    ledgerSearchTimer = setTimeout(() => {
+      fetchStockLedger(1);
+    }, 350);
+  }
+
+  function handleLedgerSearchInput(){
+    renderLedgerBatchOptions([], '', ledgerSearch?.value || '');
+    scheduleLedgerReload();
+  }
+
+  function renderLedgerRecordGrid(record, emptyMessage){
+    const entries = Object.entries(record || {}).filter(([key, value]) => String(key || '').trim() && cleanCellValue(value) !== '');
+    if(!entries.length){
+      return `<div class="ledger-empty">${escapeHtml(emptyMessage || 'No data available.')}</div>`;
+    }
+    return `
+      <div class="ledger-trace-grid">
+        ${entries.map(([key, value]) => `
+          <div class="ledger-trace-kv">
+            <div class="ledger-trace-k">${escapeHtml(ledgerFieldLabel(key))}</div>
+            <div class="ledger-trace-v">${escapeHtml(formatLedgerFieldValue(key, value))}</div>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  }
+
+  function renderLedgerFallbackTable(rows){
+    if(!(rows || []).length){
+      return '<div class="ledger-empty">No supporting storestockup trace rows were found near this movement.</div>';
+    }
+    const preferredCols = [
+      'EffectON', 'Qty', 'SaleQty', 'GRNQty', 'RETQty', 'ISSQty', 'PURQty', 'SRQty',
+      'AdjQty', 'ShortQty', 'ClosingQty', 'OpeningQty', 'Rate', 'MRP', 'SaleValue',
+      'PurchaseValue', 'IssuedValue', 'SaleRetValue', 'IssueRetValue', 'PurRetValue',
+      'AdjValue', 'GST', 'UpdatedBy', 'UpdatedON', 'UpdatedMacName', 'UpdatedMacID',
+      'UpdatedIPAddress', 'InsertedByUserID', 'InsertedON', 'InsertedMacName',
+      'InsertedMacID', 'InsertedIPAddress', 'categoryid',
+    ];
+    const keys = Array.from(new Set(
+      (rows || []).flatMap((row) => Object.keys(row || {}).filter((key) => String(key || '').trim()))
+    ));
+    const orderedKeys = preferredCols.filter((key) => keys.includes(key)).concat(keys.filter((key) => !preferredCols.includes(key)));
+    return `
+      <div class="data-table-wrap">
+        <table class="ledger-table ledger-trace-table">
+          <thead>
+            <tr>${orderedKeys.map((key) => `<th>${escapeHtml(ledgerFieldLabel(key))}</th>`).join('')}</tr>
+          </thead>
+          <tbody>
+            ${(rows || []).map((row) => `
+              <tr>
+                ${orderedKeys.map((key) => `<td>${escapeHtml(formatLedgerFieldValue(key, row?.[key]))}</td>`).join('')}
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderLedgerTraceTimeline(rows){
+    if(!(rows || []).length){
+      return '<div class="ledger-empty">No nearby movements were found for this item.</div>';
+    }
+    return `
+      <div class="data-table-wrap">
+        <table class="ledger-table ledger-trace-table">
+          <thead>
+            <tr>
+              <th>When</th>
+              <th>Movement</th>
+              <th>Reference</th>
+              <th>Batch</th>
+              <th class="num">Moved</th>
+              <th class="num">Stock After</th>
+            </tr>
+          </thead>
+          <tbody>
+            ${(rows || []).map((entry) => `
+              <tr class="${entry?.is_selected ? 'ledger-trace-row-selected' : ''}">
+                <td>${escapeHtml(formatLedgerDateTime(entry?.doc_date) || '—')}</td>
+                <td>
+                  <span class="ledger-movement-chip ${ledgerMovementChipClass(entry)}">${escapeHtml(cleanCellValue(entry?.movement_label) || cleanCellValue(entry?.doc_type) || 'Other')}</span>
+                  <div class="ledger-ref-sub">${entry?.is_selected ? 'Selected row' : 'Nearby movement'}</div>
+                </td>
+                <td>
+                  <div class="ledger-ref-main">${escapeHtml(cleanCellValue(entry?.reference_no) || '—')}</div>
+                  <div class="ledger-ref-sub">${escapeHtml(cleanCellValue(entry?.doc_type) || '—')}</div>
+                </td>
+                <td>
+                  <div class="ledger-ref-main">${escapeHtml(cleanCellValue(entry?.batch_name) || '—')}</div>
+                  <div class="ledger-ref-sub">${escapeHtml(safeNum(entry?.batch_id) > 0 ? `Batch ID ${cleanCellValue(entry.batch_id)}` : 'No batch')}</div>
+                </td>
+                <td class="num"><span class="ledger-moved-pill ${ledgerMovedClass(entry?.moved_qty)}">${escapeHtml(fmtSignedNum(entry?.moved_qty, 3))}</span></td>
+                <td class="num">${fmtNum(entry?.stock_after, 3)}</td>
+              </tr>
+            `).join('')}
+          </tbody>
+        </table>
+      </div>
+    `;
+  }
+
+  function renderLedgerTracePanel(trace, timelineRows, currentSnapshot){
+    const data = trace || {};
+    const movedQty = safeNum(data.moved_qty);
+    const changeSince = safeNum(data.change_since);
+    const detailCards = [
+      {
+        label: 'Item',
+        value: cleanCellValue(data.item_name) || 'Unknown item',
+      },
+      {
+        label: 'Batch',
+        value: [
+          cleanCellValue(data.batch_name) || 'No batch',
+          safeNum(data.batch_id) > 0 ? `Batch ID ${cleanCellValue(data.batch_id)}` : '',
+        ].filter(Boolean).join(' | '),
+      },
+      {
+        label: 'Store',
+        value: cleanCellValue(data.store_name) || '—',
+      },
+      {
+        label: 'To Store',
+        value: cleanCellValue(data.counterparty_store_name) || '',
+      },
+      {
+        label: 'Reference',
+        value: cleanCellValue(data.reference_no) || cleanCellValue(data.doc_type) || '—',
+      },
+      {
+        label: 'Recorded On',
+        value: formatLedgerDateTime(data.audit_time || data.doc_date) || '—',
+      },
+      {
+        label: 'Recorded By',
+        value: cleanCellValue(data.audit_user_label) || 'System',
+      },
+      {
+        label: 'Expiry',
+        value: formatLedgerDateOnly(data.expiry_date) || '—',
+      },
+      {
+        label: 'Machine',
+        value: cleanCellValue(data.machine_name) || 'System',
+      },
+    ].filter((card) => cleanCellValue(card.value));
+
+    return `
+      <div class="ledger-trace-hero">
+        <div class="ledger-trace-chip-row">
+          <span class="ledger-movement-chip ${ledgerMovementChipClass(data)}">${escapeHtml(cleanCellValue(data.movement_label) || cleanCellValue(data.doc_type) || 'Movement')}</span>
+          <span class="ledger-trace-ref-chip">${escapeHtml(cleanCellValue(data.reference_no) || '—')}</span>
+          <span class="ledger-trace-ref-chip">${escapeHtml(cleanCellValue(data.batch_name) || 'No batch')}</span>
+        </div>
+        <div class="ledger-trace-story">${escapeHtml(cleanCellValue(data.story_text) || 'Movement details are not available.')}</div>
+        <div class="ledger-trace-story-note">${escapeHtml(cleanCellValue(data.change_note) || 'Later movement details appear below.')}</div>
+      </div>
+
+      <div class="ledger-trace-flow">
+        <div class="ledger-trace-flow-card">
+          <div class="ledger-trace-flow-k">Stock Before</div>
+          <div class="ledger-trace-flow-v neutral">${fmtNum(data.stock_before, 3)}</div>
+          <div class="ledger-trace-flow-sub">Stock just before this movement was recorded.</div>
+        </div>
+        <div class="ledger-trace-flow-card">
+          <div class="ledger-trace-flow-k">Moved</div>
+          <div class="ledger-trace-flow-v ${ledgerMovedClass(movedQty)}">${escapeHtml(fmtSignedNum(movedQty, 3))}</div>
+          <div class="ledger-trace-flow-sub">${escapeHtml(movedQty > 0 ? 'Stock came in during this movement.' : (movedQty < 0 ? 'Stock went out during this movement.' : 'No quantity change was recorded.'))}</div>
+        </div>
+        <div class="ledger-trace-flow-card">
+          <div class="ledger-trace-flow-k">Stock After</div>
+          <div class="ledger-trace-flow-v neutral">${fmtNum(data.stock_after, 3)}</div>
+          <div class="ledger-trace-flow-sub">Stock immediately after this movement.</div>
+        </div>
+        <div class="ledger-trace-flow-card">
+          <div class="ledger-trace-flow-k">Stock Now</div>
+          <div class="ledger-trace-flow-v neutral">${fmtNum(data.stock_now, 3)}</div>
+          <div class="ledger-trace-flow-sub">Live stock in the store right now for this item.</div>
+        </div>
+        <div class="ledger-trace-flow-card">
+          <div class="ledger-trace-flow-k">Changed Since</div>
+          <div class="ledger-trace-flow-v ${ledgerMovedClass(changeSince)}">${escapeHtml(fmtSignedNum(changeSince, 3))}</div>
+          <div class="ledger-trace-flow-sub">${escapeHtml(changeSince > 0 ? 'Stock later increased.' : (changeSince < 0 ? 'Stock later reduced further.' : 'No later stock change from this point.'))}</div>
+        </div>
+      </div>
+
+      <div class="ledger-trace-section">
+        <div class="ledger-trace-section-head">
+          <div>
+            <h5>Movement Trail</h5>
+          </div>
+          <div class="ledger-trace-section-sub">The selected row is highlighted. Later rows explain why stock now may differ from the stock after this movement.</div>
+        </div>
+        ${renderLedgerTraceTimeline(timelineRows)}
+        <div class="ledger-trace-timeline-note">Live stock refresh: ${escapeHtml(formatLedgerDateTime(currentSnapshot && currentSnapshot.updated_on) || 'Not available')}</div>
+      </div>
+
+      <div class="ledger-trace-section">
+        <div class="ledger-trace-section-head">
+          <div>
+            <h5>Recorded Details</h5>
+          </div>
+          <div class="ledger-trace-section-sub">Only the essential audit details are shown for a quick and clear review.</div>
+        </div>
+        <div class="ledger-trace-context">
+          ${detailCards.map((card) => `
+            <div class="ledger-trace-context-card">
+              <div class="ledger-trace-context-k">${escapeHtml(card.label)}</div>
+              <div class="ledger-trace-context-v">${escapeHtml(card.value)}</div>
+            </div>
+          `).join('')}
+        </div>
+      </div>
+    `;
+  }
+
+  async function openLedgerTrace(rowIndex){
+    const row = ledgerRows?.[Number(rowIndex)];
+    if(!row || !ledgerTraceBackdrop || !ledgerTraceBody) return;
+    const unit = unitSelectEl?.value || '';
+    const storeId = ledgerStoreSelect?.value || row.store_id || '';
+    if(!unit || !storeId){
+      setLedgerStatus('Select unit and store before opening trace details.');
+      return;
+    }
+    ledgerTraceBackdrop.hidden = false;
+    if(ledgerTraceTitle){
+      ledgerTraceTitle.textContent = cleanCellValue(row.item_name) || 'Movement Trace';
+    }
+    if(ledgerTraceSubtitle){
+      ledgerTraceSubtitle.textContent = [
+        cleanCellValue(row.reference_no) || cleanCellValue(row.doc_type) || 'Unknown movement',
+        cleanCellValue(row.batch_name) || 'No batch',
+      ].join(' | ');
+    }
+    ledgerTraceBody.innerHTML = '<div class="ledger-empty">Loading movement trace...</div>';
+    try{
+      const params = new URLSearchParams({
+        unit,
+        store_id: String(storeId),
+        item_id: String(row.item_id || 0),
+        batch_id: String(row.batch_id || 0),
+        ledger_id: String(row.id || 0),
+        doc_date: cleanCellValue(row.doc_date),
+        doc_id: String(row.doc_id || 0),
+        doc_type: cleanCellValue(row.doc_type),
+        qty: String(row.qty || 0),
+      });
+      const res = await fetch(`/api/mis/pharmacy/stock_ledger/trace?${params.toString()}`);
+      const data = await res.json();
+      if(!res.ok || data.status !== 'success'){
+        throw new Error(data.message || 'Failed to load trace');
+      }
+      const trace = data.trace || {};
+      const currentSnapshot = data.current_snapshot || {};
+      const timelineRows = data.timeline_rows || [];
+      if(ledgerTraceTitle){
+        ledgerTraceTitle.textContent = cleanCellValue(trace.item_name) || cleanCellValue(row.item_name) || 'Movement Trace';
+      }
+      if(ledgerTraceSubtitle){
+        ledgerTraceSubtitle.textContent = [
+          cleanCellValue(trace.reference_no) || cleanCellValue(row.reference_no) || cleanCellValue(row.doc_type) || 'Unknown movement',
+          cleanCellValue(trace.batch_name) || cleanCellValue(row.batch_name) || 'No batch',
+        ].join(' | ');
+      }
+      ledgerTraceBody.innerHTML = renderLedgerTracePanel(trace, timelineRows, currentSnapshot);
+    }catch(err){
+      ledgerTraceBody.innerHTML = `<div class="ledger-empty">${escapeHtml(`Failed to load movement trace: ${err.message}`)}</div>`;
+    }
+  }
+
+  async function queueStockLedgerExcelExport(){
+    const query = buildLedgerQueryParams(1);
+    if(!query) return;
+    setLedgerStatus('Queuing stock ledger Excel export...', true);
+    stopLedgerExportPolling();
+    if(exportStockLedgerExcel) exportStockLedgerExcel.disabled = true;
+    if(loadStockLedgerBtn) loadStockLedgerBtn.disabled = true;
+    try{
+      const res = await fetch('/api/mis/pharmacy/stock_ledger/export_excel_job', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unit: query.unit,
+          store_id: query.storeId,
+          from: query.fromDate,
+          to: query.toDate,
+          search: query.searchText,
+          batch_id: query.batchId,
+          movement_family: query.movementFamily,
+          doc_type: query.docType,
+          mismatch_only: query.mismatchOnly,
+        }),
+      });
+      const data = await res.json();
+      if(!res.ok || data.status !== 'queued'){
+        throw new Error(data.message || 'Failed to queue export');
+      }
+      const jobId = cleanCellValue(data.job_id);
+      if(!jobId){
+        throw new Error('Missing job id');
+      }
+      setLedgerStatus('Preparing stock ledger Excel export...', true);
+      const poll = async () => {
+        try{
+          const statusRes = await fetch(`/api/mis/pharmacy/stock_ledger/export_excel_job_status?job_id=${encodeURIComponent(jobId)}`);
+          const statusData = await statusRes.json();
+          if(!statusRes.ok || statusData.status !== 'success'){
+            throw new Error(statusData.message || 'Status check failed');
+          }
+          const state = String(statusData.state || '').toLowerCase();
+          if(state === 'done'){
+            stopLedgerExportPolling();
+            setLedgerStatus('Stock ledger Excel is ready. Downloading...');
+            window.location.href = `/api/mis/pharmacy/stock_ledger/export_excel_job_result?job_id=${encodeURIComponent(jobId)}`;
+            if(exportStockLedgerExcel) exportStockLedgerExcel.disabled = false;
+            if(loadStockLedgerBtn) loadStockLedgerBtn.disabled = false;
+            return;
+          }
+          if(state === 'error'){
+            throw new Error(statusData.error || 'Export failed');
+          }
+          setLedgerStatus(`Stock ledger export ${state || 'running'}...`, true);
+        }catch(err){
+          stopLedgerExportPolling();
+          if(exportStockLedgerExcel) exportStockLedgerExcel.disabled = false;
+          if(loadStockLedgerBtn) loadStockLedgerBtn.disabled = false;
+          setLedgerStatus(`Stock ledger export failed: ${err.message}`);
+        }
+      };
+      ledgerExportPoller = setInterval(poll, 2000);
+    }catch(err){
+      if(exportStockLedgerExcel) exportStockLedgerExcel.disabled = false;
+      if(loadStockLedgerBtn) loadStockLedgerBtn.disabled = false;
+      setLedgerStatus(`Stock ledger export failed: ${err.message}`);
+    }
+  }
+
   async function fetchData() {
     const unit = document.getElementById('unitSelect').value;
     const fromDate = document.getElementById('fromDate').value;
@@ -4072,7 +5870,10 @@
     if(!storeSelectEl || !unitSelectEl) return;
     const unit = unitSelectEl.value;
     if(!unit) return;
+    const prevStockStore = storeSelectEl?.value || '';
+    const prevLedgerStore = ledgerStoreSelect?.value || '';
     storeSelectEl.innerHTML = '<option value="">Loading...</option>';
+    if(ledgerStoreSelect) ledgerStoreSelect.innerHTML = '<option value="">Loading...</option>';
     try {
       const res = await fetch(`/api/mis/pharmacy/stores?unit=${encodeURIComponent(unit)}`);
       const data = await res.json();
@@ -4083,10 +5884,21 @@
         options.push(`<option value="${store.id}">${escapeHtml(label)}</option>`);
       });
       storeSelectEl.innerHTML = options.join('');
+      if(prevStockStore && Array.from(storeSelectEl.options || []).some((opt) => opt.value === prevStockStore)){
+        storeSelectEl.value = prevStockStore;
+      }
+      if(ledgerStoreSelect){
+        ledgerStoreSelect.innerHTML = options.join('');
+        if(prevLedgerStore && Array.from(ledgerStoreSelect.options || []).some((opt) => opt.value === prevLedgerStore)){
+          ledgerStoreSelect.value = prevLedgerStore;
+        }
+      }
       loadStockSnapshotDates();
     } catch (err) {
       storeSelectEl.innerHTML = '<option value="">Select store</option>';
+      if(ledgerStoreSelect) ledgerStoreSelect.innerHTML = '<option value="">Select store</option>';
       if(stockStatus) stockStatus.textContent = `Failed to load stores: ${err.message}`;
+      setLedgerStatus(`Failed to load stores: ${err.message}`);
     }
   }
 
@@ -4232,24 +6044,34 @@
     loadMarginIndentInit();
     updateMarginFiltersVisibility();
     updateStockModeUI();
+    resetLedgerState();
     resetWardTatState();
+    resetDepartmentalIssueState();
   });
 
   unitSelectEl?.addEventListener('change', () => {
     stopStockExportPolling();
+    stopLedgerExportPolling();
     loadStores();
     updateStockModeUI();
     loadMedicineTypes();
     loadManufacturers();
     loadMarginIndentInit();
+    resetLedgerState();
     resetMarginState();
     resetWardTatState();
+    resetDepartmentalIssueState('Unit changed. Click Load Report to refresh departmental issue data.');
   });
   storeSelectEl?.addEventListener('change', () => {
     loadStockSnapshotDates();
   });
+  ledgerStoreSelect?.addEventListener('change', () => {
+    resetLedgerState('Store changed. Click Load Ledger to refresh.');
+  });
   stockViewModeEl?.addEventListener('change', updateStockModeUI);
   loadStockBtn?.addEventListener('click', loadStock);
+  loadStockLedgerBtn?.addEventListener('click', () => { fetchStockLedger(1); });
+  exportStockLedgerExcel?.addEventListener('click', queueStockLedgerExcelExport);
   expiryLoadBtn?.addEventListener('click', loadExpiryReport);
   expiryExportExcel?.addEventListener('click', exportExpiryExcel);
   expiryExportPdf?.addEventListener('click', exportExpiryPdf);
@@ -4261,6 +6083,8 @@
   loadGssBtn?.addEventListener('click', loadGssRegister);
   loadWardTatBtn?.addEventListener('click', loadWardTatReport);
   wardTatExportPdf?.addEventListener('click', exportWardTatPdfReport);
+  loadDeptIssueBtn?.addEventListener('click', loadDepartmentalIssueReport);
+  exportDeptIssueExcel?.addEventListener('click', queueDepartmentalIssueExcelExport);
   loadConsumptionBtn?.addEventListener('click', loadConsumptionReport);
   exportConsumptionExcel?.addEventListener('click', exportConsumptionReportExcel);
   let consumptionSearchTimer = null;
@@ -4299,8 +6123,12 @@
   gssNext?.addEventListener('click', ()=>{ fetchGssPage(gssPage + 1); });
   wardTatPrev?.addEventListener('click', ()=>{ fetchWardTatPage(wardTatPage - 1); });
   wardTatNext?.addEventListener('click', ()=>{ fetchWardTatPage(wardTatPage + 1); });
+  deptIssuePrev?.addEventListener('click', ()=>{ deptIssuePage = Math.max(1, deptIssuePage - 1); renderDeptIssueTable(); });
+  deptIssueNext?.addEventListener('click', ()=>{ deptIssuePage += 1; renderDeptIssueTable(); });
   stockPrev?.addEventListener('click', ()=>{ stockPage -= 1; renderStockPage(); });
   stockNext?.addEventListener('click', ()=>{ stockPage += 1; renderStockPage(); });
+  stockLedgerPrev?.addEventListener('click', ()=>{ if(ledgerPage > 1) fetchStockLedger(ledgerPage - 1); });
+  stockLedgerNext?.addEventListener('click', ()=>{ if(ledgerPage < ledgerTotalPages) fetchStockLedger(ledgerPage + 1); });
   expiryPrev?.addEventListener('click', ()=>{ expiryPage -= 1; renderExpiryTable(); });
   expiryNext?.addEventListener('click', ()=>{ expiryPage += 1; renderExpiryTable(); });
   nonMovingPrev?.addEventListener('click', ()=>{ nonMovingPage -= 1; renderNonMovingTable(); });
@@ -4655,6 +6483,25 @@
     if(input) input.addEventListener('input', debouncedWardTatFilter);
   }
   wardTatSearch?.addEventListener('input', debouncedWardTatFilter);
+  let deptIssueSearchTimer = null;
+  deptIssueSearch?.addEventListener('input', () => {
+    if(deptIssueSearchTimer) clearTimeout(deptIssueSearchTimer);
+    deptIssueSearchTimer = setTimeout(() => {
+      deptIssuePage = 1;
+      renderDeptIssueTable();
+      if(deptIssueRows.length){
+        setDeptIssueStatus(`Showing ${deptIssueFilteredRows.length} filtered rows.`);
+      }
+    }, 250);
+  });
+  deptIssueStoreChips?.addEventListener('click', (e) => {
+    const btn = e.target instanceof HTMLElement ? e.target.closest('.deptissue-chip') : null;
+    if(!btn) return;
+    setDeptIssueStoreScope(btn.getAttribute('data-store') || 'all');
+    if(deptIssueRows.length){
+      setDeptIssueStatus(`Showing ${deptIssueFilteredRows.length} rows for ${deptIssueStoreLabel(deptIssueStoreScope)}.`);
+    }
+  });
 
   for (let i = 0; i <= 11; i++) {
     const sInput = document.getElementById(`saleFilter${i}`);
@@ -4694,6 +6541,46 @@
     }, 300);
   };
   nonMovingSearchEl?.addEventListener('input', debouncedNonMovingFilter);
+  ledgerSearch?.addEventListener('input', handleLedgerSearchInput);
+  ledgerMovementFamily?.addEventListener('change', () => {
+    if(ledgerHasLoaded) fetchStockLedger(1);
+  });
+  ledgerDocType?.addEventListener('change', () => {
+    if(ledgerHasLoaded) fetchStockLedger(1);
+  });
+  ledgerBatchSelect?.addEventListener('change', () => {
+    if(ledgerHasLoaded) fetchStockLedger(1);
+  });
+  ledgerMismatchOnly?.addEventListener('change', () => {
+    if(ledgerHasLoaded) fetchStockLedger(1);
+  });
+  stockLedgerTableBody?.addEventListener('click', (e) => {
+    const target = e.target;
+    const btn = target instanceof Element ? target.closest('.ledger-trace-btn') : null;
+    if(!btn) return;
+    openLedgerTrace(btn.getAttribute('data-row-index'));
+  });
+  ledgerTraceCloseBtn?.addEventListener('click', closeLedgerTrace);
+  ledgerTraceBackdrop?.addEventListener('click', (e) => {
+    if(e.target === ledgerTraceBackdrop){
+      closeLedgerTrace();
+    }
+  });
+  document.addEventListener('keydown', (e) => {
+    if(e.key === 'Escape' && ledgerTraceBackdrop && !ledgerTraceBackdrop.hidden){
+      closeLedgerTrace();
+    }
+  });
+  document.getElementById('fromDate')?.addEventListener('change', () => {
+    if(ledgerHasLoaded){
+      setLedgerStatus('Date range changed. Click Load Ledger to refresh.');
+    }
+  });
+  document.getElementById('toDate')?.addEventListener('change', () => {
+    if(ledgerHasLoaded){
+      setLedgerStatus('Date range changed. Click Load Ledger to refresh.');
+    }
+  });
 
   document.querySelectorAll('.collapse-btn').forEach(btn => {
     btn.addEventListener('click', () => {

@@ -27,13 +27,23 @@
   .cutoff{background:#fff;border:1px solid #dce7f1;border-radius:12px;padding:10px 14px;font-size:12px;color:#1e3a5f;font-weight:800}
   .scope{padding:7px 12px;border-radius:10px;border:1px solid #d8e6f2;background:#f7fbff;color:#476283;font-size:11px;font-weight:700}
   .shell{max-width:1400px;margin:0 auto;background:rgba(255,255,255,.76);border:1px solid #d8e5ef;border-radius:16px;box-shadow:0 18px 36px rgba(15,23,42,.1);overflow:hidden}
-  .tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));border-bottom:1px solid #dbe6f0;background:linear-gradient(180deg,#f8fcff 0,#eef5fb 100%)}
-  .tab{border:none;background:transparent;padding:14px 16px;text-align:left;cursor:pointer;font-size:13px;color:#274d72;font-weight:700;border-left:4px solid transparent}
-  .tab .tab-sub{display:block;font-weight:500;margin-top:3px;color:#5b6b80;font-size:12px}
-  .tab .tab-help{display:block;margin-top:4px;color:#6a8097;font-size:11px;font-weight:600;line-height:1.35}
-  .tab.active .tab-help{color:#3d607f}
-  .tab.active{background:#fff;border-left-color:#0f4c81;color:#0f4c81}
-  .module-prompt{padding:16px;border-bottom:1px solid #dbe6f0;background:#f8fcff;color:#355474;font-size:13px;font-weight:700}
+  .tabs{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:12px;padding:14px;border-bottom:1px solid #dbe6f0;background:linear-gradient(180deg,#f8fcff 0,#eef5fb 100%)}
+  .tab{position:relative;display:flex;flex-direction:column;gap:6px;min-height:136px;border:1px solid #d7e5f1;border-radius:16px;background:linear-gradient(180deg,#ffffff 0,#f8fbff 100%);padding:18px;text-align:left;cursor:pointer;font-size:13px;color:#274d72;font-weight:700;box-shadow:0 8px 18px rgba(15,23,42,.05);transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,background-color .18s ease,color .18s ease}
+  .tab:hover{transform:translateY(-2px);border-color:#afcbe4;background:linear-gradient(180deg,#ffffff 0,#f2f8ff 100%);box-shadow:0 14px 28px rgba(15,76,129,.12)}
+  .tab:focus-visible{outline:none;border-color:#0f4c81;box-shadow:0 0 0 3px rgba(15,76,129,.16),0 14px 28px rgba(15,76,129,.12)}
+  .tab-top{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+  .tab-title{display:block;font-size:15px;font-weight:800;line-height:1.2;color:inherit}
+  .tab-cta{display:inline-flex;align-items:center;gap:6px;flex:0 0 auto;padding:6px 10px;border-radius:999px;border:1px solid #d4e3f1;background:#eef6ff;color:#0f4c81;font-size:11px;font-weight:800;letter-spacing:.25px;text-transform:uppercase;white-space:nowrap}
+  .tab-arrow{display:inline-block;font-size:14px;line-height:1;transition:transform .18s ease}
+  .tab:hover .tab-arrow,.tab:focus-visible .tab-arrow{transform:translateX(2px)}
+  .tab .tab-sub{display:block;font-weight:600;margin-top:0;color:#51677f;font-size:12px;line-height:1.45}
+  .tab .tab-help{display:block;margin-top:auto;padding-top:8px;color:#6a8097;font-size:11px;font-weight:700;line-height:1.45}
+  .tab.active .tab-help{color:#365a7d}
+  .tab.active{background:linear-gradient(180deg,#ffffff 0,#eef6ff 100%);border-color:#7fb1db;color:#0f4c81;box-shadow:0 16px 30px rgba(15,76,129,.14)}
+  .tab.active .tab-cta{background:#0f4c81;border-color:#0f4c81;color:#fff}
+  .tab.active .tab-arrow{transform:translateX(2px)}
+  .module-prompt{display:flex;align-items:center;gap:10px;padding:16px 18px;border-bottom:1px solid #dbe6f0;background:#f8fcff;color:#355474;font-size:13px;font-weight:700}
+  .module-prompt::before{content:"Click a module";display:inline-flex;align-items:center;justify-content:center;padding:6px 10px;border-radius:999px;background:#e8f2ff;color:#0f4c81;font-size:11px;font-weight:800;letter-spacing:.3px;text-transform:uppercase;white-space:nowrap}
   .panel{display:none;padding:12px}
   .panel.active{display:block}
   .ctrls{display:grid;grid-template-columns:repeat(6,minmax(0,1fr));gap:8px;align-items:end;padding:10px;border:1px solid #d9e6f0;border-radius:12px;background:#f8fcff}
@@ -47,8 +57,37 @@
   .actions{flex-direction:row;align-items:center;justify-content:flex-end;gap:8px;flex-wrap:wrap}
   .export-opt{display:inline-flex;align-items:center;gap:8px;color:#345676;font-size:12px;font-weight:700;white-space:nowrap;margin-right:auto}
   .export-opt input[type="checkbox"]{width:16px;height:16px;min-width:16px;accent-color:#0f4c81;margin:0}
-  #reconEntryPrintDateWrap{display:none}
-  #reconPanel .ctrl.actions{grid-column:1/-1;justify-content:flex-end;flex-wrap:wrap}
+  .recon-workbench{margin-top:14px;display:grid;grid-template-columns:minmax(0,1.04fr) minmax(0,1.04fr) minmax(0,1.16fr) minmax(260px,.88fr);gap:14px;align-items:stretch}
+  .action-card{position:relative;display:flex;flex-direction:column;gap:16px;min-width:0;height:100%;padding:20px;border:1px solid #d9e6f0;border-radius:22px;background:linear-gradient(180deg,#ffffff 0,#f8fbff 100%);box-shadow:0 14px 28px rgba(15,23,42,.06);overflow:hidden}
+  .action-card::before{content:"";position:absolute;top:0;left:0;right:0;height:4px;background:linear-gradient(90deg,#b7d5ee 0,#dcebfa 100%)}
+  .action-card.recon-card::before{background:linear-gradient(90deg,#7aaad4 0,#d6e9fb 100%)}
+  .action-card.actions-card::before{background:linear-gradient(90deg,#8bb7de 0,#dff1ff 100%)}
+  .action-card.print-card::before{background:linear-gradient(90deg,#9fc3e6 0,#e4f0fb 100%)}
+  .action-card.export-card::before{background:linear-gradient(90deg,#e4c28c 0,#f7ead2 100%)}
+  .action-head{display:flex;flex-direction:column;gap:6px;padding-bottom:14px;border-bottom:1px solid rgba(190,214,238,.74)}
+  .action-eyebrow{font-size:11px;font-weight:900;letter-spacing:.55px;text-transform:uppercase;color:#557391}
+  .action-title{font-size:15px;font-weight:900;letter-spacing:.28px;text-transform:uppercase;color:#143a5d}
+  .action-sub{font-size:12.5px;line-height:1.6;color:#5b7591;max-width:40ch}
+  .action-fields{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px}
+  .print-card .action-fields{grid-template-columns:repeat(2,minmax(0,1fr));grid-template-areas:"filter filter" "from to";align-items:end}
+  .print-card #reconPrintFilterByWrap{grid-area:filter;max-width:none}
+  .print-card #reconEntryPrintFromWrap{grid-area:from}
+  .print-card #reconEntryPrintToWrap{grid-area:to}
+  .action-note{padding:14px 16px;border:1px solid rgba(190,214,238,.72);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.94) 0,rgba(247,251,255,.88) 100%);font-size:12px;line-height:1.55;color:#5f7894}
+  .actions-card .action-note{min-height:92px}
+  .action-buttons{display:grid;align-items:stretch;gap:12px;margin-top:auto}
+  .recon-card .action-buttons,.actions-card .action-buttons{grid-template-columns:repeat(2,minmax(0,1fr))}
+  .print-card .action-buttons,.export-card .action-buttons{grid-template-columns:1fr}
+  .action-card .btn{display:inline-flex;align-items:center;justify-content:center;width:100%;min-width:0;min-height:56px;height:auto;padding:14px 16px;border-radius:18px;font-size:15px;font-weight:800;line-height:1.25;text-align:center;white-space:normal;box-shadow:none;transition:transform .18s ease,box-shadow .18s ease,border-color .18s ease,background-color .18s ease}
+  .action-card .btn.sec{color:#113458;background:linear-gradient(180deg,#ebf4ff 0,#d9ebfb 100%);border:1px solid #bed6ee}
+  .action-card .btn.warn{color:#8a3412;background:linear-gradient(180deg,#fff8ef 0,#fff1df 100%);border:1px solid #fdba74;min-width:0;white-space:normal}
+  .action-card .btn:hover{transform:translateY(-1px);box-shadow:0 10px 20px rgba(15,76,129,.10)}
+  .print-card .action-buttons .btn,.export-card .action-buttons .btn{width:100%;min-width:0}
+  .action-card .export-opt{display:flex;align-items:center;gap:10px;padding:14px 16px;border:1px solid rgba(228,216,189,.9);border-radius:16px;background:linear-gradient(180deg,rgba(255,255,255,.96) 0,rgba(255,250,241,.9) 100%);margin:0}
+  .action-card .ctrl{gap:6px}
+  .action-card .ctrl label{display:flex;align-items:flex-end;min-height:0;line-height:1.2}
+  .action-card .ctrl input:not([type="checkbox"]),.action-card .ctrl select{height:50px;border-radius:16px;padding:0 14px;font-size:14px;font-weight:700;background:#fff}
+  .action-card .ctrl input[type="date"]{padding-right:14px}
   #legacyPanel .ctrls{grid-template-columns:repeat(12,minmax(0,1fr));gap:10px 12px;padding:12px}
   #legacyPanel .ctrl{grid-column:span 2}
   #legacyPanel .ctrl.legacy-search{grid-column:span 8}
@@ -68,15 +107,25 @@
   .recon-scope b{color:#113458}
   .recon-scope .hint{display:block;margin-top:4px;color:#5f7894;font-size:11px}
   .subtype-mini{margin-top:8px;border:1px solid #d9e6f0;border-radius:10px;background:#fff;overflow:hidden}
-  .subtype-mini-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;background:#f6fbff;border-bottom:1px solid #e1ebf5}
+  .subtype-mini-head{display:flex;justify-content:space-between;align-items:center;gap:10px;padding:8px 10px;background:#f6fbff}
   .subtype-mini-head .title{font-size:12px;font-weight:800;color:#123b61}
   .subtype-mini-head .meta{font-size:11px;color:#56718d}
+  .subtype-mini-head-main{display:flex;align-items:center;gap:10px;min-width:0}
+  .subtype-mini-head-actions{display:flex;align-items:center;gap:8px;flex:0 0 auto}
+  .subtype-mini-toggle{display:inline-flex;align-items:center;gap:8px;height:32px;padding:0 12px;border:1px solid #c8d8e7;border-radius:999px;background:#fff;color:#1e3b5c;font-size:12px;font-weight:800;cursor:pointer;white-space:nowrap;transition:border-color .18s ease,box-shadow .18s ease,background-color .18s ease,color .18s ease}
+  .subtype-mini-toggle:hover{border-color:#9ec0df;background:#eef6ff;color:#0f4c81}
+  .subtype-mini-toggle:focus-visible{outline:none;border-color:#0f4c81;box-shadow:0 0 0 3px rgba(15,76,129,.14)}
+  .subtype-mini-toggle .caret{display:inline-block;font-size:13px;line-height:1;transition:transform .18s ease}
+  .subtype-mini.expanded .subtype-mini-toggle .caret{transform:rotate(180deg)}
+  .subtype-mini-body{display:none;border-top:1px solid #e1ebf5}
+  .subtype-mini.expanded .subtype-mini-body{display:block}
   .subtype-mini-scroll{overflow:auto;max-width:100%}
   .subtype-mini-table{width:max-content;min-width:100%;border-collapse:collapse}
   .subtype-mini-table th,.subtype-mini-table td{padding:7px 9px;border-bottom:1px solid #eef3f8;font-size:11px;color:#1c3a58;text-align:left}
   .subtype-mini-table th{background:#fbfdff;color:#33577a;font-weight:700;text-transform:uppercase;white-space:nowrap}
   .subtype-mini-table th.num,.subtype-mini-table td.num{text-align:right}
   .subtype-mini .foot{padding:7px 10px;font-size:11px;color:#5d7894;background:#fbfdff}
+  .subtype-mini-hint{padding:8px 10px;background:#fbfdff;color:#5d7894;font-size:11px;border-top:1px solid #e1ebf5}
   .kpis{margin-top:10px;display:grid;grid-template-columns:repeat(5,minmax(0,1fr));gap:8px}
   .k{background:#fff;border:1px solid #dbe7f2;border-radius:12px;padding:10px}
   .k.clickable{cursor:pointer;user-select:none;transition:border-color .18s ease,box-shadow .18s ease,background-color .18s ease}
@@ -85,7 +134,7 @@
   .k .l{font-size:11px;text-transform:uppercase;color:#3f617f;font-weight:700}
   .k .v{margin-top:6px;font-size:19px;font-weight:800;color:#0f2238}
   .table-wrap{margin-top:10px;border:1px solid #d7e3ef;border-radius:12px;background:#fff;overflow:auto;max-width:100%}
-  .recon-table{width:100%;border-collapse:collapse;min-width:1880px}
+  .recon-table{width:100%;border-collapse:collapse;min-width:1520px}
   .recon-table th,.recon-table td{border-bottom:1px solid #e4edf5;padding:8px 9px;font-size:12px;vertical-align:top;color:#17324e;text-align:left}
   .recon-table th{position:sticky;top:0;z-index:2;background:#f3f8fc;color:#0f4c81;font-size:11px;text-transform:uppercase;white-space:nowrap;vertical-align:middle}
   .recon-table th.num,.recon-table td.num{text-align:right}
@@ -115,6 +164,10 @@
   .wo-btn{border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:8px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
   .wo-btn:hover{background:#dbeafe}
   .wo-btn:disabled{cursor:not-allowed;opacity:.65}
+  .unsubmit-btn{border:1px solid #fed7aa;background:#fff7ed;color:#9a3412;border-radius:8px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
+  .unsubmit-btn:hover{background:#ffedd5}
+  .unsubmit-btn:disabled{cursor:not-allowed;opacity:.65}
+  .action-stack{display:flex;flex-direction:column;align-items:center;gap:6px}
   .drow td{background:#f8fbff;padding:10px 12px}
   .dinner{border:1px solid #dbe7f3;border-radius:10px;background:#fff;overflow:auto}
   .dtable{width:100%;border-collapse:collapse;min-width:900px}
@@ -146,6 +199,34 @@
   .updates-modal{position:fixed;inset:0;z-index:2100;background:rgba(2,12,27,.52);display:none;align-items:center;justify-content:center;padding:18px}
   .updates-modal.open{display:flex}
   .updates-modal-card{width:min(1200px,100%);max-height:90vh;background:#fff;border:1px solid #dbe7f2;border-radius:14px;box-shadow:0 20px 44px rgba(15,23,42,.28);display:flex;flex-direction:column;overflow:hidden}
+  .action-desk-modal{z-index:2050}
+  .action-desk-card{width:min(1320px,100%);max-height:92vh}
+  .action-desk-toolbar{display:grid;grid-template-columns:minmax(0,1.6fr) minmax(180px,.7fr) minmax(150px,.45fr) auto;gap:10px;padding:12px 14px;border-bottom:1px solid #edf3f9;background:#fbfdff;align-items:end}
+  .action-desk-toolbar.single-source{grid-template-columns:minmax(0,1.8fr) minmax(150px,.45fr) auto}
+  .action-desk-toolbar .ctrl{gap:6px}
+  .action-desk-toolbar .ctrl input,.action-desk-toolbar .ctrl select{height:38px}
+  .action-desk-toolbar-actions{display:flex;align-items:center;gap:8px;justify-content:flex-end;flex-wrap:wrap}
+  .action-desk-summary{display:flex;align-items:center;justify-content:space-between;gap:10px;flex-wrap:wrap;padding:10px 14px;border-bottom:1px solid #edf3f9;background:#fff}
+  .action-desk-summary .summary-main{font-size:12px;font-weight:700;color:#294763}
+  .action-desk-summary .summary-sub{font-size:11px;color:#5f7894}
+  .action-desk-pills{display:flex;align-items:center;gap:8px;flex-wrap:wrap}
+  .action-desk-pill{display:inline-flex;align-items:center;gap:6px;padding:5px 10px;border-radius:999px;border:1px solid #d7e5f2;background:#f7fbff;color:#234566;font-size:11px;font-weight:800}
+  .action-desk-pill.ok{background:#ecfdf3;border-color:#bbf7d0;color:#166534}
+  .action-desk-pill.warn{background:#fff7ed;border-color:#fed7aa;color:#9a3412}
+  .action-desk-pill.info{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+  .action-desk-table{width:100%;border-collapse:collapse;min-width:1320px}
+  .action-desk-table th,.action-desk-table td{padding:8px 9px;border-bottom:1px solid #e6eef7;font-size:12px;color:#17324e;text-align:left;vertical-align:top}
+  .action-desk-table th{background:#f4f8fd;color:#1e4f7c;font-size:11px;text-transform:uppercase;white-space:nowrap}
+  .action-desk-table th.num,.action-desk-table td.num{text-align:right}
+  .action-desk-table th.center,.action-desk-table td.center{text-align:center}
+  .action-desk-empty{padding:24px 18px;text-align:center;color:#5d7389;font-size:13px;font-weight:700}
+  .desk-action-btn{border:1px solid #bfdbfe;background:#eff6ff;color:#1d4ed8;border-radius:8px;padding:5px 9px;font-size:11px;font-weight:800;cursor:pointer;white-space:nowrap}
+  .desk-action-btn:hover{background:#dbeafe}
+  .desk-action-btn:disabled{cursor:not-allowed;opacity:.6}
+  .desk-action-btn.warn{border-color:#fed7aa;background:#fff7ed;color:#9a3412}
+  .desk-action-btn.warn:hover{background:#ffedd5}
+  .desk-note{font-size:11px;line-height:1.35;color:#5f7894;max-width:260px}
+  .receipt-modal-card{max-height:min(92vh,960px);overflow-y:auto}
   .updates-modal-head{display:flex;justify-content:space-between;align-items:center;padding:12px 14px;border-bottom:1px solid #e6eef7;background:#f6fbff}
   .updates-modal-head h3{margin:0;font-size:18px;color:#12355b}
   .updates-modal-close{border:none;background:transparent;color:#425d7a;font-size:26px;line-height:1;cursor:pointer}
@@ -180,16 +261,33 @@
   .bulk-foot{display:flex;justify-content:flex-end;align-items:center;gap:8px;padding:10px 14px;border-top:1px solid #e6eef7;background:#fbfdff}
   .receipt-form{display:grid;grid-template-columns:repeat(2,minmax(0,1fr));gap:12px;padding:14px}
   .receipt-field{display:flex;flex-direction:column;gap:6px}
-  .receipt-field label{font-size:12px;font-weight:700;color:#234566}
-  .receipt-field input,.receipt-field textarea,.receipt-field select{width:100%;min-height:38px;border:1px solid #c9d7e6;border-radius:10px;padding:8px 10px;font-size:13px;color:#132941;background:#fff}
+  .receipt-field label{display:flex;align-items:center;justify-content:space-between;gap:8px;font-size:12px;font-weight:700;color:#234566}
+  .receipt-field .field-note{font-size:11px;line-height:1.35;color:#6a7f95}
+  .receipt-field input,.receipt-field textarea,.receipt-field select{width:100%;min-height:38px;border:1px solid #c9d7e6;border-radius:12px;padding:9px 12px;font-size:13px;color:#132941;background:#fff;transition:border-color .18s ease,box-shadow .18s ease,background-color .18s ease}
+  .receipt-field input:focus,.receipt-field textarea:focus,.receipt-field select:focus{outline:none;border-color:#7aa9d5;box-shadow:0 0 0 3px rgba(15,76,129,.12)}
   .receipt-field input[type="number"]{-moz-appearance:textfield;appearance:textfield}
   .receipt-field input[type="number"]::-webkit-outer-spin-button,.receipt-field input[type="number"]::-webkit-inner-spin-button{-webkit-appearance:none;margin:0}
   .receipt-field input[readonly]{background:#f5f9fd;color:#526b85}
+  .receipt-field.money input{font-weight:800;font-size:14px;text-align:right;font-variant-numeric:tabular-nums}
+  .receipt-field.money-claim label{color:#1d4ed8}
+  .receipt-field.money-claim input{background:#eff6ff;border-color:#bfdbfe;color:#1d4ed8}
+  .receipt-field.money-approved label{color:#1e40af}
+  .receipt-field.money-approved input{background:#eef4ff;border-color:#c7d2fe;color:#1e3a8a}
+  .receipt-field.money-received label{color:#0f766e}
+  .receipt-field.money-received input{background:#ecfdf5;border-color:#99f6e4;color:#0f766e}
+  .receipt-field.money-tds label{color:#b45309}
+  .receipt-field.money-tds input{background:#fff7ed;border-color:#fdba74;color:#b45309}
+  .receipt-field.money-rebate label{color:#c2410c}
+  .receipt-field.money-rebate input{background:#fff7ed;border-color:#fed7aa;color:#c2410c}
   .receipt-field.wide{grid-column:1/-1}
+  .receipt-side-note{margin-top:2px;padding:9px 11px;border:1px solid #dbe7f2;border-radius:12px;background:#f8fbff;display:flex;flex-direction:column;gap:3px}
+  .receipt-side-note .mini-label{font-size:10px;font-weight:800;letter-spacing:.04em;text-transform:uppercase;color:#5c7692}
+  .receipt-side-note .mini-value{font-size:12px;font-weight:700;color:#12355b;line-height:1.35}
   .receipt-context{padding:12px 14px;border-bottom:1px solid #edf3f9;background:#fbfdff;display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
   .receipt-context .kv{font-size:12px;color:#294763}
   .receipt-context b{color:#12355b}
   .receipt-hint{padding:0 14px 12px;font-size:12px;color:#49627d}
+  .decision-note{margin:12px 14px 0;padding:10px 12px;border:1px solid #fed7aa;border-radius:12px;background:#fff7ed;color:#9a3412;font-size:12px;line-height:1.45}
   .receipt-actions{display:flex;justify-content:flex-end;gap:8px;padding:10px 14px;border-top:1px solid #e6eef7;background:#fbfdff}
   .row-final{background:#ecfdf3}
   .legacy-st{display:inline-flex;align-items:center;padding:2px 8px;border-radius:999px;font-size:11px;font-weight:700;border:1px solid transparent;white-space:nowrap}
@@ -206,14 +304,15 @@
   .toast.s{border-left-color:#16a34a;background:#f6fff9}.toast.w{border-left-color:#d97706;background:#fffaf2}.toast.e{border-left-color:#dc2626;background:#fff8f8}.toast.l{border-left-color:#1d4ed8;background:#f8fbff}
   .tb{flex:1;display:flex;gap:10px}.sp{width:14px;height:14px;border:2px solid rgba(29,78,216,.24);border-top-color:#1d4ed8;border-radius:50%;animation:spin .8s linear infinite;margin-top:2px}.tm{font-size:13px;font-weight:600;line-height:1.35}.tc{border:none;background:transparent;color:#64748b;font-size:18px;line-height:1;padding:0 2px;cursor:pointer}
   @keyframes spin{to{transform:rotate(360deg)}}
-  .recon-table th:nth-child(3),.recon-table td:nth-child(3){min-width:120px}
-  .recon-table th:nth-child(4),.recon-table td:nth-child(4){min-width:190px}
-  .recon-table th:nth-child(5),.recon-table td:nth-child(5){min-width:110px}
-  .recon-table th:nth-child(6),.recon-table td:nth-child(6){min-width:190px}
-  .recon-table th:nth-child(7),.recon-table td:nth-child(7),.recon-table th:nth-child(8),.recon-table td:nth-child(8){min-width:120px}
+  .recon-table th:nth-child(3),.recon-table td:nth-child(3){min-width:110px}
+  .recon-table th:nth-child(4),.recon-table td:nth-child(4){min-width:120px}
+  .recon-table th:nth-child(5),.recon-table td:nth-child(5){min-width:220px}
+  .recon-table th:nth-child(6),.recon-table td:nth-child(6){min-width:110px}
+  .recon-table th:nth-child(7),.recon-table td:nth-child(7){min-width:220px}
+  .recon-table th:nth-child(8),.recon-table td:nth-child(8){min-width:140px}
   .recon-table th:nth-child(9),.recon-table td:nth-child(9){min-width:170px}
-  @media (max-width:1200px){.ctrls{grid-template-columns:repeat(4,minmax(0,1fr))}.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.updates-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.suspense-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}#reconPanel .ctrl.actions{grid-column:1/-1;justify-content:flex-end;flex-wrap:wrap}#legacyPanel .ctrls{grid-template-columns:repeat(8,minmax(0,1fr))}#legacyPanel .ctrl{grid-column:span 2}#legacyPanel .ctrl.legacy-search{grid-column:span 5}#legacyPanel .ctrl.actions{grid-column:span 3;justify-content:flex-end}#legacyPanel .ctrl.actions .btn{min-width:0}}
-  @media (max-width:900px){.head{grid-template-columns:1fr;padding:14px}.head h1{font-size:28px}.head-side{align-items:flex-start;min-width:0}.top-actions{top:12px;right:12px}.ctrls{grid-template-columns:repeat(2,minmax(0,1fr))}.actions{justify-content:flex-start}#reconPanel .ctrl.actions{grid-column:1/-1;justify-content:flex-start;flex-wrap:wrap}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.updates-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.suspense-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.updates-modal-kv,.receipt-context,.receipt-form{grid-template-columns:1fr}#legacyPanel .ctrls{grid-template-columns:repeat(2,minmax(0,1fr))}#legacyPanel .ctrl{grid-column:span 1}#legacyPanel .ctrl.legacy-search,#legacyPanel .ctrl.actions{grid-column:1/-1}#legacyPanel .ctrl.actions .btn{flex:1 1 180px}}
+  @media (max-width:1200px){.tabs{grid-template-columns:repeat(2,minmax(0,1fr))}.ctrls{grid-template-columns:repeat(4,minmax(0,1fr))}.recon-workbench{grid-template-columns:repeat(2,minmax(0,1fr))}.print-card #reconPrintFilterByWrap{max-width:none}.action-card.export-card{grid-column:1/-1}.kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.updates-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}.suspense-kpis{grid-template-columns:repeat(3,minmax(0,1fr))}#legacyPanel .ctrls{grid-template-columns:repeat(8,minmax(0,1fr))}#legacyPanel .ctrl{grid-column:span 2}#legacyPanel .ctrl.legacy-search{grid-column:span 5}#legacyPanel .ctrl.actions{grid-column:span 3;justify-content:flex-end}#legacyPanel .ctrl.actions .btn{min-width:0}}
+  @media (max-width:900px){.head{grid-template-columns:1fr;padding:14px}.head h1{font-size:28px}.head-side{align-items:flex-start;min-width:0}.top-actions{top:12px;right:12px}.tabs{grid-template-columns:1fr;padding:12px}.tab{min-height:0;padding:16px}.tab-top{flex-direction:column;align-items:flex-start}.module-prompt{align-items:flex-start;flex-direction:column}.ctrls{grid-template-columns:repeat(2,minmax(0,1fr))}.actions{justify-content:flex-start}.recon-workbench{grid-template-columns:1fr}.action-card{padding:18px}.action-fields,.action-desk-toolbar,.action-desk-toolbar.single-source{grid-template-columns:1fr}.print-card .action-fields{grid-template-columns:1fr;grid-template-areas:"filter" "from" "to"}.print-card #reconPrintFilterByWrap{grid-column:auto}.recon-card .action-buttons,.actions-card .action-buttons,.action-buttons,.action-desk-toolbar-actions{grid-template-columns:1fr;justify-content:flex-start}.kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.updates-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.suspense-kpis{grid-template-columns:repeat(2,minmax(0,1fr))}.updates-modal-kv,.receipt-context,.receipt-form{grid-template-columns:1fr}#legacyPanel .ctrls{grid-template-columns:repeat(2,minmax(0,1fr))}#legacyPanel .ctrl{grid-column:span 1}#legacyPanel .ctrl.legacy-search,#legacyPanel .ctrl.actions{grid-column:1/-1}#legacyPanel .ctrl.actions .btn{flex:1 1 180px}}
 </style>
 <div class="corp">
   <div class="top-actions"><div class="fab-user"><div class="fab-timer" id="fabTimer">--:--</div><button class="fab-btn" id="fabToggle" type="button"><span class="fab-icon"><span></span><span></span><span></span></span></button><div class="fab-menu" id="fabMenu"><div class="menu-title">{{ session.get('username') or session.get('user') or 'User' }}</div><a href="{{ url_for('dashboard') }}">Back to Dashboard</a><a href="{{ url_for('settings') }}">Settings</a><a href="{{ url_for('logout') }}">Logout</a></div></div></div>
@@ -234,25 +333,89 @@
   </header>
   <div class="shell">
     <div class="tabs">
-      <button class="tab" type="button" data-panel="reconPanel">Receipt Reconciliation<span class="tab-sub">Dynamic KPI cards, client-side filtering and receipt drill-down.</span><span class="tab-help">Click Load Data or Refresh Data to fetch records. Filters do not auto-fetch on tab switch.</span></button>
-      <button class="tab" type="button" data-panel="legacyPanel">Corporate Bill Summary<span class="tab-sub">Existing corporate bill summary kept intact for continuity.</span><span class="tab-help">Set Unit and date range, then click Load Bill Summary. Export uses the active filter selection.</span></button>
-      <button class="tab" type="button" data-panel="updatesPanel">Updates Monitor<span class="tab-sub">Tracks additions and updates from corporate source tables.</span><span class="tab-help">Click Load Updates to fetch events. Auto Refresh runs every 60s only when enabled.</span></button>
+      <button class="tab" type="button" data-panel="reconPanel" aria-label="Open Receipt Reconciliation module">
+        <span class="tab-top"><span class="tab-title">Receipt Reconciliation</span><span class="tab-cta">Open Module <span class="tab-arrow" aria-hidden="true">&#8250;</span></span></span>
+        <span class="tab-sub">Focused reporting grid, action desks, and receipt drill-down.</span>
+        <span class="tab-help">Click Load Data or Refresh Data to fetch records. Filters do not auto-fetch on tab switch.</span>
+      </button>
+      <button class="tab" type="button" data-panel="legacyPanel" aria-label="Open Corporate Bill Summary module">
+        <span class="tab-top"><span class="tab-title">Corporate Bill Summary</span><span class="tab-cta">Open Module <span class="tab-arrow" aria-hidden="true">&#8250;</span></span></span>
+        <span class="tab-sub">Existing corporate bill summary kept intact for continuity.</span>
+        <span class="tab-help">Set Unit and date range, then click Load Bill Summary. For server-backed units, the date range follows submit date. Export uses the active filter selection.</span>
+      </button>
+      <button class="tab" type="button" data-panel="updatesPanel" aria-label="Open Updates Monitor module">
+        <span class="tab-top"><span class="tab-title">Updates Monitor</span><span class="tab-cta">Open Module <span class="tab-arrow" aria-hidden="true">&#8250;</span></span></span>
+        <span class="tab-sub">Tracks additions and updates from corporate source tables.</span>
+        <span class="tab-help">Click Load Updates to fetch events. Auto Refresh runs every 60s only when enabled.</span>
+      </button>
     </div>
-    <div class="module-prompt" id="modulePrompt">Select a module tab to begin. Data is fetched only when you use that module&apos;s load action.</div>
+    <div class="module-prompt" id="modulePrompt">Select one of the module cards above to begin. Data is fetched only when you use that module&apos;s load action.</div>
     <section class="panel" id="reconPanel">
       <div class="ctrls">
         <div class="ctrl"><label>Unit</label><select id="reconUnit"></select></div>
         <div class="ctrl"><label>Date From</label><input type="date" id="reconBillFrom"></div>
         <div class="ctrl"><label>Date To</label><input type="date" id="reconBillTo"></div>
-        <div class="ctrl" id="reconEntryPrintDateWrap"><label>Receipt Entry Date</label><input type="date" id="reconEntryPrintDate"></div>
         <div class="ctrl inline"><input type="checkbox" id="reconIncludeCancelled"><label for="reconIncludeCancelled">Include Cancelled</label></div>
-        <div class="ctrl"><label>Search</label><input type="text" id="reconSearch" placeholder="Bill / Patient / Visit / Dept"></div>
+        <div class="ctrl"><label>Search</label><input type="text" id="reconSearch" placeholder="Bill / Patient / Visit / Dept or comma-separated Patient IDs"></div>
         <div class="ctrl"><label>Source</label><select id="reconSource"><option value="">All Sources</option></select></div>
         <div class="ctrl"><label>Patient SubType</label><select id="reconPatientSubtype"><option value="">All SubTypes</option></select></div>
-        <div class="ctrl"><label>Sort By</label><select id="reconSortBy"><option value="balance_all_time">Balance All-time</option><option value="balance_window">Balance In Window</option><option value="bill_amount">Bill Amount</option><option value="receipt_total_all_time">Receipt All-time</option><option value="tds_total_all_time">TDS All-time</option><option value="rebate_discount_all_time">Rebate/Discount All-time</option><option value="writeoff_total_all_time">Write-off All-time</option><option value="settled_total_all_time">Settled All-time</option><option value="receipt_total_window">Receipt In Window</option><option value="tds_total_window">TDS In Window</option><option value="rebate_discount_window">Rebate/Discount In Window</option><option value="writeoff_total_window">Write-off In Window</option><option value="settled_total_window">Settled In Window</option><option value="bill_date">Submit Date</option><option value="due_date">Due Date</option><option value="patient_name">Patient Name</option><option value="last_receipt_date_all_time">Last Receipt Date</option></select></div>
+        <div class="ctrl"><label>Sort By</label><select id="reconSortBy"><option value="balance_all_time">Balance</option><option value="bill_amount">Bill Amount</option><option value="receipt_total_all_time">Receipt</option><option value="tds_total_all_time">TDS</option><option value="rebate_discount_all_time">Rebate/Discount</option><option value="writeoff_total_all_time">Write-off</option><option value="settled_total_all_time">Settled</option><option value="bill_date">Submit Date</option><option value="due_date">Due Date</option><option value="patient_name">Patient Name</option><option value="last_receipt_date_all_time">Last Receipt Date</option></select></div>
         <div class="ctrl"><label>Sort Direction</label><select id="reconSortDir"><option value="desc">Descending</option><option value="asc">Ascending</option></select></div>
         <div class="ctrl"><label>Page Size</label><select id="reconPageSize"><option value="25">25</option><option value="50">50</option><option value="100">100</option><option value="200">200</option></select></div>
-        <div class="ctrl actions"><label class="export-opt" for="reconExportSubmittedOnly"><input type="checkbox" id="reconExportSubmittedOnly"><span>Export Bills: Submitted Only</span></label><button class="btn sec" type="button" id="reconLoadBtn">Load Data</button><button class="btn sec" type="button" id="reconForceRefreshBtn">Refresh Data</button><button class="btn sec" type="button" id="reconOpeningBtn">Load Opening</button><button class="btn sec" type="button" id="reconDailyPrintBtn" style="display:none">Print Daily Receipts</button><button class="btn warn" type="button" id="reconSuspenseBtn">Review Exceptions</button><button class="btn" type="button" id="reconExportBtn">Export XLSX</button></div>
+      </div>
+      <div class="recon-workbench">
+        <section class="action-card recon-card">
+          <div class="action-head">
+            <div class="action-eyebrow">Reconciliation</div>
+            <div class="action-title">Data Load and Review</div>
+            <div class="action-sub">Load the live reconciliation view, refresh it on demand, review exceptions, and switch to opening balance scope when needed.</div>
+          </div>
+          <div class="action-buttons">
+            <button class="btn sec" type="button" id="reconLoadBtn">Load Data</button>
+            <button class="btn sec" type="button" id="reconForceRefreshBtn">Refresh Data</button>
+            <button class="btn sec" type="button" id="reconOpeningBtn">Load Opening</button>
+            <button class="btn warn" type="button" id="reconSuspenseBtn">Review Exceptions</button>
+          </div>
+        </section>
+        <section class="action-card actions-card" id="reconActionsCard">
+          <div class="action-head">
+            <div class="action-eyebrow">Actions</div>
+            <div class="action-title">Receipt and Bill Desk</div>
+            <div class="action-sub">Use dedicated popup desks for rapid receipt entry and bill unsubmit actions without cluttering the reporting grid.</div>
+          </div>
+          <div class="action-note" id="reconActionsNote">Best used for comma-separated Patient ID lookup, quick receipt posting, and focused bill follow-up work.</div>
+          <div class="action-buttons">
+            <button class="btn sec" type="button" id="reconReceiptDeskBtn">Open Receipt Desk</button>
+            <button class="btn warn" type="button" id="reconUnsubmitDeskBtn">Open Unsubmit Desk</button>
+          </div>
+        </section>
+        <section class="action-card print-card" id="reconPrintCard">
+          <div class="action-head">
+            <div class="action-eyebrow">Receipt Register</div>
+            <div class="action-title">Receipt Print Section</div>
+            <div class="action-sub" id="reconPrintSub">Generate the corporate receipt register for the selected entry or receipt-date window.</div>
+          </div>
+          <div class="action-fields">
+            <div class="ctrl" id="reconPrintFilterByWrap"><label for="reconPrintFilterBy">Filter By</label><select id="reconPrintFilterBy"><option value="entry_date" selected>Entry Date</option><option value="receipt_date">Receipt Date</option></select></div>
+            <div class="ctrl" id="reconEntryPrintFromWrap"><label for="reconEntryPrintFrom" id="reconEntryPrintFromLabel">Entry Date From</label><input type="date" id="reconEntryPrintFrom"></div>
+            <div class="ctrl" id="reconEntryPrintToWrap"><label for="reconEntryPrintTo" id="reconEntryPrintToLabel">Entry Date To</label><input type="date" id="reconEntryPrintTo"></div>
+          </div>
+          <div class="action-note" id="reconPrintNote">This print window remains independent from the bill submit-date filters used in reconciliation.</div>
+          <div class="action-buttons">
+            <button class="btn sec" type="button" id="reconDailyPrintBtn" style="display:none">Print Receipt Register</button>
+          </div>
+        </section>
+        <section class="action-card export-card">
+          <div class="action-head">
+            <div class="action-eyebrow">Export</div>
+            <div class="action-title">Excel Output</div>
+            <div class="action-sub">Download the reconciliation workbook using the current filters and export rules.</div>
+          </div>
+          <label class="export-opt" for="reconExportSubmittedOnly"><input type="checkbox" id="reconExportSubmittedOnly"><span>Export Bills: Submitted Only</span></label>
+          <div class="action-buttons">
+            <button class="btn" type="button" id="reconExportBtn">Export XLSX</button>
+          </div>
+        </section>
       </div>
       <div class="status sr-only" id="reconStatus" aria-live="polite" aria-atomic="true">Ready.</div>
       <div class="bulkbar" id="reconBulkBar">
@@ -264,11 +427,16 @@
       </div>
       <div class="recon-scope" id="reconScopeSummary">Settlement summary will appear after data load.</div>
       <div class="subtype-mini" id="reconSubtypeMini">
-        <div class="subtype-mini-head"><span class="title">Closing by SubType</span><span class="meta">Waiting for data...</span></div>
-        <div class="foot">Top subtypes will appear after reconciliation load.</div>
+        <div class="subtype-mini-head">
+          <div class="subtype-mini-head-main"><span class="title">Closing by SubType</span><span class="meta">Waiting for data...</span></div>
+          <div class="subtype-mini-head-actions">
+            <button class="subtype-mini-toggle" type="button" data-subtype-toggle="1" aria-expanded="false"><span>Expand</span><span class="caret" aria-hidden="true">&#9662;</span></button>
+          </div>
+        </div>
+        <div class="subtype-mini-hint">Collapsed by default. Expand only when you want to review subtype-level closing detail.</div>
       </div>
       <div class="kpis" id="reconKpis"></div>
-      <div class="table-wrap"><table class="recon-table"><thead><tr><th class="center"><input type="checkbox" id="reconSelectAllVisible" aria-label="Select visible write-off rows"></th><th class="center">Details</th><th>Source</th><th>Bill</th><th class="center">Status All</th><th>Patient</th><th>Patient Type</th><th>Patient Sub Type</th><th>Visit</th><th class="num">Bill Amt</th><th class="num">Receipt All</th><th class="num">TDS All</th><th class="num">Rebate/Discount All</th><th class="num">Write-off All</th><th class="num">Balance All</th><th class="num">Receipt Window</th><th class="num">Rebate/Discount Window</th><th class="num">Balance Window</th><th class="center">Status Window</th><th class="center">Receipts</th><th>Last Receipt</th><th class="center">Actions</th></tr></thead><tbody id="reconBody"><tr><td colspan="22" class="empty">No data loaded.</td></tr></tbody></table></div>
+      <div class="table-wrap"><table class="recon-table"><thead><tr><th class="center"><input type="checkbox" id="reconSelectAllVisible" aria-label="Select visible write-off rows"></th><th class="center">Details</th><th class="center">Write-off</th><th>Source</th><th>Bill</th><th class="center">Status</th><th>Patient</th><th>Patient Type</th><th>Patient Sub Type</th><th>Visit</th><th class="num">Bill Amt</th><th class="num">Receipt</th><th class="num">TDS</th><th class="num">Rebate/Discount</th><th class="num">Write-off</th><th class="num">Balance</th><th class="center">Receipts</th><th>Last Receipt</th></tr></thead><tbody id="reconBody"><tr><td colspan="18" class="empty">No data loaded.</td></tr></tbody></table></div>
       <div class="pager"><div class="meta" id="reconPageInfo">Page 0 / 0</div><div><button class="pbtn" id="reconPrev" type="button">Prev</button><button class="pbtn" id="reconNext" type="button">Next</button></div></div>
     </section>
     <section class="panel" id="legacyPanel">
@@ -278,8 +446,8 @@
         <div class="ctrl"><label>To</label><input type="date" id="legacyTo"></div>
         <div class="ctrl"><label>Visit Type</label><select id="legacyVisitType"><option value="0">All</option><option value="1">IPD</option><option value="2">OPD</option><option value="3">DPV</option></select></div>
         <div class="ctrl"><label>Patient SubType</label><select id="legacyPatientSubtype"><option value="">All SubTypes</option></select></div>
-        <div class="ctrl"><label>Status Filter</label><select id="legacyStatus"><option value="all">All</option><option value="final">Final Submitted</option><option value="nonfinal">Other Status</option></select></div>
-        <div class="ctrl legacy-search"><label>Search</label><input type="text" id="legacySearch" placeholder="Bill No / Registration / Patient / Bill Date"></div>
+        <div class="ctrl"><label>Status Filter</label><select id="legacyStatus"><option value="all">All</option><option value="final">Final Submitted</option><option value="pending">Submission Pending</option><option value="notworked">Not Worked</option><option value="nonfinal">Other Status (All Non-Final)</option></select></div>
+        <div class="ctrl legacy-search"><label>Search</label><input type="text" id="legacySearch" placeholder="Bill No / Registration / Patient / Submit or Bill Date"></div>
         <div class="ctrl actions"><button class="btn sec" type="button" id="legacyLoadBtn">Load Bill Summary</button><button class="btn" type="button" id="legacyExportBtn">Export Bill Summary</button></div>
       </div>
       <div class="status" id="legacyStatusTxt">Corporate bill summary panel ready.</div>
@@ -395,9 +563,118 @@
         </table>
       </div>
     </div>
+</div>
+<div class="updates-modal action-desk-modal" id="receiptDeskModal" aria-hidden="true">
+  <div class="updates-modal-card action-desk-card">
+    <div class="updates-modal-head">
+      <h3 id="receiptDeskModalTitle">Receipt Desk</h3>
+      <button class="updates-modal-close" type="button" id="receiptDeskModalClose">&times;</button>
+    </div>
+    <div class="action-desk-toolbar">
+      <div class="ctrl"><label for="receiptDeskSearch">Search</label><input type="text" id="receiptDeskSearch" placeholder="Bill / Patient / Visit / Dept or comma-separated Patient IDs"></div>
+      <div class="ctrl"><label for="receiptDeskSource">Source</label><select id="receiptDeskSource"><option value="">All Sources</option></select></div>
+      <div class="ctrl"><label for="receiptDeskPageSize">Page Size</label><select id="receiptDeskPageSize"><option value="25">25</option><option value="50">50</option><option value="100">100</option></select></div>
+      <div class="action-desk-toolbar-actions">
+        <button class="btn sec" type="button" id="receiptDeskLoadBtn">Load Bills</button>
+        <button class="btn sec" type="button" id="receiptDeskRefreshBtn">Refresh</button>
+      </div>
+    </div>
+    <div class="action-desk-summary" id="receiptDeskSummary">
+      <div>
+        <div class="summary-main">Search corporate bills or openings for receipt entry.</div>
+        <div class="summary-sub">The same comma-separated Patient ID search logic is available here for quick action work.</div>
+      </div>
+      <div class="action-desk-pills" id="receiptDeskPills"></div>
+    </div>
+    <div class="updates-modal-body">
+      <table class="action-desk-table">
+        <thead>
+          <tr>
+            <th class="center">Action</th>
+            <th>Source</th>
+            <th>Bill</th>
+            <th>Patient</th>
+            <th>Visit</th>
+            <th class="num">Bill Amt</th>
+            <th class="num">Receipt</th>
+            <th class="num">TDS</th>
+            <th class="num">Rebate/Discount</th>
+            <th class="num">Write-off</th>
+            <th class="num">Balance</th>
+            <th class="center">Status</th>
+            <th>Receipt State</th>
+          </tr>
+        </thead>
+        <tbody id="receiptDeskBody">
+          <tr><td colspan="13" class="action-desk-empty">Receipt desk is ready. Load data to begin.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="bulk-foot">
+      <div class="meta" id="receiptDeskPageInfo">Page 0 / 0</div>
+      <div>
+        <button class="pbtn" type="button" id="receiptDeskPrev">Prev</button>
+        <button class="pbtn" type="button" id="receiptDeskNext">Next</button>
+      </div>
+    </div>
   </div>
-  <div class="updates-modal" id="receiptModal" aria-hidden="true">
-    <div class="updates-modal-card" style="width:min(860px,100%)">
+</div>
+<div class="updates-modal action-desk-modal" id="unsubmitDeskModal" aria-hidden="true">
+  <div class="updates-modal-card action-desk-card">
+    <div class="updates-modal-head">
+      <h3 id="unsubmitDeskModalTitle">Unsubmit Desk</h3>
+      <button class="updates-modal-close" type="button" id="unsubmitDeskModalClose">&times;</button>
+    </div>
+    <div class="action-desk-toolbar single-source">
+      <div class="ctrl"><label for="unsubmitDeskSearch">Search</label><input type="text" id="unsubmitDeskSearch" placeholder="Bill / Patient / Visit / Dept or comma-separated Patient IDs"></div>
+      <div class="ctrl"><label for="unsubmitDeskPageSize">Page Size</label><select id="unsubmitDeskPageSize"><option value="25">25</option><option value="50">50</option><option value="100">100</option></select></div>
+      <div class="action-desk-toolbar-actions">
+        <button class="btn sec" type="button" id="unsubmitDeskLoadBtn">Load Bills</button>
+        <button class="btn sec" type="button" id="unsubmitDeskRefreshBtn">Refresh</button>
+      </div>
+    </div>
+    <div class="action-desk-summary" id="unsubmitDeskSummary">
+      <div>
+        <div class="summary-main">Search submitted corporate bills and unsubmit the right records with audit-safe validation.</div>
+        <div class="summary-sub">Bills with receipt, TDS, rebate, or write-off activity remain visible but clearly blocked.</div>
+      </div>
+      <div class="action-desk-pills" id="unsubmitDeskPills"></div>
+    </div>
+    <div class="updates-modal-body">
+      <table class="action-desk-table">
+        <thead>
+          <tr>
+            <th class="center">Action</th>
+            <th>Bill</th>
+            <th>Patient</th>
+            <th>Visit</th>
+            <th>Submit Date</th>
+            <th class="num">Bill Amt</th>
+            <th class="num">Receipt</th>
+            <th class="num">TDS</th>
+            <th class="num">Rebate/Discount</th>
+            <th class="num">Write-off</th>
+            <th class="num">Balance</th>
+            <th class="center">Status</th>
+            <th>Eligibility</th>
+          </tr>
+        </thead>
+        <tbody id="unsubmitDeskBody">
+          <tr><td colspan="13" class="action-desk-empty">Unsubmit desk is ready. Load data to begin.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="bulk-foot">
+      <div class="meta" id="unsubmitDeskPageInfo">Page 0 / 0</div>
+      <div>
+        <button class="pbtn" type="button" id="unsubmitDeskPrev">Prev</button>
+        <button class="pbtn" type="button" id="unsubmitDeskNext">Next</button>
+      </div>
+    </div>
+  </div>
+</div>
+<div class="updates-modal" id="receiptModal" aria-hidden="true">
+  <div class="updates-modal-card receipt-modal-card" style="width:min(860px,100%)">
       <div class="updates-modal-head">
         <h3 id="receiptModalTitle">Take Receipt</h3>
         <button class="updates-modal-close" type="button" id="receiptModalClose">&times;</button>
@@ -426,32 +703,89 @@
           <label for="receiptUtrNo">UTR No</label>
           <input type="text" id="receiptUtrNo" placeholder="Optional UTR / reference no">
         </div>
-        <div class="receipt-field">
-          <label for="receiptBillAmount">C_amount</label>
+        <div class="receipt-field money money-claim">
+          <label for="receiptBillAmount">Claim Amount</label>
+          <div class="field-note">Claim value as submitted against this corporate bill/opening.</div>
           <input type="text" id="receiptBillAmount" inputmode="decimal" readonly>
         </div>
-        <div class="receipt-field">
+        <div class="receipt-field money money-approved">
           <label for="receiptApprovedAmount">Approved Amt</label>
+          <div class="field-note">Gross approved figure after adding any TDS component.</div>
           <input type="text" id="receiptApprovedAmount" inputmode="decimal">
         </div>
-        <div class="receipt-field">
-          <label for="receiptTdsAmount">TDS Amt</label>
-          <input type="text" id="receiptTdsAmount" inputmode="decimal">
-        </div>
-        <div class="receipt-field">
+        <div class="receipt-field money money-received">
           <label for="receiptReceivedAmount">Received Amt</label>
+          <div class="field-note">Net amount actually collected against the bill.</div>
           <input type="text" id="receiptReceivedAmount" inputmode="decimal">
         </div>
-        <div class="receipt-field wide">
-          <label for="receiptRebateAmount">Rebate</label>
+        <div class="receipt-field">
+          <label for="receiptTdsPercent">TDS %</label>
+          <input type="text" id="receiptTdsPercent" inputmode="decimal" placeholder="Optional TDS %">
+          <div class="field-note" id="receiptTdsPercentNote">Default TDS suggestion loads automatically and can be edited.</div>
+          <div class="receipt-side-note" aria-live="polite">
+            <div class="mini-label">Patient SubType</div>
+            <div class="mini-value" id="receiptPatientSubtypeNote">-</div>
+          </div>
+        </div>
+        <div class="receipt-field money money-tds">
+          <label for="receiptTdsAmount">TDS Amt</label>
+          <div class="field-note">Calculated from TDS % and absorbed out of the rebate bucket.</div>
+          <input type="text" id="receiptTdsAmount" inputmode="decimal">
+        </div>
+        <div class="receipt-field wide money money-rebate">
+          <label for="receiptRebateAmount">Rebate / Discount</label>
+          <div class="field-note">Remaining difference after receipt and TDS allocation.</div>
           <input type="text" id="receiptRebateAmount" inputmode="decimal">
         </div>
       </div>
-      <div class="receipt-hint" id="receiptHint">Approved Amt should equal Received Amt + TDS Amt, and C_amount should equal Received Amt + TDS Amt + Rebate.</div>
+      <div class="receipt-hint" id="receiptHint">Enter Received Amt first. The remaining claim value shifts to Rebate / Discount, and the suggested TDS % can be edited before save.</div>
       <div class="receipt-actions">
         <button class="btn sec" type="button" id="receiptModalCancelBtn">Cancel</button>
-        <button class="btn" type="button" id="receiptSaveBtn">Save &amp; Print</button>
+        <button class="btn" type="button" id="receiptSaveBtn">Save Receipt</button>
       </div>
+    </div>
+  </div>
+</div>
+<div class="updates-modal" id="unsubmitBillModal" aria-hidden="true">
+  <div class="updates-modal-card" style="width:min(780px,100%)">
+    <div class="updates-modal-head">
+      <h3 id="unsubmitBillModalTitle">Unsubmit Corporate Bill</h3>
+      <button class="updates-modal-close" type="button" id="unsubmitBillModalClose">&times;</button>
+    </div>
+    <div class="receipt-context">
+      <div class="kv"><b>Bill</b><div id="unsubmitBillContextBill">-</div></div>
+      <div class="kv"><b>Patient</b><div id="unsubmitBillContextPatient">-</div></div>
+      <div class="kv"><b>Visit</b><div id="unsubmitBillContextVisit">-</div></div>
+    </div>
+    <div class="decision-note">
+      Use this only for wrongly submitted corporate bills that must be taken back out of reconciliation. This will change Submitted Status to No and clear Submit Date in the corporate bill table. Bills with receipt, TDS, rebate, or write-off activity are blocked.
+    </div>
+    <div class="receipt-form">
+      <div class="receipt-field">
+        <label for="unsubmitBillCurrentStatus">Current Submitted Status</label>
+        <input type="text" id="unsubmitBillCurrentStatus" readonly>
+      </div>
+      <div class="receipt-field">
+        <label for="unsubmitBillCurrentSubmitDate">Current Submit Date</label>
+        <input type="text" id="unsubmitBillCurrentSubmitDate" readonly>
+      </div>
+      <div class="receipt-field">
+        <label for="unsubmitBillReceiptAllTime">Receipt</label>
+        <input type="text" id="unsubmitBillReceiptAllTime" readonly>
+      </div>
+      <div class="receipt-field">
+        <label for="unsubmitBillBalanceAllTime">Balance</label>
+        <input type="text" id="unsubmitBillBalanceAllTime" readonly>
+      </div>
+      <div class="receipt-field wide">
+        <label for="unsubmitBillReason">Reason</label>
+        <textarea id="unsubmitBillReason" rows="4" placeholder="Why should this bill be marked unsubmitted?"></textarea>
+      </div>
+    </div>
+    <div class="receipt-hint" id="unsubmitBillHint">Mandatory reason. The action is audited with before/after status and submit date.</div>
+    <div class="receipt-actions">
+      <button class="btn sec" type="button" id="unsubmitBillCancelBtn">Cancel</button>
+      <button class="btn warn" type="button" id="unsubmitBillSaveBtn">Mark Unsubmitted</button>
     </div>
   </div>
 </div>
@@ -460,8 +794,10 @@
   const ALLOWED_UNITS = {{ (allowed_units or []) | tojson }};
   const DEFAULT_UNIT = {{ (selected_unit or "") | tojson }};
   const UNIT_LABELS = {{ (unit_labels or {}) | tojson }};
+  const SESSION_RECEIPT_UTR_BY_UNIT = {{ (session.get('corp_last_receipt_utr_by_unit') or {}) | tojson }};
   const CAN_RECEIPT = {{ (can_receipt or False) | tojson }};
   const CAN_WRITEOFF = {{ (can_writeoff or False) | tojson }};
+  const CAN_UNSUBMIT_BILL = {{ (can_unsubmit_bill or False) | tojson }};
   const fmtMoney = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtInt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
   const state = {
@@ -477,6 +813,7 @@
       baseKpis: {},
       loading: false,
       searchTimer: null,
+      searchApplied: "",
       datasetLoaded: false,
       kpiFilter: "",
       filteredBillKeys: [],
@@ -484,6 +821,7 @@
       baseDetails: {},
       baseMeta: {},
       writeoffBusy: false,
+      unsubmitBusy: false,
       rowIndex: {},
       bulkSelected: {},
       bulkPreviewRows: [],
@@ -496,17 +834,58 @@
       suspenseSelected: {},
       suspenseVisibleKeys: [],
       suspenseAuditBusy: false,
+      subtypeMiniExpanded: false,
+      subtypeMiniPayload: { rows: [], summaryRows: [], scope: "page", totalRows: 0 },
     },
     receipt: {
       open: false,
       saving: false,
       activeBill: null,
+      initialValues: null,
+      parentDesk: "",
       calcLock: false,
+      tdsRateCapped: false,
       paymentModes: [],
       paymentModesLoaded: false,
       paymentModesLoading: false,
       paymentModesPromise: null,
       paymentModesUnit: "",
+      savedUtrByUnit: Object.fromEntries(
+        Object.entries(SESSION_RECEIPT_UTR_BY_UNIT && typeof SESSION_RECEIPT_UTR_BY_UNIT === "object" ? SESSION_RECEIPT_UTR_BY_UNIT : {})
+          .map(([key, value]) => [String(key || "").trim().toUpperCase(), String(value || "").trim()])
+          .filter(([key, value]) => key && value)
+      ),
+    },
+    unsubmit: {
+      open: false,
+      saving: false,
+      activeBill: null,
+      initialReason: "",
+      parentDesk: "",
+    },
+    actions: {
+      receipt: {
+        open: false,
+        loading: false,
+        loaded: false,
+        rows: [],
+        meta: {},
+        page: 1,
+        pageSize: 25,
+        unit: "",
+        lastSearch: "",
+      },
+      unsubmit: {
+        open: false,
+        loading: false,
+        loaded: false,
+        rows: [],
+        meta: {},
+        page: 1,
+        pageSize: 25,
+        unit: "",
+        lastSearch: "",
+      },
     },
     updates: {
       loading: false,
@@ -524,6 +903,7 @@
       raw: [],
       filtered: [],
       groups: [],
+      scopeCount: 0,
       page: 1,
       pageSize: 20,
       loaded: false,
@@ -538,7 +918,44 @@
   const els = {
     modulePrompt: $("modulePrompt"),
     tabs: Array.from(document.querySelectorAll(".tab")), panels: Array.from(document.querySelectorAll(".panel")),
-    recon: { unit: $("reconUnit"), billFrom: $("reconBillFrom"), billTo: $("reconBillTo"), entryPrintDateWrap: $("reconEntryPrintDateWrap"), entryPrintDate: $("reconEntryPrintDate"), includeCancelled: $("reconIncludeCancelled"), exportSubmittedOnly: $("reconExportSubmittedOnly"), search: $("reconSearch"), source: $("reconSource"), patientSubtype: $("reconPatientSubtype"), sortBy: $("reconSortBy"), sortDir: $("reconSortDir"), pageSize: $("reconPageSize"), loadBtn: $("reconLoadBtn"), forceRefreshBtn: $("reconForceRefreshBtn"), openingBtn: $("reconOpeningBtn"), dailyPrintBtn: $("reconDailyPrintBtn"), suspenseBtn: $("reconSuspenseBtn"), exportBtn: $("reconExportBtn"), status: $("reconStatus"), scopeSummary: $("reconScopeSummary"), subtypeMini: $("reconSubtypeMini"), bulkMeta: $("reconBulkMeta"), bulkPreviewBtn: $("reconBulkPreviewBtn"), bulkClearBtn: $("reconBulkClearBtn"), selectAllVisible: $("reconSelectAllVisible"), kpis: $("reconKpis"), body: $("reconBody"), pageInfo: $("reconPageInfo"), prev: $("reconPrev"), next: $("reconNext"), bulkModal: $("reconBulkModal"), bulkModalTitle: $("reconBulkModalTitle"), bulkModalMeta: $("reconBulkModalMeta"), bulkModalClose: $("reconBulkModalClose"), bulkModalBody: $("reconBulkBody"), bulkModalCancel: $("reconBulkCancelBtn"), bulkModalApply: $("reconBulkApplyBtn"), suspenseModal: $("reconSuspenseModal"), suspenseModalTitle: $("reconSuspenseModalTitle"), suspenseModalClose: $("reconSuspenseModalClose"), suspenseSearch: $("reconSuspenseSearch"), suspenseMeta: $("reconSuspenseMeta"), suspenseKpis: $("reconSuspenseKpis"), suspenseBody: $("reconSuspenseBody"), suspenseSelectAll: $("reconSuspenseSelectAll"), suspenseApproveBtn: $("reconSuspenseApproveBtn"), suspenseClearBtn: $("reconSuspenseClearBtn") },
+    recon: { unit: $("reconUnit"), billFrom: $("reconBillFrom"), billTo: $("reconBillTo"), printCard: $("reconPrintCard"), printSub: $("reconPrintSub"), printNote: $("reconPrintNote"), printFilterByWrap: $("reconPrintFilterByWrap"), printFilterBy: $("reconPrintFilterBy"), entryPrintFromWrap: $("reconEntryPrintFromWrap"), entryPrintFrom: $("reconEntryPrintFrom"), entryPrintFromLabel: $("reconEntryPrintFromLabel"), entryPrintToWrap: $("reconEntryPrintToWrap"), entryPrintTo: $("reconEntryPrintTo"), entryPrintToLabel: $("reconEntryPrintToLabel"), includeCancelled: $("reconIncludeCancelled"), exportSubmittedOnly: $("reconExportSubmittedOnly"), search: $("reconSearch"), source: $("reconSource"), patientSubtype: $("reconPatientSubtype"), sortBy: $("reconSortBy"), sortDir: $("reconSortDir"), pageSize: $("reconPageSize"), loadBtn: $("reconLoadBtn"), forceRefreshBtn: $("reconForceRefreshBtn"), openingBtn: $("reconOpeningBtn"), dailyPrintBtn: $("reconDailyPrintBtn"), suspenseBtn: $("reconSuspenseBtn"), exportBtn: $("reconExportBtn"), status: $("reconStatus"), scopeSummary: $("reconScopeSummary"), subtypeMini: $("reconSubtypeMini"), bulkMeta: $("reconBulkMeta"), bulkPreviewBtn: $("reconBulkPreviewBtn"), bulkClearBtn: $("reconBulkClearBtn"), selectAllVisible: $("reconSelectAllVisible"), kpis: $("reconKpis"), body: $("reconBody"), pageInfo: $("reconPageInfo"), prev: $("reconPrev"), next: $("reconNext"), bulkModal: $("reconBulkModal"), bulkModalTitle: $("reconBulkModalTitle"), bulkModalMeta: $("reconBulkModalMeta"), bulkModalClose: $("reconBulkModalClose"), bulkModalBody: $("reconBulkBody"), bulkModalCancel: $("reconBulkCancelBtn"), bulkModalApply: $("reconBulkApplyBtn"), suspenseModal: $("reconSuspenseModal"), suspenseModalTitle: $("reconSuspenseModalTitle"), suspenseModalClose: $("reconSuspenseModalClose"), suspenseSearch: $("reconSuspenseSearch"), suspenseMeta: $("reconSuspenseMeta"), suspenseKpis: $("reconSuspenseKpis"), suspenseBody: $("reconSuspenseBody"), suspenseSelectAll: $("reconSuspenseSelectAll"), suspenseApproveBtn: $("reconSuspenseApproveBtn"), suspenseClearBtn: $("reconSuspenseClearBtn") },
+    actions: {
+      card: $("reconActionsCard"),
+      note: $("reconActionsNote"),
+      receiptLaunch: $("reconReceiptDeskBtn"),
+      unsubmitLaunch: $("reconUnsubmitDeskBtn"),
+      receipt: {
+        modal: $("receiptDeskModal"),
+        title: $("receiptDeskModalTitle"),
+        close: $("receiptDeskModalClose"),
+        search: $("receiptDeskSearch"),
+        source: $("receiptDeskSource"),
+        pageSize: $("receiptDeskPageSize"),
+        loadBtn: $("receiptDeskLoadBtn"),
+        refreshBtn: $("receiptDeskRefreshBtn"),
+        summary: $("receiptDeskSummary"),
+        pills: $("receiptDeskPills"),
+        body: $("receiptDeskBody"),
+        pageInfo: $("receiptDeskPageInfo"),
+        prev: $("receiptDeskPrev"),
+        next: $("receiptDeskNext"),
+      },
+      unsubmit: {
+        modal: $("unsubmitDeskModal"),
+        title: $("unsubmitDeskModalTitle"),
+        close: $("unsubmitDeskModalClose"),
+        search: $("unsubmitDeskSearch"),
+        pageSize: $("unsubmitDeskPageSize"),
+        loadBtn: $("unsubmitDeskLoadBtn"),
+        refreshBtn: $("unsubmitDeskRefreshBtn"),
+        summary: $("unsubmitDeskSummary"),
+        pills: $("unsubmitDeskPills"),
+        body: $("unsubmitDeskBody"),
+        pageInfo: $("unsubmitDeskPageInfo"),
+        prev: $("unsubmitDeskPrev"),
+        next: $("unsubmitDeskNext"),
+      },
+    },
     legacy: {
       unit: $("legacyUnit"),
       from: $("legacyFrom"),
@@ -586,14 +1003,47 @@
       utrNo: $("receiptUtrNo"),
       billAmount: $("receiptBillAmount"),
       approvedAmount: $("receiptApprovedAmount"),
-      tdsAmount: $("receiptTdsAmount"),
       receivedAmount: $("receiptReceivedAmount"),
+      tdsPercent: $("receiptTdsPercent"),
+      tdsPercentNote: $("receiptTdsPercentNote"),
+      patientSubtypeNote: $("receiptPatientSubtypeNote"),
+      tdsAmount: $("receiptTdsAmount"),
       rebateAmount: $("receiptRebateAmount"),
       hint: $("receiptHint"),
       contextBill: $("receiptContextBill"),
       contextPatient: $("receiptContextPatient"),
       contextVisit: $("receiptContextVisit"),
     },
+    unsubmit: {
+      modal: $("unsubmitBillModal"),
+      title: $("unsubmitBillModalTitle"),
+      close: $("unsubmitBillModalClose"),
+      cancel: $("unsubmitBillCancelBtn"),
+      save: $("unsubmitBillSaveBtn"),
+      contextBill: $("unsubmitBillContextBill"),
+      contextPatient: $("unsubmitBillContextPatient"),
+      contextVisit: $("unsubmitBillContextVisit"),
+      currentStatus: $("unsubmitBillCurrentStatus"),
+      currentSubmitDate: $("unsubmitBillCurrentSubmitDate"),
+      receiptAllTime: $("unsubmitBillReceiptAllTime"),
+      balanceAllTime: $("unsubmitBillBalanceAllTime"),
+      reason: $("unsubmitBillReason"),
+      hint: $("unsubmitBillHint"),
+    },
+  };
+  const receiptRememberedUtr = (unit = currentUnit()) => {
+    const key = String(unit || "").trim().toUpperCase();
+    if (!key) return "";
+    return String(state.receipt.savedUtrByUnit?.[key] || "").trim();
+  };
+  const rememberReceiptUtr = (unit, value) => {
+    const key = String(unit || "").trim().toUpperCase();
+    const txt = String(value || "").trim();
+    if (!key || !txt) return;
+    if (!state.receipt.savedUtrByUnit || typeof state.receipt.savedUtrByUnit !== "object") {
+      state.receipt.savedUtrByUnit = {};
+    }
+    state.receipt.savedUtrByUnit[key] = txt;
   };
   const esc = (v) => String(v == null ? "" : v).replace(/&/g, "&amp;").replace(/</g, "&lt;").replace(/>/g, "&gt;").replace(/\"/g, "&quot;").replace(/'/g, "&#39;");
   const money = (v) => fmtMoney.format(Number.isFinite(Number(v)) ? Number(v) : 0);
@@ -602,7 +1052,7 @@
   const bClass = (n) => { const x = Number(n || 0); if (x < -1) return "bover"; if (x > 1) return "bpos"; return "bok"; };
   const bBadge = (s) => { const k = String(s || "").toLowerCase(); let c = "st-un"; if (k === "settled") c = "st-set"; else if (k === "partial") c = "st-par"; else if (k === "overpaid") c = "st-over"; return `<span class="badge ${c}">${esc(s || "Unpaid")}</span>`; };
   const num = (v) => {
-    const raw = typeof v === "string" ? v.replace(/,/g, "").trim() : v;
+    const raw = typeof v === "string" ? v.replace(/[₹,\s]/g, "").trim() : v;
     const n = Number(raw);
     return Number.isFinite(n) ? n : 0;
   };
@@ -639,6 +1089,13 @@
     if (toDate && receiptDate > toDate) return false;
     return true;
   };
+  const normalizeSearchText = (value) => String(value || "")
+    .replace(/\r\n/g, "\n")
+    .replace(/[\t\n\r]+/g, ",")
+    .replace(/\s*,\s*/g, ",")
+    .replace(/,+/g, ",")
+    .replace(/^,|,$/g, "")
+    .trim();
   const reconStatusFromBalance = (balance, receipt) => {
     const tol = 1.0;
     const b = num(balance);
@@ -714,6 +1171,20 @@
     return dateKey(dt);
   };
   const defaultReconSourcesForUnit = (unit) => (supportsOpeningRecon(unit) ? ["Corporate Bill", "Opening Balance"] : ["Corporate Bill"]);
+  const reconPrintFilterMode = () => {
+    const raw = String(els.recon.printFilterBy?.value || "entry_date").trim().toLowerCase();
+    return raw === "receipt_date" ? "receipt_date" : "entry_date";
+  };
+  const reconPrintFilterLabel = () => (reconPrintFilterMode() === "receipt_date" ? "Receipt Date" : "Entry Date");
+  const refreshReconPrintFilterUi = () => {
+    const label = reconPrintFilterLabel();
+    if (els.recon.entryPrintFromLabel) els.recon.entryPrintFromLabel.textContent = `${label} From`;
+    if (els.recon.entryPrintToLabel) els.recon.entryPrintToLabel.textContent = `${label} To`;
+    if (els.recon.printSub) els.recon.printSub.textContent = `Print the corporate receipt register by ${label.toLowerCase()} range. Select the same from and to date to print a one-day register.`;
+    if (els.recon.printNote) els.recon.printNote.textContent = reconPrintFilterMode() === "receipt_date"
+      ? "Receipt Date filters by the actual receipt date saved on the receipt. This print scope is independent from the bill submit date filters used for reconciliation."
+      : "Entry Date filters by the system entry timestamp of the receipt. This print scope is independent from the bill submit date filters used for reconciliation.";
+  };
   const refreshUpdatesSourceOptionsForUnit = (unit, preserveSelection = true) => {
     if (!els.updates.source) return;
     const prev = preserveSelection ? String(els.updates.source.value || "").trim() : "";
@@ -730,12 +1201,39 @@
       els.recon.openingBtn.style.display = show ? "" : "none";
       els.recon.openingBtn.disabled = !show || !!state.recon.loading;
     }
-    const showDailyPrint = isSharpSightUnit(unit);
-    if (els.recon.entryPrintDateWrap) els.recon.entryPrintDateWrap.style.display = showDailyPrint ? "flex" : "none";
-    if (els.recon.entryPrintDate) els.recon.entryPrintDate.disabled = !showDailyPrint || !!state.recon.loading;
+    const showDailyPrint = !!String(unit || "").trim().toUpperCase();
+    if (els.recon.printCard) els.recon.printCard.style.display = showDailyPrint ? "" : "none";
+    if (els.recon.printFilterByWrap) els.recon.printFilterByWrap.style.display = showDailyPrint ? "" : "none";
+    if (els.recon.printFilterBy) els.recon.printFilterBy.disabled = !showDailyPrint || !!state.recon.loading;
+    if (els.recon.entryPrintFromWrap) els.recon.entryPrintFromWrap.style.display = showDailyPrint ? "" : "none";
+    if (els.recon.entryPrintToWrap) els.recon.entryPrintToWrap.style.display = showDailyPrint ? "" : "none";
+    if (els.recon.entryPrintFrom) els.recon.entryPrintFrom.disabled = !showDailyPrint || !!state.recon.loading;
+    if (els.recon.entryPrintTo) els.recon.entryPrintTo.disabled = !showDailyPrint || !!state.recon.loading;
     if (els.recon.dailyPrintBtn) {
       els.recon.dailyPrintBtn.style.display = showDailyPrint ? "" : "none";
       els.recon.dailyPrintBtn.disabled = !showDailyPrint || !!state.recon.loading;
+    }
+    if (els.actions.card) {
+      const showActionsCard = !!String(unit || "").trim().toUpperCase() && (CAN_RECEIPT || CAN_UNSUBMIT_BILL);
+      els.actions.card.style.display = showActionsCard ? "" : "none";
+    }
+    if (els.actions.note) {
+      const notes = [];
+      if (CAN_RECEIPT) notes.push("Receipt desk ready");
+      if (CAN_UNSUBMIT_BILL) notes.push("Unsubmit desk ready");
+      if (!notes.length) notes.push("No action rights assigned");
+      const suffix = unit
+        ? `${unitLabel(unit)}. Use comma-separated Patient IDs for fast lookup.`
+        : "the selected unit.";
+      els.actions.note.textContent = `${notes.join(" | ")} for ${suffix}`;
+    }
+    if (els.actions.receiptLaunch) {
+      els.actions.receiptLaunch.style.display = CAN_RECEIPT ? "" : "none";
+      els.actions.receiptLaunch.disabled = !CAN_RECEIPT || !showDailyPrint || !!state.recon.loading;
+    }
+    if (els.actions.unsubmitLaunch) {
+      els.actions.unsubmitLaunch.style.display = CAN_UNSUBMIT_BILL ? "" : "none";
+      els.actions.unsubmitLaunch.disabled = !CAN_UNSUBMIT_BILL || !showDailyPrint || !!state.recon.loading;
     }
   };
   const refreshHeaderChips = (panelId) => {
@@ -751,7 +1249,7 @@
       setTxt($("headScopeTxt"), "Click Load Updates to fetch latest events. Auto Refresh runs every 60s only when enabled.");
     } else if (activePanel === "reconPanel") {
       setTxt($("headCutoffTxt"), "Reconciliation Cutoff Date: 2025-03-31");
-      setTxt($("headScopeTxt"), "Set filters, then click Load Data or Refresh Data to fetch records. No automatic fetch on tab switch.");
+      setTxt($("headScopeTxt"), "Use Reconciliation to load data, Actions for receipt and unsubmit workflows, and Receipt Register separately for printing.");
     } else {
       setTxt($("headCutoffTxt"), "Corporate Management Context");
       setTxt($("headScopeTxt"), "Choose a module tab, then use its load action to fetch data.");
@@ -856,6 +1354,57 @@
     if (prev && uniq.has(prev)) els.legacy.patientSubtype.value = prev;
     else els.legacy.patientSubtype.value = "";
   };
+  const legacyStatusKey = (status) => {
+    const low = String(status || "").trim().toLowerCase();
+    if (low === "final submitted") return "final";
+    if (low === "submission pending") return "pending";
+    if (low === "not worked" || !low) return "notworked";
+    return "other";
+  };
+  const legacyStatusCountsFromRows = (rows) => {
+    const counts = { final_submitted: 0, submission_pending: 0, not_worked: 0, other_status: 0 };
+    (Array.isArray(rows) ? rows : []).forEach((row) => {
+      const kind = legacyStatusKey(row?.Status);
+      if (kind === "final") counts.final_submitted += 1;
+      else counts.other_status += 1;
+      if (kind === "pending") counts.submission_pending += 1;
+      else if (kind === "notworked") counts.not_worked += 1;
+    });
+    return counts;
+  };
+  const legacyStatusCounts = (meta, rows) => {
+    const raw = meta && typeof meta === "object" && meta.status_counts && typeof meta.status_counts === "object" ? meta.status_counts : null;
+    if (!raw) return legacyStatusCountsFromRows(rows);
+    const asInt = (value) => {
+      const num = Number(value);
+      return Number.isFinite(num) ? Math.max(0, Math.round(num)) : 0;
+    };
+    return {
+      final_submitted: asInt(raw.final_submitted),
+      submission_pending: asInt(raw.submission_pending),
+      not_worked: asInt(raw.not_worked),
+      other_status: asInt(raw.other_status),
+    };
+  };
+  const legacyStatusBreakdown = (counts) => {
+    const finalCount = Number(counts?.final_submitted || 0);
+    const pendingCount = Number(counts?.submission_pending || 0);
+    const notWorkedCount = Number(counts?.not_worked || 0);
+    const otherCombined = Number(counts?.other_status || 0);
+    const extraOther = Math.max(0, otherCombined - pendingCount - notWorkedCount);
+    const parts = [
+      `Final ${integer(finalCount)}`,
+      `Pending ${integer(pendingCount)}`,
+      `Not Worked ${integer(notWorkedCount)}`,
+    ];
+    if (extraOther > 0) parts.push(`Other ${integer(extraOther)}`);
+    return parts.join(" | ");
+  };
+  const legacyDateScopeLabel = (unit, meta) => {
+    const explicit = String(meta?.date_scope_label || "").trim();
+    if (explicit) return explicit;
+    return isLegacyServerUnit(unit) ? "Submit Date first; fallback to Bill Date when Submit Date is blank" : "Bill Date";
+  };
   const legacyStatusBadge = (status) => {
     const txt = String(status || "").trim();
     const low = txt.toLowerCase();
@@ -875,17 +1424,15 @@
   };
 
   const kDefs = [
-    ["bill_count", "Bill Count", "n"], ["total_bill_amount", "Total Bill Amount", "m"], ["receipt_all_time", "Receipt All-time", "m"], ["receipt_in_window", "Receipt In Window", "m"], ["balance_all_time", "Balance All-time", "m"], ["balance_in_window", "Balance In Window", "m"], ["settled_count", "Settled Count", "n"], ["partial_count", "Partial Count", "n"], ["unpaid_count", "Unpaid Count", "n"], ["overpaid_count", "Overpaid Count", "n"]
+    ["bill_count", "Bill Count", "n"], ["total_bill_amount", "Total Bill Amount", "m"], ["receipt_all_time", "Receipt", "m"], ["balance_all_time", "Balance", "m"], ["settled_count", "Settled Count", "n"], ["partial_count", "Partial Count", "n"], ["unpaid_count", "Unpaid Count", "n"], ["overpaid_count", "Overpaid Count", "n"]
   ];
-  const kpiFilterable = new Set(["bill_count", "total_bill_amount", "receipt_all_time", "receipt_in_window", "balance_all_time", "balance_in_window", "settled_count", "partial_count", "unpaid_count", "overpaid_count"]);
+  const kpiFilterable = new Set(["bill_count", "total_bill_amount", "receipt_all_time", "balance_all_time", "settled_count", "partial_count", "unpaid_count", "overpaid_count"]);
   const kpiFilterLabel = (key) => {
     const map = {
       bill_count: "All Bills",
       total_bill_amount: "Bill Amount > 0",
-      receipt_all_time: "Receipt All-time > 0",
-      receipt_in_window: "Receipt In Window > 0",
-      balance_all_time: "Open Balance (All-time)",
-      balance_in_window: "Open Balance (Window)",
+      receipt_all_time: "Receipt > 0",
+      balance_all_time: "Open Balance",
       settled_count: "Settled",
       partial_count: "Partial",
       unpaid_count: "Unpaid",
@@ -899,14 +1446,26 @@
     if (k === "bill_count") return true;
     if (k === "total_bill_amount") return num(row.bill_amount) > 0;
     if (k === "receipt_all_time") return num(row.receipt_total_all_time) > 0;
-    if (k === "receipt_in_window") return num(row.receipt_total_window) > 0;
     if (k === "balance_all_time") return Math.abs(num(row.balance_all_time)) > 1;
-    if (k === "balance_in_window") return Math.abs(num(row.balance_window)) > 1;
     if (k === "settled_count") return String(row.status_all_time || "") === "Settled";
     if (k === "partial_count") return String(row.status_all_time || "") === "Partial";
     if (k === "unpaid_count") return String(row.status_all_time || "") === "Unpaid";
     if (k === "overpaid_count") return String(row.status_all_time || "") === "Overpaid";
     return true;
+  };
+  const reconKpisFromRows = (rows) => {
+    const list = Array.isArray(rows) ? rows : [];
+    const statusCount = (name) => list.filter((r) => String(r?.status_all_time || "").trim() === name).length;
+    return {
+      bill_count: list.length,
+      total_bill_amount: list.reduce((acc, r) => acc + num(r?.bill_amount), 0),
+      receipt_all_time: list.reduce((acc, r) => acc + num(r?.receipt_total_all_time), 0),
+      balance_all_time: list.reduce((acc, r) => acc + num(r?.balance_all_time), 0),
+      settled_count: statusCount("Settled"),
+      partial_count: statusCount("Partial"),
+      unpaid_count: statusCount("Unpaid"),
+      overpaid_count: statusCount("Overpaid"),
+    };
   };
   const toggleKpiFilter = (key) => {
     if (!state.recon.datasetLoaded) {
@@ -1273,11 +1832,339 @@
     state.recon.suspenseVisibleKeys = [];
   };
 
+  const actionDeskState = (kind) => state.actions?.[String(kind || "").trim().toLowerCase()] || null;
+  const actionDeskEls = (kind) => els.actions?.[String(kind || "").trim().toLowerCase()] || null;
+  const actionDeskChannel = (kind) => `recon-action-${String(kind || "").trim().toLowerCase()}`;
+  const actionDeskEndpoint = (kind) => (
+    String(kind || "").trim().toLowerCase() === "unsubmit"
+      ? "/api/corporate/reconciliation/actions/unsubmit_candidates"
+      : "/api/corporate/reconciliation/actions/receipt_candidates"
+  );
+  const resetActionDesk = (kind, { clearFilters = false } = {}) => {
+    const st = actionDeskState(kind);
+    const ref = actionDeskEls(kind);
+    if (!st) return;
+    st.open = false;
+    st.loading = false;
+    st.loaded = false;
+    st.rows = [];
+    st.meta = {};
+    st.page = 1;
+    st.unit = "";
+    st.lastSearch = "";
+    if (ref?.pageSize) ref.pageSize.value = "25";
+    if (clearFilters) {
+      if (ref?.search) ref.search.value = "";
+      if (ref?.source) ref.source.value = "";
+    }
+    if (ref?.summary) {
+      if (String(kind) === "unsubmit") {
+        ref.summary.innerHTML = '<div><div class="summary-main">Search submitted corporate bills and unsubmit the right records with audit-safe validation.</div><div class="summary-sub">Bills with receipt, TDS, rebate, or write-off activity remain visible but clearly blocked.</div></div><div class="action-desk-pills" id="unsubmitDeskPills"></div>';
+      } else {
+        ref.summary.innerHTML = '<div><div class="summary-main">Search corporate bills or openings for receipt entry.</div><div class="summary-sub">The same comma-separated Patient ID search logic is available here for quick action work.</div></div><div class="action-desk-pills" id="receiptDeskPills"></div>';
+      }
+      ref.pills = document.getElementById(`${String(kind)}DeskPills`);
+    }
+    if (ref?.body) {
+      const emptyMsg = String(kind || "").trim().toLowerCase() === "unsubmit"
+        ? "Unsubmit desk is ready. Load data to begin."
+        : "Receipt desk is ready. Load data to begin.";
+      ref.body.innerHTML = `<tr><td colspan="13" class="action-desk-empty">${esc(emptyMsg)}</td></tr>`;
+    }
+    if (ref?.pageInfo) ref.pageInfo.textContent = "Page 0 / 0";
+    if (ref?.pills) ref.pills.innerHTML = "";
+  };
+  const focusActionDeskSearch = (kind, { select = false } = {}) => {
+    const ref = actionDeskEls(kind);
+    if (!ref?.search) return false;
+    requestAnimationFrame(() => {
+      try {
+        ref.search.focus();
+        if (select && typeof ref.search.select === "function") ref.search.select();
+      } catch (err) {}
+    });
+    return true;
+  };
+  const focusFirstActionDeskButton = (kind) => {
+    const ref = actionDeskEls(kind);
+    const selector = `button[data-desk-action="${String(kind || "").trim()}"]:not([disabled])`;
+    const btn = ref?.body?.querySelector(selector) || ref?.body?.querySelector("button[data-desk-action]:not([disabled])");
+    if (!btn) return false;
+    requestAnimationFrame(() => {
+      try { btn.focus(); } catch (err) {}
+    });
+    return true;
+  };
+  const advanceReceiptDeskSearchFlow = async () => {
+    const kind = "receipt";
+    const st = actionDeskState(kind);
+    const ref = actionDeskEls(kind);
+    if (!st || !ref?.search || st.loading) return;
+    const searchValue = normalizeSearchText(ref.search.value || "");
+    ref.search.value = searchValue;
+    st.page = 1;
+    const needsLoad = !st.loaded || searchValue !== String(st.lastSearch || "").trim();
+    if (needsLoad) {
+      await loadActionDesk(kind, { resetPage: true, forceRefresh: false, silent: true });
+    }
+    if (!focusFirstActionDeskButton(kind) && ref.loadBtn && !ref.loadBtn.disabled) {
+      requestAnimationFrame(() => {
+        try { ref.loadBtn.focus(); } catch (err) {}
+      });
+    }
+  };
+  const setReceiptDeskSourceOptions = (values = [], preserveSelection = true) => {
+    const ref = els.actions?.receipt;
+    if (!ref?.source) return;
+    const prev = preserveSelection ? String(ref.source.value || "").trim() : "";
+    const opts = ['<option value="">All Sources</option>'];
+    const uniq = new Set(defaultReconSourcesForUnit(currentUnit()));
+    (Array.isArray(values) ? values : []).forEach((value) => {
+      const txt = String(value || "").trim();
+      if (txt) uniq.add(txt);
+    });
+    Array.from(uniq).sort((a, b) => a.localeCompare(b)).forEach((txt) => {
+      opts.push(`<option value="${esc(txt)}">${esc(txt)}</option>`);
+    });
+    ref.source.innerHTML = opts.join("");
+    const lowered = Array.from(ref.source.options || []).map((opt) => String(opt.value || "").trim().toLowerCase());
+    if (prev && lowered.includes(prev.toLowerCase())) ref.source.value = prev;
+    else ref.source.value = "";
+  };
+  const renderActionDeskSummary = (kind) => {
+    const st = actionDeskState(kind);
+    const ref = actionDeskEls(kind);
+    if (!st || !ref) return;
+    const meta = st.meta && typeof st.meta === "object" ? st.meta : {};
+    const rows = Array.isArray(st.rows) ? st.rows : [];
+    const eligibleCount = rows.filter((row) => String(kind) === "unsubmit" ? !!row?.can_unsubmit_bill : !!row?.can_take_receipt).length;
+    const blockedCount = Math.max(0, rows.length - eligibleCount);
+    const hasReceiptCount = rows.filter((row) => !!row?.has_receipt).length;
+    const queryEngine = String(meta.query_engine || "").trim().toLowerCase();
+    const queryLabel = queryEngine ? (queryEngine === "sql_sp" ? "SQL SP" : "Python") : "Auto";
+    const totalRows = Number(meta.total_rows || rows.length || 0);
+    const page = Number(meta.page || st.page || 1);
+    const totalPages = Number(meta.total_pages || 1);
+    if (ref.summary) {
+      const lead = String(kind) === "unsubmit"
+        ? `Showing ${integer(rows.length)} bill(s) on page ${integer(page)} of ${integer(totalPages)}. Eligible to unsubmit on this page: ${integer(eligibleCount)}.`
+        : `Showing ${integer(rows.length)} bill/opening row(s) on page ${integer(page)} of ${integer(totalPages)}. Ready for receipt on this page: ${integer(eligibleCount)}.`;
+      const sub = String(kind) === "unsubmit"
+        ? `Total matched rows: ${integer(totalRows)}. Use comma-separated Patient IDs for fast exact lookup.`
+        : `Total matched rows: ${integer(totalRows)}. Rows with existing receipt activity remain visible for context.`;
+      ref.summary.innerHTML = `<div><div class="summary-main">${esc(lead)}</div><div class="summary-sub">${esc(sub)}</div></div><div class="action-desk-pills" id="${esc(String(kind))}DeskPills"></div>`;
+    }
+    const pills = document.getElementById(`${String(kind)}DeskPills`) || ref.pills;
+    if (pills) {
+      const pillBits = [
+        `<span class="action-desk-pill ok">Eligible ${integer(eligibleCount)}</span>`,
+        `<span class="action-desk-pill warn">Blocked ${integer(blockedCount)}</span>`,
+      ];
+      if (String(kind) === "receipt") pillBits.push(`<span class="action-desk-pill info">Has Receipt ${integer(hasReceiptCount)}</span>`);
+      pillBits.push(`<span class="action-desk-pill">Engine ${esc(queryLabel)}</span>`);
+      pills.innerHTML = pillBits.join("");
+      if (!ref.pills) ref.pills = pills;
+    }
+    if (ref.pageInfo) ref.pageInfo.textContent = `Page ${integer(page)} / ${integer(totalPages)}`;
+    if (ref.prev) ref.prev.disabled = st.loading || page <= 1;
+    if (ref.next) ref.next.disabled = st.loading || page >= totalPages;
+  };
+  const renderActionDeskRows = (kind) => {
+    const st = actionDeskState(kind);
+    const ref = actionDeskEls(kind);
+    if (!st || !ref?.body) return;
+    const rows = Array.isArray(st.rows) ? st.rows : [];
+    if (!rows.length) {
+      const emptyMsg = String(kind) === "unsubmit"
+        ? "No corporate bills matched the current unsubmit desk filters."
+        : "No corporate bills or openings matched the current receipt desk filters.";
+      ref.body.innerHTML = `<tr><td colspan="13" class="action-desk-empty">${esc(emptyMsg)}</td></tr>`;
+      renderActionDeskSummary(kind);
+      return;
+    }
+    ref.body.innerHTML = rows.map((row) => {
+      const sourceText = String(row?.bill_source || "-").trim() || "-";
+      const billText = String(row?.bill_no || "-").trim() || "-";
+      const billIdText = String(row?.bill_id ?? "").trim() || "-";
+      const submitDateText = shortDate(row?.submit_date_raw || "-");
+      const dueDateText = shortDate(row?.due_date || "-");
+      const patientNameText = String(row?.patient_name || row?.source_patient_name || "-").trim() || "-";
+      const patientIdText = String(row?.patient_id ?? "").trim() || "-";
+      const patientSubtypeText = String(row?.patient_subtype || "-").trim() || "-";
+      const visitKindText = String(row?.type_of_visit || "-").trim() || "-";
+      const visitIdText = String(row?.visit_id ?? "").trim() || "-";
+      const visitDateText = shortDate(row?.visit_date || "-");
+      const canAct = String(kind) === "unsubmit" ? !!row?.can_unsubmit_bill : !!row?.can_take_receipt;
+      const buttonClass = String(kind) === "unsubmit" ? "desk-action-btn warn" : "desk-action-btn";
+      const buttonLabel = String(kind) === "unsubmit"
+        ? (canAct ? "Unsubmit Bill" : "Blocked")
+        : (canAct ? "Take Receipt" : "Blocked");
+      const noteText = String(kind) === "unsubmit"
+        ? String(row?.unsubmit_block_reason || "Ready to unsubmit.").trim() || "Ready to unsubmit."
+        : String(row?.receipt_note || "Ready for receipt.").trim() || "Ready for receipt.";
+      const receiptStateText = String(kind) === "unsubmit"
+        ? noteText
+        : (row?.has_receipt ? "Receipt already exists." : noteText);
+      const lastReceiptText = shortDate(row?.last_receipt_date_all_time || "-");
+      return `
+        <tr>
+          <td class="center">
+            <button class="${buttonClass}" type="button" data-desk-action="${esc(String(kind))}" data-bill-key="${esc(String(row?.bill_key || ""))}" ${canAct && !st.loading && !state.receipt.saving && !state.unsubmit.saving ? "" : "disabled"}>${esc(buttonLabel)}</button>
+            <div class="desk-note">${esc(receiptStateText)}</div>
+          </td>
+          ${String(kind) === "receipt" ? `<td>${esc(sourceText)}</td>` : ""}
+          <td><div class="meta-stack"><div><b>${esc(billText)}</b></div><div class="meta-line"><span class="meta-label">Bill ID</span><span class="meta-val">${esc(billIdText)}</span></div><div class="meta-line"><span class="meta-label">Submit</span><span class="meta-val">${esc(submitDateText)}</span></div><div class="meta-line"><span class="meta-label">Due</span><span class="meta-val">${esc(dueDateText)}</span></div></div></td>
+          <td><div class="meta-stack"><div><b>${esc(patientNameText)}</b></div><div class="meta-line"><span class="meta-label">Patient ID</span><span class="meta-val">${esc(patientIdText)}</span></div><div class="meta-line"><span class="meta-label">SubType</span><span class="meta-val">${esc(patientSubtypeText)}</span></div></div></td>
+          <td><div class="meta-stack"><div><b>${esc(visitKindText)}</b></div><div class="meta-line"><span class="meta-label">Visit ID</span><span class="meta-val">${esc(visitIdText)}</span></div><div class="meta-line"><span class="meta-label">Visit</span><span class="meta-val">${esc(visitDateText)}</span></div></div></td>
+          ${String(kind) === "unsubmit" ? `<td>${esc(submitDateText)}</td>` : ""}
+          <td class="num"><span class="amt bill">${money(row?.bill_amount)}</span></td>
+          <td class="num"><span class="amt receipt">${money(row?.receipt_total_all_time)}</span></td>
+          <td class="num"><span class="amt tds">${money(row?.tds_total_all_time)}</span></td>
+          <td class="num"><span class="amt rebate">${money(row?.rebate_discount_all_time)}</span></td>
+          <td class="num"><span class="amt writeoff">${money(row?.writeoff_total_all_time)}</span></td>
+          <td class="num"><span class="amt ${bClass(row?.balance_all_time)}">${money(row?.balance_all_time)}</span></td>
+          <td class="center">${bBadge(row?.status_all_time)}</td>
+          <td><div><b>${esc(row?.has_receipt ? "Has Receipt" : "No Receipt")}</b></div><div class="sub">Last Receipt: ${esc(lastReceiptText)}</div></td>
+        </tr>`;
+    }).join("");
+    ref.body.querySelectorAll("[data-desk-action][data-bill-key]").forEach((btn) => {
+      btn.addEventListener("click", async () => {
+        const billKey = String(btn.getAttribute("data-bill-key") || "").trim();
+        if (!billKey) return;
+        const row = rows.find((item) => String(item?.bill_key || "").trim() === billKey);
+        if (!row) return;
+        if (String(kind) === "unsubmit") {
+          state.unsubmit.parentDesk = "unsubmit";
+          openUnsubmitBillModal(row);
+        } else {
+          state.receipt.parentDesk = "receipt";
+          await openReceiptModal(row);
+        }
+      });
+    });
+    renderActionDeskSummary(kind);
+  };
+  const loadActionDesk = async (kind, { resetPage = false, forceRefresh = false, silent = false } = {}) => {
+    const st = actionDeskState(kind);
+    const ref = actionDeskEls(kind);
+    if (!st || !ref) return;
+    if (st.loading) return;
+    const unit = currentUnit();
+    if (!unit) {
+      notify("Please select a unit first.", "warn", actionDeskChannel(kind));
+      return;
+    }
+    if (resetPage) st.page = 1;
+    const searchValue = normalizeSearchText(ref.search?.value || "");
+    if (ref.search) ref.search.value = searchValue;
+    const pageSize = Number(ref.pageSize?.value || st.pageSize || 25);
+    st.pageSize = pageSize;
+    st.loading = true;
+    if (ref.loadBtn) ref.loadBtn.disabled = true;
+    if (ref.refreshBtn) ref.refreshBtn.disabled = true;
+    if (ref.search) ref.search.disabled = true;
+    if (ref.source) ref.source.disabled = true;
+    if (ref.pageSize) ref.pageSize.disabled = true;
+    if (!silent) notify(forceRefresh ? "Refreshing action desk from database..." : "Loading action desk...", "loading", actionDeskChannel(kind));
+    try {
+      const p = new URLSearchParams();
+      p.set("unit", unit);
+      p.set("page", String(st.page || 1));
+      p.set("page_size", String(pageSize));
+      if (searchValue) p.set("q", searchValue);
+      if (String(kind) === "receipt") {
+        const sourceValue = String(ref.source?.value || "").trim();
+        if (sourceValue) p.set("bill_source", sourceValue);
+      }
+      const engineOverride = String(window.localStorage?.getItem("corpReconEngine") || "").trim().toLowerCase();
+      if (engineOverride === "sp" || engineOverride === "py") p.set("engine", engineOverride);
+      if (forceRefresh) p.set("force_refresh", "1");
+      const res = await fetch(`${actionDeskEndpoint(kind)}?${p.toString()}`);
+      const data = await res.json();
+      if (!res.ok || data.status !== "success") throw new Error(data.message || "Failed to load action desk.");
+      clearLoading(actionDeskChannel(kind));
+      st.loaded = true;
+      st.unit = unit;
+      st.lastSearch = searchValue;
+      st.rows = Array.isArray(data?.rows) ? data.rows : [];
+      st.meta = data?.meta && typeof data.meta === "object" ? data.meta : {};
+      st.page = Number(st.meta.page || st.page || 1);
+      st.pageSize = Number(st.meta.page_size || pageSize || 25);
+      if (ref.pageSize) ref.pageSize.value = String(st.pageSize);
+      if (String(kind) === "receipt") {
+        const availableSources = Array.isArray(st.meta.available_sources) ? st.meta.available_sources : [];
+        setReceiptDeskSourceOptions(availableSources, true);
+      }
+      renderActionDeskRows(kind);
+      if (!silent) notify(`${String(kind) === "unsubmit" ? "Unsubmit" : "Receipt"} desk loaded: ${integer(st.rows.length)} row(s) on this page.`, "success", actionDeskChannel(kind));
+    } catch (err) {
+      clearLoading(actionDeskChannel(kind));
+      st.loaded = false;
+      st.rows = [];
+      st.meta = {};
+      renderActionDeskRows(kind);
+      notify(err?.message || "Failed to load action desk.", "error", actionDeskChannel(kind));
+    } finally {
+      st.loading = false;
+      if (ref.loadBtn) ref.loadBtn.disabled = false;
+      if (ref.refreshBtn) ref.refreshBtn.disabled = false;
+      if (ref.search) ref.search.disabled = false;
+      if (ref.source) ref.source.disabled = false;
+      if (ref.pageSize) ref.pageSize.disabled = false;
+      renderActionDeskRows(kind);
+    }
+  };
+  const openActionDesk = async (kind) => {
+    const st = actionDeskState(kind);
+    const ref = actionDeskEls(kind);
+    if (!st || !ref?.modal) return;
+    const unit = currentUnit();
+    if (!unit) {
+      notify("Please select a unit first.", "warn", actionDeskChannel(kind));
+      return;
+    }
+    st.open = true;
+    if (ref.title) ref.title.textContent = `${String(kind) === "unsubmit" ? "Unsubmit Desk" : "Receipt Desk"} - ${unitLabel(unit)}`;
+    ref.modal.classList.add("open");
+    ref.modal.setAttribute("aria-hidden", "false");
+    focusActionDeskSearch(kind, { select: !!String(ref.search?.value || "").trim() });
+    if (!st.loaded || st.unit !== unit) {
+      st.page = 1;
+      await loadActionDesk(kind, { resetPage: true, forceRefresh: false, silent: false });
+    } else {
+      renderActionDeskRows(kind);
+    }
+  };
+  const closeActionDesk = (kind, { force = false } = {}) => {
+    const st = actionDeskState(kind);
+    const ref = actionDeskEls(kind);
+    if (!st || !ref?.modal) return;
+    const hasContext = (
+      !!String(ref.search?.value || "").trim()
+      || !!String(ref.source?.value || "").trim()
+      || Number(st.page || st.meta?.page || 1) > 1
+    );
+    if (!force && hasContext) {
+      const title = String(kind) === "unsubmit" ? "Unsubmit Desk" : "Receipt Desk";
+      if (!window.confirm(`Close ${title}? Current search results will be dismissed from view.`)) return;
+    }
+    ref.modal.classList.remove("open");
+    ref.modal.setAttribute("aria-hidden", "true");
+    st.open = false;
+  };
+  const refreshOpenActionDesks = async ({ forceRefresh = true } = {}) => {
+    const tasks = [];
+    if (state.actions?.receipt?.open) tasks.push(loadActionDesk("receipt", { resetPage: false, forceRefresh, silent: true }));
+    if (state.actions?.unsubmit?.open) tasks.push(loadActionDesk("unsubmit", { resetPage: false, forceRefresh, silent: true }));
+    if (!tasks.length) return;
+    try { await Promise.all(tasks); } catch (err) {}
+  };
+
   const detailHtmlFromMap = (detailsMap, billKey) => {
     const rows = detailsMap?.[billKey] || [];
     if (!rows.length) return '<div class="empty" style="padding:10px;text-align:left;font-size:12px;">No receipt lines for this bill.</div>';
-    const body = rows.map((r) => `<tr><td>${esc(r.receipt_detail_id ?? "")}</td><td>${esc(r.receipt_id ?? "")}</td><td>${esc(r.receipt_no || "")}</td><td>${esc(r.receipt_date || "")}</td><td class="num">${money(r.receipt_amount)}</td><td class="num">${money(r.bill_amount)}</td><td class="num">${money(r.due_amount)}</td><td class="num"><span class="tds">${money(r.tds_amount)}</span></td><td class="num"><span class="rebate">${money(r.rebate_discount_amount)}</span></td><td class="num"><span class="writeoff">${money(r.writeoff_amount)}</span></td><td class="center">${r.in_window ? "Yes" : "No"}</td><td class="center">${esc(r.payment_mode || r.payment_mode_id || "")}</td><td>${esc(r.inserted_by || r.inserted_by_id || "-")}</td><td>${esc(r.utr_no || "")}</td><td class="center">${esc(r.cancel_status ?? "")}</td></tr>`).join("");
-    return `<div class="dinner"><table class="dtable"><thead><tr><th>RecDtl ID</th><th>Receipt ID</th><th>Receipt No</th><th>Date</th><th class="num">Receipt Amt</th><th class="num">Bill Amt (Dtl)</th><th class="num">Net Due Amt (Dtl)</th><th class="num">TDS Amt</th><th class="num">Rebate / Discount</th><th class="num">Write-off</th><th class="center">In Window</th><th class="center">Mode</th><th>Entry By</th><th>UTR</th><th class="center">Cancel</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    const body = rows.map((r) => `<tr><td>${esc(r.receipt_against_source || "")}</td><td>${esc(r.receipt_detail_id ?? "")}</td><td>${esc(r.receipt_id ?? "")}</td><td>${esc(r.receipt_no || "")}</td><td>${esc(r.receipt_date || "")}</td><td class="num">${money(r.receipt_amount)}</td><td class="num">${money(r.bill_amount)}</td><td class="num">${money(r.due_amount)}</td><td class="num"><span class="tds">${money(r.tds_amount)}</span></td><td class="num"><span class="rebate">${money(r.rebate_discount_amount)}</span></td><td class="num"><span class="writeoff">${money(r.writeoff_amount)}</span></td><td class="center">${esc(r.payment_mode || r.payment_mode_id || "")}</td><td>${esc(r.inserted_by || r.inserted_by_id || "-")}</td><td>${esc(r.utr_no || "")}</td><td class="center">${esc(r.cancel_status ?? "")}</td></tr>`).join("");
+    return `<div class="dinner"><table class="dtable"><thead><tr><th>Against</th><th>RecDtl ID</th><th>Receipt ID</th><th>Receipt No</th><th>Date</th><th class="num">Receipt Amt</th><th class="num">Bill Amt (Dtl)</th><th class="num">Net Due Amt (Dtl)</th><th class="num">TDS Amt</th><th class="num">Rebate / Discount</th><th class="num">Write-off</th><th class="center">Mode</th><th>Entry By</th><th>UTR</th><th class="center">Cancel</th></tr></thead><tbody>${body}</tbody></table></div>`;
   };
   const detailHtml = (billKey) => detailHtmlFromMap(state.recon.details, billKey);
 
@@ -1307,27 +2194,119 @@
     if (sourceKey === "BILL_MST_POST" && !caps.receipt) return '<span class="sub">Write-off col missing</span>';
     if (sourceKey === "BILL_MST_POST" && num(row?.writeoff_target_receipt_id) <= 0) return '<span class="sub">No Receipt Link</span>';
     if (canWriteoffRow(row)) {
-      const disabled = state.recon.loading || state.recon.writeoffBusy;
+      const disabled = state.recon.loading || state.recon.writeoffBusy || state.recon.unsubmitBusy;
       return `<button class="wo-btn" type="button" data-bill-key="${esc(row.bill_key || "")}" ${disabled ? "disabled" : ""}>Write-off Due</button>`;
     }
     return '<span class="sub">Not Required</span>';
   };
 
-  const canTakeReceiptRow = (row) => (
-    CAN_RECEIPT
-    && isSharpSightUnit(currentUnit())
-    && String(row?.bill_source_key || "").trim().toUpperCase() === "BILL_MST_AHL"
-    && num(row?.bill_id) > 0
-    && num(row?.balance_all_time) > 1
-    && ["partial", "unpaid"].includes(String(row?.status_all_time || "").trim().toLowerCase())
-  );
-  const reconActionHtml = (row) => {
-    if (canTakeReceiptRow(row)) {
-      const disabled = state.recon.loading || state.receipt.saving;
-      return `<button class="updates-btn receipt-btn" type="button" data-bill-key="${esc(row.bill_key || "")}" ${disabled ? "disabled" : ""}>Take Receipt</button>`;
-    }
-    return writeoffActionHtml(row);
+  const receiptAgainstLabel = (row) => {
+    const sourceKey = String(row?.bill_source_key || "").trim().toUpperCase();
+    return sourceKey === "OPENING" ? "Opening Balance" : "Corporate Bill";
   };
+  const corporateBillSourceKeyForUnit = (unit) => (isSharpSightUnit(unit) ? "BILL_MST_AHL" : "BILL_MST_POST");
+  const shouldHideUnsubmittedCorporateRow = (row) => {
+    const unit = currentUnit();
+    const sourceKey = String(row?.bill_source_key || row?.BillSourceKey || "").trim().toUpperCase();
+    if (!sourceKey || sourceKey !== corporateBillSourceKeyForUnit(unit)) return false;
+    const submittedStatusRaw = String(row?.bill_status_raw || row?.BillStatusRaw || row?.bill_status || "").trim().toUpperCase();
+    return !!submittedStatusRaw && submittedStatusRaw !== "Y";
+  };
+  const canTakeReceiptRow = (row) => {
+    if (!CAN_RECEIPT) return false;
+    if (shouldHideUnsubmittedCorporateRow(row)) return false;
+    const unit = currentUnit();
+    const sourceKey = String(row?.bill_source_key || "").trim().toUpperCase();
+    const receiptEnabled =
+      (isSharpSightUnit(unit) && sourceKey === "BILL_MST_AHL")
+      || (!isSharpSightUnit(unit) && ["BILL_MST_POST", "OPENING"].includes(sourceKey));
+    return (
+      receiptEnabled
+      && num(row?.bill_id) > 0
+      && num(row?.balance_all_time) > 1
+      && ["partial", "unpaid"].includes(String(row?.status_all_time || "").trim().toLowerCase())
+    );
+  };
+  const canUnsubmitBillRow = (row) => {
+    if (!CAN_UNSUBMIT_BILL) return false;
+    const unit = currentUnit();
+    const flagRaw = row?.can_unsubmit_bill;
+    if ([true, 1, "1", "true", "TRUE", "yes", "YES", "y", "Y"].includes(flagRaw)) return true;
+    if ([false, 0, "0", "false", "FALSE", "no", "NO", "n", "N"].includes(flagRaw)) return false;
+    let sourceKey = String(row?.bill_source_key || row?.BillSourceKey || "").trim().toUpperCase();
+    if (!sourceKey) {
+      const sourceLabel = String(row?.bill_source || row?.BillSource || "").trim().toLowerCase();
+      if (["corporate bill", "bill_mst_post", "bill_mst_ahl"].includes(sourceLabel)) sourceKey = corporateBillSourceKeyForUnit(unit);
+      else if (["opening", "opening balance"].includes(sourceLabel)) sourceKey = "OPENING";
+    }
+    if (!sourceKey || sourceKey !== corporateBillSourceKeyForUnit(unit)) return false;
+    if (num(row?.bill_id) <= 0) return false;
+    const submittedStatus = String(row?.bill_status_raw || row?.BillStatusRaw || row?.bill_status || "").trim().toUpperCase();
+    const submitDate = String(row?.submit_date_raw || row?.SubmitDateRaw || row?.submit_date || "").trim();
+    if (submittedStatus !== "Y" || !submitDate || submitDate === "-") return false;
+    if (num(row?.receipt_count_all_time) > 0) return false;
+    if (Math.abs(num(row?.receipt_total_all_time)) > 0.01) return false;
+    if (Math.abs(num(row?.tds_total_all_time)) > 0.01) return false;
+    if (Math.abs(num(row?.rebate_discount_all_time)) > 0.01) return false;
+    if (Math.abs(num(row?.writeoff_total_all_time)) > 0.01) return false;
+    return true;
+  };
+  const applyLocalReceiptDeskPatch = (row, formValues, responsePayload = {}) => {
+    const billKey = String(row?.bill_key || "").trim();
+    if (!billKey) return false;
+
+    const receiptInfo = responsePayload?.receipt && typeof responsePayload.receipt === "object"
+      ? responsePayload.receipt
+      : {};
+    const receiptDate = String(receiptInfo?.receipt_date || formValues?.receipt_date || "").trim();
+    const receiptAdded = receiptRound(Math.max(0, num(formValues?.received_amount)));
+    const tdsAdded = receiptRound(Math.max(0, num(formValues?.tds_amount)));
+    const rebateAdded = receiptRound(Math.max(0, num(formValues?.rebate_amount)));
+    let touched = false;
+
+    const patchRow = (target) => {
+      if (!target || typeof target !== "object") return;
+      target.receipt_total_all_time = receiptRound(num(target?.receipt_total_all_time) + receiptAdded);
+      target.tds_total_all_time = receiptRound(num(target?.tds_total_all_time) + tdsAdded);
+      target.rebate_discount_all_time = receiptRound(num(target?.rebate_discount_all_time) + rebateAdded);
+      target.receipt_count_all_time = Math.max(0, Math.trunc(num(target?.receipt_count_all_time))) + 1;
+      if (receiptDate) target.last_receipt_date_all_time = receiptDate;
+      target.has_receipt = true;
+      target.can_take_receipt = false;
+      target.receipt_note = "Receipt already exists on this bill.";
+      target.can_unsubmit_bill = false;
+      target.unsubmit_block_reason = "Bill has receipt activity and can no longer be unsubmitted.";
+      target.settled_total_all_time = receiptRound(
+        num(target?.receipt_total_all_time)
+        + num(target?.tds_total_all_time)
+        + num(target?.rebate_discount_all_time)
+        + num(target?.writeoff_total_all_time)
+      );
+      target.balance_all_time = receiptRound(Math.max(0, num(target?.bill_amount) - num(target?.settled_total_all_time)));
+      target.status_all_time = num(target?.balance_all_time) <= 1 ? "Settled" : "Partial";
+    };
+
+    ["receipt", "unsubmit"].forEach((kind) => {
+      const st = actionDeskState(kind);
+      if (!st || !Array.isArray(st.rows) || !st.rows.length) return;
+      const target = st.rows.find((item) => {
+        const targetKey = String(item?.bill_key || "").trim();
+        if (targetKey && targetKey === billKey) return true;
+        return (
+          num(item?.bill_id) > 0
+          && num(item?.bill_id) === num(row?.bill_id)
+          && String(item?.bill_source_key || "").trim().toUpperCase() === String(row?.bill_source_key || "").trim().toUpperCase()
+        );
+      });
+      if (!target) return;
+      patchRow(target);
+      touched = true;
+      renderActionDeskRows(kind);
+    });
+
+    return touched;
+  };
+  const reconActionHtml = (row) => writeoffActionHtml(row);
   const lockReceiptModal = (locked) => {
     [
       els.receipt.correctionMonth,
@@ -1335,8 +2314,9 @@
       els.receipt.paymentMode,
       els.receipt.utrNo,
       els.receipt.approvedAmount,
-      els.receipt.tdsAmount,
       els.receipt.receivedAmount,
+      els.receipt.tdsPercent,
+      els.receipt.tdsAmount,
       els.receipt.rebateAmount,
       els.receipt.cancel,
       els.receipt.close,
@@ -1346,6 +2326,21 @@
   const receiptRound = (value) => {
     const n = Number(value);
     return Number.isFinite(n) ? Math.round((n + Number.EPSILON) * 100) / 100 : 0;
+  };
+  const receiptSuggestedTdsPercent = (row) => {
+    const context = [
+      row?.patient_subtype,
+      row?.patient_type,
+      row?.bill_source,
+      row?.source_patient_name,
+    ].map((v) => String(v || "").trim().toLowerCase()).join(" ");
+    if (context.includes("eastern central railway") || /(^|[^a-z])ecr([^a-z]|$)/.test(context)) return 2;
+    return 10;
+  };
+  const receiptSuggestedTdsNote = (row) => {
+    const rate = receiptSuggestedTdsPercent(row);
+    if (rate === 2) return "Default TDS: 2% suggested for Eastern Central Railway. You can edit this before save.";
+    return "Default TDS: 10% suggested for this bill. You can edit this before save.";
   };
   const bindReceiptQuickSelect = (node) => {
     if (!node || node.dataset.quickSelectBound === "1") return;
@@ -1370,7 +2365,60 @@
   };
   const setReceiptAmountValue = (node, value) => {
     if (!node) return;
-    node.value = receiptRound(value).toFixed(2);
+    node.value = money(receiptRound(value));
+  };
+  const clearReceiptAmountValue = (node) => {
+    if (!node) return;
+    node.value = "";
+  };
+  const setReceiptPercentValue = (node, value) => {
+    if (!node) return;
+    if (value == null || value === "") {
+      node.value = "";
+      return;
+    }
+    const rounded = receiptRound(value);
+    if (!Number.isFinite(rounded)) {
+      node.value = "";
+      return;
+    }
+    node.value = rounded.toFixed(2).replace(/\.00$/, "").replace(/(\.\d*[1-9])0$/, "$1");
+  };
+  const receiptTdsPercentRaw = () => String(els.receipt.tdsPercent?.value || "").trim();
+  const receiptTdsPercentValue = () => {
+    const raw = receiptTdsPercentRaw();
+    if (!raw) return null;
+    const parsed = num(raw);
+    return Number.isFinite(parsed) ? parsed : null;
+  };
+  const deriveReceiptTdsPercent = (approved, tds) => {
+    const approvedVal = receiptRound(approved);
+    const tdsVal = receiptRound(tds);
+    if (approvedVal <= 0 || tdsVal <= 0) return null;
+    return receiptRound((tdsVal * 100) / approvedVal);
+  };
+  const calcReceiptSplitFromTdsPercent = (billAmount, receivedAmount, ratePercent) => {
+    const bill = receiptRound(Math.max(0, billAmount));
+    const received = receiptRound(Math.max(0, receivedAmount));
+    const rawRate = Number(ratePercent);
+    const rate = Number.isFinite(rawRate) ? Math.max(0, rawRate) : 0;
+    if (received <= 0 || rate <= 0) {
+      return {
+        approved: received,
+        tds: 0,
+        rebate: receiptRound(Math.max(0, bill - received)),
+        overage: 0,
+      };
+    }
+    const divisor = Math.max(0.01, 100 - rate);
+    const approved = receiptRound((received * 100) / divisor);
+    const tds = receiptRound(approved - received);
+    return {
+      approved,
+      tds,
+      rebate: receiptRound(Math.max(0, bill - approved)),
+      overage: receiptRound(Math.max(0, approved - bill)),
+    };
   };
   const receiptDefaultPaymentModeId = (modes = state.receipt.paymentModes) => {
     const rows = Array.isArray(modes) ? modes : [];
@@ -1450,6 +2498,27 @@
     received_amount: num(els.receipt.receivedAmount?.value),
     rebate_amount: num(els.receipt.rebateAmount?.value),
   });
+  const receiptDraftSnapshot = () => {
+    const f = receiptFormValues();
+    return {
+      correction_month: String(f.correction_month || "").trim(),
+      receipt_date: String(f.receipt_date || "").trim(),
+      payment_mode: String(f.payment_mode || "").trim(),
+      utr_no: String(f.utr_no || "").trim(),
+      bill_amount: receiptRound(f.bill_amount),
+      approved_amount: receiptRound(f.approved_amount),
+      tds_amount: receiptRound(f.tds_amount),
+      received_amount: receiptRound(f.received_amount),
+      rebate_amount: receiptRound(f.rebate_amount),
+      tds_percent: String(receiptTdsPercentRaw() || "").trim(),
+    };
+  };
+  const receiptModalHasUnsavedChanges = () => {
+    if (!state.receipt.open || !state.receipt.activeBill) return false;
+    const initial = state.receipt.initialValues;
+    if (!initial || typeof initial !== "object") return false;
+    return JSON.stringify(receiptDraftSnapshot()) !== JSON.stringify(initial);
+  };
   const applyReceiptAutocalc = (trigger = "", { sourceNode = null, formatSource = true } = {}) => {
     if (state.receipt.calcLock) {
       refreshReceiptHint();
@@ -1458,19 +2527,43 @@
     const billAmount = receiptRound(num(els.receipt.billAmount?.value));
     const key = String(trigger || "").trim().toLowerCase();
     let approved = receiptRound(num(els.receipt.approvedAmount?.value));
-    const tds = receiptRound(Math.max(0, num(els.receipt.tdsAmount?.value)));
+    let tds = receiptRound(Math.max(0, num(els.receipt.tdsAmount?.value)));
     let received = receiptRound(num(els.receipt.receivedAmount?.value));
     let rebate = receiptRound(num(els.receipt.rebateAmount?.value));
-    if (key === "tds" || key === "rebate") {
-      approved = receiptRound(billAmount - rebate);
-      received = receiptRound(approved - tds);
-      rebate = receiptRound(billAmount - approved);
-    } else if (key === "received") {
+    const rateRaw = receiptTdsPercentRaw();
+    const rateValue = receiptTdsPercentValue();
+    const hasRate = rateRaw !== "";
+    state.receipt.tdsRateCapped = false;
+    received = receiptRound(Math.max(0, Math.min(received, billAmount)));
+    const availableRebate = receiptRound(Math.max(0, billAmount - received));
+    if (key === "tdsrate" || (key === "received" && hasRate)) {
+      const split = calcReceiptSplitFromTdsPercent(billAmount, received, rateValue);
+      approved = split.approved;
+      tds = split.tds;
+      rebate = split.rebate;
+    } else if (key === "tds") {
+      tds = receiptRound(Math.max(0, Math.min(tds, availableRebate)));
+      rebate = receiptRound(Math.max(0, availableRebate - tds));
       approved = receiptRound(received + tds);
-      rebate = receiptRound(billAmount - approved);
+    } else if (key === "rebate") {
+      rebate = receiptRound(Math.max(0, Math.min(rebate, availableRebate)));
+      tds = receiptRound(Math.max(0, availableRebate - rebate));
+      approved = receiptRound(received + tds);
+    } else if (key === "received") {
+      tds = receiptRound(Math.max(0, Math.min(tds, availableRebate)));
+      approved = receiptRound(received + tds);
+      rebate = receiptRound(availableRebate - tds);
     } else {
-      received = receiptRound(approved - tds);
-      rebate = receiptRound(billAmount - approved);
+      approved = receiptRound(Math.max(0, Math.min(approved, billAmount)));
+      tds = receiptRound(Math.max(0, Math.min(tds, approved)));
+      received = receiptRound(Math.max(0, approved - tds));
+      rebate = receiptRound(Math.max(0, billAmount - approved));
+      if (hasRate && (key === "approved" || key === "")) {
+        const split = calcReceiptSplitFromTdsPercent(billAmount, received, rateValue);
+        approved = split.approved;
+        tds = split.tds;
+        rebate = split.rebate;
+      }
     }
     state.receipt.calcLock = true;
     try {
@@ -1484,6 +2577,13 @@
         if (!formatSource && sourceNode && node === sourceNode) return;
         setReceiptAmountValue(node, value);
       });
+      if (els.receipt.tdsPercent) {
+        const preserveRequestedRate = hasRate && (key === "tdsrate" || (key === "received" && sourceNode === els.receipt.receivedAmount));
+        const percentValue = preserveRequestedRate ? rateValue : deriveReceiptTdsPercent(approved, tds);
+        if (!(!formatSource && sourceNode && els.receipt.tdsPercent === sourceNode)) {
+          setReceiptPercentValue(els.receipt.tdsPercent, percentValue);
+        }
+      }
     } finally {
       state.receipt.calcLock = false;
     }
@@ -1492,85 +2592,111 @@
   const refreshReceiptHint = () => {
     if (!els.receipt.hint) return;
     const f = receiptFormValues();
+    const availableRebate = receiptRound(Math.max(0, f.bill_amount - f.received_amount));
+    const rateRaw = receiptTdsPercentRaw();
+    if (f.received_amount <= 0) {
+      setTxt(
+        els.receipt.hint,
+        "Enter Received Amt to auto-fill Approved Amt and shift the remaining claim value to Rebate / Discount. TDS % works only after some balance is available in rebate."
+      );
+      return;
+    }
     const approvedGap = f.approved_amount - (f.received_amount + f.tds_amount);
     const billGap = f.bill_amount - (f.received_amount + f.tds_amount + f.rebate_amount);
     const balanced = Math.abs(approvedGap) <= 0.01 && Math.abs(billGap) <= 0.01 && [f.approved_amount, f.tds_amount, f.received_amount, f.rebate_amount].every((v) => v >= -0.01);
+    const rateMsg = rateRaw
+      ? ` | TDS %: ${rateRaw}%${availableRebate <= 0 ? " (no rebate available yet)" : ""}`
+      : availableRebate <= 0
+        ? " | Received Amt matches Claim Amount, so Rebate / Discount and TDS stay 0."
+        : "";
     setTxt(
       els.receipt.hint,
-      `${balanced ? "Balanced split" : "Needs correction"} | Approved delta: ${money(approvedGap)} | Bill delta: ${money(billGap)} | Correction Month is reporting-only. Receipt Date is the actual collection date.`
+      `${balanced ? "Balanced split" : "Needs correction"} | Approved delta: ${money(approvedGap)} | Claim delta: ${money(billGap)}${rateMsg} | Correction Month is reporting-only. Receipt Date is the actual collection date.`
     );
   };
   const closeReceiptModal = (force = false) => {
     if (!els.receipt.modal) return;
     if (state.receipt.saving && !force) return;
+    if (!force && receiptModalHasUnsavedChanges()) {
+      if (!window.confirm("Discard the receipt details you entered?")) return;
+    }
     els.receipt.modal.classList.remove("open");
     els.receipt.modal.setAttribute("aria-hidden", "true");
     state.receipt.open = false;
     state.receipt.saving = false;
     state.receipt.activeBill = null;
+    state.receipt.initialValues = null;
+    state.receipt.parentDesk = "";
   };
   const openReceiptModal = async (row) => {
     if (!row || !els.receipt.modal) return;
+    const targetBillKey = String(row?.bill_key || "").trim();
     const billAmount = num(row?.bill_amount);
-    const outstanding = Math.max(0, num(row?.balance_all_time));
-    const suggested = outstanding > 0 ? outstanding : billAmount;
     const now = new Date();
     const defaultMonth = `${now.getFullYear()}-${String(now.getMonth() + 1).padStart(2, "0")}`;
     const todayValue = dateKey(now);
-    if (els.receipt.title) els.receipt.title.textContent = `Take Receipt - ${unitLabel(currentUnit())}`;
-    setTxt(els.receipt.contextBill, `${row?.bill_no || "-"} | Bill ID: ${row?.bill_id || "-"}`);
+    const againstLabel = receiptAgainstLabel(row);
+    if (els.receipt.title) els.receipt.title.textContent = `Take Receipt - ${unitLabel(currentUnit())} (${againstLabel})`;
+    setTxt(els.receipt.contextBill, `${row?.bill_no || "-"} | ${againstLabel} ID: ${row?.bill_id || "-"}`);
     setTxt(els.receipt.contextPatient, `${row?.patient_name || "-"} | Patient ID: ${row?.patient_id || "-"}`);
-    setTxt(els.receipt.contextVisit, `${row?.type_of_visit || "-"} | Visit ID: ${row?.visit_id || "-"}`);
+    setTxt(els.receipt.contextVisit, `${row?.type_of_visit || againstLabel} | Visit ID: ${row?.visit_id || "-"}`);
+    setTxt(els.receipt.patientSubtypeNote, String(row?.patient_subtype || "-").trim() || "-");
     if (els.receipt.correctionMonth) els.receipt.correctionMonth.value = defaultMonth;
     if (els.receipt.receiptDate) els.receipt.receiptDate.value = todayValue;
     if (els.receipt.paymentMode) {
       els.receipt.paymentMode.innerHTML = '<option value="">Loading payment modes...</option>';
       els.receipt.paymentMode.value = "";
     }
-    if (els.receipt.utrNo) els.receipt.utrNo.value = "";
+    if (els.receipt.utrNo) els.receipt.utrNo.value = receiptRememberedUtr(currentUnit());
     setReceiptAmountValue(els.receipt.billAmount, billAmount);
-    setReceiptAmountValue(els.receipt.approvedAmount, suggested);
+    clearReceiptAmountValue(els.receipt.approvedAmount);
+    clearReceiptAmountValue(els.receipt.receivedAmount);
+    setReceiptPercentValue(els.receipt.tdsPercent, receiptSuggestedTdsPercent(row));
+    setTxt(els.receipt.tdsPercentNote, receiptSuggestedTdsNote(row));
     setReceiptAmountValue(els.receipt.tdsAmount, 0);
-    setReceiptAmountValue(els.receipt.receivedAmount, suggested);
     setReceiptAmountValue(els.receipt.rebateAmount, 0);
     state.receipt.activeBill = row;
     state.receipt.open = true;
     state.receipt.saving = false;
+    state.receipt.initialValues = null;
     state.receipt.calcLock = false;
+    state.receipt.tdsRateCapped = false;
     lockReceiptModal(false);
     refreshReceiptHint();
     els.receipt.modal.classList.add("open");
     els.receipt.modal.setAttribute("aria-hidden", "false");
+    requestAnimationFrame(() => {
+      try {
+        els.receipt.receivedAmount?.focus();
+        els.receipt.receivedAmount?.select();
+      } catch (err) {}
+    });
     await loadReceiptPaymentModes({ preserveSelection: false });
+    if (!state.receipt.open || String(state.receipt.activeBill?.bill_key || "").trim() !== targetBillKey) return;
     if (els.receipt.paymentMode && !String(els.receipt.paymentMode.value || "").trim()) {
       els.receipt.paymentMode.value = receiptDefaultPaymentModeId();
     }
     refreshReceiptHint();
+    state.receipt.initialValues = receiptDraftSnapshot();
   };
   const saveReceipt = async () => {
     const row = state.receipt.activeBill;
     if (!row || state.receipt.saving) return;
+    const parentDesk = String(state.receipt.parentDesk || "").trim().toLowerCase();
     const f = receiptFormValues();
     if (!f.correction_month) { notify("Please select Correction Month.", "warn", "receipt-save"); return; }
     if (!f.receipt_date) { notify("Please select Receipt Date.", "warn", "receipt-save"); return; }
     if (f.approved_amount < 0 || f.tds_amount < 0 || f.received_amount < 0 || f.rebate_amount < 0) { notify("Approved, TDS, Received, and Rebate amounts cannot be negative.", "warn", "receipt-save"); return; }
     if (f.received_amount <= 0) { notify("Received Amt must be greater than zero.", "warn", "receipt-save"); return; }
     const tol = 1.0;
-    if (f.approved_amount > f.bill_amount + tol) { notify("Approved Amt cannot be greater than C_amount.", "warn", "receipt-save"); return; }
-    if (f.received_amount > f.bill_amount + tol) { notify("Received Amt cannot be greater than C_amount.", "warn", "receipt-save"); return; }
+    if (f.approved_amount > f.bill_amount + tol) { notify("Approved Amt cannot be greater than Claim Amount.", "warn", "receipt-save"); return; }
+    if (f.received_amount > f.bill_amount + tol) { notify("Received Amt cannot be greater than Claim Amount.", "warn", "receipt-save"); return; }
     if (Math.abs((f.received_amount + f.tds_amount) - f.approved_amount) > tol) { notify("Approved Amt must match Received Amt + TDS Amt.", "warn", "receipt-save"); return; }
-    if (Math.abs((f.received_amount + f.tds_amount + f.rebate_amount) - f.bill_amount) > tol) { notify("Received Amt + TDS Amt + Rebate must match C_amount.", "warn", "receipt-save"); return; }
-
-    let printWindow = null;
-    try {
-      printWindow = window.open("", "_blank");
-    } catch (e) {
-      printWindow = null;
-    }
+    if (Math.abs((f.received_amount + f.tds_amount + f.rebate_amount) - f.bill_amount) > tol) { notify("Received Amt + TDS Amt + Rebate must match Claim Amount.", "warn", "receipt-save"); return; }
 
     state.receipt.saving = true;
     lockReceiptModal(true);
-    notify("Saving SharpSight receipt...", "loading", "receipt-save");
+    notify("Saving corporate receipt...", "loading", "receipt-save");
     try {
       const res = await fetch("/api/corporate/receipt", {
         method: "POST",
@@ -1578,6 +2704,7 @@
         body: JSON.stringify({
           unit: currentUnit(),
           bill_id: Number(row.bill_id),
+          bill_source_key: String(row.bill_source_key || "").trim().toUpperCase(),
           bill_amount: f.bill_amount,
           patient_id: row.patient_id ?? null,
           visit_id: row.visit_id ?? null,
@@ -1602,15 +2729,15 @@
       if (!res.ok || d.status !== "success") throw new Error(d.message || "Failed to save receipt.");
       clearLoading("receipt-save");
       notify(d.message || "Receipt saved successfully.", "success", "receipt-save");
+      rememberReceiptUtr(currentUnit(), f.utr_no || d?.remembered_utr_no || "");
       closeReceiptModal(true);
-      if (printWindow && d.print_url) printWindow.location = d.print_url;
-      else if (d.print_url) window.open(d.print_url, "_blank");
-      await loadRecon({ resetPage: false, forceRefresh: true });
+      applyLocalReceiptDeskPatch(row, f, d);
+      const staleMsg = "Receipt saved. Main reconciliation report is now out of date. Click Refresh Data when ready.";
+      markReconDirty(staleMsg);
+      notify(staleMsg, "warn", "recon-dirty");
+      if (parentDesk === "receipt") focusActionDeskSearch("receipt", { select: true });
     } catch (e) {
       clearLoading("receipt-save");
-      if (printWindow) {
-        try { printWindow.close(); } catch (closeErr) {}
-      }
       notify(e?.message || "Failed to save receipt.", "error", "receipt-save");
       state.receipt.saving = false;
       lockReceiptModal(false);
@@ -1618,18 +2745,34 @@
   };
   const openDailyReceiptPrint = () => {
     const unit = currentUnit();
-    if (!isSharpSightUnit(unit)) {
-      notify("Daily receipt print is available only for SharpSight.", "warn", "recon-daily-print");
+    const filterLabel = reconPrintFilterLabel();
+    const filterMode = reconPrintFilterMode();
+    if (!unit) {
+      notify("Please select a unit first.", "warn", "recon-daily-print");
       return;
     }
-    const entryDate = String(els.recon.entryPrintDate?.value || "").trim();
-    if (!entryDate) {
-      notify("Please select Receipt Entry Date first.", "warn", "recon-daily-print");
+    const entryFrom = String(els.recon.entryPrintFrom?.value || "").trim();
+    const entryTo = String(els.recon.entryPrintTo?.value || "").trim();
+    const effectiveFrom = entryFrom || entryTo;
+    const effectiveTo = entryTo || entryFrom;
+    if (!effectiveFrom || !effectiveTo) {
+      notify(`Please select ${filterLabel} From and To first.`, "warn", "recon-daily-print");
       return;
     }
-    const url = `/api/corporate/receipts/daily_print?unit=${encodeURIComponent(unit)}&entry_date=${encodeURIComponent(entryDate)}`;
+    const fromDate = parseIsoDate(effectiveFrom);
+    const toDate = parseIsoDate(effectiveTo);
+    if (!fromDate || !toDate) {
+      notify(`Invalid ${filterLabel.toLowerCase()} range selected.`, "warn", "recon-daily-print");
+      return;
+    }
+    if (fromDate.getTime() > toDate.getTime()) {
+      notify(`${filterLabel} From cannot be after ${filterLabel} To.`, "warn", "recon-daily-print");
+      return;
+    }
+    const params = new URLSearchParams({ unit, entry_from: effectiveFrom, entry_to: effectiveTo, filter_by: filterMode });
+    const url = `/api/corporate/receipts/daily_print?${params.toString()}`;
     const win = window.open(url, "_blank");
-    if (!win) notify("Popup blocked. Please allow popups to print daily receipts.", "warn", "recon-daily-print");
+    if (!win) notify("Popup blocked. Please allow popups to print the receipt register.", "warn", "recon-daily-print");
   };
 
   const askWriteoffAmount = (row, { channel = "recon-writeoff", defaultAmount = null } = {}) => {
@@ -1726,6 +2869,128 @@
     if (!res.ok || d.status !== "success") throw new Error(d.message || "Failed to post write-off entry.");
     return d;
   };
+  const lockUnsubmitModal = (locked) => {
+    [
+      els.unsubmit.close,
+      els.unsubmit.cancel,
+      els.unsubmit.save,
+      els.unsubmit.reason,
+    ].forEach((node) => { if (node) node.disabled = !!locked; });
+  };
+  const unsubmitModalHasUnsavedChanges = () => (
+    !!state.unsubmit.open
+    && !!state.unsubmit.activeBill
+    && String(els.unsubmit.reason?.value || "").trim() !== String(state.unsubmit.initialReason || "").trim()
+  );
+  const closeUnsubmitBillModal = (force = false) => {
+    if (!els.unsubmit.modal) return;
+    if (state.unsubmit.saving && !force) return;
+    if (!force && unsubmitModalHasUnsavedChanges()) {
+      if (!window.confirm("Discard the unsubmit reason you entered?")) return;
+    }
+    els.unsubmit.modal.classList.remove("open");
+    els.unsubmit.modal.setAttribute("aria-hidden", "true");
+    state.unsubmit.open = false;
+    state.unsubmit.saving = false;
+    state.unsubmit.activeBill = null;
+    state.unsubmit.initialReason = "";
+    state.unsubmit.parentDesk = "";
+    if (els.unsubmit.reason) els.unsubmit.reason.value = "";
+  };
+  const openUnsubmitBillModal = (row) => {
+    if (!row || !els.unsubmit.modal) return;
+    if (!canUnsubmitBillRow(row)) {
+      notify("Selected bill is not eligible for unsubmit.", "warn", "recon-unsubmit");
+      return;
+    }
+    state.unsubmit.activeBill = row;
+    state.unsubmit.open = true;
+    state.unsubmit.saving = false;
+    if (els.unsubmit.title) els.unsubmit.title.textContent = `Unsubmit Corporate Bill - ${unitLabel(currentUnit())}`;
+    setTxt(els.unsubmit.contextBill, `${row?.bill_no || "-"} | Bill ID: ${row?.bill_id || "-"}`);
+    setTxt(els.unsubmit.contextPatient, `${row?.patient_name || "-"} | Patient ID: ${row?.patient_id || "-"}`);
+    setTxt(els.unsubmit.contextVisit, `${row?.type_of_visit || "-"} | Visit ID: ${row?.visit_id || "-"}`);
+    if (els.unsubmit.currentStatus) els.unsubmit.currentStatus.value = String(row?.bill_status_raw || "").trim().toUpperCase() === "Y" ? "Yes" : "No";
+    if (els.unsubmit.currentSubmitDate) els.unsubmit.currentSubmitDate.value = String(row?.submit_date_raw || "").trim() || "-";
+    if (els.unsubmit.receiptAllTime) els.unsubmit.receiptAllTime.value = money(row?.receipt_total_all_time);
+    if (els.unsubmit.balanceAllTime) els.unsubmit.balanceAllTime.value = money(row?.balance_all_time);
+    if (els.unsubmit.reason) {
+      els.unsubmit.reason.value = "";
+      els.unsubmit.reason.focus();
+    }
+    state.unsubmit.initialReason = "";
+    setTxt(
+      els.unsubmit.hint,
+      "Mandatory reason. The audit log captures who performed the unsubmit, the reason, and the before/after submit fields."
+    );
+    lockUnsubmitModal(false);
+    els.unsubmit.modal.classList.add("open");
+    els.unsubmit.modal.setAttribute("aria-hidden", "false");
+  };
+  const postUnsubmitRequest = async (row, reason) => {
+    const unit = String(els.recon.unit?.value || "").trim().toUpperCase();
+    if (!unit) throw new Error("Please select a unit before marking a bill unsubmitted.");
+    const res = await fetch("/api/corporate/reconciliation/unsubmit_bill", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        unit,
+        bill_id: Number(row.bill_id),
+        bill_source_key: String(row.bill_source_key || "").trim().toUpperCase(),
+        reason: String(reason || "").trim(),
+      }),
+    });
+    const d = await res.json();
+    if (!res.ok || d.status !== "success") throw new Error(d.message || "Failed to mark the bill unsubmitted.");
+    return d;
+  };
+  const saveUnsubmitBill = async () => {
+    const row = state.unsubmit.activeBill;
+    if (!row || state.unsubmit.saving || state.recon.loading) return;
+    if (!canUnsubmitBillRow(row)) {
+      notify("Selected bill is no longer eligible for unsubmit.", "warn", "recon-unsubmit");
+      return;
+    }
+    const reason = String(els.unsubmit.reason?.value || "").trim();
+    if (!reason) {
+      notify("Please enter a reason before marking the bill unsubmitted.", "warn", "recon-unsubmit");
+      els.unsubmit.reason?.focus();
+      return;
+    }
+    const billNo = String(row.bill_no || row.bill_id || "").trim();
+    const confirmMsg = `Mark bill ${billNo} as unsubmitted and clear its submit date?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    state.unsubmit.saving = true;
+    state.recon.unsubmitBusy = true;
+    lockUnsubmitModal(true);
+    lockRecon(true);
+    notify("Marking corporate bill unsubmitted...", "loading", "recon-unsubmit");
+    try {
+      const d = await postUnsubmitRequest(row, reason);
+      clearLoading("recon-unsubmit");
+      notify(d.message || "Bill marked unsubmitted. Refreshing from database...", "success", "recon-unsubmit");
+      closeUnsubmitBillModal(true);
+      try {
+        await loadRecon({ resetPage: false, forceRefresh: true });
+        await refreshOpenActionDesks({ forceRefresh: true });
+      } catch (refreshErr) {
+        notify(refreshErr?.message || "Bill updated, but reconciliation refresh failed. Please reload.", "warn", "recon-unsubmit-refresh");
+      }
+    } catch (e) {
+      clearLoading("recon-unsubmit");
+      notify(e?.message || "Failed to mark bill unsubmitted.", "error", "recon-unsubmit");
+      state.unsubmit.saving = false;
+      lockUnsubmitModal(false);
+    } finally {
+      state.recon.unsubmitBusy = false;
+      lockRecon(false);
+      if (state.recon.datasetLoaded) {
+        renderReconRows();
+        renderBulkBar();
+      }
+    }
+  };
 
   const selectedBillKeys = () => Object.keys(state.recon.bulkSelected || {}).filter((k) => !!state.recon.bulkSelected[k]);
   const clearBulkSelection = () => {
@@ -1764,8 +3029,8 @@
     } else {
       setTxt(els.recon.bulkMeta, `${integer(count)} bills selected | Total due: ${money(total)}`);
     }
-    if (els.recon.bulkPreviewBtn) els.recon.bulkPreviewBtn.disabled = !count || state.recon.loading || state.recon.writeoffBusy;
-    if (els.recon.bulkClearBtn) els.recon.bulkClearBtn.disabled = !selectedBillKeys().length || state.recon.loading || state.recon.writeoffBusy;
+    if (els.recon.bulkPreviewBtn) els.recon.bulkPreviewBtn.disabled = !count || state.recon.loading || state.recon.writeoffBusy || state.recon.unsubmitBusy;
+    if (els.recon.bulkClearBtn) els.recon.bulkClearBtn.disabled = !selectedBillKeys().length || state.recon.loading || state.recon.writeoffBusy || state.recon.unsubmitBusy;
   };
   const closeBulkModal = () => {
     if (!els.recon.bulkModal) return;
@@ -1891,7 +3156,7 @@
     const rows = state.recon.rows || [];
     if (!els.recon.body) return;
     if (!rows.length) {
-      els.recon.body.innerHTML = '<tr><td colspan="22" class="empty">No records found for current filters.</td></tr>';
+      els.recon.body.innerHTML = '<tr><td colspan="18" class="empty">No records found for current filters.</td></tr>';
       if (els.recon.selectAllVisible) {
         els.recon.selectAllVisible.checked = false;
         els.recon.selectAllVisible.indeterminate = false;
@@ -1911,9 +3176,15 @@
       const sourceKeyText = String(r.bill_source_key || sourceText || "").trim().toUpperCase();
       const billNoText = String(r.bill_no || "-").trim() || "-";
       const billIdText = String(r.bill_id ?? "").trim() || "-";
-      const submitDateValue = String(r.submit_date_raw || r.submit_date || "").trim();
+      const submittedStatusRaw = String(r.bill_status_raw || r.BillStatusRaw || r.bill_status || "").trim().toUpperCase();
+      const submitDateValueRaw = String(r.submit_date_raw || r.submit_date || "").trim();
+      const submittedStatusText = sourceKeyText === "OPENING"
+        ? "-"
+        : (submittedStatusRaw
+          ? (submittedStatusRaw === "Y" ? "Yes" : "No")
+          : (submitDateValueRaw ? "Yes" : "No"));
+      const submitDateValue = submittedStatusText === "Yes" ? submitDateValueRaw : "";
       const submitDateText = shortDate(submitDateValue || "-");
-      const submittedStatusText = sourceKeyText === "OPENING" ? "-" : (submitDateValue ? "Yes" : "No");
       const dueDateText = shortDate(r.due_date || "-");
       const updatedByText = String(r.bill_updated_by || r.bill_updated_by_id || "-").trim() || "-";
       const patientNameText = String(r.patient_name || r.source_patient_name || "-").trim() || "-";
@@ -1925,7 +3196,7 @@
       const patientTypeText = String(r.patient_type || "").trim() || "-";
       const patientSubtypeText = String(r.patient_subtype || "").trim() || "-";
       const patientTone = patientTypeTone(patientTypeText, patientSubtypeText);
-      html.push(`<tr><td class="center"><input type="checkbox" class="recon-select-row" data-bill-key="${esc(key)}" ${checkedSel} ${disabledSel}></td><td class="center"><button class="tg" type="button" data-key="${esc(key)}" aria-expanded="false">Details</button></td><td class="src-cell">${esc(sourceText)}</td><td><div class="meta-stack"><div><b>${esc(billNoText)}</b></div><div class="meta-line"><span class="meta-label">Bill ID</span><span class="meta-val">${esc(billIdText)}</span></div><div class="meta-line"><span class="meta-label">Submit</span><span class="meta-val">${esc(submitDateText)}</span></div><div class="meta-line"><span class="meta-label">Submitted Status</span><span class="meta-val">${esc(submittedStatusText)}</span></div><div class="meta-line"><span class="meta-label">Due</span><span class="meta-val">${esc(dueDateText)}</span></div><div class="meta-line"><span class="meta-label">Updated By</span><span class="meta-val">${esc(updatedByText)}</span></div></div></td><td class="center">${bBadge(r.status_all_time)}</td><td><div class="meta-stack"><div><b>${esc(patientNameText)}</b></div><div class="meta-line"><span class="meta-label">Patient ID</span><span class="meta-val">${esc(patientIdText)}</span></div></div></td><td>${patientTypeChip(patientTypeText, patientTone, "Patient Type", "type")}</td><td>${patientTypeChip(patientSubtypeText, patientTone, "Patient SubType", "subtype")}</td><td><div class="meta-stack"><div><b>${esc(visitKindText)}</b></div><div class="meta-line"><span class="meta-label">Visit ID</span><span class="meta-val">${esc(visitIdText)}</span></div><div class="meta-line"><span class="meta-label">Visit</span><span class="meta-val">${esc(visitDateText)}</span></div><div class="meta-line"><span class="meta-label">Discharge</span><span class="meta-val">${esc(dischargeDateText)}</span></div></div></td><td class="num"><span class="amt bill">${money(r.bill_amount)}</span></td><td class="num"><span class="amt receipt">${money(r.receipt_total_all_time)}</span></td><td class="num"><span class="amt tds">${money(r.tds_total_all_time)}</span></td><td class="num"><span class="amt rebate">${money(r.rebate_discount_all_time)}</span></td><td class="num"><span class="amt writeoff">${money(r.writeoff_total_all_time)}</span></td><td class="num"><span class="amt ${bClass(r.balance_all_time)}">${money(r.balance_all_time)}</span></td><td class="num"><span class="amt receipt">${money(r.receipt_total_window)}</span></td><td class="num"><span class="amt rebate">${money(r.rebate_discount_window)}</span></td><td class="num"><span class="amt ${bClass(r.balance_window)}">${money(r.balance_window)}</span></td><td class="center">${bBadge(r.status_window)}</td><td class="center"><div><b>${integer(r.receipt_count_all_time)} / ${integer(r.receipt_count_window)}</b></div><div class="sub">All / Window</div></td><td><div><b>${esc(shortDate(r.last_receipt_date_all_time || "-"))}</b></div><div class="sub">Window: ${esc(shortDate(r.last_receipt_date_window || "-"))}</div></td><td class="center">${reconActionHtml(r)}</td></tr><tr class="drow" data-detail="${esc(key)}" hidden><td colspan="22">${detailHtml(key)}</td></tr>`);
+      html.push(`<tr><td class="center"><input type="checkbox" class="recon-select-row" data-bill-key="${esc(key)}" ${checkedSel} ${disabledSel}></td><td class="center"><button class="tg" type="button" data-key="${esc(key)}" aria-expanded="false">Details</button></td><td class="center">${reconActionHtml(r)}</td><td class="src-cell">${esc(sourceText)}</td><td><div class="meta-stack"><div><b>${esc(billNoText)}</b></div><div class="meta-line"><span class="meta-label">Bill ID</span><span class="meta-val">${esc(billIdText)}</span></div><div class="meta-line"><span class="meta-label">Submit</span><span class="meta-val">${esc(submitDateText)}</span></div><div class="meta-line"><span class="meta-label">Submitted Status</span><span class="meta-val">${esc(submittedStatusText)}</span></div><div class="meta-line"><span class="meta-label">Due</span><span class="meta-val">${esc(dueDateText)}</span></div><div class="meta-line"><span class="meta-label">Updated By</span><span class="meta-val">${esc(updatedByText)}</span></div></div></td><td class="center">${bBadge(r.status_all_time)}</td><td><div class="meta-stack"><div><b>${esc(patientNameText)}</b></div><div class="meta-line"><span class="meta-label">Patient ID</span><span class="meta-val">${esc(patientIdText)}</span></div></div></td><td>${patientTypeChip(patientTypeText, patientTone, "Patient Type", "type")}</td><td>${patientTypeChip(patientSubtypeText, patientTone, "Patient SubType", "subtype")}</td><td><div class="meta-stack"><div><b>${esc(visitKindText)}</b></div><div class="meta-line"><span class="meta-label">Visit ID</span><span class="meta-val">${esc(visitIdText)}</span></div><div class="meta-line"><span class="meta-label">Visit</span><span class="meta-val">${esc(visitDateText)}</span></div><div class="meta-line"><span class="meta-label">Discharge</span><span class="meta-val">${esc(dischargeDateText)}</span></div></div></td><td class="num"><span class="amt bill">${money(r.bill_amount)}</span></td><td class="num"><span class="amt receipt">${money(r.receipt_total_all_time)}</span></td><td class="num"><span class="amt tds">${money(r.tds_total_all_time)}</span></td><td class="num"><span class="amt rebate">${money(r.rebate_discount_all_time)}</span></td><td class="num"><span class="amt writeoff">${money(r.writeoff_total_all_time)}</span></td><td class="num"><span class="amt ${bClass(r.balance_all_time)}">${money(r.balance_all_time)}</span></td><td class="center">${integer(r.receipt_count_all_time)}</td><td><div><b>${esc(shortDate(r.last_receipt_date_all_time || "-"))}</b></div><div class="sub">${esc(num(r.receipt_total_all_time) > 0 ? "Receipt recorded" : "No receipt yet")}</div></td></tr><tr class="drow" data-detail="${esc(key)}" hidden><td colspan="18">${detailHtml(key)}</td></tr>`);
     }
     els.recon.body.innerHTML = html.join("");
     els.recon.body.querySelectorAll(".tg").forEach((b) => {
@@ -1944,14 +3215,6 @@
         const row = (state.recon.rows || []).find((r) => String(r?.bill_key || "").trim() === billKey);
         if (!row) return;
         await writeoffBill(row);
-      });
-    });
-    els.recon.body.querySelectorAll(".receipt-btn[data-bill-key]").forEach((btn) => {
-      btn.addEventListener("click", async () => {
-        const billKey = String(btn.getAttribute("data-bill-key") || "").trim();
-        const row = (state.recon.rows || []).find((r) => String(r?.bill_key || "").trim() === billKey);
-        if (!row) return;
-        await openReceiptModal(row);
       });
     });
     els.recon.body.querySelectorAll(".recon-select-row[data-bill-key]").forEach((cb) => {
@@ -1993,8 +3256,17 @@
     if (els.recon.next) els.recon.next.disabled = p >= t || state.recon.loading;
   };
 
+  const reconSearchInputValue = () => normalizeSearchText(els.recon.search?.value || "");
+  const reconCommittedSearch = () => String(state.recon.searchApplied || "").trim();
+  const reconHasPendingSearch = () => reconSearchInputValue() !== reconCommittedSearch();
+  const commitReconSearch = () => {
+    const next = reconSearchInputValue();
+    if (els.recon.search) els.recon.search.value = next;
+    state.recon.searchApplied = next;
+    return next;
+  };
   const reconFilters = () => ({
-    unit: String(els.recon.unit?.value || "").trim().toUpperCase(), bill_from: String(els.recon.billFrom?.value || "").trim(), bill_to: String(els.recon.billTo?.value || "").trim(), q: String(els.recon.search?.value || "").trim(), bill_source: String(els.recon.source?.value || "").trim(), patient_subtype: String(els.recon.patientSubtype?.value || "").trim(), include_cancelled: !!els.recon.includeCancelled?.checked, export_submitted_only: !!els.recon.exportSubmittedOnly?.checked, sort_by: String(els.recon.sortBy?.value || "balance_all_time"), sort_dir: String(els.recon.sortDir?.value || "desc"), page: state.recon.page, page_size: state.recon.pageSize
+    unit: String(els.recon.unit?.value || "").trim().toUpperCase(), bill_from: String(els.recon.billFrom?.value || "").trim(), bill_to: String(els.recon.billTo?.value || "").trim(), q: reconCommittedSearch(), bill_source: String(els.recon.source?.value || "").trim(), patient_subtype: String(els.recon.patientSubtype?.value || "").trim(), include_cancelled: !!els.recon.includeCancelled?.checked, export_submitted_only: !!els.recon.exportSubmittedOnly?.checked, sort_by: String(els.recon.sortBy?.value || "balance_all_time"), sort_dir: String(els.recon.sortDir?.value || "desc"), page: state.recon.page, page_size: state.recon.pageSize
   });
 
   const renderReconScopeSummary = (kpis = {}, meta = {}, options = {}) => {
@@ -2040,8 +3312,18 @@
   };
   const renderSubtypeMini = ({ rows = [], summaryRows = [], scope = "page", totalRows = 0 } = {}) => {
     if (!els.recon.subtypeMini) return;
+    state.recon.subtypeMiniPayload = {
+      rows: Array.isArray(rows) ? rows : [],
+      summaryRows: Array.isArray(summaryRows) ? summaryRows : [],
+      scope,
+      totalRows,
+    };
     const includeOpening = supportsOpeningRecon(currentUnit());
     const scopedSummary = Array.isArray(summaryRows) ? summaryRows.filter((r) => String(r?.subtype || "").trim()) : [];
+    const expanded = !!state.recon.subtypeMiniExpanded;
+    els.recon.subtypeMini.classList.toggle("expanded", expanded);
+    const renderHead = (metaText) => `<div class="subtype-mini-head"><div class="subtype-mini-head-main"><span class="title">Closing by SubType</span><span class="meta">${esc(metaText)}</span></div><div class="subtype-mini-head-actions"><button class="subtype-mini-toggle" type="button" data-subtype-toggle="1" aria-expanded="${expanded ? "true" : "false"}" aria-label="${expanded ? "Collapse subtype summary" : "Expand subtype summary"}"><span>${expanded ? "Collapse" : "Expand"}</span><span class="caret" aria-hidden="true">&#9662;</span></button></div></div><div class="subtype-mini-hint">Collapsed by default. Expand only when you want to review subtype-level closing detail.</div>`;
+    const renderBody = (contentHtml = "") => `<div class="subtype-mini-body">${contentHtml}</div>`;
 
     let grouped = [];
     if (scopedSummary.length) {
@@ -2050,24 +3332,18 @@
         bills: num(r?.bills),
         corporate_bills: num(r?.corporate_bills),
         opening_bills: num(r?.opening_bills),
-        settled: num(r?.settled_count ?? r?.settled),
-        settled_corporate: num(r?.settled_corporate_count),
-        settled_opening: num(r?.settled_opening_count),
-        partial: num(r?.partial_count ?? r?.partial),
-        partial_corporate: num(r?.partial_corporate_count),
-        partial_opening: num(r?.partial_opening_count),
+        settled: num(r?.settled_count ?? r?.settled) + num(r?.partial_count) + num(r?.overpaid_count),
+        settled_corporate: num(r?.settled_corporate_count) + num(r?.partial_corporate_count) + num(r?.overpaid_corporate_count),
+        settled_opening: num(r?.settled_opening_count) + num(r?.partial_opening_count) + num(r?.overpaid_opening_count),
         unpaid: num(r?.unpaid_count ?? r?.unpaid),
         unpaid_corporate: num(r?.unpaid_corporate_count),
         unpaid_opening: num(r?.unpaid_opening_count),
-        overpaid: num(r?.overpaid_count ?? r?.overpaid),
-        overpaid_corporate: num(r?.overpaid_corporate_count),
-        overpaid_opening: num(r?.overpaid_opening_count),
         closing_balance: num(r?.closing_balance),
       })).filter((r) => !!r.subtype);
     } else {
       const list = Array.isArray(rows) ? rows : [];
       if (!list.length) {
-        els.recon.subtypeMini.innerHTML = '<div class="subtype-mini-head"><span class="title">Closing by SubType</span><span class="meta">No rows in current scope.</span></div><div class="foot">Load data or adjust filters to populate subtype summary.</div>';
+        els.recon.subtypeMini.innerHTML = `${renderHead("No rows in current scope.")}${renderBody('<div class="foot">Load data or adjust filters to populate subtype summary.</div>')}`;
         return;
       }
       const groupMap = new Map();
@@ -2082,15 +3358,9 @@
             settled: 0,
             settled_corporate: 0,
             settled_opening: 0,
-            partial: 0,
-            partial_corporate: 0,
-            partial_opening: 0,
             unpaid: 0,
             unpaid_corporate: 0,
             unpaid_opening: 0,
-            overpaid: 0,
-            overpaid_corporate: 0,
-            overpaid_opening: 0,
             closing_balance: 0,
           });
         }
@@ -2102,18 +3372,10 @@
         else g.corporate_bills += 1;
         g.closing_balance += num(row?.balance_all_time);
         const status = String(row?.status_all_time || "").trim().toLowerCase();
-        if (status === "settled") {
+        if (status === "settled" || status === "partial" || status === "overpaid") {
           g.settled += 1;
           if (sourceKey === "OPENING" || sourceLabel === "opening balance") g.settled_opening += 1;
           else g.settled_corporate += 1;
-        } else if (status === "partial") {
-          g.partial += 1;
-          if (sourceKey === "OPENING" || sourceLabel === "opening balance") g.partial_opening += 1;
-          else g.partial_corporate += 1;
-        } else if (status === "overpaid") {
-          g.overpaid += 1;
-          if (sourceKey === "OPENING" || sourceLabel === "opening balance") g.overpaid_opening += 1;
-          else g.overpaid_corporate += 1;
         } else {
           g.unpaid += 1;
           if (sourceKey === "OPENING" || sourceLabel === "opening balance") g.unpaid_opening += 1;
@@ -2135,15 +3397,9 @@
       acc.settled += g.settled;
       acc.settled_corporate += num(g.settled_corporate);
       acc.settled_opening += num(g.settled_opening);
-      acc.partial += g.partial;
-      acc.partial_corporate += num(g.partial_corporate);
-      acc.partial_opening += num(g.partial_opening);
       acc.unpaid += g.unpaid;
       acc.unpaid_corporate += num(g.unpaid_corporate);
       acc.unpaid_opening += num(g.unpaid_opening);
-      acc.overpaid += g.overpaid;
-      acc.overpaid_corporate += num(g.overpaid_corporate);
-      acc.overpaid_opening += num(g.overpaid_opening);
       acc.closing_balance += g.closing_balance;
       return acc;
     }, {
@@ -2153,23 +3409,17 @@
       settled: 0,
       settled_corporate: 0,
       settled_opening: 0,
-      partial: 0,
-      partial_corporate: 0,
-      partial_opening: 0,
       unpaid: 0,
       unpaid_corporate: 0,
       unpaid_opening: 0,
-      overpaid: 0,
-      overpaid_corporate: 0,
-      overpaid_opening: 0,
       closing_balance: 0,
     });
 
     const bodyRows = visibleRows.map((g) => {
       if (!includeOpening) {
-        return `<tr><td>${esc(g.subtype)}</td><td class="num">${integer(g.bills)}</td><td class="num">${integer(g.corporate_bills)}</td><td class="num">${integer(g.settled)}</td><td class="num">${integer(g.settled_corporate)}</td><td class="num">${integer(g.partial)}</td><td class="num">${integer(g.partial_corporate)}</td><td class="num">${integer(g.unpaid)}</td><td class="num">${integer(g.unpaid_corporate)}</td><td class="num">${integer(g.overpaid)}</td><td class="num">${integer(g.overpaid_corporate)}</td><td class="num">${money(g.closing_balance)}</td></tr>`;
+        return `<tr><td>${esc(g.subtype)}</td><td class="num">${integer(g.bills)}</td><td class="num">${integer(g.corporate_bills)}</td><td class="num">${integer(g.settled)}</td><td class="num">${integer(g.settled_corporate)}</td><td class="num">${integer(g.unpaid)}</td><td class="num">${integer(g.unpaid_corporate)}</td><td class="num">${money(g.closing_balance)}</td></tr>`;
       }
-      return `<tr><td>${esc(g.subtype)}</td><td class="num">${integer(g.bills)}</td><td class="num">${integer(g.corporate_bills)}</td><td class="num">${integer(g.opening_bills)}</td><td class="num">${integer(g.settled)}</td><td class="num">${integer(g.settled_corporate)}</td><td class="num">${integer(g.settled_opening)}</td><td class="num">${integer(g.partial)}</td><td class="num">${integer(g.partial_corporate)}</td><td class="num">${integer(g.partial_opening)}</td><td class="num">${integer(g.unpaid)}</td><td class="num">${integer(g.unpaid_corporate)}</td><td class="num">${integer(g.unpaid_opening)}</td><td class="num">${integer(g.overpaid)}</td><td class="num">${integer(g.overpaid_corporate)}</td><td class="num">${integer(g.overpaid_opening)}</td><td class="num">${money(g.closing_balance)}</td></tr>`;
+      return `<tr><td>${esc(g.subtype)}</td><td class="num">${integer(g.bills)}</td><td class="num">${integer(g.corporate_bills)}</td><td class="num">${integer(g.opening_bills)}</td><td class="num">${integer(g.settled)}</td><td class="num">${integer(g.settled_corporate)}</td><td class="num">${integer(g.settled_opening)}</td><td class="num">${integer(g.unpaid)}</td><td class="num">${integer(g.unpaid_corporate)}</td><td class="num">${integer(g.unpaid_opening)}</td><td class="num">${money(g.closing_balance)}</td></tr>`;
     }).join("");
     const shownCount = visibleRows.length;
     const scopeText = String(scope || "").toLowerCase() === "full_filter"
@@ -2177,14 +3427,14 @@
       : `Current page scope (${integer(total.bills)} rows). Showing all ${integer(shownCount)} subtypes.`;
     const totalLabel = String(scope || "").toLowerCase() === "full_filter" ? "Total (Filter)" : "Total (Page)";
     if (!includeOpening) {
-      els.recon.subtypeMini.innerHTML = `<div class="subtype-mini-head"><span class="title">Closing by SubType</span><span class="meta">${esc(scopeText)}</span></div><div class="subtype-mini-scroll"><table class="subtype-mini-table"><thead><tr><th>Subtype</th><th class="num">Bills</th><th class="num">Corporate</th><th class="num">Settled</th><th class="num">Settled (C)</th><th class="num">Partial</th><th class="num">Partial (C)</th><th class="num">Unpaid</th><th class="num">Unpaid (C)</th><th class="num">Overpaid</th><th class="num">Overpaid (C)</th><th class="num">Closing</th></tr></thead><tbody>${bodyRows}<tr><td><b>${esc(totalLabel)}</b></td><td class="num"><b>${integer(total.bills)}</b></td><td class="num"><b>${integer(total.corporate_bills)}</b></td><td class="num"><b>${integer(total.settled)}</b></td><td class="num"><b>${integer(total.settled_corporate)}</b></td><td class="num"><b>${integer(total.partial)}</b></td><td class="num"><b>${integer(total.partial_corporate)}</b></td><td class="num"><b>${integer(total.unpaid)}</b></td><td class="num"><b>${integer(total.unpaid_corporate)}</b></td><td class="num"><b>${integer(total.overpaid)}</b></td><td class="num"><b>${integer(total.overpaid_corporate)}</b></td><td class="num"><b>${money(total.closing_balance)}</b></td></tr></tbody></table></div><div class="foot">Computed on filtered scope without extra base-table scan.</div>`;
+      els.recon.subtypeMini.innerHTML = `${renderHead(scopeText)}${renderBody(`<div class="subtype-mini-scroll"><table class="subtype-mini-table"><thead><tr><th>Subtype</th><th class="num">Bills</th><th class="num">Corporate</th><th class="num">Settled</th><th class="num">Settled (C)</th><th class="num">Unpaid</th><th class="num">Unpaid (C)</th><th class="num">Closing</th></tr></thead><tbody>${bodyRows}<tr><td><b>${esc(totalLabel)}</b></td><td class="num"><b>${integer(total.bills)}</b></td><td class="num"><b>${integer(total.corporate_bills)}</b></td><td class="num"><b>${integer(total.settled)}</b></td><td class="num"><b>${integer(total.settled_corporate)}</b></td><td class="num"><b>${integer(total.unpaid)}</b></td><td class="num"><b>${integer(total.unpaid_corporate)}</b></td><td class="num"><b>${money(total.closing_balance)}</b></td></tr></tbody></table></div><div class="foot">Computed on filtered scope without extra base-table scan.</div>`)}`;
       return;
     }
-    els.recon.subtypeMini.innerHTML = `<div class="subtype-mini-head"><span class="title">Closing by SubType</span><span class="meta">${esc(scopeText)}</span></div><div class="subtype-mini-scroll"><table class="subtype-mini-table"><thead><tr><th>Subtype</th><th class="num">Bills</th><th class="num">Corporate</th><th class="num">Opening</th><th class="num">Settled</th><th class="num">Settled (C)</th><th class="num">Settled (O)</th><th class="num">Partial</th><th class="num">Partial (C)</th><th class="num">Partial (O)</th><th class="num">Unpaid</th><th class="num">Unpaid (C)</th><th class="num">Unpaid (O)</th><th class="num">Overpaid</th><th class="num">Overpaid (C)</th><th class="num">Overpaid (O)</th><th class="num">Closing</th></tr></thead><tbody>${bodyRows}<tr><td><b>${esc(totalLabel)}</b></td><td class="num"><b>${integer(total.bills)}</b></td><td class="num"><b>${integer(total.corporate_bills)}</b></td><td class="num"><b>${integer(total.opening_bills)}</b></td><td class="num"><b>${integer(total.settled)}</b></td><td class="num"><b>${integer(total.settled_corporate)}</b></td><td class="num"><b>${integer(total.settled_opening)}</b></td><td class="num"><b>${integer(total.partial)}</b></td><td class="num"><b>${integer(total.partial_corporate)}</b></td><td class="num"><b>${integer(total.partial_opening)}</b></td><td class="num"><b>${integer(total.unpaid)}</b></td><td class="num"><b>${integer(total.unpaid_corporate)}</b></td><td class="num"><b>${integer(total.unpaid_opening)}</b></td><td class="num"><b>${integer(total.overpaid)}</b></td><td class="num"><b>${integer(total.overpaid_corporate)}</b></td><td class="num"><b>${integer(total.overpaid_opening)}</b></td><td class="num"><b>${money(total.closing_balance)}</b></td></tr></tbody></table></div><div class="foot">Computed on filtered scope without extra base-table scan.</div>`;
+    els.recon.subtypeMini.innerHTML = `${renderHead(scopeText)}${renderBody(`<div class="subtype-mini-scroll"><table class="subtype-mini-table"><thead><tr><th>Subtype</th><th class="num">Bills</th><th class="num">Corporate</th><th class="num">Opening</th><th class="num">Settled</th><th class="num">Settled (C)</th><th class="num">Settled (O)</th><th class="num">Unpaid</th><th class="num">Unpaid (C)</th><th class="num">Unpaid (O)</th><th class="num">Closing</th></tr></thead><tbody>${bodyRows}<tr><td><b>${esc(totalLabel)}</b></td><td class="num"><b>${integer(total.bills)}</b></td><td class="num"><b>${integer(total.corporate_bills)}</b></td><td class="num"><b>${integer(total.opening_bills)}</b></td><td class="num"><b>${integer(total.settled)}</b></td><td class="num"><b>${integer(total.settled_corporate)}</b></td><td class="num"><b>${integer(total.settled_opening)}</b></td><td class="num"><b>${integer(total.unpaid)}</b></td><td class="num"><b>${integer(total.unpaid_corporate)}</b></td><td class="num"><b>${integer(total.unpaid_opening)}</b></td><td class="num"><b>${money(total.closing_balance)}</b></td></tr></tbody></table></div><div class="foot">Computed on filtered scope without extra base-table scan.</div>`)}`;
   };
 
   const lockRecon = (x) => {
-    [els.recon.loadBtn, els.recon.forceRefreshBtn, els.recon.openingBtn, els.recon.dailyPrintBtn, els.recon.suspenseBtn, els.recon.exportBtn, els.recon.bulkPreviewBtn, els.recon.bulkClearBtn, els.recon.bulkModalApply, els.recon.unit, els.recon.billFrom, els.recon.billTo, els.recon.entryPrintDate, els.recon.includeCancelled, els.recon.exportSubmittedOnly, els.recon.search, els.recon.source, els.recon.patientSubtype, els.recon.sortBy, els.recon.sortDir, els.recon.pageSize, els.recon.selectAllVisible, els.recon.suspenseApproveBtn, els.recon.suspenseClearBtn, els.recon.suspenseSelectAll].forEach((n) => { if (n) n.disabled = !!x; });
+    [els.recon.loadBtn, els.recon.forceRefreshBtn, els.recon.openingBtn, els.recon.dailyPrintBtn, els.recon.suspenseBtn, els.recon.exportBtn, els.recon.bulkPreviewBtn, els.recon.bulkClearBtn, els.recon.bulkModalApply, els.recon.unit, els.recon.billFrom, els.recon.billTo, els.recon.printFilterBy, els.recon.entryPrintFrom, els.recon.entryPrintTo, els.recon.includeCancelled, els.recon.exportSubmittedOnly, els.recon.search, els.recon.source, els.recon.patientSubtype, els.recon.sortBy, els.recon.sortDir, els.recon.pageSize, els.recon.selectAllVisible, els.recon.suspenseApproveBtn, els.recon.suspenseClearBtn, els.recon.suspenseSelectAll].forEach((n) => { if (n) n.disabled = !!x; });
     refreshReconUnitActions(currentUnit());
     refreshSuspenseButton();
     renderPager();
@@ -2197,19 +3447,31 @@
     const serverKpis = d?.kpis && typeof d.kpis === "object" ? d.kpis : {};
     const activeKpiFilter = String(state.recon.kpiFilter || "").trim();
     const isKpiFilteredScope = !!(activeKpiFilter && activeKpiFilter !== "bill_count" && kpiFilterable.has(activeKpiFilter));
-    const viewRows = rows.slice();
-    const effectiveKpis = serverKpis;
+    const hiddenRows = rows.filter((row) => shouldHideUnsubmittedCorporateRow(row));
+    const viewRows = rows.filter((row) => !shouldHideUnsubmittedCorporateRow(row));
+    const visibleKeys = new Set(viewRows.map((row) => String(row?.bill_key || "").trim()).filter((key) => !!key));
+    const viewDetails = Object.fromEntries(
+      Object.entries(details).filter(([billKey]) => visibleKeys.has(String(billKey || "").trim()))
+    );
+    const effectiveMeta = { ...meta };
+    if (hiddenRows.length) {
+      const totalRows = Math.max(0, Number(meta.total_rows || rows.length || 0) - hiddenRows.length);
+      const pageSize = Math.max(1, Number(meta.page_size || els.recon.pageSize?.value || 25));
+      effectiveMeta.total_rows = totalRows;
+      effectiveMeta.total_pages = Math.max(1, Math.ceil(totalRows / pageSize));
+    }
+    const effectiveKpis = hiddenRows.length ? reconKpisFromRows(viewRows) : serverKpis;
 
-    state.recon.baseRows = rows.slice();
-    state.recon.baseDetails = details;
-    state.recon.baseMeta = { ...meta };
+    state.recon.baseRows = viewRows.slice();
+    state.recon.baseDetails = viewDetails;
+    state.recon.baseMeta = { ...effectiveMeta };
     state.recon.baseKpis = { ...serverKpis };
     state.recon.rows = viewRows;
-    state.recon.details = details;
+    state.recon.details = viewDetails;
     state.recon.kpis = effectiveKpis;
-    state.recon.meta = { ...meta };
-    state.recon.page = Number(meta.page || state.recon.page || 1);
-    state.recon.pageSize = Number(meta.page_size || els.recon.pageSize?.value || 25);
+    state.recon.meta = { ...effectiveMeta };
+    state.recon.page = Number(effectiveMeta.page || state.recon.page || 1);
+    state.recon.pageSize = Number(effectiveMeta.page_size || els.recon.pageSize?.value || 25);
     state.recon.filteredBillKeys = viewRows.map((row) => String(row?.bill_key || "").trim()).filter((k) => !!k);
 
     const rowIndex = {};
@@ -2222,25 +3484,25 @@
 
     const sources = Array.isArray(meta.available_sources)
       ? meta.available_sources.map((s) => ({ bill_source: String(s || "") }))
-      : rows;
+      : viewRows;
     const subtypes = Array.isArray(meta.available_patient_subtypes)
       ? meta.available_patient_subtypes.map((s) => ({ patient_subtype: String(s || "") }))
-      : rows;
+      : viewRows;
     setReconSourceOptions(sources, true);
     setReconSubtypeOptions(subtypes, true);
 
     renderKpis(effectiveKpis);
-    renderReconScopeSummary(effectiveKpis, meta, {
+    renderReconScopeSummary(effectiveKpis, effectiveMeta, {
       scope: isKpiFilteredScope ? "kpi_filter" : "full_filter",
       kpiLabel: isKpiFilteredScope ? kpiFilterLabel(activeKpiFilter) : "",
     });
-    const subtypeSummary = Array.isArray(meta.subtype_closing_summary) ? meta.subtype_closing_summary : [];
-    const subtypeScope = String(meta.subtype_closing_scope || (subtypeSummary.length ? "full_filter" : "page")).trim().toLowerCase();
+    const subtypeSummary = hiddenRows.length ? [] : (Array.isArray(meta.subtype_closing_summary) ? meta.subtype_closing_summary : []);
+    const subtypeScope = String((hiddenRows.length ? "page" : meta.subtype_closing_scope) || (subtypeSummary.length ? "full_filter" : "page")).trim().toLowerCase();
     renderSubtypeMini({
       rows: viewRows,
       summaryRows: subtypeSummary,
       scope: subtypeScope,
-      totalRows: Number(meta.total_rows || rows.length || 0),
+      totalRows: Number(effectiveMeta.total_rows || viewRows.length || 0),
     });
     renderReconRows();
     renderPager();
@@ -2257,10 +3519,11 @@
     const timing = meta.timings && typeof meta.timings === "object" ? meta.timings : {};
     const totalMs = Number(timing.total_ms || 0);
     const timeText = totalMs > 0 ? ` Time: ${(totalMs / 1000).toFixed(2)}s.` : "";
-    const totalRows = Number(meta.total_rows || rows.length || 0);
+    const totalRows = Number(effectiveMeta.total_rows || viewRows.length || 0);
     const kpiLabel = activeKpiFilter ? kpiFilterLabel(activeKpiFilter) : "";
     const kpiText = kpiLabel ? ` KPI filter: ${kpiLabel} (full filter scope).` : "";
-    setTxt(els.recon.status, `Loaded ${viewRows.length} row(s) on page ${integer(meta.page || 1)} (${integer(totalRows)} total).${kpiText}${sourceText}${suspenseText}${engineText}${timeText}`);
+    const visibilityText = hiddenRows.length ? ` Hidden ${integer(hiddenRows.length)} unsubmitted corporate bill(s).` : "";
+    setTxt(els.recon.status, `Loaded ${viewRows.length} row(s) on page ${integer(effectiveMeta.page || 1)} (${integer(totalRows)} total).${kpiText}${sourceText}${suspenseText}${engineText}${timeText}${visibilityText}`);
   };
 
   const applyReconClientFilters = ({ resetPage = false, forceRefresh = false } = {}) => {
@@ -2347,6 +3610,7 @@
       state.recon.baseDetails = {};
       state.recon.baseMeta = {};
       state.recon.baseKpis = {};
+      state.recon.unsubmitBusy = false;
       state.recon.baseSuspenseRows = [];
       state.recon.baseSuspenseDetails = {};
       state.recon.suspenseLoaded = false;
@@ -2487,9 +3751,13 @@
       const currentPage = Number(meta.page || state.legacy.page || 1);
       const totalPages = Number(meta.total_pages || 1);
       const totalRows = Number(meta.total_rows || rows.length || 0);
+      const scopedRows = Number(meta.scoped_total_rows || totalRows || 0);
       if (!rows.length) {
         els.legacy.groups.innerHTML = '<div class="empty">No rows found for current corporate bill summary filters.</div>';
-        setTxt(els.legacy.pageInfo, `Page ${integer(currentPage)} / ${integer(totalPages)} | Total Rows: ${integer(totalRows)}`);
+        const pageTxt = scopedRows > totalRows
+          ? `Page ${integer(currentPage)} / ${integer(totalPages)} | Matching Rows: ${integer(totalRows)} | Scope Rows: ${integer(scopedRows)}`
+          : `Page ${integer(currentPage)} / ${integer(totalPages)} | Total Rows: ${integer(totalRows)}`;
+        setTxt(els.legacy.pageInfo, pageTxt);
         if (els.legacy.prev) els.legacy.prev.disabled = currentPage <= 1;
         if (els.legacy.next) els.legacy.next.disabled = currentPage >= totalPages;
         return;
@@ -2522,7 +3790,10 @@
           target.classList.toggle("open");
         });
       });
-      setTxt(els.legacy.pageInfo, `Page ${integer(currentPage)} / ${integer(totalPages)} | Rows on Page: ${integer(rows.length)} | Total Rows: ${integer(totalRows)}`);
+      const pageTxt = scopedRows > totalRows
+        ? `Page ${integer(currentPage)} / ${integer(totalPages)} | Rows on Page: ${integer(rows.length)} | Matching Rows: ${integer(totalRows)} | Scope Rows: ${integer(scopedRows)}`
+        : `Page ${integer(currentPage)} / ${integer(totalPages)} | Rows on Page: ${integer(rows.length)} | Total Rows: ${integer(totalRows)}`;
+      setTxt(els.legacy.pageInfo, pageTxt);
       if (els.legacy.prev) els.legacy.prev.disabled = currentPage <= 1;
       if (els.legacy.next) els.legacy.next.disabled = currentPage >= totalPages;
       return;
@@ -2531,7 +3802,11 @@
     const groups = state.legacy.groups || [];
     if (!groups.length) {
       els.legacy.groups.innerHTML = '<div class="empty">No rows found for current corporate bill summary filters.</div>';
-      setTxt(els.legacy.pageInfo, "Page 0 / 0");
+      const scopeCount = Number(state.legacy.scopeCount || 0);
+      const pageTxt = scopeCount > 0
+        ? `Page 0 / 0 | Matching Rows: 0 | Scope Rows: ${integer(scopeCount)}`
+        : "Page 0 / 0";
+      setTxt(els.legacy.pageInfo, pageTxt);
       if (els.legacy.prev) els.legacy.prev.disabled = true;
       if (els.legacy.next) els.legacy.next.disabled = true;
       return;
@@ -2583,7 +3858,11 @@
     const first = els.legacy.groups.querySelector(".hist-body");
     if (first) first.classList.add("open");
 
-    setTxt(els.legacy.pageInfo, `Page ${state.legacy.page} / ${totalPages} | Groups: ${integer(groups.length)} | Rows: ${integer(state.legacy.filtered.length)}`);
+    const scopeCount = Number(state.legacy.scopeCount || state.legacy.filtered.length || 0);
+    const pageTxt = scopeCount > Number(state.legacy.filtered.length || 0)
+      ? `Page ${state.legacy.page} / ${totalPages} | Groups: ${integer(groups.length)} | Matching Rows: ${integer(state.legacy.filtered.length)} | Scope Rows: ${integer(scopeCount)}`
+      : `Page ${state.legacy.page} / ${totalPages} | Groups: ${integer(groups.length)} | Rows: ${integer(state.legacy.filtered.length)}`;
+    setTxt(els.legacy.pageInfo, pageTxt);
     if (els.legacy.prev) els.legacy.prev.disabled = state.legacy.page <= 1;
     if (els.legacy.next) els.legacy.next.disabled = state.legacy.page >= totalPages;
   };
@@ -2600,15 +3879,32 @@
       }, 280);
       return;
     }
+    if (!state.legacy.loaded) {
+      setTxt(els.legacy.txt, "Adjust filters and click Load Bill Summary.");
+      return;
+    }
     const q = String(els.legacy.search?.value || "").trim().toLowerCase();
     const sf = String(els.legacy.status?.value || "all").toLowerCase();
     const subtype = String(els.legacy.patientSubtype?.value || "").trim().toLowerCase();
-    let rows = Array.isArray(state.legacy.raw) ? state.legacy.raw.slice() : [];
-    if (q) rows = rows.filter((r) => String(r.Registration_No || "").toLowerCase().includes(q) || String(r.PatientName || "").toLowerCase().includes(q) || String(r.BillDate || "").toLowerCase().includes(q));
-    if (subtype) rows = rows.filter((r) => String(r.PatientSubType || "").trim().toLowerCase() === subtype);
+    let scopedRows = Array.isArray(state.legacy.raw) ? state.legacy.raw.slice() : [];
+    if (q) {
+      scopedRows = scopedRows.filter((r) => [
+        r.Registration_No,
+        r.PatientName,
+        r.BillNo,
+        r.BillDate,
+        r.Submit_Date,
+      ].some((value) => String(value || "").toLowerCase().includes(q)));
+    }
+    if (subtype) scopedRows = scopedRows.filter((r) => String(r.PatientSubType || "").trim().toLowerCase() === subtype);
+    const scopedCounts = legacyStatusCountsFromRows(scopedRows);
+    let rows = scopedRows.slice();
     if (sf === "final") rows = rows.filter((r) => String(r.Status || "").trim().toLowerCase() === "final submitted");
     else if (sf === "nonfinal") rows = rows.filter((r) => String(r.Status || "").trim().toLowerCase() !== "final submitted");
+    else if (sf === "pending") rows = rows.filter((r) => String(r.Status || "").trim().toLowerCase() === "submission pending");
+    else if (sf === "notworked") rows = rows.filter((r) => String(r.Status || "").trim().toLowerCase() === "not worked");
     state.legacy.filtered = rows;
+    state.legacy.scopeCount = scopedRows.length;
     const map = {};
     rows.forEach((r) => {
       const reg = String(r.Registration_No || "").trim() || "Unknown";
@@ -2622,6 +3918,12 @@
     }));
     state.legacy.page = 1;
     renderLegacy();
+    const unit = String(els.legacy.unit?.value || "").trim().toUpperCase();
+    const scopeLabel = legacyDateScopeLabel(unit, null);
+    setTxt(
+      els.legacy.txt,
+      `Loaded ${integer(rows.length)} matching row${rows.length === 1 ? "" : "s"} for ${unit || "selected unit"}. In scope: ${legacyStatusBreakdown(scopedCounts)}. Date Scope: ${scopeLabel}.`
+    );
   };
   const loadLegacy = async ({ resetPage = false } = {}) => {
     const unit = String(els.legacy.unit?.value || "").trim().toUpperCase();
@@ -2664,16 +3966,24 @@
         state.legacy.raw = [];
         state.legacy.filtered = [];
         state.legacy.groups = [];
+        state.legacy.scopeCount = 0;
         renderLegacy();
         const totalRows = Number(state.legacy.meta?.total_rows || state.legacy.serverRows.length || 0);
+        const scopedRows = Number(state.legacy.meta?.scoped_total_rows || totalRows || 0);
+        const scopeCounts = legacyStatusCounts(state.legacy.meta, state.legacy.serverRows);
         const sourceEngine = String(state.legacy.meta?.query_engine || "").trim().toLowerCase();
         const totalMs = Number(state.legacy.meta?.timings?.total_ms || 0);
-        const engineTxt = sourceEngine ? ` Engine: ${sourceEngine === "sql_sp" ? "SQL SP" : "SQL Fallback"}.` : "";
-        const timeTxt = totalMs > 0 ? ` Time: ${(totalMs / 1000).toFixed(2)}s.` : "";
-        setTxt(
-          els.legacy.txt,
-          `Loaded ${integer(state.legacy.serverRows.length)} rows on page ${integer(state.legacy.meta?.page || 1)} (${integer(totalRows)} total) for ${unit}.${engineTxt}${timeTxt}`
-        );
+        const scopeTxt = scopedRows > totalRows
+          ? `${integer(totalRows)} matching current status filter; ${integer(scopedRows)} in current scope`
+          : `${integer(totalRows)} total`;
+        const parts = [
+          `Loaded ${integer(state.legacy.serverRows.length)} rows on page ${integer(state.legacy.meta?.page || 1)} (${scopeTxt}) for ${unit}.`,
+          `In scope: ${legacyStatusBreakdown(scopeCounts)}.`,
+          `Date Scope: ${legacyDateScopeLabel(unit, state.legacy.meta)}.`,
+        ];
+        if (sourceEngine) parts.push(`Engine: ${sourceEngine === "sql_sp" ? "SQL SP" : "SQL Fallback"}.`);
+        if (totalMs > 0) parts.push(`Time: ${(totalMs / 1000).toFixed(2)}s.`);
+        setTxt(els.legacy.txt, parts.join(" "));
         notify(`Corporate bill summary loaded: ${integer(totalRows)} rows (${unit}).`, "success", "legacy-load");
       } else {
         state.legacy.mode = "client";
@@ -2682,7 +3992,6 @@
         state.legacy.raw = Array.isArray(d.data) ? d.data : [];
         setLegacySubtypeOptions(state.legacy.raw, true);
         applyLegacyFilters();
-        setTxt(els.legacy.txt, `Loaded ${integer(state.legacy.raw.length)} corporate bill summary rows for ${unit}.`);
         notify(`Corporate bill summary loaded: ${integer(state.legacy.raw.length)} rows.`, "success", "legacy-load");
       }
     } catch (e) {
@@ -2690,6 +3999,7 @@
       state.legacy.raw = [];
       state.legacy.filtered = [];
       state.legacy.groups = [];
+      state.legacy.scopeCount = 0;
       state.legacy.serverRows = [];
       state.legacy.meta = {};
       setLegacySubtypeOptions([], false);
@@ -2984,7 +4294,8 @@
     const from90 = d90.toISOString().slice(0, 10);
     if (els.recon.billFrom && !els.recon.billFrom.value) els.recon.billFrom.value = from90;
     if (els.recon.billTo && !els.recon.billTo.value) els.recon.billTo.value = today;
-    if (els.recon.entryPrintDate && !els.recon.entryPrintDate.value) els.recon.entryPrintDate.value = today;
+    if (els.recon.entryPrintFrom && !els.recon.entryPrintFrom.value) els.recon.entryPrintFrom.value = today;
+    if (els.recon.entryPrintTo && !els.recon.entryPrintTo.value) els.recon.entryPrintTo.value = today;
     const legacyUnit = String(els.legacy.unit?.value || "").trim().toUpperCase();
     if (!isLegacyServerUnit(legacyUnit)) {
       if (els.legacy.from && !els.legacy.from.value) els.legacy.from.value = today;
@@ -2992,19 +4303,37 @@
     }
     state.legacy.mode = isLegacyServerUnit(legacyUnit) ? "server" : "client";
     setLegacySubtypeOptions([], false);
+    setReceiptDeskSourceOptions([], false);
+    resetActionDesk("receipt", { clearFilters: false });
+    resetActionDesk("unsubmit", { clearFilters: false });
 
     initTabs(); initTimerMenu(); renderKpis({}); renderReconScopeSummary({}, {}); renderSubtypeMini({ rows: [] }); renderPager(); renderLegacy(); renderBulkBar(); setTxt(els.recon.status, "Select filters and load reconciliation."); setTxt(els.legacy.txt, "Load corporate bill summary when needed."); setActivePanel("");
+    refreshReconPrintFilterUi();
+    els.recon.subtypeMini?.addEventListener("click", (evt) => {
+      const toggle = evt.target.closest("[data-subtype-toggle]");
+      if (!toggle) return;
+      state.recon.subtypeMiniExpanded = !state.recon.subtypeMiniExpanded;
+      renderSubtypeMini(state.recon.subtypeMiniPayload || { rows: [] });
+    });
 
     els.recon.search?.addEventListener("input", () => {
       state.recon.page = 1;
-      if (state.recon.searchTimer) clearTimeout(state.recon.searchTimer);
-      if (!state.recon.datasetLoaded) {
-        markReconDirty();
+      if (!reconHasPendingSearch()) {
+        if (!state.recon.datasetLoaded) {
+          markReconDirty();
+          return;
+        }
+        setTxt(els.recon.status, "Search matches the current loaded data.");
         return;
       }
-      state.recon.searchTimer = setTimeout(() => {
-        applyReconClientFilters({ resetPage: true });
-      }, 350);
+      markReconDirty("Search updated. Press Enter or click Load Data / Refresh Data to apply it.");
+    });
+    els.recon.search?.addEventListener("keydown", (ev) => {
+      if (ev.key !== "Enter") return;
+      ev.preventDefault();
+      state.recon.page = 1;
+      commitReconSearch();
+      loadRecon({ resetPage: true, forceRefresh: false });
     });
     [els.recon.billFrom, els.recon.billTo, els.recon.source, els.recon.patientSubtype, els.recon.sortBy, els.recon.sortDir, els.recon.pageSize, els.recon.includeCancelled].forEach((n) => n?.addEventListener("change", () => {
       state.recon.page = 1;
@@ -3014,12 +4343,75 @@
       }
       applyReconClientFilters({ resetPage: true });
     }));
-    els.recon.loadBtn?.addEventListener("click", () => { state.recon.page = 1; loadRecon({ resetPage: true, forceRefresh: false }); });
-    els.recon.forceRefreshBtn?.addEventListener("click", () => { state.recon.page = 1; loadRecon({ resetPage: true, forceRefresh: true }); });
-    els.recon.openingBtn?.addEventListener("click", loadOpeningRecon);
+    els.recon.loadBtn?.addEventListener("click", () => { state.recon.page = 1; commitReconSearch(); loadRecon({ resetPage: true, forceRefresh: false }); });
+    els.recon.forceRefreshBtn?.addEventListener("click", () => { state.recon.page = 1; commitReconSearch(); loadRecon({ resetPage: true, forceRefresh: true }); });
+    els.recon.openingBtn?.addEventListener("click", () => { commitReconSearch(); loadOpeningRecon(); });
+    els.recon.printFilterBy?.addEventListener("change", refreshReconPrintFilterUi);
     els.recon.dailyPrintBtn?.addEventListener("click", openDailyReceiptPrint);
     els.recon.suspenseBtn?.addEventListener("click", openSuspenseModal);
     els.recon.exportBtn?.addEventListener("click", exportRecon);
+    els.actions.receiptLaunch?.addEventListener("click", () => { openActionDesk("receipt"); });
+    els.actions.unsubmitLaunch?.addEventListener("click", () => { openActionDesk("unsubmit"); });
+    ["receipt", "unsubmit"].forEach((kind) => {
+      const ref = actionDeskEls(kind);
+      if (!ref) return;
+      ref.close?.addEventListener("click", () => closeActionDesk(kind));
+      ref.modal?.addEventListener("click", (ev) => {
+        if (ev.target === ref.modal) closeActionDesk(kind);
+      });
+      ref.loadBtn?.addEventListener("click", () => {
+        const st = actionDeskState(kind);
+        if (st) st.page = 1;
+        loadActionDesk(kind, { resetPage: true, forceRefresh: false, silent: false });
+      });
+      ref.refreshBtn?.addEventListener("click", () => {
+        const st = actionDeskState(kind);
+        if (st) st.page = 1;
+        loadActionDesk(kind, { resetPage: true, forceRefresh: true, silent: false });
+      });
+      ref.search?.addEventListener("keydown", (ev) => {
+        if (kind === "receipt" && ev.key === "Tab" && !ev.shiftKey) {
+          ev.preventDefault();
+          advanceReceiptDeskSearchFlow();
+          return;
+        }
+        if (ev.key !== "Enter") return;
+        ev.preventDefault();
+        const st = actionDeskState(kind);
+        if (st) st.page = 1;
+        loadActionDesk(kind, { resetPage: true, forceRefresh: false, silent: false });
+      });
+      ref.search?.addEventListener("change", () => {
+        if (ref.search) ref.search.value = normalizeSearchText(ref.search.value || "");
+      });
+      ref.pageSize?.addEventListener("change", () => {
+        const st = actionDeskState(kind);
+        if (st) st.page = 1;
+        if (st?.open || st?.loaded) loadActionDesk(kind, { resetPage: true, forceRefresh: false, silent: true });
+      });
+      ref.prev?.addEventListener("click", () => {
+        const st = actionDeskState(kind);
+        const page = Number(st?.meta?.page || st?.page || 1);
+        if (st && page > 1) {
+          st.page = page - 1;
+          loadActionDesk(kind, { resetPage: false, forceRefresh: false, silent: true });
+        }
+      });
+      ref.next?.addEventListener("click", () => {
+        const st = actionDeskState(kind);
+        const page = Number(st?.meta?.page || st?.page || 1);
+        const totalPages = Number(st?.meta?.total_pages || 1);
+        if (st && page < totalPages) {
+          st.page = page + 1;
+          loadActionDesk(kind, { resetPage: false, forceRefresh: false, silent: true });
+        }
+      });
+    });
+    els.actions.receipt.source?.addEventListener("change", () => {
+      const st = actionDeskState("receipt");
+      if (st) st.page = 1;
+      if (st?.open || st?.loaded) loadActionDesk("receipt", { resetPage: true, forceRefresh: false, silent: true });
+    });
     els.recon.bulkPreviewBtn?.addEventListener("click", openBulkModal);
     els.recon.bulkClearBtn?.addEventListener("click", () => {
       if (!selectedBillKeys().length) return;
@@ -3036,6 +4428,12 @@
     els.recon.suspenseModal?.addEventListener("click", (ev) => {
       if (ev.target === els.recon.suspenseModal) closeSuspenseModal();
     });
+    els.unsubmit.close?.addEventListener("click", closeUnsubmitBillModal);
+    els.unsubmit.cancel?.addEventListener("click", closeUnsubmitBillModal);
+    els.unsubmit.modal?.addEventListener("click", (ev) => {
+      if (ev.target === els.unsubmit.modal) closeUnsubmitBillModal();
+    });
+    els.unsubmit.save?.addEventListener("click", saveUnsubmitBill);
     els.receipt.close?.addEventListener("click", closeReceiptModal);
     els.receipt.cancel?.addEventListener("click", closeReceiptModal);
     els.receipt.modal?.addEventListener("click", (ev) => {
@@ -3046,14 +4444,42 @@
     [els.receipt.receiptDate, els.receipt.paymentMode].forEach((n) => n?.addEventListener("change", refreshReceiptHint));
     [
       [els.receipt.approvedAmount, "approved"],
-      [els.receipt.tdsAmount, "tds"],
       [els.receipt.receivedAmount, "received"],
+      [els.receipt.tdsPercent, "tdsrate"],
+      [els.receipt.tdsAmount, "tds"],
       [els.receipt.rebateAmount, "rebate"],
     ].forEach(([node, trigger]) => {
       bindReceiptQuickSelect(node);
       node?.addEventListener("input", () => applyReceiptAutocalc(trigger, { sourceNode: node, formatSource: false }));
+      node?.addEventListener("keyup", () => applyReceiptAutocalc(trigger, { sourceNode: node, formatSource: false }));
       node?.addEventListener("change", () => applyReceiptAutocalc(trigger, { sourceNode: node, formatSource: true }));
       node?.addEventListener("blur", () => applyReceiptAutocalc(trigger, { sourceNode: node, formatSource: true }));
+    });
+    els.receipt.receivedAmount?.addEventListener("keydown", (ev) => {
+      if (ev.key === "Tab" && !ev.shiftKey && els.receipt.tdsPercent) {
+        ev.preventDefault();
+        els.receipt.tdsPercent.focus();
+        els.receipt.tdsPercent.select?.();
+      }
+    });
+    els.receipt.tdsPercent?.addEventListener("keydown", (ev) => {
+      if (ev.key === "Tab" && !ev.shiftKey && els.receipt.save) {
+        ev.preventDefault();
+        els.receipt.save.focus();
+        return;
+      }
+      if (ev.key === "Tab" && ev.shiftKey && els.receipt.receivedAmount) {
+        ev.preventDefault();
+        els.receipt.receivedAmount.focus();
+        els.receipt.receivedAmount.select?.();
+      }
+    });
+    els.receipt.save?.addEventListener("keydown", (ev) => {
+      if (ev.key === "Tab" && ev.shiftKey && els.receipt.tdsPercent) {
+        ev.preventDefault();
+        els.receipt.tdsPercent.focus();
+        els.receipt.tdsPercent.select?.();
+      }
     });
     els.receipt.save?.addEventListener("click", saveReceipt);
     els.recon.suspenseSearch?.addEventListener("input", () => {
@@ -3127,9 +4553,15 @@
       state.recon.bulkPreviewRows = [];
       closeBulkModal();
       closeSuspenseModal();
+      closeActionDesk("receipt", { force: true });
+      closeActionDesk("unsubmit", { force: true });
+      resetActionDesk("receipt", { clearFilters: false });
+      resetActionDesk("unsubmit", { clearFilters: false });
+      closeUnsubmitBillModal(true);
       closeReceiptModal();
       setReconSourceOptions([], false);
       setReconSubtypeOptions([], false);
+      setReceiptDeskSourceOptions([], false);
       renderKpis({});
       renderReconScopeSummary({}, {});
       renderSubtypeMini({ rows: [] });
@@ -3187,6 +4619,7 @@
       state.legacy.raw = [];
       state.legacy.filtered = [];
       state.legacy.groups = [];
+      state.legacy.scopeCount = 0;
       state.legacy.serverRows = [];
       state.legacy.meta = {};
       setLegacySubtypeOptions([], false);
@@ -3249,10 +4682,24 @@
     });
     els.updates.modalSearch?.addEventListener("input", renderUpdatesModalRows);
     document.addEventListener("keydown", (ev) => {
+      if ((ev.ctrlKey || ev.metaKey) && String(ev.key || "").toLowerCase() === "s" && state.receipt.open && els.receipt.modal?.classList.contains("open")) {
+        ev.preventDefault();
+        if (!state.receipt.saving) saveReceipt();
+        return;
+      }
       if (ev.key === "Escape" && els.updates.modal?.classList.contains("open")) closeUpdatesModal();
       if (ev.key === "Escape" && els.recon.bulkModal?.classList.contains("open")) closeBulkModal();
       if (ev.key === "Escape" && els.recon.suspenseModal?.classList.contains("open")) closeSuspenseModal();
+      if (ev.key === "Escape" && els.unsubmit.modal?.classList.contains("open")) closeUnsubmitBillModal();
       if (ev.key === "Escape" && els.receipt.modal?.classList.contains("open")) closeReceiptModal();
+      if (
+        ev.key === "Escape"
+        && !els.unsubmit.modal?.classList.contains("open")
+        && !els.receipt.modal?.classList.contains("open")
+      ) {
+        if (els.actions.unsubmit.modal?.classList.contains("open")) closeActionDesk("unsubmit");
+        else if (els.actions.receipt.modal?.classList.contains("open")) closeActionDesk("receipt");
+      }
     });
 
     if (ALLOWED_UNITS.length === 1 || DEFAULT_UNIT) {

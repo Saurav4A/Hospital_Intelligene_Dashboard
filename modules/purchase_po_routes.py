@@ -44,6 +44,7 @@ def register_purchase_po_routes(
     purchase_is_valid_email,
     send_graph_mail_with_attachment,
     build_po_supplier_dispatch_email_body,
+    build_po_cancellation_email_body,
     normalize_po_header_for_audit,
     diff_simple_fields,
     diff_po_items,
@@ -94,6 +95,7 @@ def register_purchase_po_routes(
     _purchase_is_valid_email = purchase_is_valid_email
     _send_graph_mail_with_attachment = send_graph_mail_with_attachment
     _build_po_supplier_dispatch_email_body = build_po_supplier_dispatch_email_body
+    _build_po_cancellation_email_body = build_po_cancellation_email_body
     _normalize_po_header_for_audit = normalize_po_header_for_audit
     _diff_simple_fields = diff_simple_fields
     _diff_po_items = diff_po_items
@@ -111,6 +113,7 @@ def register_purchase_po_routes(
     PO_VAL_SYNC_CACHE = po_val_sync_cache
     PO_VAL_SYNC_LOCK = po_val_sync_lock
     LOCAL_TZ = local_tz
+    PO_CANCELLATION_INTERNAL_RECIPIENTS = ("accounts@asarfihospital.com", "us@asarfihospital.com")
 
     def _find_duplicate_purchase_item_refs(
         items: list,
@@ -186,12 +189,265 @@ def register_purchase_po_routes(
             labels.append(f'{dup_id} ({name})' if name else str(dup_id))
         return labels
 
+    def _po_status_label(status_code) -> str:
+        code = str(status_code or "").strip().upper()
+        return {
+            "D": "Draft",
+            "P": "Pending Approval",
+            "A": "Approved",
+            "C": "Cancelled",
+        }.get(code, "Draft")
+
+    def _is_it_user() -> bool:
+        return str(session.get("role") or "").strip().upper() == "IT"
+
+    def _format_snapshot_date(value) -> str:
+        if isinstance(value, datetime):
+            return value.strftime("%d-%b-%Y %I:%M %p")
+        if isinstance(value, date):
+            return value.strftime("%d-%b-%Y")
+        return str(value or "").strip()[:19]
+
+    def _format_snapshot_qty(value) -> str:
+        qty_val = _safe_float(value)
+        return f"{qty_val:.3f}".rstrip("0").rstrip(".")
+
+    def _build_po_cancellation_snapshot_text_bytes(
+        unit: str,
+        header_row: dict,
+        items: list[dict],
+        *,
+        cancelled_by: str,
+        cancelled_at: datetime,
+    ) -> bytes:
+        po_no_val = str(header_row.get("PONo") or f"PO-{_safe_int(header_row.get('ID'))}").strip()
+        purchasing_dept_name = _resolve_purchasing_department_name(_safe_int(header_row.get("PurchasingDeptId"))) or ""
+        lines = [
+            "Purchase Order Cancellation Snapshot",
+            "===================================",
+            f"Unit: {unit}",
+            f"PO No: {po_no_val}",
+            f"PO Date: {_format_snapshot_date(header_row.get('PODate'))}",
+            "Status: Cancelled",
+            f"Cancelled By: {cancelled_by or '-'}",
+            f"Cancelled At: {_format_snapshot_date(cancelled_at)}",
+            f"Supplier: {str(header_row.get('SupplierName') or '').strip() or '-'}",
+            f"Supplier Email: {str(header_row.get('SupplierEmail') or '').strip() or '-'}",
+            f"Purchasing Dept: {purchasing_dept_name or '-'}",
+            f"Reference No: {str(header_row.get('RefNo') or '').strip() or '-'}",
+            f"Subject: {str(header_row.get('Subject') or '').strip() or '-'}",
+            f"Amount: {_format_indian_currency(header_row.get('Amount') or 0)}",
+            "",
+            "Items",
+            "-----",
+        ]
+        if not items:
+            lines.append("No items found.")
+        for idx, row in enumerate(items or [], start=1):
+            item_name = str(row.get("ItemName") or row.get("item_name") or "").strip() or f"Item {idx}"
+            pack_name = str(row.get("PackSizeName") or row.get("pack_size_name") or row.get("PackSizeId") or "").strip()
+            unit_name = str(row.get("UnitName") or row.get("unit") or "").strip()
+            qty = _format_snapshot_qty(row.get("Qty") or row.get("qty"))
+            rate = _format_indian_currency(row.get("Rate") or row.get("rate") or 0)
+            net_amt = _format_indian_currency(row.get("NetAmount") or row.get("net_amt") or 0)
+            line = f"{idx}. {item_name} | Qty: {qty or '0'} | Rate: {rate} | Net: {net_amt}"
+            if pack_name:
+                line += f" | Pack: {pack_name}"
+            if unit_name:
+                line += f" | Unit: {unit_name}"
+            lines.append(line)
+        return "\r\n".join(lines).encode("utf-8")
+
+    def _build_po_cancellation_snapshot_image_bytes(
+        unit: str,
+        header_row: dict,
+        items: list[dict],
+        *,
+        cancelled_by: str,
+        cancelled_at: datetime,
+    ) -> bytes:
+        try:
+            from PIL import Image, ImageDraw, ImageFont
+        except Exception:
+            return b""
+
+        import os
+
+        po_no_val = str(header_row.get("PONo") or f"PO-{_safe_int(header_row.get('ID'))}").strip()
+        purchasing_dept_name = _resolve_purchasing_department_name(_safe_int(header_row.get("PurchasingDeptId"))) or "-"
+        supplier_name = str(header_row.get("SupplierName") or "").strip() or "-"
+        supplier_email = str(header_row.get("SupplierEmail") or "").strip() or "-"
+        subject_val = str(header_row.get("Subject") or "").strip() or "-"
+        ref_no_val = str(header_row.get("RefNo") or "").strip() or "-"
+        amount_val = _format_indian_currency(header_row.get("Amount") or 0)
+
+        info_rows = [
+            f"Unit: {unit}",
+            f"PO No: {po_no_val}",
+            f"PO Date: {_format_snapshot_date(header_row.get('PODate'))}",
+            "Status: Cancelled",
+            f"Cancelled By: {cancelled_by or '-'}",
+            f"Cancelled At: {_format_snapshot_date(cancelled_at)}",
+            f"Supplier: {supplier_name}",
+            f"Supplier Email: {supplier_email}",
+            f"Purchasing Dept: {purchasing_dept_name}",
+            f"Reference No: {ref_no_val}",
+            f"Amount: {amount_val}",
+            f"Subject: {subject_val}",
+        ]
+
+        item_lines = []
+        for idx, row in enumerate(items or [], start=1):
+            item_name = str(row.get("ItemName") or row.get("item_name") or "").strip() or f"Item {idx}"
+            pack_name = str(row.get("PackSizeName") or row.get("pack_size_name") or row.get("PackSizeId") or "").strip()
+            unit_name = str(row.get("UnitName") or row.get("unit") or "").strip()
+            qty = _format_snapshot_qty(row.get("Qty") or row.get("qty")) or "0"
+            rate = _format_indian_currency(row.get("Rate") or row.get("rate") or 0)
+            net_amt = _format_indian_currency(row.get("NetAmount") or row.get("net_amt") or 0)
+            line = f"{idx}. {item_name} | Qty: {qty} | Rate: {rate} | Net: {net_amt}"
+            if pack_name:
+                line += f" | Pack: {pack_name}"
+            if unit_name:
+                line += f" | Unit: {unit_name}"
+            item_lines.append(line)
+        if not item_lines:
+            item_lines.append("No items found.")
+        elif len(item_lines) > 12:
+            extra_count = len(item_lines) - 12
+            item_lines = item_lines[:12] + [f"... and {extra_count} more item(s)."]
+
+        width = 1600
+        margin = 58
+        content_width = width - (margin * 2)
+
+        def _load_font(size: int, *, bold: bool = False):
+            windir = os.environ.get("WINDIR") or r"C:\Windows"
+            candidates = []
+            if bold:
+                candidates.extend(
+                    [
+                        os.path.join(windir, "Fonts", "arialbd.ttf"),
+                        os.path.join(windir, "Fonts", "calibrib.ttf"),
+                        "arialbd.ttf",
+                    ]
+                )
+            else:
+                candidates.extend(
+                    [
+                        os.path.join(windir, "Fonts", "arial.ttf"),
+                        os.path.join(windir, "Fonts", "calibri.ttf"),
+                        "arial.ttf",
+                    ]
+                )
+            candidates.extend(["DejaVuSans-Bold.ttf" if bold else "DejaVuSans.ttf"])
+            for candidate in candidates:
+                try:
+                    return ImageFont.truetype(candidate, size=size)
+                except Exception:
+                    continue
+            return ImageFont.load_default()
+
+        title_font = _load_font(46, bold=True)
+        sub_font = _load_font(24, bold=False)
+        badge_font = _load_font(22, bold=True)
+        section_font = _load_font(24, bold=True)
+        body_font = _load_font(22, bold=False)
+        footer_font = _load_font(18, bold=False)
+
+        probe = Image.new("RGB", (width, 200), "#ffffff")
+        probe_draw = ImageDraw.Draw(probe)
+
+        def _line_height(font) -> int:
+            bbox = probe_draw.textbbox((0, 0), "Ag", font=font)
+            return max(26, (bbox[3] - bbox[1]) + 8)
+
+        def _wrap_text(text: str, font, max_width: int) -> list[str]:
+            words = str(text or "").split()
+            if not words:
+                return [""]
+            lines = []
+            current = words[0]
+            for word in words[1:]:
+                trial = f"{current} {word}"
+                bbox = probe_draw.textbbox((0, 0), trial, font=font)
+                if (bbox[2] - bbox[0]) <= max_width:
+                    current = trial
+                else:
+                    lines.append(current)
+                    current = word
+            lines.append(current)
+            return lines
+
+        info_line_height = _line_height(body_font)
+        item_line_height = _line_height(body_font)
+        footer_line_height = _line_height(footer_font)
+
+        wrapped_info = []
+        for row in info_rows:
+            wrapped_info.extend(_wrap_text(row, body_font, content_width))
+
+        wrapped_items = []
+        for row in item_lines:
+            wrapped_items.extend(_wrap_text(row, body_font, content_width))
+
+        header_height = 164
+        section_gap = 26
+        footer_height = 72
+        total_height = (
+            header_height
+            + (len(wrapped_info) * info_line_height)
+            + section_gap
+            + 42
+            + (len(wrapped_items) * item_line_height)
+            + footer_height
+            + margin
+        )
+        total_height = max(total_height, 950)
+
+        image = Image.new("RGB", (width, total_height), "#fffdfd")
+        draw = ImageDraw.Draw(image)
+        draw.rectangle([(0, 0), (width, header_height)], fill="#991b1b")
+        draw.rectangle([(0, header_height), (width, total_height)], fill="#fffdfd")
+        draw.text((margin, 34), "PURCHASE ORDER CANCELLED", font=title_font, fill="#ffffff")
+        draw.text((margin, 92), "This PO stands cancelled. Attached PDF carries the cancellation watermark.", font=sub_font, fill="#fee2e2")
+        badge_box = (width - 338, 34, width - 58, 92)
+        draw.rectangle(badge_box, fill="#fecaca")
+        draw.text((badge_box[0] + 24, badge_box[1] + 14), "STATUS: CANCELLED", font=badge_font, fill="#7f1d1d")
+
+        y = header_height + 26
+        for line in wrapped_info:
+            draw.text((margin, y), line, font=body_font, fill="#111827")
+            y += info_line_height
+
+        y += section_gap
+        draw.line((margin, y, width - margin, y), fill="#fecaca", width=3)
+        y += 18
+        draw.text((margin, y), "Items Snapshot", font=section_font, fill="#991b1b")
+        y += 42
+
+        for line in wrapped_items:
+            draw.text((margin, y), line, font=body_font, fill="#1f2937")
+            y += item_line_height
+
+        footer_top = total_height - footer_height
+        draw.rectangle([(0, footer_top), (width, total_height)], fill="#fef2f2")
+        footer_text = f"Generated on {_format_snapshot_date(cancelled_at)} by {cancelled_by or '-'}"
+        draw.text((margin, footer_top + 20), footer_text, font=footer_font, fill="#7f1d1d")
+
+        out = io.BytesIO()
+        image.save(out, format="JPEG", quality=90, optimize=True)
+        return out.getvalue()
+
     @app.route('/api/purchase/po_lookup')
     @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
     def api_purchase_po_lookup():
         unit, error = _get_purchase_unit()
         if error:
             return error
+        try:
+            data_fetch.ensure_po_cmc_amc_warranty_column(unit)
+        except Exception:
+            pass
         query = (request.args.get("q") or "").strip()
         if not query:
             return jsonify({"status": "error", "message": "Please enter a PO number or ID"}), 400
@@ -223,11 +479,8 @@ def register_purchase_po_routes(
             except Exception:
                 pass
         status_code = str(header_row.get("Status") or "").strip().upper()
-        status_label = {
-            "D": "Draft",
-            "P": "Pending Approval",
-            "A": "Approved",
-        }.get(status_code, "Draft")
+        status_label = _po_status_label(status_code)
+        cmc_amc_warranty_notes = header_row.get("CmcAmcWarrantyNotes") or header_row.get("CMCAMCWarrantyNotes") or header_row.get("OtherTerms")
 
         header_payload = _sanitize_json_payload({
             "po_id": header_row.get("ID"),
@@ -248,7 +501,8 @@ def register_purchase_po_routes(
             "prepared_by": header_row.get("Preparedby"),
             "delivery_terms": header_row.get("DeliveryTerms"),
             "payment_terms": header_row.get("PaymentsTerms"),
-            "other_terms": header_row.get("OtherTerms"),
+            "cmc_amc_warranty": cmc_amc_warranty_notes,
+            "other_terms": header_row.get("OtherTerms") or cmc_amc_warranty_notes,
             "freight_charges": header_row.get("Custom1") or 0,
             "packing_charges": header_row.get("Custom2") or 0,
             "discount_total": header_row.get("Discount") or 0,
@@ -1513,6 +1767,18 @@ def register_purchase_po_routes(
         except Exception:
             pass
         try:
+            data_fetch.ensure_po_cmc_amc_warranty_column(unit)
+        except Exception:
+            pass
+        try:
+            data_fetch.ensure_po_overall_discount_mode_column(unit)
+        except Exception:
+            pass
+        try:
+            data_fetch.ensure_po_overall_discount_value_column(unit)
+        except Exception:
+            pass
+        try:
             data_fetch.ensure_po_print_format_column(unit)
         except Exception:
             pass
@@ -1658,6 +1924,10 @@ def register_purchase_po_routes(
             except Exception:
                 return val
 
+        cmc_amc_warranty_value = header.get("cmc_amc_warranty")
+        if cmc_amc_warranty_value is None:
+            cmc_amc_warranty_value = header.get("other_terms")
+
         po_params = {
             "pId": int(header.get("po_id") or 0),
             "pSupplierid": supplier_id,
@@ -1666,7 +1936,7 @@ def register_purchase_po_routes(
             "pPodate": header.get("po_date"),
             "pDeliveryterms": header.get("delivery_terms"),
             "pPaymentsterms": header.get("payment_terms"),
-            "pOtherterms": header.get("other_terms"),
+            "pOtherterms": cmc_amc_warranty_value,
             "pTaxid": int(header.get("tax_id") or 0),
             "pTax": tax_total,
             "pDiscount": discount_total,
@@ -1675,6 +1945,7 @@ def register_purchase_po_routes(
             "pPocomplete": int(bool(header.get("po_complete"))),
             "pNotes": header.get("notes"),
             "pSpecialNotes": header.get("special_notes"),
+            "pCmcAmcWarrantyNotes": cmc_amc_warranty_value,
             "SeniorApprovalAuthorityName": header.get("senior_approval_authority_name"),
             "SeniorApprovalAuthorityDesignation": header.get("senior_approval_authority_designation"),
             "pPreparedby": header.get("prepared_by"),
@@ -1896,6 +2167,22 @@ def register_purchase_po_routes(
         except Exception:
             pass
         try:
+            data_fetch.ensure_po_cmc_amc_warranty_column(unit)
+        except Exception:
+            pass
+        try:
+            data_fetch.ensure_po_overall_discount_mode_column(unit)
+        except Exception:
+            pass
+        try:
+            data_fetch.ensure_po_overall_discount_value_column(unit)
+        except Exception:
+            pass
+        try:
+            data_fetch.ensure_po_print_format_column(unit)
+        except Exception:
+            pass
+        try:
             data_fetch.ensure_po_senior_approval_authority_column(unit)
         except Exception:
             pass
@@ -2088,6 +2375,10 @@ def register_purchase_po_routes(
             except Exception:
                 return val
 
+        cmc_amc_warranty_value = header.get("cmc_amc_warranty")
+        if cmc_amc_warranty_value is None:
+            cmc_amc_warranty_value = header.get("other_terms")
+
         po_params = {
             "pId": po_id,
             "pSupplierid": int(header.get("supplier_id") or 0),
@@ -2096,7 +2387,7 @@ def register_purchase_po_routes(
             "pPodate": header.get("po_date"),
             "pDeliveryterms": header.get("delivery_terms"),
             "pPaymentsterms": header.get("payment_terms"),
-            "pOtherterms": header.get("other_terms"),
+            "pOtherterms": cmc_amc_warranty_value,
             "pTaxid": int(header.get("tax_id") or 0),
             "pTax": tax_total,
             "pDiscount": discount_total,
@@ -2105,6 +2396,7 @@ def register_purchase_po_routes(
             "pPocomplete": int(bool(header.get("po_complete"))),
             "pNotes": header.get("notes"),
             "pSpecialNotes": header.get("special_notes"),
+            "pCmcAmcWarrantyNotes": cmc_amc_warranty_value,
             "SeniorApprovalAuthorityName": header.get("senior_approval_authority_name"),
             "SeniorApprovalAuthorityDesignation": header.get("senior_approval_authority_designation"),
             "pPreparedby": header.get("prepared_by"),
@@ -2242,7 +2534,7 @@ def register_purchase_po_routes(
                 summary="PO updated but some items failed",
                 details={
                     "po_no": po_no,
-                    "header_changes": _diff_simple_fields(old_header, new_header, ["supplier_id", "supplier_name", "purchasing_dept_id", "senior_approval_authority_name", "senior_approval_authority_designation", "po_date", "status", "amount", "tax_total", "discount_total"]),
+                    "header_changes": _diff_simple_fields(old_header, new_header, ["supplier_id", "supplier_name", "purchasing_dept_id", "senior_approval_authority_name", "senior_approval_authority_designation", "po_date", "status", "amount", "tax_total", "discount_total", "cmc_amc_warranty"]),
                     "items": _diff_po_items(existing_items, items),
                     "errors": detail_errors,
                 },
@@ -2299,7 +2591,7 @@ def register_purchase_po_routes(
             summary="PO updated",
             details={
                 "po_no": po_no,
-                "header_changes": _diff_simple_fields(old_header, new_header, ["supplier_id", "supplier_name", "purchasing_dept_id", "senior_approval_authority_name", "senior_approval_authority_designation", "po_date", "status", "amount", "tax_total", "discount_total"]),
+                "header_changes": _diff_simple_fields(old_header, new_header, ["supplier_id", "supplier_name", "purchasing_dept_id", "senior_approval_authority_name", "senior_approval_authority_designation", "po_date", "status", "amount", "tax_total", "discount_total", "cmc_amc_warranty"]),
                 "items": _diff_po_items(existing_items, items),
                 "otp_request_id": otp_request_id,
                 "created_items": created_items,
@@ -2643,6 +2935,283 @@ def register_purchase_po_routes(
                 "auto_email": auto_email_result,
             }
         )
+
+
+    @app.route('/api/purchase/po_status_override', methods=['POST'])
+    @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+    def api_purchase_po_status_override():
+        unit, error = _get_purchase_unit()
+        if error:
+            return error
+
+        payload = request.get_json(silent=True) or {}
+        po_id = _safe_int(payload.get("po_id"))
+        target_status_raw = str(payload.get("target_status") or payload.get("status") or "").strip().lower()
+        target_status = {
+            "draft": "D",
+            "d": "D",
+            "cancel": "C",
+            "cancelled": "C",
+            "canceled": "C",
+            "c": "C",
+        }.get(target_status_raw)
+
+        if not _is_it_user():
+            _audit_log_event(
+                "purchase",
+                "po_status_override",
+                status="error",
+                entity_type="po",
+                entity_id=str(po_id) if po_id > 0 else None,
+                unit=unit,
+                summary="Only IT can change PO status to Draft or Cancelled",
+                details={"target_status": target_status_raw},
+            )
+            return jsonify({"status": "error", "message": "Only IT users can change PO status to Draft or Cancelled."}), 403
+
+        if po_id <= 0:
+            _audit_log_event(
+                "purchase",
+                "po_status_override",
+                status="error",
+                entity_type="po",
+                unit=unit,
+                summary="PO ID is required",
+                details={"target_status": target_status_raw},
+            )
+            return jsonify({"status": "error", "message": "PO ID is required"}), 400
+
+        if target_status not in {"D", "C"}:
+            _audit_log_event(
+                "purchase",
+                "po_status_override",
+                status="error",
+                entity_type="po",
+                entity_id=str(po_id),
+                unit=unit,
+                summary="Invalid PO target status",
+                details={"target_status": target_status_raw},
+            )
+            return jsonify({"status": "error", "message": "Target status must be Draft or Cancelled"}), 400
+
+        header_df = data_fetch.fetch_purchase_po_header(unit, po_id=po_id)
+        if header_df is None:
+            _audit_log_event(
+                "purchase",
+                "po_status_override",
+                status="error",
+                entity_type="po",
+                entity_id=str(po_id),
+                unit=unit,
+                summary="Failed to fetch PO for status change",
+                details={"target_status": target_status},
+            )
+            return jsonify({"status": "error", "message": "Failed to fetch PO"}), 500
+        if header_df.empty:
+            _audit_log_event(
+                "purchase",
+                "po_status_override",
+                status="error",
+                entity_type="po",
+                entity_id=str(po_id),
+                unit=unit,
+                summary="PO not found",
+                details={"target_status": target_status},
+            )
+            return jsonify({"status": "error", "message": "PO not found"}), 404
+
+        header_df = _clean_df_columns(header_df)
+        header_row = header_df.iloc[0].to_dict()
+        current_status = str(header_row.get("Status") or "").strip().upper()
+        target_status_label = _po_status_label(target_status)
+        po_no_val = str(header_row.get("PONo") or "").strip()
+        if not po_no_val:
+            try:
+                po_no_fix = data_fetch.ensure_purchase_po_number(unit, po_id)
+                ensured_po_no = str(po_no_fix.get("po_no") or "").strip()
+                if ensured_po_no:
+                    po_no_val = ensured_po_no
+                    header_row["PONo"] = ensured_po_no
+            except Exception:
+                pass
+        if not po_no_val:
+            po_no_val = f"PO-{po_id}"
+
+        if current_status == target_status:
+            return jsonify(
+                {
+                    "status": "success",
+                    "po_id": po_id,
+                    "po_no": po_no_val,
+                    "target_status_code": target_status,
+                    "target_status_label": target_status_label,
+                    "changed": False,
+                    "message": f"PO is already {target_status_label.lower()}.",
+                }
+            )
+
+        status_result = data_fetch.update_po_status(unit, po_id, target_status)
+        if status_result.get("error"):
+            _audit_log_event(
+                "purchase",
+                "po_status_override",
+                status="error",
+                entity_type="po",
+                entity_id=str(po_id),
+                unit=unit,
+                summary="PO status update failed",
+                details={
+                    "po_no": po_no_val,
+                    "from_status": current_status,
+                    "to_status": target_status,
+                    "error": status_result.get("error"),
+                },
+            )
+            return jsonify({"status": "error", "message": status_result["error"]}), 500
+
+        actor = str(session.get("username") or session.get("user") or "").strip()
+        changed_at = datetime.now(tz=LOCAL_TZ)
+        response = {
+            "status": "success",
+            "po_id": po_id,
+            "po_no": po_no_val,
+            "target_status_code": target_status,
+            "target_status_label": target_status_label,
+            "changed": True,
+        }
+
+        if target_status == "D":
+            response["message"] = "PO status changed to Draft. You can edit this PO now."
+            _audit_log_event(
+                "purchase",
+                "po_change_to_draft",
+                status="success",
+                entity_type="po",
+                entity_id=str(po_id),
+                unit=unit,
+                summary="PO status changed to Draft",
+                details={
+                    "po_no": po_no_val,
+                    "from_status": current_status,
+                    "to_status": target_status,
+                },
+            )
+            return jsonify(response)
+
+        mail_result = {"status": "skipped", "message": "Cancellation email not sent"}
+        supplier_email = _purchase_normalize_email(header_row.get("SupplierEmail"))
+        recipients = []
+        try:
+            items_df = data_fetch.fetch_purchase_po_items(unit, po_id)
+            if items_df is None:
+                raise RuntimeError("Failed to fetch PO items for cancellation mail")
+            items_df = _clean_df_columns(items_df)
+            items_rows = items_df.to_dict(orient="records") if not items_df.empty else []
+
+            approval_meta = _fetch_purchase_approval_meta(po_id)
+            header_pdf = dict(header_row)
+            header_pdf["Status"] = "C"
+            header_pdf["PurchasingDeptName"] = _resolve_purchasing_department_name(_safe_int(header_row.get("PurchasingDeptId")))
+            print_format = _resolve_po_print_format_for_render(
+                unit,
+                header_row=header_pdf,
+                purchasing_dept_id=_safe_int(header_row.get("PurchasingDeptId")),
+            )
+            pdf_buffer = _build_po_pdf_buffer(unit, header_pdf, items_rows, approval_meta, print_format=print_format)
+            pdf_bytes = pdf_buffer.getvalue() if pdf_buffer else b""
+
+            snapshot = {
+                "unit": unit,
+                "po_no": po_no_val,
+                "po_date": _format_snapshot_date(header_row.get("PODate")),
+                "supplier": str(header_row.get("SupplierName") or ""),
+                "amount": _format_indian_currency(header_row.get("Amount") or 0),
+                "cancelled_by": actor or "-",
+                "cancelled_at": _format_snapshot_date(changed_at),
+                "subject": str(header_row.get("Subject") or ""),
+            }
+            snapshot_bytes = _build_po_cancellation_snapshot_image_bytes(
+                unit,
+                header_row,
+                items_rows,
+                cancelled_by=actor,
+                cancelled_at=changed_at,
+            )
+            snapshot_attachment = {
+                "filename": f"PO_{po_no_val}_cancel_snapshot.jpg",
+                "content_type": "image/jpeg",
+                "content_bytes": snapshot_bytes,
+            }
+            if not snapshot_bytes:
+                snapshot_attachment = {
+                    "filename": f"PO_{po_no_val}_cancel_snapshot.txt",
+                    "content_type": "text/plain",
+                    "content_bytes": _build_po_cancellation_snapshot_text_bytes(
+                        unit,
+                        header_row,
+                        items_rows,
+                        cancelled_by=actor,
+                        cancelled_at=changed_at,
+                    ),
+                }
+
+            recipients = []
+            if _purchase_is_valid_email(supplier_email):
+                recipients.append(supplier_email)
+            recipients.extend(PO_CANCELLATION_INTERNAL_RECIPIENTS)
+            recipients = [addr for addr in dict.fromkeys([str(addr or "").strip().lower() for addr in recipients]) if addr]
+
+            mail_subject = f"PO Cancelled - {po_no_val}"
+            mail_body = _build_po_cancellation_email_body(snapshot)
+            mail_result = _send_graph_mail_with_attachment(
+                subject=mail_subject,
+                body_html=mail_body,
+                to_recipients=recipients,
+                attachments=[
+                    snapshot_attachment,
+                    {
+                        "filename": f"PO_{po_no_val}_cancelled.pdf",
+                        "content_type": "application/pdf",
+                        "content_bytes": pdf_bytes,
+                    },
+                ],
+            )
+        except Exception as exc:
+            mail_result = {"status": "error", "message": str(exc)}
+
+        response["mail_status"] = {
+            "status": str(mail_result.get("status") or ""),
+            "message": str(mail_result.get("message") or ""),
+            "recipients": recipients,
+            "supplier_email": supplier_email,
+        }
+
+        if str(mail_result.get("status") or "").strip().lower() == "success":
+            if _purchase_is_valid_email(supplier_email):
+                response["message"] = "PO cancelled and notification email sent to vendor and internal recipients."
+            else:
+                response["message"] = "PO cancelled. Supplier email was missing or invalid, so notification went to internal recipients only."
+        else:
+            response["message"] = f"PO cancelled, but notification email failed: {mail_result.get('message') or 'dispatch failed'}"
+
+        _audit_log_event(
+            "purchase",
+            "po_cancel",
+            status="success" if str(mail_result.get("status") or "").strip().lower() == "success" else "partial",
+            entity_type="po",
+            entity_id=str(po_id),
+            unit=unit,
+            summary="PO cancelled",
+            details={
+                "po_no": po_no_val,
+                "from_status": current_status,
+                "to_status": target_status,
+                "cancelled_by": actor,
+                "cancelled_at": changed_at.isoformat(timespec="seconds"),
+                "mail_result": response.get("mail_status"),
+            },
+        )
+        return jsonify(response)
 
 
     @app.route('/api/purchase/po_resend_otp', methods=['POST'])

@@ -379,6 +379,10 @@
     --accent: #1e3a8a;
     --accent-soft: #dbeafe;
   }
+  .module-tab-btn--grn {
+    --accent: #0f766e;
+    --accent-soft: #ccfbf1;
+  }
   .module-tab-btn--work-order {
     --accent: #0f766e;
     --accent-soft: #ccfbf1;
@@ -399,6 +403,11 @@
     transform: translateY(-3px);
     border-color: #cbd5e1;
     box-shadow: 0 18px 32px rgba(15,23,42,0.12);
+  }
+  .module-tab-btn--nav {
+    display: block;
+    color: inherit;
+    text-decoration: none;
   }
   .module-tab-btn.active {
     border-color: var(--accent-soft);
@@ -664,6 +673,50 @@
     opacity: 0.9;
     align-self: stretch;
     min-height: 64px;
+  }
+  .po-order-toolbar {
+    display: grid;
+    grid-template-columns: repeat(auto-fit, minmax(220px, 1fr));
+    gap: 12px;
+    width: min(100%, 980px);
+    z-index: 1;
+  }
+  .po-order-toolbar-group {
+    min-width: 0;
+    padding: 12px 14px;
+    border-radius: 16px;
+    border: 1px solid rgba(255,255,255,0.22);
+    background: rgba(255,255,255,0.08);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.06);
+  }
+  .po-order-toolbar-label {
+    margin: 0 0 10px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: rgba(239,246,255,0.82);
+  }
+  .po-order-toolbar-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    align-items: center;
+  }
+  .po-order-toolbar-group .find-po {
+    width: 100%;
+  }
+  .po-order-toolbar-group .find-po input {
+    flex: 1 1 180px;
+    min-width: 0;
+  }
+  .po-order-toolbar-group .po-print-format-hero {
+    display: grid;
+    gap: 6px;
+    min-width: 180px;
+  }
+  .po-order-toolbar-group .po-print-format-hero select {
+    min-width: 0;
   }
   .po-otp {
     margin: 18px 0;
@@ -2508,6 +2561,7 @@
           {{ session.get('username') or 'User' }}
         </div>
         <a href="{{ url_for('dashboard') }}">Dashboard</a>
+        <a href="{{ url_for('purchase_grn') }}" id="purchaseGrnMenuLink" {% if ((allowed_units or [])|first or '')|upper != 'SHARPSIGHT' %}style="display:none;"{% endif %}>GRN Entry</a>
         <a href="{{ url_for('settings') }}">Settings</a>
         <a href="{{ url_for('logout') }}">Logout</a>
       </div>
@@ -2538,6 +2592,13 @@
       </div>
       <div class="module-tab-sub">Create and approve purchase orders with GST.</div>
     </button>
+    <a class="module-tab-btn module-tab-btn--grn module-tab-btn--nav" href="{{ url_for('purchase_grn') }}" id="purchaseGrnCard" {% if ((allowed_units or [])|first or '')|upper != 'SHARPSIGHT' %}style="display:none;"{% endif %}>
+      <div class="module-tab-title">
+        <span class="module-tab-icon">GRN</span>
+        GRN Entry
+      </div>
+      <div class="module-tab-sub">Create GST-based goods receipt notes for Sharpsight stock intake.</div>
+    </a>
     <button class="module-tab-btn module-tab-btn--work-order" type="button" data-module="purchaseWorkOrderSection" id="workOrderTabBtn" style="display:none;">
       <div class="module-tab-title">
         <span class="module-tab-icon">WO</span>
@@ -2581,31 +2642,47 @@
           <span class="hero-chip">GST: Single Tax</span>
         </div>
       </div>
-        <div class="po-actions po-actions-split">
-        <div class="po-actions-group po-actions-main">
-          <div class="find-po">
-            <input type="text" id="findPoInput" placeholder="Find PO (No/ID/Supplier/Ref/Subject)" list="poList">
-            <button class="btn ghost small" type="button" id="findPoBtn">Find PO</button>
+      <div class="po-order-toolbar">
+        <div class="po-order-toolbar-group">
+          <div class="po-order-toolbar-label">Find &amp; Start</div>
+          <div class="po-order-toolbar-actions">
+            <div class="find-po">
+              <input type="text" id="findPoInput" placeholder="Find PO (No/ID/Supplier/Ref/Subject)" list="poList">
+              <button class="btn ghost small" type="button" id="findPoBtn">Find PO</button>
+            </div>
+            <button class="btn ghost" type="button" id="newPoBtn">New PO</button>
+            <button class="btn ghost" type="button" id="clearFormBtn">Clear Form</button>
           </div>
-          <button class="btn primary" type="button" id="saveDraftBtn">Save Draft</button>
-          <button class="btn secondary" type="button" id="submitPoBtn">Submit for Approval</button>
-          <button class="btn secondary" type="button" id="printPoBtn">Print PO</button>
-          <button class="btn secondary" type="button" id="printPoListBtn">Print Existing PO</button>
-          <button class="btn secondary" type="button" id="emailPoBtn">Email PO</button>
-          {% if can_use_po_def_format %}
-          <div class="field po-print-format-hero">
-            <label>Print Format</label>
-            <select id="poPrintFormat">
-              <option value="standard">Asarfi Hospital Ltd.</option>
-              <option value="def">Dhanbad Educational Foundation</option>
-            </select>
-          </div>
-          {% endif %}
-          <button class="btn ghost" type="button" id="newPoBtn">New PO</button>
-          <button class="btn ghost" type="button" id="clearFormBtn">Clear Form</button>
         </div>
-        <div class="po-actions-divider" aria-hidden="true"></div>
-        <div class="po-actions-group po-actions-master"></div>
+        <div class="po-order-toolbar-group">
+          <div class="po-order-toolbar-label">Workflow</div>
+          <div class="po-order-toolbar-actions">
+            <button class="btn primary" type="button" id="saveDraftBtn">Save Draft</button>
+            <button class="btn secondary" type="button" id="submitPoBtn">Submit for Approval</button>
+            {% if (session.get('role') or '').strip() == 'IT' %}
+            <button class="btn ghost" type="button" id="restorePoDraftBtn" hidden>Change to Draft</button>
+            <button class="btn ghost" type="button" id="cancelPoBtn" hidden>Cancel PO</button>
+            {% endif %}
+          </div>
+        </div>
+        <div class="po-order-toolbar-group">
+          <div class="po-order-toolbar-label">Print &amp; Dispatch</div>
+          <div class="po-order-toolbar-actions">
+            {% if can_use_po_def_format or can_use_po_trust_format %}
+            <div class="field po-print-format-hero">
+              <label>Print Format</label>
+              <select id="poPrintFormat">
+                <option value="standard">Asarfi Hospital Ltd.</option>
+                {% if can_use_po_trust_format %}<option value="trust">Asarfi Charitable Trust</option>{% endif %}
+                {% if can_use_po_def_format %}<option value="def">Dhanbad Educational Foundation</option>{% endif %}
+              </select>
+            </div>
+            {% endif %}
+            <button class="btn secondary" type="button" id="printPoBtn">Print PO</button>
+            <button class="btn secondary" type="button" id="printPoListBtn">Print Existing PO</button>
+            <button class="btn secondary" type="button" id="emailPoBtn">Email PO</button>
+          </div>
+        </div>
       </div>
     </section>
 
@@ -2623,7 +2700,7 @@
       </div>
       <div class="po-otp-extra">
         <label class="po-otp-auto-email" for="poOtpAutoEmail">
-          <input type="checkbox" id="poOtpAutoEmail" checked>
+          <input type="checkbox" id="poOtpAutoEmail">
           Auto-email approved PO PDF to supplier
         </label>
       </div>
@@ -2673,6 +2750,7 @@
             <option>Draft</option>
             <option>Pending Approval</option>
             <option>Approved</option>
+            <option>Cancelled</option>
           </select>
         </div>
 
@@ -2879,7 +2957,7 @@
           <button class="tab-btn active" type="button" data-tab="tab-total" data-icon="TN">Total Notes</button>
           <button class="tab-btn" type="button" data-tab="tab-delivery" data-icon="DT">Delivery Terms</button>
           <button class="tab-btn" type="button" data-tab="tab-payment" data-icon="PT">Payment Terms</button>
-          <button class="tab-btn" type="button" data-tab="tab-other" data-icon="OT">Other Terms</button>
+          <button class="tab-btn" type="button" data-tab="tab-cmc-amc-warranty" data-icon="CW">CMC/AMC & Warranty</button>
         </div>
         <div class="tab-panel active" id="tab-total">
           <div class="form-grid">
@@ -2913,10 +2991,10 @@
             <textarea id="paymentTerms" placeholder="Payment milestones, credit days, and billing instructions."></textarea>
           </div>
         </div>
-        <div class="tab-panel" id="tab-other">
+        <div class="tab-panel" id="tab-cmc-amc-warranty">
           <div class="field">
-            <label>Other Terms</label>
-            <textarea id="otherTerms" placeholder="Additional terms, compliance notes, and sign authority."></textarea>
+            <label>CMC/AMC & Warranty</label>
+            <textarea id="cmcAmcWarrantyNotes" placeholder="Optional long narration for PO print. Shown as bullet points when provided."></textarea>
           </div>
         </div>
       </div>
@@ -4327,12 +4405,13 @@
       </select>
     </div>
     {% endif %}
-    {% if can_use_po_def_format %}
+    {% if can_use_po_def_format or can_use_po_trust_format %}
     <div class="field">
       <label>Print Format</label>
       <select id="poPrintFormatModal">
         <option value="standard">Asarfi Hospital Ltd.</option>
-        <option value="def">Dhanbad Educational Foundation</option>
+        {% if can_use_po_trust_format %}<option value="trust">Asarfi Charitable Trust</option>{% endif %}
+        {% if can_use_po_def_format %}<option value="def">Dhanbad Educational Foundation</option>{% endif %}
       </select>
     </div>
     {% endif %}
@@ -4522,7 +4601,7 @@
   const overallDiscountModeSelect = document.getElementById('overallDiscountMode');
   const deliveryTermsInput = document.getElementById('deliveryTerms');
   const paymentTermsInput = document.getElementById('paymentTerms');
-  const otherTermsInput = document.getElementById('otherTerms');
+  const cmcAmcWarrantyInput = document.getElementById('cmcAmcWarrantyNotes');
 
   const summaryGross = document.getElementById('summaryGross');
   const summaryDiscount = document.getElementById('summaryDiscount');
@@ -4584,6 +4663,8 @@
   const findPoBtn = document.getElementById('findPoBtn');
   const newPoBtn = document.getElementById('newPoBtn');
   const clearFormBtn = document.getElementById('clearFormBtn');
+  const restorePoDraftBtn = document.getElementById('restorePoDraftBtn');
+  const cancelPoBtn = document.getElementById('cancelPoBtn');
   const printPoBtn = document.getElementById('printPoBtn');
   const emailPoBtn = document.getElementById('emailPoBtn');
   const addSupplierBtn = document.getElementById('addSupplierBtn');
@@ -4635,6 +4716,8 @@
   const tableBody = document.getElementById('poItemsBody');
   const poItemsLoading = document.getElementById('poItemsLoading');
 
+  const purchaseGrnMenuLink = document.getElementById('purchaseGrnMenuLink');
+  const purchaseGrnCard = document.getElementById('purchaseGrnCard');
   const workOrderTabBtn = document.getElementById('workOrderTabBtn');
   const workOrderAlert = document.getElementById('workOrderAlert');
   const workOrderSection = document.getElementById('purchaseWorkOrderSection');
@@ -5046,6 +5129,7 @@
   let indentInitLoaded = false;
   const isITRole = {{ 'true' if (session.get('role') or '').strip() == 'IT' else 'false' }};
   const canUsePoDefFormat = {{ 'true' if can_use_po_def_format else 'false' }};
+  const canUsePoTrustFormat = {{ 'true' if can_use_po_trust_format else 'false' }};
   let currentPoId = null;
   let currentPoStatusCode = 'D';
   let currentOtpRequestId = null;
@@ -6298,33 +6382,19 @@
     "Billing shall strictly comply with the PO-approved quantity and rate.",
     "Commercial terms, including discounts and bonuses, shall be only as approved with the authorized representative.",
   ];
-  const poOtherDefault = [
-    "1. Short supply must be intimated to the Purchaser.",
-    "2. Disputes: Dhanbad, Jharkhand courts only.",
-    "3. Mention the PO number on the invoice.",
-  ];
-  const poOtherStore = [
-    "1. Short supply must be intimated to the Purchaser.",
-    "2. Disputes: Dhanbad, Jharkhand courts only.",
-    "3. Mention the PO number on the invoice.",
-  ];
   const buildPoTermsForUnit = (unit) => {
     const key = String(unit || '').trim().toUpperCase().replace(/\s+/g, '');
     const delivery = poDeliveryDefault;
     if (key === 'AHLSTORE' || key === 'CANCERUNITSTORE') {
-      return { delivery, payment: poPaymentStore.join('\n'), other: poOtherStore.join('\n') };
+      return { delivery, payment: poPaymentStore.join('\n') };
     }
     if (key === 'BALLIASTORE') {
-      const terms = [...poOtherStore];
-      terms[1] = "2. Disputes: Ballia, UP courts only.";
-      return { delivery, payment: poPaymentStore.join('\n'), other: terms.join('\n') };
+      return { delivery, payment: poPaymentStore.join('\n') };
     }
     if (key === 'BALLIA') {
-      const terms = [...poOtherDefault];
-      terms[1] = "2. Disputes: Ballia, UP courts only.";
-      return { delivery, payment: poPaymentDefault.join('\n'), other: terms.join('\n') };
+      return { delivery, payment: poPaymentDefault.join('\n') };
     }
-    return { delivery, payment: poPaymentDefault.join('\n'), other: poOtherDefault.join('\n') };
+    return { delivery, payment: poPaymentDefault.join('\n') };
   };
   const applyPoDefaultTerms = (force = false) => {
     const unit = getUnit();
@@ -6335,9 +6405,6 @@
     }
     if (paymentTermsInput && (force || !String(paymentTermsInput.value || '').trim())) {
       paymentTermsInput.value = terms.payment;
-    }
-    if (otherTermsInput && (force || !String(otherTermsInput.value || '').trim())) {
-      otherTermsInput.value = terms.other;
     }
   };
 
@@ -6570,7 +6637,17 @@
   };
   const NON_MEDICAL_UNITS = new Set(['AHLSTORE', 'CANCERUNITSTORE', 'BALLIASTORE']);
   const ADHOC_DEFAULT_STORE_NAME = 'Main Store';
+  const isSharpsightUnit = (unit) => String(unit || '').trim().toUpperCase() === 'SHARPSIGHT';
   const isNonMedicalUnit = (unit) => NON_MEDICAL_UNITS.has(String(unit || '').trim().toUpperCase());
+  const updateGrnEntryVisibility = (unitOverride = '') => {
+    const allowed = isSharpsightUnit(unitOverride || getUnit());
+    if (purchaseGrnCard) {
+      purchaseGrnCard.style.display = allowed ? '' : 'none';
+    }
+    if (purchaseGrnMenuLink) {
+      purchaseGrnMenuLink.style.display = allowed ? '' : 'none';
+    }
+  };
   const applyAdhocStoreDefault = (row, unitOverride = '') => {
     if (!row) return '';
     const storeField = row.querySelector('.cell-item-code');
@@ -6610,6 +6687,7 @@
       'poPrintSelect', 'poPrintRefresh', 'poPrintGo', 'poPrintEmail', 'poPrintEmailBtn',
       'supplierEmail', 'unitSelect', 'newPoBtn', 'clearFormBtn',
       'poOtpInput', 'poOtpAutoEmail', 'poOtpValidateBtn', 'poOtpResendBtn',
+      'restorePoDraftBtn', 'cancelPoBtn',
       'refreshItemsBtn', 'poResetColsBtn', 'poItemSearch', 'openItemMasterBtn',
     ]);
     const controls = poPage.querySelectorAll('input, select, textarea, button');
@@ -6627,8 +6705,25 @@
     if (loadIndentBtn) loadIndentBtn.disabled = !!readonly;
     if (saveDraftBtn) saveDraftBtn.disabled = !!readonly;
     if (submitPoBtn) submitPoBtn.disabled = !!readonly;
+    updatePoStatusActionButtons();
     if (!readonly && tableBody) {
       tableBody.querySelectorAll('tr').forEach((row) => hydrateRow(row));
+    }
+  };
+
+  const updatePoStatusActionButtons = () => {
+    const status = String(currentPoStatusCode || '').trim().toUpperCase();
+    const hasLoadedPo = !!currentPoId;
+    if (restorePoDraftBtn) {
+      const canRestore = isITRole && hasLoadedPo && status !== 'D';
+      restorePoDraftBtn.hidden = !canRestore;
+      restorePoDraftBtn.disabled = !canRestore;
+      restorePoDraftBtn.textContent = status === 'C' ? 'Restore to Draft' : 'Change to Draft';
+    }
+    if (cancelPoBtn) {
+      const canCancel = isITRole && hasLoadedPo && status !== 'C';
+      cancelPoBtn.hidden = !canCancel;
+      cancelPoBtn.disabled = !canCancel;
     }
   };
 
@@ -6685,7 +6780,7 @@
     if (overallDiscountModeSelect) overallDiscountModeSelect.value = 'amount';
     if (deliveryTermsInput) deliveryTermsInput.value = '';
     if (paymentTermsInput) paymentTermsInput.value = '';
-    if (otherTermsInput) otherTermsInput.value = '';
+    if (cmcAmcWarrantyInput) cmcAmcWarrantyInput.value = '';
 
     if (tableBody) {
       tableBody.innerHTML = '';
@@ -6696,6 +6791,7 @@
     currentPoId = null;
     currentPoStatusCode = 'D';
     currentOtpRequestId = null;
+    if (poOtpAutoEmail) poOtpAutoEmail.checked = false;
     syncPoPrintFormatControls('standard');
     setPoReadonly(false);
     if (heroModeChip) heroModeChip.textContent = 'Mode: Add';
@@ -6847,19 +6943,27 @@
     return String(unitValue || '').trim().toUpperCase() === 'AHLSTORE';
   };
 
+  const canUseTrustPoPrintFormatForUnit = (unitValue = getUnit()) => {
+    if (!canUsePoTrustFormat) return false;
+    return String(unitValue || '').trim().toUpperCase() === 'AHLSTORE';
+  };
+
   const normalizePoPrintFormatValue = (value, options = {}) => {
     const fmt = String(value || '').trim().toLowerCase();
-    const allowSavedDef = !!options.allowSavedDef;
+    const allowSavedSpecial = !!options.allowSavedSpecial || !!options.allowSavedDef;
     const unitValue = options.unitValue ?? getUnit();
-    if (fmt === 'def' && (allowSavedDef || canUseDefPoPrintFormatForUnit(unitValue))) {
+    if (fmt === 'def' && (allowSavedSpecial || canUseDefPoPrintFormatForUnit(unitValue))) {
       return 'def';
+    }
+    if (fmt === 'trust' && (allowSavedSpecial || canUseTrustPoPrintFormatForUnit(unitValue))) {
+      return 'trust';
     }
     return 'standard';
   };
 
   const syncPoPrintFormatControls = (formatValue, options = {}) => {
     const normalized = normalizePoPrintFormatValue(formatValue, {
-      allowSavedDef: options.allowSavedDef,
+      allowSavedSpecial: options.allowSavedSpecial || options.allowSavedDef,
       unitValue: options.unitValue,
     });
     currentPoPrintFormat = normalized;
@@ -6873,7 +6977,7 @@
   };
 
   const buildPoPrintFormatParam = (formatValue) => {
-    const fmt = normalizePoPrintFormatValue(formatValue, { allowSavedDef: true });
+    const fmt = normalizePoPrintFormatValue(formatValue, { allowSavedSpecial: true });
     if (!fmt || fmt === 'standard') return '';
     return `&format=${encodeURIComponent(fmt)}`;
   };
@@ -6900,9 +7004,17 @@
     return `${match[1]}-${match[2]}-${match[3].slice(-2)}`;
   };
 
+  const resolvePoStatusLabel = (statusRaw) => {
+    const status = String(statusRaw || '').trim().toUpperCase();
+    if (status === 'A') return 'Approved';
+    if (status === 'P') return 'Pending Approval';
+    if (status === 'C') return 'Cancelled';
+    return 'Draft';
+  };
+
   const buildPoLookupLabel = (row) => {
     const status = String(row.Status || row.status || '').trim().toUpperCase();
-    const statusLabel = status === 'A' ? 'Approved' : status === 'P' ? 'Pending' : 'Draft';
+    const statusLabel = resolvePoStatusLabel(status);
     const supplierRaw = row.SupplierName || row.suppliername || '';
     const subjectRaw = row.Subject || row.subject || '';
     const primary = shortLookupText(supplierRaw || subjectRaw || 'Supplier not set', 28);
@@ -6995,7 +7107,7 @@
     if (poPrintFormatModal) {
       poPrintFormatModal.value = normalizePoPrintFormatValue(
         opt?.dataset?.printFormat || currentPoPrintFormat,
-        { allowSavedDef: true, unitValue: poPrintUnitSelect?.value || getUnit() }
+        { allowSavedSpecial: true, unitValue: poPrintUnitSelect?.value || getUnit() }
       );
     }
   };
@@ -7142,7 +7254,7 @@
           const woNo = row.PONo || row.PoNo || row.po_no || row.wo_no || '';
           if (!woNo) return;
           const status = String(row.Status || row.status || '').trim().toUpperCase();
-          const statusLabel = status === 'A' ? 'Approved' : status === 'P' ? 'Pending' : 'Draft';
+          const statusLabel = resolvePoStatusLabel(status);
           const supplier = row.SupplierName || row.suppliername || '';
           const dateVal = row.PODate || row.PoDate || row.po_date || row.wo_date || '';
           const label = [woNo, supplier, statusLabel, dateVal ? String(dateVal).slice(0, 10) : '']
@@ -7182,7 +7294,7 @@
       const woId = row.ID || row.Id || row.id || '';
       const woNo = row.PONo || row.PoNo || row.po_no || row.wo_no || '';
       const status = String(row.Status || row.status || '').trim().toUpperCase();
-      const statusLabel = status === 'A' ? 'Approved' : status === 'P' ? 'Pending' : 'Draft';
+      const statusLabel = resolvePoStatusLabel(status);
       const supplier = row.SupplierName || row.suppliername || '';
       const supplierEmail = normalizeEmail(row.SupplierEmail || row.supplier_email || '');
       const amountVal = parseNumber(row.Amount || row.amount || row.Total || row.total);
@@ -7291,7 +7403,7 @@
       const poId = row.ID || row.Id || row.id || '';
       const poNo = row.PONo || row.PoNo || row.po_no || '';
       const status = String(row.Status || row.status || '').trim().toUpperCase();
-      const statusLabel = status === 'A' ? 'Approved' : status === 'P' ? 'Pending' : 'Draft';
+      const statusLabel = resolvePoStatusLabel(status);
       const supplier = row.SupplierName || row.suppliername || '';
       const supplierId = parseNumber(row.SupplierID || row.SupplierId || row.supplier_id);
       const supplierEmail = normalizeEmail(row.SupplierEmail || row.supplier_email || '');
@@ -7308,7 +7420,7 @@
       opt.dataset.supplierEmail = supplierEmail;
       opt.dataset.printFormat = normalizePoPrintFormatValue(
         row.POPrintFormat || row.po_print_format || row.print_format || 'standard',
-        { allowSavedDef: true, unitValue: poPrintUnitSelect?.value || getUnit() }
+        { allowSavedSpecial: true, unitValue: poPrintUnitSelect?.value || getUnit() }
       );
       opt.textContent = label || poNo || `ID ${poId}`;
       poPrintSelect.appendChild(opt);
@@ -7353,7 +7465,7 @@
     }
     if (poPrintFormatModal) {
       poPrintFormatModal.value = normalizePoPrintFormatValue(currentPoPrintFormat, {
-        allowSavedDef: true,
+        allowSavedSpecial: true,
         unitValue: poPrintUnitSelect?.value || unit,
       });
     }
@@ -8460,6 +8572,7 @@
     updatePoValuationFreshness();
     clearChannelLoading(PO_VALUATION_CHANNEL);
     setPoValuationStatus('Click "Load Report" to fetch data.', false);
+    updateGrnEntryVisibility(unit);
     updateWorkOrderTabVisibility();
     if (document.getElementById('purchaseOrderSection')?.classList.contains('active')) {
       loadInit();
@@ -12115,7 +12228,7 @@
       currentPoId = header.po_id || null;
       currentPoStatusCode = header.status_code || 'D';
       currentOtpRequestId = header.otp_request_id || null;
-      syncPoPrintFormatControls(header.print_format || 'standard', { allowSavedDef: true, unitValue: unit });
+      syncPoPrintFormatControls(header.print_format || 'standard', { allowSavedSpecial: true, unitValue: unit });
       if (poNoInput) poNoInput.value = header.po_no || '';
       if (poDateInput && header.po_date) {
         const dateVal = String(header.po_date);
@@ -12148,7 +12261,7 @@
       if (preparedByInput) preparedByInput.value = header.prepared_by || '';
       if (deliveryTermsInput) deliveryTermsInput.value = header.delivery_terms || '';
       if (paymentTermsInput) paymentTermsInput.value = header.payment_terms || '';
-      if (otherTermsInput) otherTermsInput.value = header.other_terms || '';
+      if (cmcAmcWarrantyInput) cmcAmcWarrantyInput.value = header.cmc_amc_warranty || header.other_terms || '';
       if (poStatusSelect && header.status_label) poStatusSelect.value = header.status_label;
       if (purchasingDeptSelect) {
         const deptId = parseNumber(header.purchasing_dept_id);
@@ -12204,8 +12317,10 @@
       const statusUpper = (header.status_code || '').toUpperCase();
       const isApproved = statusUpper === 'A';
       const isPending = statusUpper === 'P';
-      setPoReadonly(isApproved);
-      if (heroModeChip) heroModeChip.textContent = isApproved ? 'Mode: View' : 'Mode: Edit';
+      const isCancelled = statusUpper === 'C';
+      if (poOtpAutoEmail) poOtpAutoEmail.checked = false;
+      setPoReadonly(isApproved || isCancelled);
+      if (heroModeChip) heroModeChip.textContent = (isApproved || isCancelled) ? 'Mode: View' : 'Mode: Edit';
       if (isPending) {
         const otpMessage = currentOtpRequestId
           ? `OTP sent to Purchasing Dept approver. Request ID: ${currentOtpRequestId}`
@@ -12214,10 +12329,12 @@
       } else {
         setOtpPanel(false, '', '');
       }
-      const alertMsg = isApproved
-        ? 'Approved PO loaded in read-only mode.'
-        : isPending ? 'Pending PO loaded. You can edit and re-submit, or resend OTP.' : 'PO loaded. You can edit and save.';
-      setAlert(alertMsg, isApproved ? 'warn' : isPending ? 'warn' : 'success');
+      const alertMsg = isCancelled
+        ? (isITRole ? 'Cancelled PO loaded in read-only mode. Use Restore to Draft to reopen it.' : 'Cancelled PO loaded in read-only mode.')
+        : isApproved
+          ? (isITRole ? 'Approved PO loaded in read-only mode. Use Change to Draft to reopen it.' : 'Approved PO loaded in read-only mode.')
+          : isPending ? 'Pending PO loaded. You can edit and re-submit, or resend OTP.' : 'PO loaded. You can edit and save.';
+      setAlert(alertMsg, (isApproved || isCancelled || isPending) ? 'warn' : 'success');
     } catch (err) {
       setAlert(err.message || 'Failed to load PO.', 'error');
     } finally {
@@ -12500,7 +12617,7 @@
       overall_discount_value: roundMoneyValue(overallDiscountValue),
       delivery_terms: deliveryTermsInput?.value || '',
       payment_terms: paymentTermsInput?.value || '',
-      other_terms: otherTermsInput?.value || '',
+      cmc_amc_warranty: cmcAmcWarrantyInput?.value || '',
       totals,
     };
   };
@@ -12541,8 +12658,10 @@
       setAlert(execCheck.message, 'warn');
       return;
     }
-    if (currentPoId && currentPoStatusCode === 'A') {
-      setAlert('Approved POs are read-only. Use New PO to create another.', 'warn');
+    if (currentPoId && (currentPoStatusCode === 'A' || currentPoStatusCode === 'C')) {
+      const isCancelledPo = currentPoStatusCode === 'C';
+      const actionHint = isITRole ? 'Use Change to Draft to reopen this PO.' : 'Use New PO to create another.';
+      setAlert(`${isCancelledPo ? 'Cancelled' : 'Approved'} POs are read-only. ${actionHint}`, 'warn');
       return;
     }
     const hybridCheck = validateHybridRows();
@@ -12550,7 +12669,7 @@
       setAlert(hybridCheck.message, 'warn');
       return;
     }
-    const isUpdate = !!(currentPoId && currentPoStatusCode !== 'A');
+    const isUpdate = !!(currentPoId && currentPoStatusCode !== 'A' && currentPoStatusCode !== 'C');
     if (isUpdate) {
       const poRef = String(poNoInput?.value || '').trim() || `ID ${currentPoId}`;
       const modeLabel = currentPoStatusCode === 'P' ? 'Pending Approval' : 'Draft';
@@ -12611,6 +12730,80 @@
     } catch (err) {
       setAlert(err.message || 'Failed to save PO.', 'error');
     } finally {
+      clearLoading();
+    }
+  };
+
+  const changePoStatusForIT = async (targetStatus) => {
+    const unit = getUnit();
+    const targetKey = String(targetStatus || '').trim().toLowerCase();
+    const targetLabel = targetKey === 'cancelled' ? 'Cancelled' : 'Draft';
+    const currentLabel = resolvePoStatusLabel(currentPoStatusCode);
+    if (!isITRole) {
+      setAlert('Only IT can change PO status to Draft or Cancelled.', 'warn');
+      return;
+    }
+    if (!unit) {
+      setAlert('Please select a unit first.', 'warn');
+      return;
+    }
+    if (!currentPoId) {
+      setAlert('Please load a PO first.', 'warn');
+      return;
+    }
+    if ((targetKey === 'draft' && currentPoStatusCode === 'D') || (targetKey === 'cancelled' && currentPoStatusCode === 'C')) {
+      setAlert(`PO is already ${targetLabel.toLowerCase()}.`, 'warn');
+      return;
+    }
+
+    const poRef = String(poNoInput?.value || '').trim() || `ID ${currentPoId}`;
+    const confirmText = targetKey === 'cancelled'
+      ? `Cancel PO ${poRef}? The system will email the vendor, accounts, and us@asarfihospital.com with the cancellation snapshot and cancelled PDF.`
+      : `Change PO ${poRef} from ${currentLabel} to Draft? This will reopen the PO for editing.`;
+    if (!window.confirm(confirmText)) {
+      return;
+    }
+
+    try {
+      showLoading(targetKey === 'cancelled' ? 'Cancelling PO and sending notifications... Please wait.' : 'Changing PO status to Draft... Please wait.');
+      if (restorePoDraftBtn) restorePoDraftBtn.disabled = true;
+      if (cancelPoBtn) cancelPoBtn.disabled = true;
+      const res = await apiJson('/api/purchase/po_status_override', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unit,
+          po_id: currentPoId,
+          target_status: targetKey,
+        }),
+      });
+      if (res.status !== 'success') {
+        setAlert(res.message || `Failed to change PO status to ${targetLabel}.`, 'error');
+        return;
+      }
+
+      currentPoStatusCode = String(res.target_status_code || '').trim().toUpperCase() || (targetKey === 'cancelled' ? 'C' : 'D');
+      currentOtpRequestId = null;
+      if (poStatusSelect) {
+        poStatusSelect.value = res.target_status_label || resolvePoStatusLabel(currentPoStatusCode);
+      }
+      const isReadonly = currentPoStatusCode === 'A' || currentPoStatusCode === 'C';
+      setPoReadonly(isReadonly);
+      if (heroModeChip) heroModeChip.textContent = isReadonly ? 'Mode: View' : 'Mode: Edit';
+      setOtpPanel(false, '', '');
+
+      const mailStatus = String(res.mail_status?.status || '').trim().toLowerCase();
+      const alertKind = currentPoStatusCode === 'C' && mailStatus && mailStatus !== 'success' ? 'warn' : 'success';
+      setAlert(
+        res.message || (currentPoStatusCode === 'C'
+          ? 'PO cancelled successfully.'
+          : 'PO status changed to Draft successfully.'),
+        alertKind
+      );
+    } catch (err) {
+      setAlert(err.message || `Failed to change PO status to ${targetLabel}.`, 'error');
+    } finally {
+      updatePoStatusActionButtons();
       clearLoading();
     }
   };
@@ -13141,7 +13334,7 @@
 
   const tabButtons = document.querySelectorAll('.tab-btn');
   const tabPanels = document.querySelectorAll('.tab-panel');
-  const moduleTabButtons = document.querySelectorAll('.module-tab-btn');
+  const moduleTabButtons = document.querySelectorAll('.module-tab-btn[data-module]');
   const moduleSections = document.querySelectorAll('.module-section');
   const resetModuleLandingState = () => {
     moduleTabButtons.forEach((button) => button.classList.remove('active'));
@@ -13850,6 +14043,12 @@
       clearLoading();
     });
   }
+  if (restorePoDraftBtn) {
+    restorePoDraftBtn.addEventListener('click', () => changePoStatusForIT('draft'));
+  }
+  if (cancelPoBtn) {
+    cancelPoBtn.addEventListener('click', () => changePoStatusForIT('cancelled'));
+  }
   if (printPoBtn) {
     printPoBtn.addEventListener('click', () => {
       const unit = getUnit();
@@ -14000,7 +14199,7 @@
       }
       const formatVal = normalizePoPrintFormatValue(
         poPrintFormatModal?.value || opt?.dataset?.printFormat || currentPoPrintFormat || 'standard',
-        { allowSavedDef: true, unitValue: unit }
+        { allowSavedSpecial: true, unitValue: unit }
       );
       await sendPoEmailPdf({
         poId,
@@ -14215,6 +14414,7 @@
 
   initWorkOrderBodyEditor();
   resetModuleLandingState();
+  updateGrnEntryVisibility();
   updateWorkOrderTabVisibility();
   initResizableTables();
   syncIndentUnitDisplay();

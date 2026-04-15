@@ -1,0 +1,158 @@
+<div class="collapsible-card mis-section" id="section-stock-ledger">
+  <div class="collapsible-header">
+    <div class="collapsible-title">
+      <h3>Pharmacy Stock Ledger</h3>
+      <div class="stock-note" id="stockLedgerStatus">Select store, date range, and click Load.</div>
+    </div>
+    <button class="collapse-btn" data-target="stockLedgerBody">Collapse</button>
+  </div>
+  <div class="collapsible-body collapsed" id="stockLedgerBody">
+    <div class="ledger-controls-shell">
+      <div class="ledger-controls">
+        <div class="filter-group">
+          <label>Store</label>
+          <select id="ledgerStoreSelect" class="form-control">
+            <option value="">Select store</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Search</label>
+          <input
+            type="text"
+            id="ledgerSearch"
+            class="form-control"
+            placeholder="Item name / item ID / batch / DocType-DocId"
+          >
+        </div>
+        <div class="filter-group">
+          <label>Movement</label>
+          <select id="ledgerMovementFamily" class="form-control">
+            <option value="">All movements</option>
+            <option value="opening">Opening</option>
+            <option value="inbound">Inbound</option>
+            <option value="outbound">Outbound</option>
+            <option value="return">Returns</option>
+            <option value="transfer">Transfer / Receipt</option>
+            <option value="adjustment">Adjustment</option>
+            <option value="other">Other</option>
+          </select>
+        </div>
+        <div class="filter-group">
+          <label>Doc Type</label>
+          <select id="ledgerDocType" class="form-control">
+            <option value="">All doc types</option>
+          </select>
+        </div>
+        <div class="filter-group" id="ledgerBatchFilterGroup" hidden>
+          <label>Batch</label>
+          <select id="ledgerBatchSelect" class="form-control" disabled>
+            <option value="">All batches</option>
+          </select>
+        </div>
+      </div>
+      <div class="ledger-footer-controls">
+        <label class="ledger-toggle" for="ledgerMismatchOnly">
+          <input type="checkbox" id="ledgerMismatchOnly">
+          <span>Only rows where stock changed later</span>
+        </label>
+        <div class="ledger-action-group">
+          <button class="inline-btn" id="exportStockLedgerExcel" type="button">Export Excel</button>
+          <button class="btn-primary" id="loadStockLedgerBtn" type="button">Load Ledger</button>
+        </div>
+      </div>
+    </div>
+
+    <div class="ledger-meta-row">
+      <div class="ledger-legend">
+        <span class="ledger-movement-chip opening">Opening</span>
+        <span class="ledger-movement-chip inbound">Inbound</span>
+        <span class="ledger-movement-chip outbound">Outbound</span>
+        <span class="ledger-movement-chip return">Returns</span>
+        <span class="ledger-movement-chip transfer">Transfer / Receipt</span>
+        <span class="ledger-movement-chip adjustment">Adjustment</span>
+      </div>
+      <div class="ledger-comparison-note" id="stockLedgerComparisonNote">
+        Current stock comparison note will appear here after load.
+      </div>
+    </div>
+
+    <div class="stock-kpi-grid ledger-kpi-grid">
+      <div class="stock-kpi-card">
+        <div class="stock-kpi-title">Opening Stock</div>
+        <div class="stock-kpi-value" id="ledgerOpeningQty">0</div>
+        <div class="stock-kpi-sub">Stock before the first movement in this view</div>
+      </div>
+      <div class="stock-kpi-card">
+        <div class="stock-kpi-title">Stock In</div>
+        <div class="stock-kpi-value" id="ledgerInwardQty">0</div>
+        <div class="stock-kpi-sub">Receipts and positive movement in the view</div>
+      </div>
+      <div class="stock-kpi-card">
+        <div class="stock-kpi-title">Stock Out</div>
+        <div class="stock-kpi-value" id="ledgerOutwardQty">0</div>
+        <div class="stock-kpi-sub">Sales, issues, and other outward movement</div>
+      </div>
+      <div class="stock-kpi-card">
+        <div class="stock-kpi-title">Last Stock After Movement</div>
+        <div class="stock-kpi-value" id="ledgerClosingQty">0</div>
+        <div class="stock-kpi-sub">Last stock reached within the selected view</div>
+      </div>
+      <div class="stock-kpi-card">
+        <div class="stock-kpi-title">Stock Now</div>
+        <div class="stock-kpi-value" id="ledgerCurrentQty">0</div>
+        <div class="stock-kpi-sub">Live store stock for the items shown below</div>
+      </div>
+      <div class="stock-kpi-card ledger-kpi-card-delta">
+        <div class="stock-kpi-title" id="ledgerDeltaTitle">Changed Since</div>
+        <div class="stock-kpi-value" id="ledgerDeltaSummary">0 rows</div>
+        <div class="stock-kpi-sub" id="ledgerDeltaSub">Rows where later movement changed the stock</div>
+      </div>
+    </div>
+
+    <div class="data-table-wrap">
+      <table class="ledger-table">
+        <thead>
+          <tr>
+            <th>Date/Time</th>
+            <th>Movement</th>
+            <th>Reference</th>
+            <th>Item</th>
+            <th>Batch</th>
+            <th class="num">Stock Before</th>
+            <th class="num">Moved</th>
+            <th class="num">Stock After</th>
+            <th class="num">Stock Now</th>
+            <th class="num" id="ledgerDeltaColumnTitle">Changed Since</th>
+            <th class="center">Trace</th>
+          </tr>
+        </thead>
+        <tbody id="stockLedgerTableBody">
+          <tr>
+            <td colspan="11" style="text-align:center; color:#94a3b8; padding:30px;">No ledger data loaded yet.</td>
+          </tr>
+        </tbody>
+      </table>
+    </div>
+
+    <div class="stock-pager">
+      <span id="stockLedgerPageInfo" style="margin-right:auto;font-size:12px;color:#475569;"></span>
+      <button id="stockLedgerPrev" type="button">Prev</button>
+      <button id="stockLedgerNext" type="button">Next</button>
+    </div>
+  </div>
+</div>
+
+<div class="ledger-trace-backdrop" id="ledgerTraceBackdrop" hidden>
+  <div class="ledger-trace-panel" id="ledgerTracePanel" role="dialog" aria-modal="true" aria-labelledby="ledgerTraceTitle">
+    <div class="ledger-trace-header">
+      <div>
+        <h4 id="ledgerTraceTitle">Movement Trace</h4>
+        <div class="ledger-trace-sub" id="ledgerTraceSubtitle">Select a row to inspect how stock moved before, during, and after the transaction.</div>
+      </div>
+      <button class="btn-ghost" id="ledgerTraceCloseBtn" type="button">Close</button>
+    </div>
+    <div class="ledger-trace-body" id="ledgerTraceBody">
+      <div class="ledger-empty">Trace details will appear here.</div>
+    </div>
+  </div>
+</div>

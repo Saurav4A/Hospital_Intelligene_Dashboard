@@ -35,9 +35,17 @@ from modules.service_addition_routes import register_service_addition_routes
 from modules.patient_journey_routes import register_patient_journey_routes
 from modules.occupancy_routes import register_occupancy_routes
 from modules.purchase_master_routes import register_purchase_master_routes
+from modules.purchase_grn_routes import register_purchase_grn_routes
 from modules.purchase_pm_indent_routes import register_purchase_pm_indent_routes
 from modules.purchase_po_routes import register_purchase_po_routes
 from modules.purchase_work_order_routes import register_purchase_work_order_routes
+from modules.mis_laboratory_summary_routes import register_mis_laboratory_summary_routes
+from modules.mis_radiology_summary_routes import register_mis_radiology_summary_routes
+from modules.mis_pharmacy_stock_ledger_routes import register_mis_pharmacy_stock_ledger_routes
+from modules.mis_pharmacy_department_issue_routes import register_mis_pharmacy_department_issue_routes
+from modules.mod_reports_dashboard_routes import register_mod_reports_dashboard_routes
+from modules.mod_reports_morning_routes import register_mod_reports_morning_routes
+from modules.mod_reports_night_routes import register_mod_reports_night_routes
 try:
     from modules.notification_routes import NOTIFICATIONS_FILE, USER_NOTIFICATIONS_FILE
 except Exception:
@@ -591,11 +599,14 @@ CORP_RECON_CUTOFF_DATE = "2025-03-31"
 CORP_RECON_SETTLE_TOLERANCE = 1.00
 CORP_RECON_UNITS = {"AHL", "ACI", "BALLIA", "SHARPSIGHT"}
 CORPORATE_ONLY_UNITS = {"SHARPSIGHT"}
+PURCHASE_ENABLED_CORPORATE_UNITS = {"SHARPSIGHT"}
 UNIT_DISPLAY_NAMES = {
     "SHARPSIGHT": "SharpSight",
 }
 CORP_RECON_RECEIPT_SECTION = "corporate_receipt"
 CORP_RECON_WRITEOFF_SECTION = "corporate_writeoff"
+CORP_RECON_RECEIPT_DATE_EDIT_SECTION = "corporate_receipt_date_edit"
+CORP_RECON_BILL_UNSUBMIT_SECTION = "corporate_bill_unsubmit"
 CORP_RECON_CACHE_TTL = 60 * 60
 CORP_RECON_CACHE_MAX = 24
 CORP_RECON_CACHE = {}
@@ -701,6 +712,21 @@ def _corp_bill_page_cache_get(key):
 
 def _corp_bill_page_cache_put(key, payload):
     _generic_cache_put("corp_bill_page", key, {"payload": payload}, CORP_BILL_PAGE_CACHE_TTL, CORP_BILL_PAGE_CACHE)
+
+
+CORP_BILL_ALLOWED_STATUS_FILTERS = {"all", "final", "nonfinal", "pending", "notworked"}
+CORP_BILL_STATUS_FILTER_LABELS = {
+    "all": "All",
+    "final": "Final Submitted",
+    "nonfinal": "Other Status (All Non-Final)",
+    "pending": "Submission Pending",
+    "notworked": "Not Worked",
+}
+
+
+def _corp_bill_status_filter_label(status_filter: str) -> str:
+    key = str(status_filter or "").strip().lower()
+    return CORP_BILL_STATUS_FILTER_LABELS.get(key, CORP_BILL_STATUS_FILTER_LABELS["all"])
 
 
 def _billing_cache_get(key):
@@ -1252,6 +1278,11 @@ ROUTE_SECTION_MAP = {
     "/api/mis/pharmacy/current_stock_statement/export_job": "mis_pharmacy",
     "/api/mis/pharmacy/current_stock_statement/export_job_status": "mis_pharmacy",
     "/api/mis/pharmacy/current_stock_statement/export_job_result": "mis_pharmacy",
+    "/api/mis/pharmacy/stock_ledger": "mis_pharmacy",
+    "/api/mis/pharmacy/stock_ledger/trace": "mis_pharmacy",
+    "/api/mis/pharmacy/stock_ledger/export_excel_job": "mis_pharmacy",
+    "/api/mis/pharmacy/stock_ledger/export_excel_job_status": "mis_pharmacy",
+    "/api/mis/pharmacy/stock_ledger/export_excel_job_result": "mis_pharmacy",
     "/api/mis/pharmacy/medicine_types": "mis_pharmacy",
     "/api/mis/pharmacy/manufacturers": "mis_pharmacy",
     "/api/mis/pharmacy/product_margin": "mis_pharmacy",
@@ -1264,6 +1295,11 @@ ROUTE_SECTION_MAP = {
     "/api/mis/pharmacy/gss_issue_register/export_excel_job_status": "mis_pharmacy",
     "/api/mis/pharmacy/gss_issue_register/export_excel_job_result": "mis_pharmacy",
     "/api/mis/pharmacy/ward_medicine_tat": "mis_pharmacy",
+    "/api/mis/pharmacy/departmental_issue": "mis_pharmacy",
+    "/api/mis/pharmacy/departmental_issue/export_excel": "mis_pharmacy",
+    "/api/mis/pharmacy/departmental_issue/export_excel_job": "mis_pharmacy",
+    "/api/mis/pharmacy/departmental_issue/export_excel_job_status": "mis_pharmacy",
+    "/api/mis/pharmacy/departmental_issue/export_excel_job_result": "mis_pharmacy",
     "/api/mis/pharmacy/itemwise_consumption": "mis_pharmacy",
     "/api/mis/pharmacy/itemwise_consumption/export_excel": "mis_pharmacy",
     "/api/mis/pharmacy/expired_items": "mis_pharmacy",
@@ -1305,6 +1341,8 @@ ROUTE_SECTION_MAP = {
     "/corporate": "corporate_management",
     "/api/corporate": "corporate_management",
     "/api/corporate/reconciliation": "corporate_management",
+    "/api/corporate/reconciliation/actions/receipt_candidates": "corporate_management",
+    "/api/corporate/reconciliation/actions/unsubmit_candidates": "corporate_management",
     "/api/corporate/reconciliation/suspense": "corporate_management",
     "/api/corporate/reconciliation/writeoff": "corporate_management",
     "/api/corporate/reconciliation/suspense/audit": "corporate_management",
@@ -1333,6 +1371,8 @@ ROUTE_SECTION_MAP = {
     "/api/ip_package/submit": "service_addition_ip_package",
     "/api/ip_package/next_code": "service_addition_ip_package",
     "/purchase": "purchase",
+    "/purchase/grn": "purchase",
+    "/api/purchase/grn": "purchase",
     "/api/purchase/init": "purchase",
     "/api/purchase/po_valuation_filters": "purchase",
     "/api/purchase/suppliers": "purchase",
@@ -1411,6 +1451,10 @@ def _all_section_keys():
     keys.add(CORP_RECON_RECEIPT_SECTION)
     # Additional fine-grained right for corporate reconciliation write-off action.
     keys.add(CORP_RECON_WRITEOFF_SECTION)
+    # Additional fine-grained right for corporate receipt-date correction action.
+    keys.add(CORP_RECON_RECEIPT_DATE_EDIT_SECTION)
+    # Additional fine-grained right for corporate bill unsubmit action.
+    keys.add(CORP_RECON_BILL_UNSUBMIT_SECTION)
     return sorted(keys)
 
 def _resolve_section_for_request(path: str) -> str | None:
@@ -1642,6 +1686,11 @@ def _all_units_upper(include_corporate_only: bool = False):
         return units
     return [u for u in units if u not in CORPORATE_ONLY_UNITS]
 
+
+def _purchase_units_upper():
+    units = _all_units_upper(include_corporate_only=True)
+    return [u for u in units if u not in CORPORATE_ONLY_UNITS or u in PURCHASE_ENABLED_CORPORATE_UNITS]
+
 def _analytics_units_upper():
     units_all = _all_units_upper()
     explicit = getattr(config, "ANALYTICS_UNITS", None)
@@ -1717,6 +1766,34 @@ def _validated_user_scope_units(raw_units, *, include_corporate_only: bool, fiel
     return _normalize_unit_scope_text(requested), None
 
 
+def _allowed_purchase_scope_units_for_session():
+    allowed = _allowed_units_for_session(include_corporate_only=True)
+    if not allowed:
+        return []
+    purchase_set = {str(u or "").strip().upper() for u in _purchase_units_upper()}
+    return [u for u in allowed if str(u or "").strip().upper() in purchase_set]
+
+
+def _validated_purchase_scope_units(raw_units, *, field_label: str):
+    requested = _normalize_unit_scope(raw_units)
+    if not requested:
+        return "", None
+
+    allowed_units = _allowed_purchase_scope_units_for_session()
+    allowed_set = {str(u or "").strip().upper() for u in (allowed_units or []) if str(u or "").strip()}
+
+    if "*" in requested:
+        if not allowed_units:
+            return None, f"You cannot assign {field_label} outside your own scope"
+        return _normalize_unit_scope_text(allowed_units), None
+
+    invalid = [u for u in requested if u.upper() not in allowed_set]
+    if invalid:
+        return None, f"You cannot assign {field_label} outside your own scope"
+
+    return _normalize_unit_scope_text(requested), None
+
+
 def _corporate_units(units: list[str] | None):
     allowed = []
     seen = set()
@@ -1734,7 +1811,7 @@ def _allowed_purchase_units_for_session():
     - Defaults to normal session units.
     - If session['purchase_unit_scope'] is set, restrict Purchase to that subset.
     """
-    allowed = _allowed_units_for_session()
+    allowed = _allowed_purchase_scope_units_for_session()
     if not allowed:
         return []
     purchase_scope = _normalize_unit_scope(session.get("purchase_unit_scope") or "")
@@ -2090,6 +2167,7 @@ def _normalize_po_header_for_audit(header: dict, totals: dict | None = None, sta
         "discount_total": discount_total,
         "notes": pick(["Notes", "notes"]),
         "special_notes": pick(["SpecialNotes", "special_notes"]),
+        "cmc_amc_warranty": pick(["CmcAmcWarrantyNotes", "CMCAMCWarrantyNotes", "cmc_amc_warranty", "OtherTerms", "other_terms"]),
         "subject": pick(["Subject", "subject"]),
         "ref_no": pick(["RefNo", "Ref_No", "ref_no"]),
     }
@@ -3746,6 +3824,7 @@ DEFAULT_PURCHASING_DEPARTMENTS = [
 UNIT_DEFAULT_PURCHASING_DEPT = {
     "AHL": "Pharmacy and Drugs",
     "ACI": "Pharmacy and Drugs",
+    "SHARPSIGHT": "Pharmacy and Drugs",
 }
 
 
@@ -14768,6 +14847,40 @@ def _build_overall_once():
 # ============================================================
 # Enforce idle timeout & single-session per user
 # ============================================================
+def _request_counts_as_session_activity() -> bool:
+    if request.endpoint == 'session_remaining':
+        return False
+    if request.endpoint == 'session_keepalive':
+        return True
+
+    activity_hint = (request.headers.get("X-Session-Activity") or "").strip().lower()
+    if activity_hint in {"1", "true", "active", "touch", "keepalive"}:
+        return True
+
+    if request.method in {"HEAD", "OPTIONS"}:
+        return False
+
+    requested_with = (request.headers.get("X-Requested-With") or "").strip().lower()
+    if requested_with == "xmlhttprequest":
+        return False
+
+    sec_fetch_dest = (request.headers.get("Sec-Fetch-Dest") or "").strip().lower()
+    sec_fetch_mode = (request.headers.get("Sec-Fetch-Mode") or "").strip().lower()
+    if sec_fetch_dest == "empty" and sec_fetch_mode in {"cors", "same-origin", "no-cors"}:
+        return False
+
+    accept = (request.headers.get("Accept") or "").lower()
+    wants_json_only = "application/json" in accept and "text/html" not in accept
+    if wants_json_only:
+        return False
+
+    path = (request.path or "").strip().lower()
+    if path.startswith("/api/") or path.startswith("/_"):
+        return False
+
+    return True
+
+
 @app.before_request
 def enforce_session_policies():
     # Lazy-start OTP worker on first incoming request (Flask 3 removed before_first_request)
@@ -14796,8 +14909,7 @@ def enforce_session_policies():
         session.clear()
         return redirect(url_for('login'))
 
-    # Do not refresh last_activity for passive timer polling
-    if request.endpoint != 'session_remaining':
+    if _request_counts_as_session_activity():
         session['last_activity'] = now
         _session_store_touch(username, sid)
 
@@ -18788,23 +18900,6 @@ def mis_administrative():
     return render_template('administrative_mis.html', allowed_units=allowed_units, selected_unit=selected_unit)
 
 
-@app.route('/mod_reports')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
-def mod_reports_dashboard():
-    allowed_units = _analytics_allowed_units_for_session() or _allowed_units_for_session()
-    if not allowed_units:
-        selected_unit = "ALL"
-    elif len(allowed_units) == 1:
-        selected_unit = allowed_units[0]
-    else:
-        selected_unit = "ALL"
-    return render_template(
-        'mod_reports.html',
-        allowed_units=allowed_units,
-        selected_unit=selected_unit,
-    )
-
-
 def _mod_summary_normalize_date(value) -> str | None:
     if value is None:
         return None
@@ -20288,280 +20383,6 @@ def _build_mod_sequence_audit_excel(
     return buffer.getvalue()
 
 
-@app.route('/api/mod_reports/summary')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
-def api_mod_reports_summary():
-    duration = (request.args.get("duration") or "daily").strip().lower()
-    if duration not in {"daily", "monthly", "yearly"}:
-        duration = "daily"
-    requested_segment = (request.args.get("segment") or "total").strip().lower()
-    if requested_segment not in {"total", "asarfi", "cardiac"}:
-        requested_segment = "total"
-
-    try:
-        limit = int(request.args.get("limit") or _mod_summary_default_limit(duration))
-    except Exception:
-        limit = _mod_summary_default_limit(duration)
-    limit = max(3, min(limit, 120))
-
-    try:
-        lookback_days = int(request.args.get("lookback_days") or _mod_summary_pick_lookback_days(duration))
-    except Exception:
-        lookback_days = _mod_summary_pick_lookback_days(duration)
-    lookback_days = max(30, min(lookback_days, 3650))
-
-    requested_unit = (request.args.get("unit") or "").strip().upper()
-    allowed_units = _analytics_allowed_units_for_session() or _allowed_units_for_session()
-    if not allowed_units:
-        return jsonify({"status": "error", "message": "No unit access"}), 403
-
-    if requested_unit and requested_unit != "ALL" and requested_unit not in allowed_units:
-        return jsonify({"status": "error", "message": "Unit not allowed"}), 403
-    if not requested_unit:
-        requested_unit = allowed_units[0] if len(allowed_units) == 1 else "ALL"
-    if requested_unit != "AHL":
-        requested_segment = "total"
-
-    units_to_use = allowed_units if requested_unit == "ALL" else [requested_unit]
-    today = datetime.now(tz=LOCAL_TZ).date()
-    include_today = _is_truthy(request.args.get("include_today"))
-    closed_to = today if include_today else (today - timedelta(days=1))
-    from_dt = today - timedelta(days=lookback_days)
-    if closed_to < from_dt:
-        from_dt = closed_to
-    from_date = from_dt.strftime("%Y-%m-%d")
-    to_date = closed_to.strftime("%Y-%m-%d")
-
-    try:
-        daily_rows = _fetch_mod_summary_daily_rows(units_to_use, from_date, to_date, segment=requested_segment)
-        rows = _aggregate_mod_summary_rows(daily_rows, duration)
-        dept_insights = _fetch_mod_summary_department_insights(units_to_use, from_date, to_date, duration)
-    except Exception as e:
-        return jsonify({"status": "error", "message": f"Failed to build MOD summary: {e}"}), 500
-
-    rows = rows[:limit]
-
-    def _avg(field: str) -> float:
-        vals = [float(r[field]) for r in rows if r.get(field) is not None]
-        if not vals:
-            return 0.0
-        return round(sum(vals) / len(vals), 2)
-
-    def _trend(field: str) -> float | None:
-        if len(rows) < 2:
-            return None
-        a = rows[0].get(field)
-        b = rows[1].get(field)
-        if a is None or b is None:
-            return None
-        return round(float(a) - float(b), 2)
-
-    kpis = {
-        "avg_occupancy_pct": _avg("avg_occupancy_pct"),
-        "avg_opd": _avg("avg_opd"),
-        "avg_ipd": _avg("avg_ipd"),
-        "avg_night_admissions": _avg("avg_night_admissions"),
-        "avg_night_discharges": _avg("avg_night_discharges"),
-        "avg_investigations": _avg("avg_investigations"),
-        "avg_procedures": _avg("avg_procedures"),
-        "avg_coverage_pct": _avg("coverage_pct"),
-        "total_reports_saved": int(sum(int(r.get("reports_saved") or 0) for r in rows)),
-        "periods": len(rows),
-    }
-    trends = {
-        "occupancy_pct": _trend("avg_occupancy_pct"),
-        "opd": _trend("avg_opd"),
-        "ipd": _trend("avg_ipd"),
-        "night_admissions": _trend("avg_night_admissions"),
-        "night_discharges": _trend("avg_night_discharges"),
-        "coverage_pct": _trend("coverage_pct"),
-    }
-
-    for row in rows:
-        row.pop("_updated_dt", None)
-
-    segment_limited = bool(requested_unit == "AHL" and requested_segment in {"asarfi", "cardiac"})
-    if segment_limited:
-        dept_insights["note"] = "Department insights use combined AHL doctorwise snapshots; split-wise department data is not persisted."
-
-    return jsonify(
-        {
-            "status": "success",
-            "duration": duration,
-            "unit": requested_unit,
-            "segment": requested_segment,
-            "units": units_to_use,
-            "from": from_date,
-            "to": to_date,
-            "closed_only": not include_today,
-            "rows": rows,
-            "kpis": kpis,
-            "trends": trends,
-            "dept_insights": dept_insights,
-            "available_units": allowed_units,
-            "updated_at": datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S"),
-        }
-    )
-
-
-@app.route('/api/mod_reports/sequence_audit/export_excel')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
-def api_mod_reports_sequence_audit_export_excel():
-    duration_raw = request.args.get("range") or request.args.get("duration") or "custom"
-    from_raw = request.args.get("from") or request.args.get("from_date")
-    to_raw = request.args.get("to") or request.args.get("to_date")
-    duration, from_dt, to_dt = _resolve_mod_export_date_range(duration_raw, from_raw, to_raw)
-
-    if not from_dt or not to_dt:
-        return jsonify({"status": "error", "message": "Valid from/to date is required (YYYY-MM-DD)."}), 400
-    if to_dt < from_dt:
-        return jsonify({"status": "error", "message": "To date cannot be earlier than from date."}), 400
-    if (to_dt - from_dt).days > 3660:
-        return jsonify({"status": "error", "message": "Date range too large. Keep it within 10 years."}), 400
-
-    now_local = datetime.now(tz=LOCAL_TZ)
-    today = now_local.date()
-    if to_dt > today:
-        return jsonify({"status": "error", "message": "Future dates are not allowed."}), 400
-
-    allowed_units = _analytics_allowed_units_for_session() or _allowed_units_for_session()
-    if not allowed_units:
-        return jsonify({"status": "error", "message": "No unit access"}), 403
-
-    requested_unit = (request.args.get("unit") or "").strip().upper()
-    if requested_unit and requested_unit != "ALL" and requested_unit not in allowed_units:
-        return jsonify({"status": "error", "message": "Unit not allowed"}), 403
-    if not requested_unit:
-        requested_unit = allowed_units[0] if len(allowed_units) == 1 else "ALL"
-    units_to_use = allowed_units if requested_unit == "ALL" else [requested_unit]
-
-    requested_segment = (request.args.get("segment") or "total").strip().lower()
-    if requested_segment not in {"total", "asarfi", "cardiac"}:
-        requested_segment = "total"
-    if requested_unit != "AHL":
-        requested_segment = "total"
-
-    from_date = from_dt.strftime("%Y-%m-%d")
-    to_date = to_dt.strftime("%Y-%m-%d")
-
-    try:
-        daily_rows = _fetch_mod_summary_daily_rows(units_to_use, from_date, to_date, segment=requested_segment)
-    except Exception as e:
-        return jsonify({"status": "error", "message": f"Failed to build MOD audit export data: {e}"}), 500
-
-    rows_for_export = []
-    for row in (daily_rows or []):
-        period_key = str(row.get("period_key") or "").strip()
-        try:
-            period_dt = datetime.strptime(period_key, "%Y-%m-%d").date()
-        except Exception:
-            continue
-        # Sequence lock happens 6 hours after 08:00 snapshot => 14:00 local time.
-        lock_ready_at = datetime.combine(period_dt, datetime.min.time(), tzinfo=LOCAL_TZ) + timedelta(hours=14)
-        if now_local < lock_ready_at:
-            continue
-        expected_reports = max(1, int(row.get("expected_reports") or 0))
-        reports_saved = int(row.get("reports_saved") or 0)
-        out = dict(row)
-        if reports_saved >= expected_reports:
-            out["status_label"] = "LOCKED"
-        elif reports_saved > 0:
-            out["status_label"] = "PARTIAL"
-        else:
-            out["status_label"] = "MISSING"
-        rows_for_export.append(out)
-
-    locked_only = _is_truthy(request.args.get("locked_only", "1"))
-    if locked_only:
-        rows_for_export = [
-            r for r in rows_for_export
-            if int(r.get("reports_saved") or 0) >= int(r.get("expected_reports") or 0)
-        ]
-
-    rows_for_export.sort(key=lambda r: str(r.get("period_key") or ""), reverse=True)
-    if not rows_for_export:
-        return jsonify(
-            {
-                "status": "error",
-                "message": "No locked MOD sequence rows found for this range/unit.",
-                "from": from_date,
-                "to": to_date,
-            }
-        ), 404
-
-    include_ahl_details = requested_unit == "AHL"
-    if include_ahl_details:
-        extras_map = _fetch_ahl_sequence_export_extras(from_date, to_date)
-        ahl_inv_labels = [str(label).strip() for label, _ in MORNING_REPORT_INVESTIGATION_MAP if str(label).strip()]
-        ahl_proc_labels = [str(label).strip() for label in MORNING_REPORT_KEY_PROCEDURES if str(label).strip()]
-        for row in rows_for_export:
-            date_key = str(row.get("period_key") or row.get("period_label") or "").strip()
-            ext = extras_map.get(date_key) or {}
-            row["ahl_night_cash_occupancy"] = int(ext.get("night_cash_occupancy") or 0)
-            row["ahl_night_cashless_occupancy"] = int(ext.get("night_cashless_occupancy") or 0)
-            row["ahl_night_asarfi_admissions"] = int(ext.get("night_asarfi_admissions") or 0)
-            row["ahl_night_asarfi_discharges"] = int(ext.get("night_asarfi_discharges") or 0)
-            row["ahl_night_cardiac_admissions"] = int(ext.get("night_cardiac_admissions") or 0)
-            row["ahl_night_cardiac_discharges"] = int(ext.get("night_cardiac_discharges") or 0)
-            row["ahl_night_0000_0800_asarfi_admissions"] = int(ext.get("night_0000_0800_asarfi_admissions") or 0)
-            row["ahl_night_0000_0800_cardiac_admissions"] = int(ext.get("night_0000_0800_cardiac_admissions") or 0)
-            row["ahl_night_0000_0800_total_admissions"] = int(ext.get("night_0000_0800_total_admissions") or 0)
-            row["ahl_night_ward_wise_patient_count"] = str(ext.get("ward_wise_patient_count") or "-")
-            row["ahl_morning_key_procedures"] = int(ext.get("morning_key_procedures") or 0)
-            for label in ahl_inv_labels:
-                key = _mod_seq_export_key(label)
-                row[f"ahl_inv_{key}_asarfi"] = int(ext.get(f"inv_{key}_asarfi") or 0)
-                row[f"ahl_inv_{key}_cardiac"] = int(ext.get(f"inv_{key}_cardiac") or 0)
-                row[f"ahl_inv_{key}_total"] = int(ext.get(f"inv_{key}_total") or 0)
-            for label in ahl_proc_labels:
-                key = _mod_seq_export_key(label)
-                row[f"ahl_proc_{key}"] = int(ext.get(f"proc_{key}") or 0)
-
-    exported_by = session.get("username") or session.get("user") or "Unknown"
-    unit_label = requested_unit if requested_unit != "ALL" else "ALL Units"
-    if requested_unit == "AHL" and requested_segment in {"asarfi", "cardiac"}:
-        unit_label = f"AHL ({requested_segment.title()})"
-
-    data = _build_mod_sequence_audit_excel(
-        rows_for_export,
-        from_date=from_date,
-        to_date=to_date,
-        unit_label=unit_label,
-        duration=duration,
-        segment=requested_segment,
-        locked_only=locked_only,
-        exported_by=exported_by,
-        include_ahl_details=include_ahl_details,
-    )
-
-    unit_token = re.sub(r"[^A-Za-z0-9_]+", "_", unit_label.replace(" ", "_")).strip("_") or "ALL"
-    filename = f"MOD_Sequence_Audit_{unit_token}_{from_date}_to_{to_date}.xlsx"
-    return send_file(
-        io.BytesIO(data),
-        as_attachment=True,
-        download_name=filename,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-
-
-@app.route('/mod_reports/night_report')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
-def night_report_page():
-    allowed_units = _analytics_allowed_units_for_session()
-    if not allowed_units:
-        allowed_units = _allowed_units_for_session()
-    selected_unit = (request.args.get("unit") or "").strip().upper()
-    if not selected_unit and allowed_units:
-        selected_unit = allowed_units[0]
-    today = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-    return render_template(
-        'night_report.html',
-        allowed_units=allowed_units,
-        selected_unit=selected_unit,
-        today=today
-    )
-
-
 def _fetch_night_snapshot_audit_rows(limit: int = 120) -> list[dict]:
     limit = max(20, min(int(limit or 120), 500))
     rows_out = []
@@ -20601,24 +20422,6 @@ def _fetch_night_snapshot_audit_rows(limit: int = 120) -> list[dict]:
             "wards_saved": int(wards_saved or 0),
         })
     return rows_out
-
-
-@app.route('/mod_reports/night_snapshot_health')
-@login_required(allowed_roles={"IT", "Management"})
-def night_snapshot_health_page():
-    return render_template('night_snapshot_health.html')
-
-
-@app.route('/api/mod_reports/night_snapshot_health')
-@login_required(allowed_roles={"IT", "Management"})
-def api_night_snapshot_health():
-    limit_raw = request.args.get("limit") or "120"
-    try:
-        limit = int(limit_raw)
-    except Exception:
-        limit = 120
-    rows = _fetch_night_snapshot_audit_rows(limit=limit)
-    return jsonify({"status": "success", "rows": rows})
 
 
 def _fetch_morning_snapshot_audit_rows(limit: int = 120) -> list[dict]:
@@ -20668,155 +20471,6 @@ def _fetch_morning_snapshot_audit_rows(limit: int = 120) -> list[dict]:
             "saved": None if saved_flag is None else bool(saved_flag),
         })
     return rows_out
-
-
-@app.route('/mod_reports/morning_snapshot_health')
-@login_required(allowed_roles={"IT", "Management"})
-def morning_snapshot_health_page():
-    return render_template('morning_snapshot_health.html')
-
-
-@app.route('/api/mod_reports/morning_snapshot_health')
-@login_required(allowed_roles={"IT", "Management"})
-def api_morning_snapshot_health():
-    limit_raw = request.args.get("limit") or "120"
-    try:
-        limit = int(limit_raw)
-    except Exception:
-        limit = 120
-    rows = _fetch_morning_snapshot_audit_rows(limit=limit)
-    return jsonify({"status": "success", "rows": rows})
-
-
-@app.route('/mod_reports/morning_report')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
-def morning_report_page():
-    today = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-    mod_name = session.get("username") or session.get("user") or ""
-    allowed_units = _analytics_allowed_units_for_session()
-    if not allowed_units:
-        allowed_units = _allowed_units_for_session()
-    selected_unit = (request.args.get("unit") or "").strip().upper()
-    if not selected_unit and allowed_units:
-        selected_unit = allowed_units[0]
-    return render_template(
-        'morning_report.html',
-        today=today,
-        mod_name=mod_name,
-        allowed_units=allowed_units,
-        selected_unit=selected_unit,
-    )
-
-
-@app.route('/api/mod_reports/night_report/snapshot_dates')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
-def api_night_report_snapshot_dates():
-    unit = (request.args.get("unit") or "").strip().upper()
-    allowed_units = _analytics_allowed_units_for_session() or _allowed_units_for_session()
-    if allowed_units and unit and unit not in allowed_units:
-        return jsonify({"status": "error", "message": "Unit not allowed"}), 403
-    if not unit and allowed_units:
-        unit = allowed_units[0]
-    if not unit:
-        return jsonify({"status": "error", "message": "Unit is required"}), 400
-
-    try:
-        with _get_login_db_connection() as conn:
-            _ensure_night_report_detail_table(conn)
-            _ensure_night_report_ward_table(conn)
-            cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT TOP 120 d.SnapshotDate, d.MaxDetailTime, w.MaxWardTime
-                FROM (
-                    SELECT SnapshotDate, MAX(SnapshotTime) AS MaxDetailTime
-                    FROM dbo.HID_Night_Report_Detail WITH (NOLOCK)
-                    WHERE Unit = ?
-                    GROUP BY SnapshotDate
-                ) d
-                INNER JOIN (
-                    SELECT SnapshotDate, MAX(SnapshotTime) AS MaxWardTime
-                    FROM dbo.HID_Night_Report_Ward WITH (NOLOCK)
-                    WHERE Unit = ?
-                    GROUP BY SnapshotDate
-                ) w ON w.SnapshotDate = d.SnapshotDate
-                ORDER BY d.SnapshotDate DESC
-                """,
-                (unit, unit),
-            )
-            rows = cur.fetchall()
-    except Exception as e:
-        return jsonify({"status": "error", "message": f"Failed to load snapshot dates: {e}"}), 500
-
-    dates = []
-    now_local = datetime.now(tz=LOCAL_TZ)
-    for row in rows:
-        snap_date = row[0] if row else None
-        detail_time = row[1] if row and len(row) > 1 else None
-        ward_time = row[2] if row and len(row) > 2 else None
-        if snap_date is None:
-            continue
-        # Ignore snapshots that appear to be in the future for current local time.
-        latest_time = ward_time or detail_time
-        if detail_time and ward_time:
-            try:
-                latest_time = max(detail_time, ward_time)
-            except Exception:
-                latest_time = ward_time or detail_time
-        snap_dt = _coerce_local_dt(latest_time)
-        if snap_dt and snap_dt > (now_local + timedelta(minutes=1)):
-            continue
-        if isinstance(snap_date, (datetime, date)):
-            dates.append(snap_date.strftime("%Y-%m-%d"))
-        else:
-            raw = str(snap_date).strip()
-            if len(raw) >= 10 and raw[4] == "-" and raw[7] == "-":
-                raw = raw[:10]
-            dates.append(raw)
-
-    return jsonify({"status": "success", "dates": dates})
-
-
-@app.route('/api/mod_reports/morning_report/snapshot_dates')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
-def api_morning_report_snapshot_dates():
-    unit = (request.args.get("unit") or "").strip().upper()
-    allowed_units = _analytics_allowed_units_for_session() or _allowed_units_for_session()
-    unit_norm = _resolve_morning_unit(allowed_units, unit)
-    if not unit_norm:
-        return jsonify({"status": "error", "message": "No unit access"}), 403
-
-    try:
-        with _get_login_db_connection() as conn:
-            _ensure_morning_report_tables(conn)
-            cur = conn.cursor()
-            cur.execute(
-                """
-                SELECT TOP 120 SnapshotDate
-                FROM dbo.HID_Morning_Report_Header WITH (NOLOCK)
-                WHERE Unit = ?
-                ORDER BY SnapshotDate DESC
-                """,
-                (unit_norm,),
-            )
-            rows = cur.fetchall()
-    except Exception as e:
-        return jsonify({"status": "error", "message": f"Failed to load snapshot dates: {e}"}), 500
-
-    dates = []
-    for row in rows:
-        snap_date = row[0] if row else None
-        if snap_date is None:
-            continue
-        if isinstance(snap_date, (datetime, date)):
-            dates.append(snap_date.strftime("%Y-%m-%d"))
-        else:
-            raw = str(snap_date).strip()
-            if len(raw) >= 10 and raw[4] == "-" and raw[7] == "-":
-                raw = raw[:10]
-            dates.append(raw)
-
-    return jsonify({"status": "success", "dates": dates})
 
 
 def _fetch_previous_night_snapshot_date(report_date_str: str, unit: str) -> str | None:
@@ -20882,760 +20536,6 @@ def _night_payload_has_core_values(payload: dict | None) -> bool:
     return False
 
 
-@app.route('/api/mod_reports/night_report')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
-def api_night_report_data():
-    date_str = (request.args.get("date") or "").strip()
-    mode = (request.args.get("mode") or "snapshot").strip().lower()
-    unit = (request.args.get("unit") or "").strip().upper()
-    if not date_str:
-        date_str = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-
-    _t0 = time.perf_counter()
-    def _log(stage: str):
-        elapsed = (time.perf_counter() - _t0) * 1000
-        print(f"[timing] night_report {unit or '-'} {date_str} {mode} {stage}: {elapsed:.1f}ms")
-
-    allowed_units = _analytics_allowed_units_for_session() or _allowed_units_for_session()
-    _log("allowed_units")
-    if allowed_units and unit and unit not in allowed_units:
-        return jsonify({"status": "error", "message": "Unit not allowed"}), 403
-    if not unit and allowed_units:
-        unit = allowed_units[0]
-    if not unit:
-        return jsonify({"status": "error", "message": "Unit is required"}), 400
-
-    role = str(session.get("role") or "").strip().lower()
-    is_it = role == "it"
-
-    cached_payload = _mod_report_cache_get("night", unit, date_str, mode)
-    _log("cache_check")
-    if cached_payload:
-        if mode == "snapshot":
-            now_local = datetime.now(tz=LOCAL_TZ)
-            snap_dt = _coerce_local_dt(cached_payload.get("snapshot_time"))
-            is_future_snapshot = bool(snap_dt and snap_dt > (now_local + timedelta(minutes=1)))
-            if (not _night_payload_has_core_values(cached_payload)) or is_future_snapshot:
-                _mod_report_cache_clear("night", unit, date_str)
-                cached_payload = None
-                _log("cache_drop_invalid_snapshot")
-        if cached_payload:
-            _log("cache_hit")
-            return jsonify({"status": "success", "data": _attach_mod_report_lock(cached_payload, unit, date_str, is_it, report_kind="night")})
-
-    if mode == "snapshot":
-        now_local = datetime.now(tz=LOCAL_TZ)
-        payload = _build_night_report_payload(unit, date_str, source="snapshot")
-        _log("build_snapshot")
-        snap_dt = _coerce_local_dt(payload.get("snapshot_time")) if payload else None
-        is_future_snapshot = bool(snap_dt and snap_dt > (now_local + timedelta(minutes=1)))
-        if (not payload) or (not _night_payload_has_core_values(payload)) or is_future_snapshot:
-            prev_date = _fetch_previous_night_snapshot_date(date_str, unit)
-            if prev_date:
-                prev_payload = _build_night_report_payload(unit, prev_date, source="snapshot")
-                if prev_payload and _night_payload_has_core_values(prev_payload):
-                    prev_payload["requested_date"] = date_str
-                    prev_payload["resolved_snapshot_date"] = prev_date
-                    payload = prev_payload
-                    _log("fallback_prev_snapshot")
-        if not payload or not _night_payload_has_core_values(payload):
-            return jsonify({"status": "error", "message": "No snapshot data for this date"}), 404
-        if str(payload.get("date") or "") == date_str:
-            _mod_report_cache_set("night", unit, date_str, mode, payload)
-            _log("cache_set_snapshot")
-        else:
-            _log("skip_cache_snapshot_fallback")
-        return jsonify({"status": "success", "data": _attach_mod_report_lock(payload, unit, date_str, is_it, report_kind="night")})
-
-    payload = _build_night_report_payload(unit, date_str, source="live")
-    _log("build_live")
-    if not payload:
-        return jsonify({"status": "error", "message": "Failed to load data"}), 500
-    _mod_report_cache_set("night", unit, date_str, mode, payload)
-    _log("cache_set_live")
-    return jsonify({"status": "success", "data": _attach_mod_report_lock(payload, unit, date_str, is_it, report_kind="night")})
-
-
-@app.route('/api/mod_reports/morning_report')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
-def api_morning_report_data():
-    now = datetime.now(tz=LOCAL_TZ)
-    report_date_str = (request.args.get("date") or "").strip()
-    mode = (request.args.get("mode") or "snapshot").strip().lower()
-    unit_override = (request.args.get("unit") or "").strip()
-    if not report_date_str:
-        report_date = now.date()
-        report_date_str = report_date.strftime("%Y-%m-%d")
-    else:
-        try:
-            report_date = datetime.strptime(report_date_str, "%Y-%m-%d").date()
-        except Exception:
-            report_date = now.date()
-            report_date_str = report_date.strftime("%Y-%m-%d")
-
-    _t0 = time.perf_counter()
-    def _log(stage: str):
-        elapsed = (time.perf_counter() - _t0) * 1000
-        print(f"[timing] morning_report {unit_override or '-'} {report_date_str} {mode} {stage}: {elapsed:.1f}ms")
-
-    allowed_units = _analytics_allowed_units_for_session() or _allowed_units_for_session()
-    _log("allowed_units")
-    base_unit = _resolve_morning_unit(allowed_units, unit_override)
-    if not base_unit:
-        return jsonify({"status": "error", "message": "No unit access"}), 403
-
-    role = str(session.get("role") or "").strip().lower()
-    is_it = role == "it"
-
-    cached_payload = _mod_report_cache_get("morning", base_unit, report_date_str, mode)
-    _log("cache_check")
-    if cached_payload:
-        hydrated_payload = _apply_morning_staff_non_med_prefill(cached_payload, report_date_str, base_unit)
-        if hydrated_payload:
-            hydrated_payload = dict(hydrated_payload)
-            hydrated_payload["summary_rows"] = _ensure_morning_death_summary_row(
-                base_unit,
-                report_date_str,
-                hydrated_payload.get("summary_rows") or [],
-            )
-        if hydrated_payload != cached_payload:
-            _mod_report_cache_set("morning", base_unit, report_date_str, mode, hydrated_payload)
-            cached_payload = hydrated_payload
-            _log("cache_prefill_refresh")
-        _log("cache_hit")
-        return jsonify({"status": "success", "data": _attach_mod_report_lock(cached_payload, base_unit, report_date_str, is_it)})
-
-    if mode == "snapshot":
-        snapshot_payload = _fetch_morning_report_snapshot(report_date_str, base_unit)
-        _log("fetch_snapshot")
-        if snapshot_payload:
-            needs_live = (
-                not _rows_have_any_value(snapshot_payload.get("doctorwise_rows"), ("department", "opd", "ipd"))
-                or not _rows_have_any_value(snapshot_payload.get("occupancy_rows"), ("ward", "patient_count", "occupied_count", "clinically_discharged_count"))
-                or not _rows_have_any_value(snapshot_payload.get("doctor_night_visits"), ("patient_name", "admission_time", "consultant", "visiting"))
-            )
-            if needs_live:
-                mod_name = session.get("username") or session.get("user") or ""
-                live_payload = _mod_report_cache_get("morning", base_unit, report_date_str, "live")
-                _log("live_cache_check")
-                if not live_payload:
-                    live_payload = _build_morning_report_payload(
-                        base_unit,
-                        report_date,
-                        source="live",
-                        mod_name=mod_name,
-                        report_time=now.strftime("%I:%M %p").lstrip("0") or now.strftime("%I:%M %p"),
-                        snapshot_time=None,
-                    )
-                    _log("build_live_for_snapshot")
-                    if live_payload:
-                        _mod_report_cache_set("morning", base_unit, report_date_str, "live", live_payload)
-                        _log("cache_set_live_for_snapshot")
-                if live_payload:
-                    if not _rows_have_any_value(snapshot_payload.get("doctorwise_rows"), ("department", "opd", "ipd")):
-                        snapshot_payload["doctorwise_rows"] = live_payload.get("doctorwise_rows") or []
-                    if not _rows_have_any_value(snapshot_payload.get("occupancy_rows"), ("ward", "patient_count", "occupied_count", "clinically_discharged_count")):
-                        snapshot_payload["occupancy_rows"] = live_payload.get("occupancy_rows") or []
-                    if not _rows_have_any_value(snapshot_payload.get("doctor_night_visits"), ("patient_name", "admission_time", "consultant", "visiting")):
-                        snapshot_payload["doctor_night_visits"] = live_payload.get("doctor_night_visits") or []
-                _log("live_merge_into_snapshot")
-            snapshot_payload = _apply_morning_staff_non_med_prefill(snapshot_payload, report_date_str, base_unit)
-            _mod_report_cache_set("morning", base_unit, report_date_str, mode, snapshot_payload)
-            _log("cache_set_snapshot")
-            return jsonify({"status": "success", "data": _attach_mod_report_lock(snapshot_payload, base_unit, report_date_str, is_it)})
-
-    mod_name = session.get("username") or session.get("user") or ""
-    live_payload = _build_morning_report_payload(
-        base_unit,
-        report_date,
-        source="live",
-        mod_name=mod_name,
-        report_time=now.strftime("%I:%M %p").lstrip("0") or now.strftime("%I:%M %p"),
-        snapshot_time=None,
-    )
-    _log("build_live")
-    if not live_payload:
-        return jsonify({"status": "error", "message": "Failed to load data"}), 500
-    live_payload = _apply_morning_staff_non_med_prefill(live_payload, report_date_str, base_unit)
-    _mod_report_cache_set("morning", base_unit, report_date_str, mode, live_payload)
-    _log("cache_set_live")
-    return jsonify({"status": "success", "data": _attach_mod_report_lock(live_payload, base_unit, report_date_str, is_it)})
-
-
-@app.route('/api/mod_reports/morning_report/save', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
-def api_morning_report_save():
-    payload = request.get_json(silent=True) or {}
-    report_date = (payload.get("report_date") or "").strip()
-    unit = (payload.get("unit") or "").strip().upper()
-    if not report_date:
-        report_date = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-
-    allowed_units = _analytics_allowed_units_for_session() or _allowed_units_for_session()
-    if allowed_units and unit and unit not in allowed_units:
-        _audit_log_event(
-            "mod_reports",
-            "morning_save",
-            status="error",
-            entity_type="morning_report",
-            unit=unit,
-            summary="Unit not allowed",
-            details={"report_date": report_date},
-        )
-        return jsonify({"status": "error", "message": "Unit not allowed"}), 403
-    if not unit:
-        unit = _resolve_morning_unit(allowed_units, None)
-    if not unit:
-        _audit_log_event(
-            "mod_reports",
-            "morning_save",
-            status="error",
-            entity_type="morning_report",
-            summary="Unit is required",
-            details={"report_date": report_date},
-        )
-        return jsonify({"status": "error", "message": "Unit is required"}), 400
-    entity_id = f"{unit}:{report_date}"
-
-    role = str(session.get("role") or "").strip().lower()
-    if role != "it":
-        lock_info = _mod_report_edit_lock_info(unit, report_date)
-        if lock_info.get("locked"):
-            lock_at = lock_info.get("lock_at") or ""
-            msg = f"Edits are locked for {report_date} (locked at {lock_at}). Contact IT."
-            _audit_log_event(
-                "mod_reports",
-                "morning_save",
-                status="error",
-                entity_type="morning_report",
-                entity_id=entity_id,
-                unit=unit,
-                summary="Edits are locked",
-                details={"lock_at": lock_at},
-            )
-            return jsonify({"status": "error", "message": msg}), 403
-
-    clean_payload = {
-        "unit": unit,
-        "report_date": report_date,
-        "report_time": payload.get("report_time") or "",
-        "mod_name": payload.get("mod_name") or (session.get("username") or session.get("user") or ""),
-        "snapshot_time": datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S"),
-        "summary_rows": _ensure_morning_death_summary_row(unit, report_date, payload.get("summary_rows") or []),
-        "investigations": payload.get("investigations") or [],
-        "key_procedures": payload.get("key_procedures") or [],
-        "admissions": payload.get("admissions") or [],
-        "doctorwise_rows": payload.get("doctorwise_rows") or [],
-        "occupancy_rows": payload.get("occupancy_rows") or [],
-        "doctor_night_visits": payload.get("doctor_night_visits") or [],
-        "staff_rows": payload.get("staff_rows") or [],
-        "non_medical_rows": payload.get("non_medical_rows") or [],
-        "referral_rows": payload.get("referral_rows") or [],
-    }
-
-    old_payload = None
-    try:
-        old_payload = _fetch_morning_report_snapshot(report_date, unit)
-    except Exception:
-        old_payload = None
-
-    try:
-        _save_morning_report_snapshot_to_aci(clean_payload)
-        _mod_report_cache_clear("morning", unit, report_date)
-        diff = _build_morning_report_diff(old_payload, clean_payload)
-        _audit_log_event(
-            "mod_reports",
-            "morning_save",
-            status="success",
-            entity_type="morning_report",
-            entity_id=entity_id,
-            unit=unit,
-            summary="Morning report saved",
-            details={
-                "report_time": clean_payload.get("report_time"),
-                "mod_name": clean_payload.get("mod_name"),
-                "diff": diff,
-            },
-        )
-        return jsonify({"status": "success"})
-    except Exception as e:
-        _audit_log_event(
-            "mod_reports",
-            "morning_save",
-            status="error",
-            entity_type="morning_report",
-            entity_id=entity_id,
-            unit=unit,
-            summary="Failed to save morning report",
-            details={"error": str(e), "report_time": clean_payload.get("report_time"), "mod_name": clean_payload.get("mod_name")},
-        )
-        return jsonify({"status": "error", "message": str(e)}), 500
-
-
-@app.route('/api/mod_reports/morning_report/export', methods=['GET', 'POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
-def api_morning_report_export():
-    if request.method == 'POST':
-        payload = request.get_json(silent=True) or {}
-        exported_by = session.get("username") or session.get("user") or "Unknown"
-        data = _build_morning_report_excel(payload, exported_by=exported_by)
-        report_date = payload.get("report_date") or datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-        unit = (payload.get("unit") or "UNIT").strip().upper()
-        return send_file(
-            io.BytesIO(data),
-            as_attachment=True,
-            download_name=f"Morning_Report_{unit}_{report_date}.xlsx",
-            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-        )
-
-    report_date = (request.args.get("date") or "").strip()
-    mode = (request.args.get("mode") or "snapshot").strip().lower()
-    unit = (request.args.get("unit") or "").strip().upper()
-    if not report_date:
-        report_date = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-
-    allowed_units = _analytics_allowed_units_for_session() or _allowed_units_for_session()
-    if allowed_units and unit and unit not in allowed_units:
-        return jsonify({"status": "error", "message": "Unit not allowed"}), 403
-    if not unit:
-        unit = _resolve_morning_unit(allowed_units, None)
-    if not unit:
-        return jsonify({"status": "error", "message": "Unit is required"}), 400
-
-    payload = None
-    if mode == "snapshot":
-        export_dir = os.path.join("data", "exports", "morning_report")
-        file_name = f"Morning_Report_{unit}_{report_date}.xlsx"
-        file_path = os.path.join(export_dir, file_name)
-        if os.path.exists(file_path):
-            return send_file(
-                file_path,
-                as_attachment=True,
-                download_name=file_name,
-                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        payload = _fetch_morning_report_snapshot(report_date, unit)
-    if not payload:
-        payload = _build_morning_report_payload(unit, report_date, source="live", mod_name=(session.get("username") or session.get("user") or ""))
-    if not payload:
-        return jsonify({"status": "error", "message": "Failed to build report"}), 500
-
-    exported_by = session.get("username") or session.get("user") or "Unknown"
-    data = _build_morning_report_excel(payload, exported_by=exported_by)
-    return send_file(
-        io.BytesIO(data),
-        as_attachment=True,
-        download_name=f"Morning_Report_{unit}_{report_date}.xlsx",
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-
-
-@app.route('/api/mod_reports/morning_report/export_pdf', methods=['GET', 'POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
-def api_morning_report_export_pdf():
-    import io
-
-    if request.method == 'POST':
-        payload = request.get_json(silent=True) or {}
-        exported_by = session.get("username") or session.get("user") or "Unknown"
-        data = _build_morning_report_pdf(payload, exported_by=exported_by)
-        report_date = payload.get("report_date") or datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-        unit = (payload.get("unit") or "UNIT").strip().upper()
-        return send_file(
-            io.BytesIO(data),
-            as_attachment=True,
-            download_name=f"Morning_Report_{unit}_{report_date}.pdf",
-            mimetype="application/pdf",
-        )
-
-    report_date = (request.args.get("date") or "").strip()
-    mode = (request.args.get("mode") or "snapshot").strip().lower()
-    unit = (request.args.get("unit") or "").strip().upper()
-    if not report_date:
-        report_date = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-
-    allowed_units = _analytics_allowed_units_for_session() or _allowed_units_for_session()
-    if allowed_units and unit and unit not in allowed_units:
-        return jsonify({"status": "error", "message": "Unit not allowed"}), 403
-    if not unit:
-        unit = _resolve_morning_unit(allowed_units, None)
-    if not unit:
-        return jsonify({"status": "error", "message": "Unit is required"}), 400
-
-    payload = None
-    if mode == "snapshot":
-        payload = _fetch_morning_report_snapshot(report_date, unit)
-    if not payload:
-        payload = _build_morning_report_payload(unit, report_date, source="live", mod_name=(session.get("username") or session.get("user") or ""))
-    if not payload:
-        return jsonify({"status": "error", "message": "Failed to build report"}), 500
-
-    exported_by = session.get("username") or session.get("user") or "Unknown"
-    data = _build_morning_report_pdf(payload, exported_by=exported_by)
-    return send_file(
-        io.BytesIO(data),
-        as_attachment=True,
-        download_name=f"Morning_Report_{unit}_{report_date}.pdf",
-        mimetype="application/pdf",
-    )
-
-
-@app.route('/api/mod_reports/morning_report/export_jpg', methods=['GET', 'POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
-def api_morning_report_export_jpg():
-    import io
-
-    if request.method == 'POST':
-        payload = request.get_json(silent=True) or {}
-        section = payload.get("section")
-        try:
-            section = int(section) if section is not None else None
-        except Exception:
-            section = None
-
-        report_date = payload.get("report_date") or datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-        unit = (payload.get("unit") or "UNIT").strip().upper()
-        snapshot_payload = _fetch_morning_report_snapshot(report_date, unit)
-        if snapshot_payload:
-            if not _rows_have_any_value(payload.get("doctorwise_rows"), ("department", "opd", "ipd")):
-                payload["doctorwise_rows"] = snapshot_payload.get("doctorwise_rows") or []
-            if not _rows_have_any_value(payload.get("occupancy_rows"), ("ward", "patient_count", "occupied_count", "clinically_discharged_count")):
-                payload["occupancy_rows"] = snapshot_payload.get("occupancy_rows") or []
-            if not _rows_have_any_value(payload.get("doctor_night_visits"), ("patient_name", "admission_time", "consultant", "visiting")):
-                payload["doctor_night_visits"] = snapshot_payload.get("doctor_night_visits") or []
-            if not _rows_have_any_value(payload.get("staff_rows"), ("department", "doctor", "nursing", "aaya", "ward_boy", "housekeeping")):
-                payload["staff_rows"] = snapshot_payload.get("staff_rows") or []
-            if not _rows_have_any_value(payload.get("non_medical_rows"), ("left_label", "left_count", "right_label", "right_count")):
-                payload["non_medical_rows"] = snapshot_payload.get("non_medical_rows") or []
-            if not _rows_have_any_value(payload.get("referral_rows"), ("patient_name", "visit_time", "consultant", "reason")):
-                payload["referral_rows"] = snapshot_payload.get("referral_rows") or []
-
-        needs_live = (
-            not _rows_have_any_value(payload.get("doctorwise_rows"), ("department", "opd", "ipd"))
-            or not _rows_have_any_value(payload.get("occupancy_rows"), ("ward", "patient_count", "occupied_count", "clinically_discharged_count"))
-            or not _rows_have_any_value(payload.get("doctor_night_visits"), ("patient_name", "admission_time", "consultant", "visiting"))
-        )
-        if needs_live:
-            live_payload = _build_morning_report_payload(unit, report_date, source="live", mod_name=payload.get("mod_name"))
-            if live_payload:
-                if not _rows_have_any_value(payload.get("doctorwise_rows"), ("department", "opd", "ipd")):
-                    payload["doctorwise_rows"] = live_payload.get("doctorwise_rows") or []
-                if not _rows_have_any_value(payload.get("occupancy_rows"), ("ward", "patient_count", "occupied_count", "clinically_discharged_count")):
-                    payload["occupancy_rows"] = live_payload.get("occupancy_rows") or []
-                if not _rows_have_any_value(payload.get("doctor_night_visits"), ("patient_name", "admission_time", "consultant", "visiting")):
-                    payload["doctor_night_visits"] = live_payload.get("doctor_night_visits") or []
-
-        exported_by = session.get("username") or session.get("user") or "Unknown"
-        data = _build_morning_report_jpg(payload, exported_by=exported_by, section=section)
-        suffix = f"_P{section}" if section in (1, 2, 3) else ""
-        return send_file(
-            io.BytesIO(data),
-            as_attachment=True,
-            download_name=f"Morning_Report_{unit}_{report_date}{suffix}.jpg",
-            mimetype="image/jpeg",
-        )
-
-    report_date = (request.args.get("date") or "").strip()
-    mode = (request.args.get("mode") or "snapshot").strip().lower()
-    unit = (request.args.get("unit") or "").strip().upper()
-    section = request.args.get("section")
-    try:
-        section = int(section) if section is not None else None
-    except Exception:
-        section = None
-    if not report_date:
-        report_date = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-
-    allowed_units = _analytics_allowed_units_for_session() or _allowed_units_for_session()
-    if allowed_units and unit and unit not in allowed_units:
-        return jsonify({"status": "error", "message": "Unit not allowed"}), 403
-    if not unit:
-        unit = _resolve_morning_unit(allowed_units, None)
-    if not unit:
-        return jsonify({"status": "error", "message": "Unit is required"}), 400
-
-    payload = None
-    if mode == "snapshot":
-        payload = _fetch_morning_report_snapshot(report_date, unit)
-    if not payload:
-        payload = _build_morning_report_payload(unit, report_date, source="live", mod_name=(session.get("username") or session.get("user") or ""))
-    if not payload:
-        return jsonify({"status": "error", "message": "Failed to build report"}), 500
-
-    exported_by = session.get("username") or session.get("user") or "Unknown"
-    data = _build_morning_report_jpg(payload, exported_by=exported_by, section=section)
-    suffix = f"_P{section}" if section in (1, 2, 3) else ""
-    return send_file(
-        io.BytesIO(data),
-        as_attachment=True,
-        download_name=f"Morning_Report_{unit}_{report_date}{suffix}.jpg",
-        mimetype="image/jpeg",
-    )
-
-
-@app.route('/api/mod_reports/night_report/export')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
-def api_night_report_export():
-    date_str = (request.args.get("date") or "").strip()
-    mode = (request.args.get("mode") or "snapshot").strip().lower()
-    unit = (request.args.get("unit") or "").strip().upper()
-    if not date_str:
-        date_str = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-
-    allowed_units = _analytics_allowed_units_for_session() or _allowed_units_for_session()
-    if allowed_units and unit and unit not in allowed_units:
-        return jsonify({"status": "error", "message": "Unit not allowed"}), 403
-    if not unit and allowed_units:
-        unit = allowed_units[0]
-    if not unit:
-        return jsonify({"status": "error", "message": "Unit is required"}), 400
-
-    payload = None
-    if mode == "snapshot":
-        export_dir = os.path.join("data", "exports", "night_report")
-        file_name = f"Night_Report_{unit}_{date_str}.xlsx"
-        file_path = os.path.join(export_dir, file_name)
-        if os.path.exists(file_path):
-            return send_file(
-                file_path,
-                as_attachment=True,
-                download_name=file_name,
-                mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-            )
-        payload = _build_night_report_payload(unit, date_str, source="snapshot")
-        if not payload or not payload.get("ward_occupancy"):
-            return jsonify({"status": "error", "message": "No snapshot data for this date"}), 404
-    else:
-        payload = _build_night_report_payload(unit, date_str, source="live")
-        if not payload:
-            return jsonify({"status": "error", "message": "Failed to load data"}), 500
-
-    exported_by = session.get("username") or session.get("user") or "Unknown"
-    data = _build_night_report_excel(payload, exported_by=exported_by)
-    return send_file(
-        io.BytesIO(data),
-        as_attachment=True,
-        download_name=f"Night_Report_{unit}_{date_str}.xlsx",
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-
-
-@app.route('/api/mod_reports/night_report/export_pdf', methods=['GET', 'POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
-def api_night_report_export_pdf():
-    import io
-
-    if request.method == 'POST':
-        payload = request.get_json(silent=True) or {}
-        unit = (payload.get("unit") or "").strip().upper()
-        date_str = (payload.get("date") or "").strip() or datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-        if not unit:
-            return jsonify({"status": "error", "message": "Unit is required"}), 400
-        force_fallback = _is_truthy(request.args.get("force_fallback") or payload.get("force_fallback"))
-        if force_fallback:
-            payload["force_fallback_pdf"] = True
-        payload.setdefault("date", date_str)
-        payload.setdefault("unit", unit)
-        payload.setdefault("equipment_columns", NIGHT_REPORT_EQUIPMENT_COLS)
-        exported_by = session.get("username") or session.get("user") or "Unknown"
-        data = _build_night_report_pdf(payload, exported_by=exported_by)
-        return send_file(
-            io.BytesIO(data),
-            as_attachment=True,
-            download_name=f"Night_Report_{unit}_{date_str}.pdf",
-            mimetype="application/pdf",
-        )
-
-    date_str = (request.args.get("date") or "").strip()
-    mode = (request.args.get("mode") or "snapshot").strip().lower()
-    unit = (request.args.get("unit") or "").strip().upper()
-    if not date_str:
-        date_str = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-
-    allowed_units = _analytics_allowed_units_for_session() or _allowed_units_for_session()
-    if allowed_units and unit and unit not in allowed_units:
-        return jsonify({"status": "error", "message": "Unit not allowed"}), 403
-    if not unit and allowed_units:
-        unit = allowed_units[0]
-    if not unit:
-        return jsonify({"status": "error", "message": "Unit is required"}), 400
-
-    payload = None
-    if mode == "snapshot":
-        payload = _build_night_report_payload(unit, date_str, source="snapshot")
-        if not payload or not payload.get("ward_occupancy"):
-            return jsonify({"status": "error", "message": "No snapshot data for this date"}), 404
-    else:
-        payload = _build_night_report_payload(unit, date_str, source="live")
-        if not payload:
-            return jsonify({"status": "error", "message": "Failed to load data"}), 500
-    force_fallback = _is_truthy(request.args.get("force_fallback"))
-    if force_fallback:
-        payload["force_fallback_pdf"] = True
-
-    exported_by = session.get("username") or session.get("user") or "Unknown"
-    data = _build_night_report_pdf(payload, exported_by=exported_by)
-    return send_file(
-        io.BytesIO(data),
-        as_attachment=True,
-        download_name=f"Night_Report_{unit}_{date_str}.pdf",
-        mimetype="application/pdf",
-    )
-
-
-@app.route('/api/mod_reports/night_report/export_jpg', methods=['GET', 'POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
-def api_night_report_export_jpg():
-    import io
-
-    if request.method == 'POST':
-        payload = request.get_json(silent=True) or {}
-        unit = (payload.get("unit") or "").strip().upper()
-        date_str = (payload.get("date") or "").strip() or datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-        if not unit:
-            return jsonify({"status": "error", "message": "Unit is required"}), 400
-        payload.setdefault("date", date_str)
-        payload.setdefault("unit", unit)
-        payload.setdefault("equipment_columns", NIGHT_REPORT_EQUIPMENT_COLS)
-        exported_by = session.get("username") or session.get("user") or "Unknown"
-        try:
-            data = _build_night_report_jpg(payload, exported_by=exported_by)
-        except Exception as exc:
-            return jsonify({"status": "error", "message": str(exc)}), 500
-        return send_file(
-            io.BytesIO(data),
-            as_attachment=True,
-            download_name=f"Night_Report_{unit}_{date_str}.jpg",
-            mimetype="image/jpeg",
-        )
-
-    date_str = (request.args.get("date") or "").strip()
-    mode = (request.args.get("mode") or "snapshot").strip().lower()
-    unit = (request.args.get("unit") or "").strip().upper()
-    if not date_str:
-        date_str = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-
-    allowed_units = _analytics_allowed_units_for_session() or _allowed_units_for_session()
-    if allowed_units and unit and unit not in allowed_units:
-        return jsonify({"status": "error", "message": "Unit not allowed"}), 403
-    if not unit and allowed_units:
-        unit = allowed_units[0]
-    if not unit:
-        return jsonify({"status": "error", "message": "Unit is required"}), 400
-
-    payload = None
-    if mode == "snapshot":
-        payload = _build_night_report_payload(unit, date_str, source="snapshot")
-        if not payload or not payload.get("ward_occupancy"):
-            return jsonify({"status": "error", "message": "No snapshot data for this date"}), 404
-    else:
-        payload = _build_night_report_payload(unit, date_str, source="live")
-        if not payload:
-            return jsonify({"status": "error", "message": "Failed to load data"}), 500
-
-    exported_by = session.get("username") or session.get("user") or "Unknown"
-    try:
-        data = _build_night_report_jpg(payload, exported_by=exported_by)
-    except Exception as exc:
-        return jsonify({"status": "error", "message": str(exc)}), 500
-    return send_file(
-        io.BytesIO(data),
-        as_attachment=True,
-        download_name=f"Night_Report_{unit}_{date_str}.jpg",
-        mimetype="image/jpeg",
-    )
-
-
-@app.route('/api/mod_reports/night_report/save', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
-def api_night_report_save():
-    payload = request.get_json(silent=True) or {}
-    date_str = (payload.get("date") or "").strip()
-    unit = (payload.get("unit") or "").strip().upper()
-    if not date_str:
-        date_str = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-
-    allowed_units = _analytics_allowed_units_for_session() or _allowed_units_for_session()
-    if allowed_units and unit and unit not in allowed_units:
-        return jsonify({"status": "error", "message": "Unit not allowed"}), 403
-    if not unit and allowed_units:
-        unit = allowed_units[0]
-    if not unit:
-        return jsonify({"status": "error", "message": "Unit is required"}), 400
-    entity_id = f"{unit}:{date_str}"
-
-    role = str(session.get("role") or "").strip().lower()
-    if role != "it":
-        lock_info = _mod_report_edit_lock_info(unit, date_str, report_kind="night")
-        if lock_info.get("locked"):
-            lock_at = lock_info.get("lock_at") or ""
-            msg = f"Edits are locked for {date_str} (locked at {lock_at}). Contact IT."
-            _audit_log_event(
-                "mod_reports",
-                "night_save",
-                status="error",
-                entity_type="night_report",
-                entity_id=entity_id,
-                unit=unit,
-                summary="Edits are locked",
-                details={"lock_at": lock_at},
-            )
-            return jsonify({"status": "error", "message": msg}), 403
-
-    clean_payload = {
-        "unit": unit,
-        "date": date_str,
-        "snapshot_time": datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S"),
-        "particulars": payload.get("particulars") or [],
-        "occupancy_paytype": payload.get("occupancy_paytype") or [],
-        "equipment_rows": payload.get("equipment_rows") or [],
-        "doctor_entries": payload.get("doctor_entries") or [],
-        "doctor_volume": payload.get("doctor_volume") or [],
-        "ward_occupancy": payload.get("ward_occupancy") or [],
-    }
-
-    old_payload = None
-    try:
-        old_payload = _build_night_report_payload(unit, date_str, source="snapshot")
-    except Exception:
-        old_payload = None
-
-    try:
-        detail_rows, ward_rows = _save_night_report_snapshot_atomic(clean_payload)
-    except Exception as e:
-        _audit_log_event(
-            "mod_reports",
-            "night_save",
-            status="error",
-            entity_type="night_report",
-            entity_id=entity_id,
-            unit=unit,
-            summary="Failed to save night report snapshot",
-            details={"error": str(e)},
-        )
-        return jsonify({"status": "error", "message": f"Failed to save snapshot: {e}"}), 500
-
-    _mod_report_cache_clear("night", unit, date_str)
-
-    diff = _build_night_report_diff(old_payload, clean_payload)
-    _audit_log_event(
-        "mod_reports",
-        "night_save",
-        status="success",
-        entity_type="night_report",
-        entity_id=entity_id,
-        unit=unit,
-        summary="Night report saved",
-        details={"diff": diff},
-    )
-    return jsonify({
-        "status": "success",
-        "message": "Night report saved.",
-        "details_saved": detail_rows,
-        "wards_saved": ward_rows,
-    })
-
-
 @app.route('/reconciliations')
 @login_required(allowed_roles={"IT", "Management"})
 def reconciliations_dashboard():
@@ -21655,6 +20555,7 @@ def corporate_management():
         unit_labels={u: _unit_display_name(u) for u in allowed_units},
         can_receipt=_corp_recon_can_take_receipt_session(),
         can_writeoff=_corp_recon_can_writeoff_session(),
+        can_unsubmit_bill=_corp_recon_can_unsubmit_bill_session(),
     )
 
 register_service_addition_routes(
@@ -21751,6 +20652,8 @@ def _normalize_po_print_format(value, default: str = "standard") -> str:
     fmt = str(value or "").strip().lower()
     if fmt == "def":
         return "def"
+    if fmt == "trust":
+        return "trust"
     if fmt == "standard":
         return "standard"
     return default
@@ -21814,6 +20717,14 @@ def _can_use_def_po_print_format(unit: str, purchasing_dept_id: int | None = Non
     return False
 
 
+def _can_use_trust_po_print_format(unit: str, purchasing_dept_id: int | None = None) -> bool:
+    unit_key = str(unit or "").strip().upper()
+    if unit_key != "AHLSTORE":
+        return False
+    role_key = _role_base(session.get("role") or "")
+    return role_key in {"IT", "Management", "Departmental Head"}
+
+
 def _resolve_po_print_format_for_persistence(
     unit: str,
     requested_format,
@@ -21825,11 +20736,17 @@ def _resolve_po_print_format_for_persistence(
     if not requested_raw:
         return existing_norm
     requested_norm = _normalize_po_print_format(requested_raw, default=existing_norm)
-    if requested_norm != "def":
+    if requested_norm == "def":
+        if existing_norm == "def":
+            return "def"
+        return "def" if _can_use_def_po_print_format(unit, purchasing_dept_id) else "standard"
+    if requested_norm == "trust":
+        if existing_norm == "trust":
+            return "trust"
+        return "trust" if _can_use_trust_po_print_format(unit, purchasing_dept_id) else "standard"
+    if requested_norm != "standard":
         return "standard"
-    if existing_norm == "def":
-        return "def"
-    return "def" if _can_use_def_po_print_format(unit, purchasing_dept_id) else "standard"
+    return "standard"
 
 
 def _resolve_po_print_format_for_render(
@@ -21843,14 +20760,23 @@ def _resolve_po_print_format_for_render(
     if not requested_raw:
         return saved_format
     requested_norm = _normalize_po_print_format(requested_raw, default=saved_format)
-    if requested_norm != "def":
+    if requested_norm == "def":
+        if saved_format == "def":
+            return "def"
+        dept_id = purchasing_dept_id
+        if dept_id is None and isinstance(header_row, dict):
+            dept_id = _safe_int(header_row.get("PurchasingDeptId"))
+        return "def" if _can_use_def_po_print_format(unit, dept_id) else saved_format
+    if requested_norm == "trust":
+        if saved_format == "trust":
+            return "trust"
+        dept_id = purchasing_dept_id
+        if dept_id is None and isinstance(header_row, dict):
+            dept_id = _safe_int(header_row.get("PurchasingDeptId"))
+        return "trust" if _can_use_trust_po_print_format(unit, dept_id) else saved_format
+    if requested_norm != "standard":
         return "standard"
-    if saved_format == "def":
-        return "def"
-    dept_id = purchasing_dept_id
-    if dept_id is None and isinstance(header_row, dict):
-        dept_id = _safe_int(header_row.get("PurchasingDeptId"))
-    return "def" if _can_use_def_po_print_format(unit, dept_id) else saved_format
+    return "standard"
 
 
 def _build_purchase_department_payload(unit: str):
@@ -23003,7 +21929,79 @@ def _build_po_supplier_dispatch_email_body(snapshot: dict):
     """
 
 
-def _send_graph_mail_with_attachment(subject: str, body_html: str, to_recipients: list[str], filename: str, content_bytes: bytes):
+def _build_po_cancellation_email_body(snapshot: dict):
+    from html import escape
+    return f"""
+    <html>
+    <head>
+      <style>
+        body {{
+          font-family: Arial, sans-serif;
+          font-size: 14px;
+          color: #333;
+        }}
+        .box {{
+          border: 1px solid #e2e8f0;
+          border-radius: 10px;
+          padding: 16px 18px;
+          max-width: 700px;
+          background: #ffffff;
+        }}
+        table {{
+          width: 100%;
+          border-collapse: collapse;
+          margin-top: 10px;
+        }}
+        td {{
+          padding: 4px 6px;
+          font-size: 13px;
+          vertical-align: top;
+        }}
+        .label {{
+          width: 35%;
+          font-weight: bold;
+          color: #555;
+          white-space: nowrap;
+        }}
+        .footer {{
+          margin-top: 20px;
+          font-size: 12px;
+          color: #777;
+        }}
+      </style>
+    </head>
+    <body>
+      <div class="box">
+        <p>Dear Sir/Madam,</p>
+        <p>This Purchase Order stands cancelled. Please find the attached cancellation snapshot and cancelled PO PDF for reference.</p>
+        <h3>PO Snapshot</h3>
+        <table>
+          <tr><td class="label">Unit</td><td>: {escape(snapshot.get('unit', ''))}</td></tr>
+          <tr><td class="label">PO No</td><td>: {escape(snapshot.get('po_no', ''))}</td></tr>
+          <tr><td class="label">PO Date</td><td>: {escape(snapshot.get('po_date', ''))}</td></tr>
+          <tr><td class="label">Supplier</td><td>: {escape(snapshot.get('supplier', ''))}</td></tr>
+          <tr><td class="label">Amount</td><td>: {escape(snapshot.get('amount', ''))}</td></tr>
+          <tr><td class="label">Cancelled By</td><td>: {escape(snapshot.get('cancelled_by', ''))}</td></tr>
+          <tr><td class="label">Cancelled At</td><td>: {escape(snapshot.get('cancelled_at', ''))}</td></tr>
+          <tr><td class="label">Subject</td><td>: {escape(snapshot.get('subject', ''))}</td></tr>
+        </table>
+        <p class="footer">
+          This is an automated email from the Purchase Order Module.
+        </p>
+      </div>
+    </body>
+    </html>
+    """
+
+
+def _send_graph_mail_with_attachment(
+    subject: str,
+    body_html: str,
+    to_recipients: list[str],
+    filename: str | None = None,
+    content_bytes: bytes | None = None,
+    attachments: list[dict] | None = None,
+):
     if not to_recipients:
         return {"status": "skipped", "message": "No recipients"}
     try:
@@ -23017,18 +22015,43 @@ def _send_graph_mail_with_attachment(subject: str, body_html: str, to_recipients
             GRAPH_SCOPES = ["Mail.Send"]
 
         headers = get_graph_headers(app_id=GRAPH_APP_ID, scopes=GRAPH_SCOPES)
-        attachment = {
-            "@odata.type": "#microsoft.graph.fileAttachment",
-            "name": filename,
-            "contentType": "application/pdf",
-            "contentBytes": base64.b64encode(content_bytes or b"").decode("utf-8"),
-        }
+        graph_attachments = []
+
+        if filename:
+            graph_attachments.append(
+                {
+                    "@odata.type": "#microsoft.graph.fileAttachment",
+                    "name": filename,
+                    "contentType": "application/pdf",
+                    "contentBytes": base64.b64encode(content_bytes or b"").decode("utf-8"),
+                }
+            )
+
+        for item in attachments or []:
+            attach_name = str(item.get("filename") or item.get("name") or "").strip()
+            if not attach_name:
+                continue
+            attach_bytes = item.get("content_bytes")
+            if attach_bytes is None:
+                attach_bytes = b""
+            if isinstance(attach_bytes, str):
+                attach_bytes = attach_bytes.encode("utf-8")
+            graph_attachments.append(
+                {
+                    "@odata.type": "#microsoft.graph.fileAttachment",
+                    "name": attach_name,
+                    "contentType": str(item.get("content_type") or "application/octet-stream"),
+                    "contentBytes": base64.b64encode(attach_bytes or b"").decode("utf-8"),
+                }
+            )
+
         message = {
             "subject": subject,
             "body": {"contentType": "HTML", "content": body_html},
             "toRecipients": [{"emailAddress": {"address": addr}} for addr in to_recipients],
-            "attachments": [attachment],
         }
+        if graph_attachments:
+            message["attachments"] = graph_attachments
         request_body = {"message": message, "saveToSentItems": True}
         resp = requests.post(f"{GRAPH_API_ENDPOINT}/me/sendMail", headers=headers, json=request_body)
         if resp.status_code not in (200, 202):
@@ -23875,6 +22898,7 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
     subject_value_style = ParagraphStyle("PoSubjectValue", parent=value_style, fontSize=8.5, leading=10)
     small_style = ParagraphStyle("PoSmall", parent=styles["Normal"], fontSize=8, textColor=colors.HexColor("#64748b"))
     pending_style = ParagraphStyle("PoPending", parent=styles["Normal"], fontSize=11, alignment=TA_CENTER, textColor=colors.HexColor("#b91c1c"))
+    cancelled_style = ParagraphStyle("PoCancelled", parent=styles["Normal"], fontSize=11, alignment=TA_CENTER, textColor=colors.HexColor("#991b1b"), fontName="Helvetica-Bold")
     center_small_style = ParagraphStyle("PoCenterSmall", parent=styles["Normal"], fontSize=11, leading=13, alignment=TA_CENTER, textColor=colors.black, spaceAfter=1)
     right_small_style = ParagraphStyle("PoRightSmall", parent=styles["Normal"], fontSize=10, leading=12, alignment=TA_RIGHT, textColor=colors.black)
     sign_style = ParagraphStyle("PoSign", parent=styles["Normal"], fontSize=9, alignment=TA_RIGHT, textColor=colors.black, fontName="Helvetica-Bold")
@@ -24026,7 +23050,7 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
     )
     po_date = header.get("PODate") or header.get("po_date")
     status_code = str(header.get("Status") or header.get("status_code") or "").strip().upper()
-    status_label = {"A": "Approved", "P": "Pending Approval", "D": "Draft"}.get(status_code, "Draft")
+    status_label = {"A": "Approved", "P": "Pending Approval", "D": "Draft", "C": "Cancelled"}.get(status_code, "Draft")
     supplier_name = header.get("SupplierName") or ""
     supplier_gstin = (
         header.get("SupplierGSTIN")
@@ -24078,7 +23102,14 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
     special_notes = header.get("SpecialNotes") or header.get("special_notes") or ""
     delivery_terms = header.get("DeliveryTerms") or ""
     payment_terms = header.get("PaymentsTerms") or ""
-    other_terms = header.get("OtherTerms") or ""
+    cmc_amc_warranty = (
+        header.get("CmcAmcWarrantyNotes")
+        or header.get("CMCAMCWarrantyNotes")
+        or header.get("cmc_amc_warranty")
+        or header.get("OtherTerms")
+        or header.get("other_terms")
+        or ""
+    )
 
     senior_approval_authority_name = str(
         header.get("SeniorApprovalAuthorityName")
@@ -24095,6 +23126,7 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
 
     format_key = (print_format or "").strip().lower()
     use_def_format = format_key == "def"
+    use_trust_format = format_key == "trust"
 
     def _unit_key(unit_name: str) -> str:
         return (unit_name or "").strip().upper().replace(" ", "")
@@ -24105,6 +23137,13 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
                 "Dhanbad Educational Foundation",
                 "Ranguni, Bhuli, Dhanbad, Jharkhand",
                 "Purchase Dept.: 9234795012 | sugata.dey@asarfihospital.com",
+            ]
+        if use_trust_format:
+            return [
+                "Asarfi Charitable Trust",
+                "Dhaiya Khatal road , Dhanbad",
+                "Jharkhand 826004",
+                "URN : AACTA8183CF20129",
             ]
         key = _unit_key(unit_name)
         if key == "AHL":
@@ -24154,6 +23193,8 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
         ]
 
     def hospital_gst(unit_name: str):
+        if use_trust_format:
+            return ""
         key = _unit_key(unit_name)
         if key in ("AHL", "ACI", "AHLSTORE", "CANCERUNITSTORE"):
             return "20AAFCA4125L1Z2"
@@ -24170,8 +23211,10 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
         elements.append(Paragraph(f"GST: {gst_no}", right_small_style))
     elements.append(Spacer(1, 6))
     elements.append(Paragraph("<u>Purchase Order</u>", title_style))
-    if status_code != "A":
+    if status_code == "P":
         elements.append(Paragraph("PENDING APPROVAL", pending_style))
+    elif status_code == "C":
+        elements.append(Paragraph("CANCELLED", cancelled_style))
     elements.append(Spacer(1, 6))
 
     def _clean_address_part(val):
@@ -24443,7 +23486,7 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
     add_terms_block("Special Notes", special_notes)
     add_terms_block("Delivery Terms", delivery_terms)
     add_terms_block("Payment Terms", payment_terms)
-    add_terms_block("Terms", other_terms)
+    add_terms_block("CMC/AMC & Warranty", cmc_amc_warranty)
 
     elements.append(terms_flow[0])
     note_rows = terms_flow[1:]
@@ -24511,6 +23554,8 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
         def _signatory_company_lines():
             if use_def_format:
                 return "For Dhanbad Educational Foundation", "Dhanbad Educational Foundation"
+            if use_trust_format:
+                return "For Asarfi Charitable Trust", "Asarfi Charitable Trust"
             if key in {"BALLIA", "BALLIASTORE"}:
                 return "For ASAP Impact Pvt. Ltd.", "ASAP Impact Pvt. Ltd."
             return "For Asarfi Hospital Ltd.", "Asarfi Hospital Ltd."
@@ -24563,24 +23608,29 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
                 return None
 
             candidates = []
+            signer_name = str((signatory_profile or {}).get("Name") or "").strip()
             profile_file = os.path.basename(str((signatory_profile or {}).get("ApproverSignatureFile") or "").strip())
             if profile_file:
                 candidates.append(profile_file)
-            name_hint = str((signatory_profile or {}).get("Name") or "").strip().lower()
+            name_hint = signer_name.lower()
             if "shantonu" in name_hint:
                 candidates.append("shantonu_agasti.png")
             if "ankit" in name_hint:
                 candidates.append("ankit_kumar.png")
             if "sugata" in name_hint:
                 candidates.append("sugata_dey.png")
-            fallback_file = signature_files.get(key)
-            if fallback_file:
-                candidates.append(fallback_file)
-            if key == "BALLIA":
-                # Backward-compatible fallback for older Ballia PO templates.
-                candidates.append("shantonu_agasti.png")
-            if use_def_format:
-                candidates.append("sugata_dey.png")
+            # Only use unit-level fallback images when no person-specific signatory
+            # has been selected. Otherwise a missing signature file should not borrow
+            # another user's signature image.
+            if not signer_name:
+                fallback_file = signature_files.get(key)
+                if fallback_file:
+                    candidates.append(fallback_file)
+                if key == "BALLIA":
+                    # Backward-compatible fallback for older Ballia PO templates.
+                    candidates.append("shantonu_agasti.png")
+                if use_def_format:
+                    candidates.append("sugata_dey.png")
             seen = set()
             for filename in candidates:
                 token = str(filename or "").strip().lower()
@@ -24600,6 +23650,8 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
         def _apply_def_sign_line(block):
             if use_def_format and block:
                 block[0] = Paragraph("For Dhanbad Educational Foundation", sign_style)
+            elif use_trust_format and block:
+                block[0] = Paragraph("For Asarfi Charitable Trust", sign_style)
             return block
 
         signer_name = str((signatory_profile or {}).get("Name") or "").strip()
@@ -24705,7 +23757,12 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
             designation_line = f"({designation_text})"
             designation_only_line = designation_text
         unit_key = _unit_key(unit)
-        company_line = "FOR ASAP IMPACT PVT. LTD." if unit_key in {"BALLIA", "BALLIASTORE"} else "FOR ASARFI HOSPITAL LTD"
+        if use_trust_format:
+            company_line = "FOR ASARFI CHARITABLE TRUST"
+        elif unit_key in {"BALLIA", "BALLIASTORE"}:
+            company_line = "FOR ASAP IMPACT PVT. LTD."
+        else:
+            company_line = "FOR ASARFI HOSPITAL LTD"
         lines = [
             Paragraph(company_line, left_sign_company_style),
             Spacer(1, 10 * mm),
@@ -24750,6 +23807,14 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
         canvas.saveState()
         footer_y = 0.3 * inch
         footer_line_y = 0.5 * inch
+        if status_code == "C":
+            canvas.saveState()
+            canvas.translate(page_width / 2, page_height / 2)
+            canvas.rotate(32)
+            canvas.setFont("Helvetica-Bold", 52)
+            canvas.setFillColor(colors.HexColor("#f3c7c7"))
+            canvas.drawCentredString(0, 0, "CANCELLED")
+            canvas.restoreState()
         canvas.setStrokeColor(colors.HexColor("#cbd5e1"))
         canvas.setLineWidth(0.5)
         canvas.line(doc.leftMargin, footer_line_y, page_width - doc.rightMargin, footer_line_y)
@@ -32028,11 +31093,28 @@ def _corp_recon_can_writeoff_session() -> bool:
     return has_section_access(CORP_RECON_WRITEOFF_SECTION)
 
 
+def _corp_recon_can_unsubmit_bill_session() -> bool:
+    role_base = _role_base(session.get("role") or "")
+    if role_base == "IT":
+        return True
+    return has_section_access(CORP_RECON_BILL_UNSUBMIT_SECTION)
+
+
 def _corp_recon_can_take_receipt_session() -> bool:
     return bool(
         has_section_access(CORP_RECON_RECEIPT_SECTION)
         or has_section_access("corporate_management")
         or has_section_access(CORP_RECON_WRITEOFF_SECTION)
+    )
+
+
+def _corp_recon_can_bulk_receipt_date_edit_session() -> bool:
+    role_base = _role_base(session.get("role") or "")
+    if role_base == "IT":
+        return True
+    return bool(
+        has_section_access(CORP_RECON_RECEIPT_DATE_EDIT_SECTION)
+        and _corp_recon_can_take_receipt_session()
     )
 
 
@@ -32051,6 +31133,217 @@ def _corp_recon_resolve_unit(raw_unit: str | None):
     if unit not in allowed_units:
         return None, (jsonify({"status": "error", "message": f"Unit {unit} not permitted"}), 403)
     return unit, None
+
+
+def _corp_recon_corporate_bill_source_key(unit: str) -> str:
+    return "BILL_MST_AHL" if _is_sharpsight_corp_unit(unit) else "BILL_MST_POST"
+
+
+def _corp_recon_row_value(row, *keys):
+    if row is None:
+        return None
+    for key in keys:
+        if not key:
+            continue
+        value = None
+        try:
+            value = row.get(key) if hasattr(row, "get") else None
+        except Exception:
+            value = None
+        if value is None:
+            try:
+                value = row[key]
+            except Exception:
+                value = None
+        try:
+            if pd.isna(value):
+                value = None
+        except Exception:
+            pass
+        if value is not None:
+            return value
+    return None
+
+
+def _corp_recon_row_can_unsubmit_bill(unit: str, row) -> bool:
+    source_key = str(
+        _corp_recon_row_value(row, "bill_source_key", "BillSourceKey") or ""
+    ).strip().upper()
+    if not source_key:
+        source_label = str(
+            _corp_recon_row_value(row, "bill_source", "BillSource", "source") or ""
+        ).strip().lower()
+        if source_label in {"corporate bill", "bill_mst_post", "bill_mst_ahl"}:
+            source_key = _corp_recon_corporate_bill_source_key(unit)
+        elif source_label in {"opening", "opening balance"}:
+            source_key = "OPENING"
+    if source_key != _corp_recon_corporate_bill_source_key(unit):
+        return False
+
+    bill_id = _corp_recon_parse_int(
+        _corp_recon_row_value(row, "bill_id", "BillId"),
+        0,
+        0,
+        None,
+    )
+    if bill_id <= 0:
+        return False
+
+    submitted_status = str(
+        _corp_recon_row_value(row, "bill_status_raw", "BillStatusRaw", "bill_status") or ""
+    ).strip().upper()
+    submit_date_raw = _corp_recon_row_value(
+        row,
+        "submit_date_raw",
+        "SubmitDateRaw",
+        "submit_date",
+    )
+    submit_date = _corp_recon_fmt_date(submit_date_raw)
+    if submitted_status != "Y" or not submit_date:
+        return False
+
+    tolerance = 0.01
+    receipt_count = _corp_recon_parse_int(
+        _corp_recon_row_value(row, "receipt_count_all_time"),
+        0,
+        0,
+        None,
+    )
+
+    def _row_float(*keys) -> float:
+        raw_value = _corp_recon_row_value(row, *keys)
+        try:
+            if pd.isna(raw_value):
+                return 0.0
+        except Exception:
+            pass
+        try:
+            return float(raw_value or 0.0)
+        except Exception:
+            return 0.0
+
+    if receipt_count > 0:
+        return False
+    if abs(_row_float("receipt_total_all_time")) > tolerance:
+        return False
+    if abs(_row_float("tds_total_all_time")) > tolerance:
+        return False
+    if abs(_row_float("rebate_discount_all_time")) > tolerance:
+        return False
+    if abs(_row_float("writeoff_total_all_time")) > tolerance:
+        return False
+    return True
+
+
+def _corp_recon_row_can_take_receipt(unit: str, row) -> bool:
+    source_key = str(
+        _corp_recon_row_value(row, "bill_source_key", "BillSourceKey")
+        or ""
+    ).strip().upper()
+    if not source_key:
+        source_label = str(
+            _corp_recon_row_value(row, "bill_source", "BillSource", "source")
+            or ""
+        ).strip().lower()
+        if source_label in {"corporate bill", "bill_mst_post", "bill_mst_ahl"}:
+            source_key = _corp_recon_corporate_bill_source_key(unit)
+        elif source_label in {"opening", "opening balance"}:
+            source_key = "OPENING"
+    if source_key not in {"OPENING", _corp_recon_corporate_bill_source_key(unit)}:
+        return False
+
+    bill_id = _corp_recon_parse_int(
+        _corp_recon_row_value(row, "bill_id", "BillId"),
+        0,
+        0,
+        None,
+    )
+    if bill_id <= 0:
+        return False
+
+    if source_key != "OPENING":
+        submitted_status = str(
+            _corp_recon_row_value(row, "bill_status_raw", "BillStatusRaw", "bill_status")
+            or ""
+        ).strip().upper()
+        if submitted_status and submitted_status != "Y":
+            return False
+
+    try:
+        balance = float(_corp_recon_row_value(row, "balance_all_time", "BalanceAllTime") or 0.0)
+    except Exception:
+        balance = 0.0
+    if balance <= float(CORP_RECON_SETTLE_TOLERANCE):
+        return False
+
+    status = str(
+        _corp_recon_row_value(row, "status_all_time", "StatusAllTime")
+        or ""
+    ).strip().lower()
+    return status in {"partial", "unpaid"}
+
+
+def _corp_recon_unsubmit_block_reason(unit: str, row) -> str:
+    source_key = str(
+        _corp_recon_row_value(row, "bill_source_key", "BillSourceKey")
+        or ""
+    ).strip().upper()
+    if source_key != _corp_recon_corporate_bill_source_key(unit):
+        return "Only corporate bill rows can be unsubmitted."
+
+    submitted_status = str(
+        _corp_recon_row_value(row, "bill_status_raw", "BillStatusRaw", "bill_status")
+        or ""
+    ).strip().upper()
+    submit_date = _corp_recon_fmt_date(
+        _corp_recon_row_value(row, "submit_date_raw", "SubmitDateRaw", "submit_date")
+    )
+    if submitted_status != "Y" or not submit_date:
+        return "Bill is already not submitted."
+
+    tolerance = 0.01
+    receipt_count = _corp_recon_parse_int(
+        _corp_recon_row_value(row, "receipt_count_all_time"),
+        0,
+        0,
+        None,
+    )
+
+    def _row_float(*keys) -> float:
+        raw_value = _corp_recon_row_value(row, *keys)
+        try:
+            if pd.isna(raw_value):
+                return 0.0
+        except Exception:
+            pass
+        try:
+            return float(raw_value or 0.0)
+        except Exception:
+            return 0.0
+
+    if receipt_count > 0 or abs(_row_float("receipt_total_all_time")) > tolerance:
+        return "Receipt already exists on this bill."
+    if abs(_row_float("tds_total_all_time")) > tolerance:
+        return "TDS already exists on this bill."
+    if abs(_row_float("rebate_discount_all_time")) > tolerance:
+        return "Rebate already exists on this bill."
+    if abs(_row_float("writeoff_total_all_time")) > tolerance:
+        return "Write-off already exists on this bill."
+    return ""
+
+
+def _corp_recon_annotate_payload_rows(unit: str, payload: dict | None):
+    if not isinstance(payload, dict):
+        return payload
+    rows = payload.get("rows")
+    if not isinstance(rows, list):
+        return payload
+    for row in rows:
+        if not isinstance(row, dict):
+            continue
+        row["can_unsubmit_bill"] = bool(_corp_recon_row_can_unsubmit_bill(unit, row))
+        row["can_take_receipt"] = bool(_corp_recon_row_can_take_receipt(unit, row))
+    return payload
 
 
 def _corp_recon_parse_date(raw_value: str | None, field_name: str):
@@ -32118,7 +31411,7 @@ def _corp_recon_parse_bill_id_filter(raw_value) -> set[int] | None:
                 continue
             token_up = token.upper()
             if token_up.startswith("BILL-"):
-                token = token.split("-", 1)[1].strip()
+                token = token.rsplit("-", 1)[-1].strip()
             if not token.lstrip("-").isdigit():
                 continue
             try:
@@ -32128,6 +31421,15 @@ def _corp_recon_parse_bill_id_filter(raw_value) -> set[int] | None:
         if bill_id_int is not None and bill_id_int > 0:
             bill_ids.add(int(bill_id_int))
     return bill_ids
+
+
+def _corp_recon_make_bill_key(bill_id, source_key: str | None = None) -> str:
+    try:
+        bill_id_int = int(bill_id)
+    except Exception:
+        bill_id_int = 0
+    source_norm = str(source_key or "").strip().upper() or "UNKNOWN"
+    return f"BILL-{source_norm}-{bill_id_int}"
 
 
 def _corp_recon_kpis_from_rows(rows_df: pd.DataFrame) -> dict:
@@ -32307,6 +31609,24 @@ def _corp_recon_subtype_summary_from_rows(rows_df: pd.DataFrame) -> list[dict]:
             }
         )
     return out
+
+
+def _corp_recon_filter_export_rows(rows_df: pd.DataFrame, export_submitted_only: bool = False) -> pd.DataFrame:
+    if rows_df is None:
+        return pd.DataFrame()
+    work = rows_df.copy()
+    if work.empty or not export_submitted_only or "BillStatusRaw" not in work.columns:
+        return work
+    source_series = (
+        work["BillSourceKey"]
+        if "BillSourceKey" in work.columns
+        else work.get("BillSource", pd.Series("", index=work.index))
+    )
+    source_series = source_series.fillna("").astype(str).str.strip().str.upper()
+    opening_mask = source_series.isin({"OPENING", "OPENING BALANCE"})
+    status_series = work["BillStatusRaw"].fillna("").astype(str).str.strip().str.upper()
+    submitted_mask = status_series.isin({"Y", "YES", "1", "TRUE", "SUBMITTED", "FINAL SUBMITTED"})
+    return work[opening_mask | submitted_mask].copy()
 
 
 def _corp_updates_table_title(table_key: str) -> str:
@@ -32898,6 +32218,101 @@ def _corp_recon_status_for_balance(balance_value, receipt_value, tolerance: floa
     return "Unpaid"
 
 
+def _corp_recon_apply_receipt_closure_policy(
+    rows_df: pd.DataFrame,
+    tolerance: float = CORP_RECON_SETTLE_TOLERANCE,
+) -> pd.DataFrame:
+    if not isinstance(rows_df, pd.DataFrame) or rows_df.empty:
+        return rows_df
+
+    work = rows_df.copy()
+    numeric_defaults = (
+        "BillAmount",
+        "receipt_total_all_time",
+        "receipt_total_window",
+        "tds_total_all_time",
+        "tds_total_window",
+        "rebate_discount_all_time",
+        "rebate_discount_window",
+        "writeoff_total_all_time",
+        "writeoff_total_window",
+    )
+    for col in numeric_defaults:
+        if col not in work.columns:
+            work[col] = 0.0
+        work[col] = pd.to_numeric(work[col], errors="coerce").fillna(0.0).astype(float)
+
+    pre_policy_settled_all_time = (
+        work["receipt_total_all_time"]
+        + work["tds_total_all_time"]
+        + work["rebate_discount_all_time"]
+        + work["writeoff_total_all_time"]
+    )
+    closure_delta_all_time = work["BillAmount"] - pre_policy_settled_all_time
+
+    # Reconciliation policy: once a bill has any receipt, the bill is forced to close.
+    # Positive delta adds write-off for short-settled bills; negative delta reverses the
+    # same bucket for over-settled bills so overpaid does not remain visible.
+    auto_writeoff_all_time = np.where(
+        (work["receipt_total_all_time"] > float(tolerance)) & (closure_delta_all_time.abs() > float(tolerance)),
+        closure_delta_all_time,
+        0.0,
+    )
+    work["auto_writeoff_receipt_closure_all_time"] = pd.Series(
+        auto_writeoff_all_time,
+        index=work.index,
+        dtype="float64",
+    ).fillna(0.0)
+    work["writeoff_total_all_time"] = (
+        work["writeoff_total_all_time"] + work["auto_writeoff_receipt_closure_all_time"]
+    )
+
+    auto_writeoff_window = np.where(
+        (work["receipt_total_window"] > float(tolerance)) & (closure_delta_all_time.abs() > float(tolerance)),
+        closure_delta_all_time,
+        0.0,
+    )
+    work["auto_writeoff_receipt_closure_window"] = pd.Series(
+        auto_writeoff_window,
+        index=work.index,
+        dtype="float64",
+    ).fillna(0.0)
+    work["writeoff_total_window"] = (
+        work["writeoff_total_window"] + work["auto_writeoff_receipt_closure_window"]
+    )
+
+    work["settled_total_all_time"] = (
+        work["receipt_total_all_time"]
+        + work["tds_total_all_time"]
+        + work["rebate_discount_all_time"]
+        + work["writeoff_total_all_time"]
+    )
+    work["settled_total_window"] = (
+        work["receipt_total_window"]
+        + work["tds_total_window"]
+        + work["rebate_discount_window"]
+        + work["writeoff_total_window"]
+    )
+    work["balance_all_time"] = work["BillAmount"] - work["settled_total_all_time"]
+
+    raw_balance_window = work["BillAmount"] - work["settled_total_window"]
+    work["balance_window"] = np.where(
+        work["receipt_total_window"] > float(tolerance),
+        work["balance_all_time"],
+        raw_balance_window,
+    )
+
+    work["status_all_time"] = work.apply(
+        lambda r: _corp_recon_status_for_balance(r["balance_all_time"], r["settled_total_all_time"], tolerance=float(tolerance)),
+        axis=1,
+    )
+    work["status_window"] = work.apply(
+        lambda r: _corp_recon_status_for_balance(r["balance_window"], r["settled_total_window"], tolerance=float(tolerance)),
+        axis=1,
+    )
+    return work
+
+
 def _corp_recon_kpi_filter_label(kpi_filter: str) -> str:
     key = str(kpi_filter or "").strip().lower()
     mapping = {
@@ -32963,6 +32378,16 @@ def _corp_recon_fmt_date(value):
     if pd.isna(dt):
         return None
     return dt.strftime("%Y-%m-%d")
+
+
+def _corp_recon_fmt_excel_date(value):
+    try:
+        dt = pd.to_datetime(value, errors="coerce")
+    except Exception:
+        return None
+    if pd.isna(dt):
+        return None
+    return dt.strftime("%d-%m-%Y")
 
 
 def _corp_recon_fmt_datetime(value):
@@ -33040,12 +32465,15 @@ def _corp_recon_canonicalize_subtype_series(series: pd.Series) -> tuple[pd.Serie
 
 def _corp_recon_build_receipt_lines(
     receipts_df: pd.DataFrame,
-    bill_ids: set[int],
+    bill_refs,
     receipt_from: date | None,
     receipt_to: date | None,
 ) -> pd.DataFrame:
     base_columns = [
+        "bill_key",
         "bill_id",
+        "receipt_bill_source_key",
+        "receipt_against_source",
         "receipt_detail_id",
         "receipt_id",
         "receipt_no",
@@ -33066,10 +32494,24 @@ def _corp_recon_build_receipt_lines(
         "patient_id",
         "in_window",
     ]
-    if not bill_ids or receipts_df is None or receipts_df.empty:
+    if not bill_refs or receipts_df is None or receipts_df.empty:
         return pd.DataFrame(columns=base_columns)
 
-    work = receipts_df[receipts_df["BillId"].isin(list(bill_ids))].copy()
+    work = receipts_df.copy()
+    if "ReceiptBillSourceKey" not in work.columns:
+        work["ReceiptBillSourceKey"] = ""
+    work["ReceiptBillSourceKey"] = work["ReceiptBillSourceKey"].fillna("").astype(str).str.strip().str.upper()
+    work["BillId"] = pd.to_numeric(work.get("BillId"), errors="coerce").astype("Int64")
+    work = work.dropna(subset=["BillId"]).copy()
+    work["bill_key"] = work.apply(
+        lambda row: _corp_recon_make_bill_key(row.get("BillId"), row.get("ReceiptBillSourceKey")),
+        axis=1,
+    )
+
+    if isinstance(next(iter(bill_refs)), str):
+        work = work[work["bill_key"].isin(list(bill_refs))].copy()
+    else:
+        work = work[work["BillId"].isin(list(bill_refs))].copy()
     if work.empty:
         return pd.DataFrame(columns=base_columns)
 
@@ -33111,7 +32553,7 @@ def _corp_recon_build_receipt_lines(
     work["VisitIdFinal"] = work["DtlVisitId"].combine_first(work["MstVisitId"])
     work["PatientIdFinal"] = work["DtlPatientId"].combine_first(work["MstPatientId"])
     work["ReceiptNo"] = work.get("ReceiptNo", "").fillna("").astype(str).str.strip()
-    work["UTRNo"] = work.get("UTRNo", "").fillna("").astype(str).str.strip()
+    work["UTRNo"] = work.get("UTRNo", "").fillna("").astype(str).str.strip().str.replace(",", "", regex=False)
     if "InsertedById" not in work.columns:
         work["InsertedById"] = pd.NA
     work["InsertedById"] = pd.to_numeric(work["InsertedById"], errors="coerce").astype("Int64")
@@ -33164,7 +32606,14 @@ def _corp_recon_build_receipt_lines(
 
     out = pd.DataFrame(
         {
+            "bill_key": work["bill_key"],
             "bill_id": work["BillId"].astype("Int64"),
+            "receipt_bill_source_key": work["ReceiptBillSourceKey"],
+            "receipt_against_source": np.where(
+                work["ReceiptBillSourceKey"].astype(str).str.upper() == "OPENING",
+                "Opening",
+                "Bill",
+            ),
             "receipt_detail_id": work["ReceiptDetailId"].astype("Int64"),
             "receipt_id": work["ReceiptId"].astype("Int64"),
             "receipt_no": work["ReceiptNo"],
@@ -33188,6 +32637,38 @@ def _corp_recon_build_receipt_lines(
     )
     out = out.where(pd.notna(out), None)
     return out
+
+
+def _corp_recon_parse_reg_search_terms(query: str = "") -> list[str]:
+    raw = str(query or "").strip()
+    if "," not in raw:
+        return []
+    terms = []
+    seen = set()
+    for part in raw.split(","):
+        term = str(part or "").strip().lower()
+        if not term or term in seen:
+            continue
+        seen.add(term)
+        terms.append(term)
+    return terms
+
+
+def _corp_recon_exact_match_numeric_series(series: pd.Series | None) -> pd.Series:
+    if series is None:
+        return pd.Series(dtype="object")
+    numeric = pd.to_numeric(series, errors="coerce").astype("Int64").astype(str)
+    return numeric.replace("<NA>", "").str.strip().str.lower()
+
+
+def _corp_recon_search_term_order_map(terms: list[str] | None) -> dict[str, int]:
+    ordered = {}
+    for idx, term in enumerate(terms or []):
+        key = str(term or "").strip().lower()
+        if not key or key in ordered:
+            continue
+        ordered[key] = idx
+    return ordered
 
 
 def _corp_recon_query(
@@ -33227,6 +32708,7 @@ def _corp_recon_query(
         }
         if not normalized_bill_ids:
             normalized_bill_ids = None
+    reg_search_terms = _corp_recon_parse_reg_search_terms(q)
 
     use_sp_fastpath = (
         bool(getattr(config, "USE_CORP_RECON_SP", False))
@@ -33261,6 +32743,7 @@ def _corp_recon_query(
         )
         _sp_ms = round((time.perf_counter() - _sp_t0) * 1000.0, 1)
         if isinstance(sp_payload, dict) and sp_payload.get("status") == "success":
+            _corp_recon_annotate_payload_rows(unit, sp_payload)
             sp_meta = sp_payload.get("meta")
             if not isinstance(sp_meta, dict):
                 sp_meta = {}
@@ -33339,6 +32822,7 @@ def _corp_recon_query(
         "DueDate",
         "BillAmount",
         "BillNo",
+        "Registration_No",
         "PatientId",
         "VisitId",
         "SourcePatientName",
@@ -33408,6 +32892,7 @@ def _corp_recon_query(
         for text_col in [
             "BillSource",
             "BillNo",
+            "Registration_No",
             "SourcePatientName",
             "BillStatusRaw",
             "TypeOfVisit",
@@ -33429,12 +32914,13 @@ def _corp_recon_query(
             bills_df[num_col] = pd.to_numeric(bills_df[num_col], errors="coerce").astype("Int64")
 
         bills_df = bills_df.sort_values(["BillDate", "BillId"], ascending=[False, False], na_position="last")
-        bills_df = bills_df.drop_duplicates(subset=["BillId"], keep="first")
+        bills_df = bills_df.drop_duplicates(subset=["BillSourceKey", "BillId"], keep="first")
 
         required_receipt_cols = [
             "ReceiptDetailId",
             "ReceiptId",
             "BillId",
+            "ReceiptBillSourceKey",
             "BillAmtDtl",
             "ReceiptAmtDtl",
             "DueAmtDtl",
@@ -33467,6 +32953,7 @@ def _corp_recon_query(
         receipts_df["ReceiptDateNorm"] = receipts_df["ReceiptDateNorm"].combine_first(
             pd.to_datetime(receipts_df["ReceiptDateMst"], errors="coerce")
         )
+        receipts_df["ReceiptBillSourceKey"] = receipts_df["ReceiptBillSourceKey"].fillna("").astype(str).str.strip().str.upper()
         receipts_df["ReceiptId"] = pd.to_numeric(receipts_df["ReceiptId"], errors="coerce")
         receipts_df["ReceiptAmtDtl"] = pd.to_numeric(receipts_df["ReceiptAmtDtl"], errors="coerce").fillna(0.0).astype(float)
         receipts_df["RebateDiscountAmt"] = pd.to_numeric(receipts_df["RebateDiscountAmt"], errors="coerce").fillna(0.0).astype(float)
@@ -33474,27 +32961,30 @@ def _corp_recon_query(
         receipts_df["WriteOffAmt"] = pd.to_numeric(receipts_df["WriteOffAmt"], errors="coerce").fillna(0.0).astype(float)
         receipts_df["CancelStatus"] = pd.to_numeric(receipts_df["CancelStatus"], errors="coerce").fillna(0).astype(int)
 
-        target_candidates_df = receipts_df.copy()
+        active_receipts_df = receipts_df[receipts_df["CancelStatus"] != 1].copy()
+
+        target_candidates_df = active_receipts_df.copy()
         target_candidates_df["ReceiptId"] = pd.to_numeric(target_candidates_df["ReceiptId"], errors="coerce").astype("Int64")
         target_candidates_df = target_candidates_df.dropna(subset=["ReceiptId"]).copy()
         if target_candidates_df.empty:
-            target_receipt_df = pd.DataFrame(columns=["BillId", "WriteOffTargetReceiptId"])
+            target_receipt_df = pd.DataFrame(columns=["ReceiptBillSourceKey", "BillId", "WriteOffTargetReceiptId"])
         else:
             target_candidates_df = target_candidates_df.sort_values(
-                ["BillId", "CancelStatus", "ReceiptDateNorm", "ReceiptId"],
-                ascending=[True, True, False, False],
+                ["ReceiptBillSourceKey", "BillId", "CancelStatus", "ReceiptDateNorm", "ReceiptId"],
+                ascending=[True, True, True, False, False],
                 na_position="last",
             )
             target_receipt_df = (
-                target_candidates_df.drop_duplicates(subset=["BillId"], keep="first")[["BillId", "ReceiptId"]]
+                target_candidates_df.drop_duplicates(subset=["ReceiptBillSourceKey", "BillId"], keep="first")[["ReceiptBillSourceKey", "BillId", "ReceiptId"]]
                 .rename(columns={"ReceiptId": "WriteOffTargetReceiptId"})
             )
 
         if not include_cancelled:
-            receipts_df = receipts_df[receipts_df["CancelStatus"] != 1].copy()
+            receipts_df = active_receipts_df
 
         if receipts_df.empty:
                 grouped_all = pd.DataFrame(columns=[
+                    "ReceiptBillSourceKey",
                     "BillId",
                     "receipt_total_all_time",
                     "tds_total_all_time",
@@ -33504,6 +32994,7 @@ def _corp_recon_query(
                     "last_receipt_date_all_time_dt",
                 ])
                 grouped_window = pd.DataFrame(columns=[
+                    "ReceiptBillSourceKey",
                     "BillId",
                     "receipt_total_window",
                     "tds_total_window",
@@ -33548,7 +33039,7 @@ def _corp_recon_query(
             receipts_df["WriteOffAllocated"] = pd.to_numeric(receipts_df["WriteOffAllocated"], errors="coerce").fillna(0.0).astype(float)
 
             grouped_all = (
-                receipts_df.groupby("BillId", as_index=False)
+                receipts_df.groupby(["ReceiptBillSourceKey", "BillId"], as_index=False)
                 .agg(
                     receipt_total_all_time=("ReceiptAmtDtl", "sum"),
                     tds_total_all_time=("TDSAllocated", "sum"),
@@ -33566,7 +33057,7 @@ def _corp_recon_query(
                 window_mask = window_mask & (receipts_df["ReceiptDateNorm"].dt.date <= receipt_to)
             receipts_window_df = receipts_df[window_mask].copy()
             grouped_window = (
-                receipts_window_df.groupby("BillId", as_index=False)
+                receipts_window_df.groupby(["ReceiptBillSourceKey", "BillId"], as_index=False)
                 .agg(
                     receipt_total_window=("ReceiptAmtDtl", "sum"),
                     tds_total_window=("TDSAllocated", "sum"),
@@ -33577,9 +33068,12 @@ def _corp_recon_query(
                 )
             )
 
-        rows_df = bills_df.merge(grouped_all, how="left", on="BillId")
-        rows_df = rows_df.merge(grouped_window, how="left", on="BillId")
-        rows_df = rows_df.merge(target_receipt_df, how="left", on="BillId")
+        rows_df = bills_df.merge(grouped_all, how="left", left_on=["BillSourceKey", "BillId"], right_on=["ReceiptBillSourceKey", "BillId"])
+        rows_df = rows_df.merge(grouped_window, how="left", left_on=["BillSourceKey", "BillId"], right_on=["ReceiptBillSourceKey", "BillId"], suffixes=("", "_windowkey"))
+        rows_df = rows_df.merge(target_receipt_df, how="left", left_on=["BillSourceKey", "BillId"], right_on=["ReceiptBillSourceKey", "BillId"], suffixes=("", "_targetkey"))
+        for extra_key_col in ("ReceiptBillSourceKey", "ReceiptBillSourceKey_windowkey", "ReceiptBillSourceKey_targetkey"):
+            if extra_key_col in rows_df.columns:
+                rows_df = rows_df.drop(columns=[extra_key_col])
 
         for col in (
             "receipt_total_all_time",
@@ -33609,35 +33103,21 @@ def _corp_recon_query(
         rows_df["writeoff_total_all_time"] = rows_df["writeoff_total_all_time"] + rows_df["opening_writeoff_all_time"]
         rows_df["writeoff_total_window"] = rows_df["writeoff_total_window"] + rows_df["opening_writeoff_all_time"]
 
-        rows_df["settled_total_all_time"] = (
-            rows_df["receipt_total_all_time"]
-            + rows_df["tds_total_all_time"]
-            + rows_df["rebate_discount_all_time"]
-            + rows_df["writeoff_total_all_time"]
-        )
-        rows_df["settled_total_window"] = (
-            rows_df["receipt_total_window"]
-            + rows_df["tds_total_window"]
-            + rows_df["rebate_discount_window"]
-            + rows_df["writeoff_total_window"]
-        )
-        rows_df["balance_all_time"] = rows_df["BillAmount"] - rows_df["settled_total_all_time"]
-        rows_df["balance_window"] = rows_df["BillAmount"] - rows_df["settled_total_window"]
-
         if "WriteOffTargetReceiptId" not in rows_df.columns:
             rows_df["WriteOffTargetReceiptId"] = pd.NA
         rows_df["WriteOffTargetReceiptId"] = pd.to_numeric(
             rows_df["WriteOffTargetReceiptId"], errors="coerce"
         ).astype("Int64")
-
-        rows_df["status_all_time"] = rows_df.apply(
-            lambda r: _corp_recon_status_for_balance(r["balance_all_time"], r["settled_total_all_time"]),
-            axis=1,
+        rows_df = _corp_recon_apply_receipt_closure_policy(
+            rows_df,
+            tolerance=float(CORP_RECON_SETTLE_TOLERANCE),
         )
-        rows_df["status_window"] = rows_df.apply(
-            lambda r: _corp_recon_status_for_balance(r["balance_window"], r["settled_total_window"]),
-            axis=1,
-        )
+        if not rows_df.empty:
+            submitted_source_keys = {"BILL_MST_POST", "BILL_MST_AHL"}
+            bill_source_series = rows_df["BillSourceKey"].fillna("").astype(str).str.strip().str.upper()
+            bill_status_series = rows_df["BillStatusRaw"].fillna("").astype(str).str.strip().str.upper()
+            keep_submitted_mask = (~bill_source_series.isin(submitted_source_keys)) | (bill_status_series == "Y")
+            rows_df = rows_df[keep_submitted_mask].copy()
 
     if "IsSuspenseDateAnomaly" not in rows_df.columns:
         rows_df["IsSuspenseDateAnomaly"] = False
@@ -33713,31 +33193,44 @@ def _corp_recon_query(
         ].copy()
 
     query = str(q or "").strip().lower()
+    search_order_map = _corp_recon_search_term_order_map(reg_search_terms)
     if query and not rows_df.empty:
-        search_columns = [
-            "BillNo",
-            "BillSource",
-            "BillDate",
-            "DueDate",
-            "PatientName",
-            "SourcePatientName",
-            "TypeOfVisit",
-            "PatientType",
-            "PatientSubType",
-            "Dept",
-            "SubDept",
-            "BillUpdatedByName",
-            "BillUpdatedOnRaw",
-            "status_all_time",
-            "status_window",
-        ]
-        mask = pd.Series(False, index=rows_df.index)
-        for col in search_columns:
-            if col in rows_df.columns:
-                mask = mask | rows_df[col].astype(str).str.lower().str.contains(query, regex=False, na=False)
-        for col in ("BillId", "PatientId", "VisitId"):
-            if col in rows_df.columns:
-                mask = mask | rows_df[col].astype(str).str.lower().str.contains(query, regex=False, na=False)
+        if reg_search_terms:
+            patient_series = (
+                _corp_recon_exact_match_numeric_series(rows_df["PatientId"])
+                if "PatientId" in rows_df.columns
+                else pd.Series("", index=rows_df.index, dtype="object")
+            )
+            mask = patient_series.isin(reg_search_terms)
+            if mask.any():
+                rows_df = rows_df.copy()
+                rows_df["PatientSearchOrder"] = patient_series.map(search_order_map).fillna(len(search_order_map)).astype(int)
+        else:
+            search_columns = [
+                "BillNo",
+                "Registration_No",
+                "BillSource",
+                "BillDate",
+                "DueDate",
+                "PatientName",
+                "SourcePatientName",
+                "TypeOfVisit",
+                "PatientType",
+                "PatientSubType",
+                "Dept",
+                "SubDept",
+                "BillUpdatedByName",
+                "BillUpdatedOnRaw",
+                "status_all_time",
+                "status_window",
+            ]
+            mask = pd.Series(False, index=rows_df.index)
+            for col in search_columns:
+                if col in rows_df.columns:
+                    mask = mask | rows_df[col].astype(str).str.lower().str.contains(query, regex=False, na=False)
+            for col in ("BillId", "PatientId", "VisitId"):
+                if col in rows_df.columns:
+                    mask = mask | rows_df[col].astype(str).str.lower().str.contains(query, regex=False, na=False)
         rows_df = rows_df[mask].copy()
 
     if kpi_filter_key and not rows_df.empty:
@@ -33778,7 +33271,21 @@ def _corp_recon_query(
     sort_col = sort_columns.get(sort_key, "balance_all_time")
 
     if not rows_df.empty:
-        if sort_col == "BillId":
+        search_order_active = reg_search_terms and "PatientSearchOrder" in rows_df.columns
+        if search_order_active:
+            if sort_col == "BillId":
+                rows_df = rows_df.sort_values(
+                    ["PatientSearchOrder", "BillId"],
+                    ascending=[True, sort_asc],
+                    na_position="last",
+                )
+            else:
+                rows_df = rows_df.sort_values(
+                    ["PatientSearchOrder", sort_col, "BillId"],
+                    ascending=[True, sort_asc, False],
+                    na_position="last",
+                )
+        elif sort_col == "BillId":
             rows_df = rows_df.sort_values(["BillId"], ascending=[sort_asc], na_position="last")
         else:
             rows_df = rows_df.sort_values([sort_col, "BillId"], ascending=[sort_asc, False], na_position="last")
@@ -33843,7 +33350,10 @@ def _corp_recon_query(
         total_pages = 1
         page_rows_df = rows_df.copy()
 
-    page_rows_df["bill_key"] = page_rows_df["BillId"].apply(lambda val: f"BILL-{int(val)}")
+    page_rows_df["bill_key"] = page_rows_df.apply(
+        lambda row: _corp_recon_make_bill_key(row.get("BillId"), row.get("BillSourceKey")),
+        axis=1,
+    )
     page_rows_df["bill_date"] = page_rows_df["BillDate"].apply(_corp_recon_fmt_date)
     page_rows_df["submit_date_raw"] = page_rows_df["SubmitDateRaw"].apply(_corp_recon_fmt_date)
     page_rows_df["c_bill_date_raw"] = page_rows_df["CBillDateRaw"].apply(_corp_recon_fmt_date)
@@ -33861,6 +33371,7 @@ def _corp_recon_query(
             "bill_source_key": page_rows_df["BillSourceKey"],
             "bill_source": page_rows_df["BillSource"],
             "bill_no": page_rows_df["BillNo"],
+            "registration_no": page_rows_df["Registration_No"],
             "bill_date": page_rows_df["bill_date"],
             "submit_date_raw": page_rows_df["submit_date_raw"],
             "c_bill_date_raw": page_rows_df["c_bill_date_raw"],
@@ -33911,20 +33422,15 @@ def _corp_recon_query(
     rows_payload_df = rows_payload_df.where(pd.notna(rows_payload_df), None)
     rows_payload = _sanitize_json_payload(rows_payload_df.to_dict(orient="records"))
 
-    selected_bill_ids = {int(v) for v in page_rows_df["BillId"].tolist()} if not page_rows_df.empty else set()
-    details_df = _corp_recon_build_receipt_lines(receipts_df, selected_bill_ids, receipt_from, receipt_to)
+    selected_bill_keys = set(page_rows_df["bill_key"].tolist()) if not page_rows_df.empty else set()
+    details_df = _corp_recon_build_receipt_lines(receipts_df, selected_bill_keys, receipt_from, receipt_to)
     receipt_details = {}
     if not details_df.empty:
         details_records = details_df.to_dict(orient="records")
         for rec in details_records:
-            bill_id_val = rec.get("bill_id")
-            if bill_id_val in (None, ""):
+            bill_key = str(rec.get("bill_key") or "").strip()
+            if not bill_key:
                 continue
-            try:
-                bill_id_int = int(bill_id_val)
-            except Exception:
-                continue
-            bill_key = f"BILL-{bill_id_int}"
             receipt_details.setdefault(bill_key, []).append(rec)
 
     suspense_kpis = _corp_recon_kpis_from_rows(suspense_df)
@@ -33932,7 +33438,10 @@ def _corp_recon_query(
     suspense_receipt_details = {}
     if include_suspense_payload and not suspense_df.empty:
         suspense_rows_df = suspense_df.copy()
-        suspense_rows_df["bill_key"] = suspense_rows_df["BillId"].apply(lambda val: f"BILL-{int(val)}")
+        suspense_rows_df["bill_key"] = suspense_rows_df.apply(
+            lambda row: _corp_recon_make_bill_key(row.get("BillId"), row.get("BillSourceKey")),
+            axis=1,
+        )
         suspense_rows_df["bill_date"] = suspense_rows_df["BillDate"].apply(_corp_recon_fmt_date)
         suspense_rows_df["submit_date_raw"] = suspense_rows_df["SubmitDateRaw"].apply(_corp_recon_fmt_date)
         suspense_rows_df["c_bill_date_raw"] = suspense_rows_df["CBillDateRaw"].apply(_corp_recon_fmt_date)
@@ -33949,6 +33458,7 @@ def _corp_recon_query(
                 "bill_source_key": suspense_rows_df["BillSourceKey"],
                 "bill_source": suspense_rows_df["BillSource"],
                 "bill_no": suspense_rows_df["BillNo"],
+                "registration_no": suspense_rows_df["Registration_No"],
                 "bill_date": suspense_rows_df["bill_date"],
                 "submit_date_raw": suspense_rows_df["submit_date_raw"],
                 "c_bill_date_raw": suspense_rows_df["c_bill_date_raw"],
@@ -33999,19 +33509,14 @@ def _corp_recon_query(
         suspense_rows_payload_df = suspense_rows_payload_df.where(pd.notna(suspense_rows_payload_df), None)
         suspense_rows_payload = _sanitize_json_payload(suspense_rows_payload_df.to_dict(orient="records"))
 
-        suspense_bill_ids = {int(v) for v in suspense_rows_df["BillId"].tolist()} if not suspense_rows_df.empty else set()
-        suspense_details_df = _corp_recon_build_receipt_lines(receipts_df, suspense_bill_ids, receipt_from, receipt_to)
+        suspense_bill_keys = set(suspense_rows_df["bill_key"].tolist()) if not suspense_rows_df.empty else set()
+        suspense_details_df = _corp_recon_build_receipt_lines(receipts_df, suspense_bill_keys, receipt_from, receipt_to)
         if not suspense_details_df.empty:
             suspense_details_records = suspense_details_df.to_dict(orient="records")
             for rec in suspense_details_records:
-                bill_id_val = rec.get("bill_id")
-                if bill_id_val in (None, ""):
+                bill_key = str(rec.get("bill_key") or "").strip()
+                if not bill_key:
                     continue
-                try:
-                    bill_id_int = int(bill_id_val)
-                except Exception:
-                    continue
-                bill_key = f"BILL-{bill_id_int}"
                 suspense_receipt_details.setdefault(bill_key, []).append(rec)
 
     _t_transform_ms = round((time.perf_counter() - _t_transform_start) * 1000.0, 1)
@@ -34076,6 +33581,8 @@ def _corp_recon_query(
             },
         }
 
+    _corp_recon_annotate_payload_rows(unit, payload)
+
     _t_ser_start = time.perf_counter()
     payload_size_bytes = len(json.dumps(payload, default=str).encode("utf-8"))
     _t_serialize_ms = round((time.perf_counter() - _t_ser_start) * 1000.0, 1)
@@ -34107,6 +33614,416 @@ def _corp_recon_query(
         "receipts_df": receipts_df.copy(),
         "bills_df": bills_df.copy(),
     }
+
+
+def _corp_recon_action_rows_payload_from_df(
+    unit: str,
+    rows_df: pd.DataFrame,
+    *,
+    mode: str,
+    page: int,
+    page_size: int,
+    q: str = "",
+    bill_source: str = "",
+    query_engine: str = "python",
+) -> dict:
+    work = rows_df.copy() if isinstance(rows_df, pd.DataFrame) else pd.DataFrame()
+    total_rows = int(len(work.index)) if isinstance(work, pd.DataFrame) and not work.empty else 0
+    available_sources = []
+    if not work.empty and "BillSource" in work.columns:
+        try:
+            available_sources = sorted(
+                {
+                    str(v).strip()
+                    for v in work["BillSource"].dropna().tolist()
+                    if str(v).strip()
+                }
+            )
+        except Exception:
+            available_sources = []
+    if str(mode or "").strip().lower() == "unsubmit" and not available_sources:
+        available_sources = ["Corporate Bill"]
+    page = _corp_recon_parse_int(page, 1, 1, None)
+    page_size = _corp_recon_parse_int(page_size, 25, 10, 500)
+    total_pages = max(1, math.ceil(total_rows / page_size)) if page_size else 1
+    if page > total_pages:
+        page = total_pages
+    start = (page - 1) * page_size
+    end = start + page_size
+    page_df = work.iloc[start:end].copy() if total_rows else work.copy()
+
+    if not page_df.empty:
+        page_df["bill_key"] = page_df.apply(
+            lambda row: _corp_recon_make_bill_key(row.get("BillId"), row.get("BillSourceKey")),
+            axis=1,
+        )
+    else:
+        page_df = pd.DataFrame()
+
+    payload_rows = []
+    for rec in page_df.to_dict(orient="records") if not page_df.empty else []:
+        receipt_total = float(pd.to_numeric(pd.Series([rec.get("receipt_total_all_time")]), errors="coerce").fillna(0.0).iloc[0])
+        tds_total = float(pd.to_numeric(pd.Series([rec.get("tds_total_all_time")]), errors="coerce").fillna(0.0).iloc[0])
+        rebate_total = float(pd.to_numeric(pd.Series([rec.get("rebate_discount_all_time")]), errors="coerce").fillna(0.0).iloc[0])
+        writeoff_total = float(pd.to_numeric(pd.Series([rec.get("writeoff_total_all_time")]), errors="coerce").fillna(0.0).iloc[0])
+        settled_total = float(pd.to_numeric(pd.Series([rec.get("settled_total_all_time")]), errors="coerce").fillna(0.0).iloc[0])
+        balance_total = float(pd.to_numeric(pd.Series([rec.get("balance_all_time")]), errors="coerce").fillna(0.0).iloc[0])
+        receipt_count = int(_corp_recon_parse_int(rec.get("receipt_count_all_time"), 0, 0, None) or 0)
+        has_receipt = bool(receipt_count > 0 or abs(receipt_total) > 0.01)
+        can_take_receipt = bool(_corp_recon_row_can_take_receipt(unit, rec))
+        can_unsubmit = bool(_corp_recon_row_can_unsubmit_bill(unit, rec))
+        row_payload = {
+            "bill_key": _corp_recon_make_bill_key(rec.get("BillId"), rec.get("BillSourceKey")),
+            "bill_id": _corp_recon_parse_int(rec.get("BillId"), 0, 0, None),
+            "bill_source_key": str(rec.get("BillSourceKey") or "").strip().upper(),
+            "bill_source": str(rec.get("BillSource") or "").strip(),
+            "bill_no": str(rec.get("BillNo") or "").strip(),
+            "registration_no": str(rec.get("Registration_No") or "").strip(),
+            "bill_date": _corp_recon_fmt_date(rec.get("BillDate")),
+            "submit_date_raw": _corp_recon_fmt_date(rec.get("SubmitDateRaw")),
+            "c_bill_date_raw": _corp_recon_fmt_date(rec.get("CBillDateRaw")),
+            "due_date": _corp_recon_fmt_date(rec.get("DueDate")),
+            "patient_id": _corp_recon_parse_int(rec.get("PatientId"), 0, 0, None),
+            "patient_name": str(rec.get("PatientName") or "").strip(),
+            "patient_type": str(rec.get("PatientType") or "").strip(),
+            "patient_subtype": str(rec.get("PatientSubType") or "").strip(),
+            "type_of_visit": str(rec.get("TypeOfVisit") or "").strip(),
+            "visit_id": _corp_recon_parse_int(rec.get("VisitId"), 0, 0, None),
+            "visit_date": _corp_recon_fmt_date(rec.get("VisitDate")),
+            "discharge_date": _corp_recon_fmt_date(rec.get("DischargeDate")),
+            "dept": str(rec.get("Dept") or "").strip(),
+            "sub_dept": str(rec.get("SubDept") or "").strip(),
+            "bill_amount": float(pd.to_numeric(pd.Series([rec.get("BillAmount")]), errors="coerce").fillna(0.0).iloc[0]),
+            "receipt_total_all_time": receipt_total,
+            "tds_total_all_time": tds_total,
+            "rebate_discount_all_time": rebate_total,
+            "writeoff_total_all_time": writeoff_total,
+            "settled_total_all_time": settled_total,
+            "balance_all_time": balance_total,
+            "status_all_time": str(rec.get("status_all_time") or "").strip(),
+            "receipt_count_all_time": receipt_count,
+            "last_receipt_date_all_time": _corp_recon_fmt_date(rec.get("last_receipt_date_all_time_dt")),
+            "source_patient_name": str(rec.get("SourcePatientName") or "").strip(),
+            "bill_status_raw": str(rec.get("BillStatusRaw") or "").strip(),
+            "has_receipt": has_receipt,
+            "can_take_receipt": can_take_receipt,
+            "can_unsubmit_bill": can_unsubmit,
+            "receipt_note": (
+                "Ready for receipt."
+                if can_take_receipt
+                else ("Receipt already exists on this bill." if has_receipt else "Bill is not eligible for receipt.")
+            ),
+            "unsubmit_block_reason": "" if can_unsubmit else _corp_recon_unsubmit_block_reason(unit, rec),
+        }
+        payload_rows.append(row_payload)
+
+    return {
+        "status": "success",
+        "unit": unit,
+        "rows": _sanitize_json_payload(payload_rows),
+        "meta": {
+            "page": int(page),
+            "page_size": int(page_size),
+            "total_rows": int(total_rows),
+            "total_pages": int(total_pages),
+            "q": str(q or "").strip(),
+            "bill_source": str(bill_source or "").strip() or None,
+            "available_sources": available_sources,
+            "action_mode": str(mode or "").strip().lower() or None,
+            "query_engine": str(query_engine or "python"),
+            "used_sql_sp": str(query_engine or "").strip().lower() == "sql_sp",
+        },
+    }
+
+
+def _corp_recon_receipt_actions_query(
+    unit: str,
+    *,
+    q: str = "",
+    bill_source: str = "",
+    page: int = 1,
+    page_size: int = 25,
+    force_refresh: bool = False,
+    prefer_sql_sp: bool | None = None,
+):
+    use_sp_fastpath = (
+        bool(getattr(config, "USE_CORP_RECON_SP", False))
+        if prefer_sql_sp is None
+        else bool(prefer_sql_sp)
+    )
+    if _is_sharpsight_corp_unit(unit):
+        use_sp_fastpath = False
+
+    if use_sp_fastpath:
+        sp_payload = data_fetch.fetch_corporate_reconciliation_action_page(
+            unit,
+            action_mode="receipt",
+            q=q,
+            bill_source=bill_source,
+            page=page,
+            page_size=page_size,
+        )
+        if isinstance(sp_payload, dict) and str(sp_payload.get("status") or "").lower() == "success":
+            _corp_recon_annotate_payload_rows(unit, sp_payload)
+            rows = sp_payload.get("rows")
+            if isinstance(rows, list):
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    row["has_receipt"] = bool(
+                        (_corp_recon_parse_int(row.get("receipt_count_all_time"), 0, 0, None) or 0) > 0
+                        or abs(float(row.get("receipt_total_all_time") or 0.0)) > 0.01
+                    )
+                    row["receipt_note"] = (
+                        "Ready for receipt."
+                        if row.get("can_take_receipt")
+                        else ("Receipt already exists on this bill." if row.get("has_receipt") else "Bill is not eligible for receipt.")
+                    )
+            meta = sp_payload.get("meta")
+            if not isinstance(meta, dict):
+                meta = {}
+                sp_payload["meta"] = meta
+            meta["query_engine"] = "sql_sp"
+            meta["used_sql_sp"] = True
+            return {"payload": _sanitize_json_payload(sp_payload)}
+
+    fallback = _corp_recon_query(
+        unit,
+        bill_from=None,
+        bill_to=None,
+        receipt_from=None,
+        receipt_to=None,
+        bill_source=bill_source,
+        patient_subtype="",
+        q=q,
+        kpi_filter="",
+        include_cancelled=False,
+        page=1,
+        page_size=CORP_RECON_PAGE_SIZE_MAX,
+        sort_by="bill_date",
+        sort_dir="desc",
+        force_refresh=force_refresh,
+        apply_paging=False,
+        include_suspense_payload=False,
+        prefer_sql_sp=False,
+    )
+    rows_df = fallback.get("rows_df") if isinstance(fallback, dict) else pd.DataFrame()
+    if rows_df is None:
+        rows_df = pd.DataFrame()
+    if not rows_df.empty:
+        work = rows_df.copy()
+        source_series = work.get("BillSourceKey", pd.Series("", index=work.index)).fillna("").astype(str).str.strip().str.upper()
+        submitted_series = work.get("BillStatusRaw", pd.Series("", index=work.index)).fillna("").astype(str).str.strip().str.upper()
+        corporate_key = _corp_recon_corporate_bill_source_key(unit)
+        work = work[
+            (source_series == "OPENING")
+            | ((source_series == corporate_key) & ((submitted_series == "Y") | (submitted_series == "")))
+        ].copy()
+    else:
+        work = pd.DataFrame()
+    payload = _corp_recon_action_rows_payload_from_df(
+        unit,
+        work,
+        mode="receipt",
+        page=page,
+        page_size=page_size,
+        q=q,
+        bill_source=bill_source,
+        query_engine="python",
+    )
+    return {"payload": payload}
+
+
+def _corp_recon_unsubmit_actions_query(
+    unit: str,
+    *,
+    q: str = "",
+    page: int = 1,
+    page_size: int = 25,
+    force_refresh: bool = False,
+    prefer_sql_sp: bool | None = None,
+):
+    use_sp_fastpath = (
+        bool(getattr(config, "USE_CORP_RECON_SP", False))
+        if prefer_sql_sp is None
+        else bool(prefer_sql_sp)
+    )
+    if _is_sharpsight_corp_unit(unit):
+        use_sp_fastpath = False
+
+    if use_sp_fastpath:
+        sp_payload = data_fetch.fetch_corporate_reconciliation_action_page(
+            unit,
+            action_mode="unsubmit",
+            q=q,
+            bill_source="Corporate Bill",
+            page=page,
+            page_size=page_size,
+        )
+        if isinstance(sp_payload, dict) and str(sp_payload.get("status") or "").lower() == "success":
+            _corp_recon_annotate_payload_rows(unit, sp_payload)
+            rows = sp_payload.get("rows")
+            if isinstance(rows, list):
+                for row in rows:
+                    if not isinstance(row, dict):
+                        continue
+                    row["has_receipt"] = bool(
+                        (_corp_recon_parse_int(row.get("receipt_count_all_time"), 0, 0, None) or 0) > 0
+                        or abs(float(row.get("receipt_total_all_time") or 0.0)) > 0.01
+                    )
+                    row["unsubmit_block_reason"] = (
+                        ""
+                        if row.get("can_unsubmit_bill")
+                        else _corp_recon_unsubmit_block_reason(unit, row)
+                    )
+            meta = sp_payload.get("meta")
+            if not isinstance(meta, dict):
+                meta = {}
+                sp_payload["meta"] = meta
+            meta["query_engine"] = "sql_sp"
+            meta["used_sql_sp"] = True
+            return {"payload": _sanitize_json_payload(sp_payload)}
+
+    fallback = _corp_recon_query(
+        unit,
+        bill_from=None,
+        bill_to=None,
+        receipt_from=None,
+        receipt_to=None,
+        bill_source="Corporate Bill",
+        patient_subtype="",
+        q=q,
+        kpi_filter="",
+        include_cancelled=False,
+        page=1,
+        page_size=CORP_RECON_PAGE_SIZE_MAX,
+        sort_by="bill_date",
+        sort_dir="desc",
+        force_refresh=force_refresh,
+        apply_paging=False,
+        include_suspense_payload=False,
+        prefer_sql_sp=False,
+    )
+    rows_df = fallback.get("rows_df") if isinstance(fallback, dict) else pd.DataFrame()
+    if rows_df is None:
+        rows_df = pd.DataFrame()
+    if not rows_df.empty:
+        work = rows_df.copy()
+        source_series = work.get("BillSourceKey", pd.Series("", index=work.index)).fillna("").astype(str).str.strip().str.upper()
+        submitted_series = work.get("BillStatusRaw", pd.Series("", index=work.index)).fillna("").astype(str).str.strip().str.upper()
+        work = work[
+            (source_series == _corp_recon_corporate_bill_source_key(unit))
+            & (submitted_series == "Y")
+        ].copy()
+    else:
+        work = pd.DataFrame()
+    payload = _corp_recon_action_rows_payload_from_df(
+        unit,
+        work,
+        mode="unsubmit",
+        page=page,
+        page_size=page_size,
+        q=q,
+        bill_source="Corporate Bill",
+        query_engine="python",
+    )
+    return {"payload": payload}
+
+
+@app.route('/api/corporate/reconciliation/actions/receipt_candidates')
+@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
+def api_corporate_reconciliation_receipt_candidates():
+    if not _corp_recon_can_take_receipt_session():
+        return jsonify({"status": "error", "message": "You do not have permission to take receipts."}), 403
+
+    raw_unit = request.args.get("unit")
+    unit, unit_err = _corp_recon_resolve_unit(raw_unit)
+    if unit_err:
+        return unit_err
+
+    q = (request.args.get("q") or "").strip()
+    bill_source = (request.args.get("bill_source") or "").strip()
+    force_refresh = _corp_recon_parse_bool(request.args.get("force_refresh"), default=False)
+    if force_refresh:
+        _corp_recon_result_cache_invalidate(unit)
+    page = _corp_recon_parse_int(request.args.get("page"), 1, 1, None)
+    page_size = _corp_recon_parse_int(request.args.get("page_size"), 25, 10, 500)
+    engine_mode = (request.args.get("engine") or "").strip().lower()
+    if engine_mode not in {"", "sp", "py"}:
+        return jsonify({"status": "error", "message": "engine must be one of: sp, py"}), 400
+    prefer_sql_sp = None if engine_mode == "" else (engine_mode == "sp")
+
+    try:
+        result = _corp_recon_receipt_actions_query(
+            unit,
+            q=q,
+            bill_source=bill_source,
+            page=page,
+            page_size=page_size,
+            force_refresh=force_refresh,
+            prefer_sql_sp=prefer_sql_sp,
+        )
+        payload = result.get("payload") if isinstance(result, dict) else {}
+        if not isinstance(payload, dict):
+            payload = {}
+        meta = payload.get("meta")
+        if not isinstance(meta, dict):
+            meta = {}
+            payload["meta"] = meta
+        meta["can_take_receipt"] = True
+        meta["force_refresh"] = bool(force_refresh)
+        meta["requested_engine"] = engine_mode or "auto"
+        meta["action_mode"] = "receipt"
+        return jsonify(payload)
+    except Exception as exc:
+        return jsonify({"status": "error", "message": f"Failed to load receipt action candidates: {exc}"}), 500
+
+
+@app.route('/api/corporate/reconciliation/actions/unsubmit_candidates')
+@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
+def api_corporate_reconciliation_unsubmit_candidates():
+    if not _corp_recon_can_unsubmit_bill_session():
+        return jsonify({"status": "error", "message": "You do not have the corporate bill unsubmit right."}), 403
+
+    raw_unit = request.args.get("unit")
+    unit, unit_err = _corp_recon_resolve_unit(raw_unit)
+    if unit_err:
+        return unit_err
+
+    q = (request.args.get("q") or "").strip()
+    force_refresh = _corp_recon_parse_bool(request.args.get("force_refresh"), default=False)
+    if force_refresh:
+        _corp_recon_result_cache_invalidate(unit)
+    page = _corp_recon_parse_int(request.args.get("page"), 1, 1, None)
+    page_size = _corp_recon_parse_int(request.args.get("page_size"), 25, 10, 500)
+    engine_mode = (request.args.get("engine") or "").strip().lower()
+    if engine_mode not in {"", "sp", "py"}:
+        return jsonify({"status": "error", "message": "engine must be one of: sp, py"}), 400
+    prefer_sql_sp = None if engine_mode == "" else (engine_mode == "sp")
+
+    try:
+        result = _corp_recon_unsubmit_actions_query(
+            unit,
+            q=q,
+            page=page,
+            page_size=page_size,
+            force_refresh=force_refresh,
+            prefer_sql_sp=prefer_sql_sp,
+        )
+        payload = result.get("payload") if isinstance(result, dict) else {}
+        if not isinstance(payload, dict):
+            payload = {}
+        meta = payload.get("meta")
+        if not isinstance(meta, dict):
+            meta = {}
+            payload["meta"] = meta
+        meta["can_unsubmit_bill"] = True
+        meta["force_refresh"] = bool(force_refresh)
+        meta["requested_engine"] = engine_mode or "auto"
+        meta["action_mode"] = "unsubmit"
+        return jsonify(payload)
+    except Exception as exc:
+        return jsonify({"status": "error", "message": f"Failed to load unsubmit candidates: {exc}"}), 500
 
 
 @app.route('/api/corporate/reconciliation')
@@ -34155,6 +34072,7 @@ def api_corporate_reconciliation():
     if engine_mode not in {"", "sp", "py"}:
         return jsonify({"status": "error", "message": "engine must be one of: sp, py"}), 400
     prefer_sql_sp = None if engine_mode == "" else (engine_mode == "sp")
+    reg_search_terms = _corp_recon_parse_reg_search_terms(q)
 
     filter_ctx = {
         "bill_from": bill_from.isoformat() if bill_from else None,
@@ -34171,6 +34089,9 @@ def api_corporate_reconciliation():
         "sort_by": sort_by,
         "sort_dir": sort_dir,
         "engine": engine_mode or "auto",
+        "reg_search_mode": "patient_id_only_preserve_order"
+        if reg_search_terms
+        else "",
     }
     result_cache_key = _corp_recon_result_cache_key(unit, filter_ctx)
 
@@ -34208,6 +34129,7 @@ def api_corporate_reconciliation():
 
         if not isinstance(payload, dict):
             payload = {}
+        _corp_recon_annotate_payload_rows(unit, payload)
         payload_meta = payload.get("meta")
         if not isinstance(payload_meta, dict):
             payload_meta = {}
@@ -34215,6 +34137,7 @@ def api_corporate_reconciliation():
         payload_meta["result_cache_hit"] = bool(isinstance(cached_payload, dict))
         payload_meta["result_cache_ttl_sec"] = int(CORP_RECON_RESULT_CACHE_TTL)
         payload_meta["can_writeoff"] = bool(_corp_recon_can_writeoff_session())
+        payload_meta["can_unsubmit_bill"] = bool(_corp_recon_can_unsubmit_bill_session())
         payload_meta["can_audit_suspense"] = bool(_corp_recon_can_writeoff_session())
         source_query = str(bill_source or "").strip().lower()
         if source_query and source_query != "corporate bill":
@@ -34622,6 +34545,275 @@ def api_corporate_reconciliation_writeoff():
     )
 
 
+@app.route('/api/corporate/reconciliation/unsubmit_bill', methods=["POST"])
+@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
+def api_corporate_reconciliation_unsubmit_bill():
+    payload = request.get_json(silent=True) or {}
+    raw_unit = payload.get("unit") or request.args.get("unit")
+    actor_username = (session.get("username") or session.get("user") or "").strip() or "Unknown"
+    request_id = token_hex(8)
+
+    def _audit_failure(message: str, status_code: int = 400, extra_details: dict | None = None):
+        details = {
+            "unit": str(raw_unit or "").strip().upper(),
+            "bill_id": payload.get("bill_id"),
+            "bill_source_key": str(payload.get("bill_source_key") or "").strip().upper(),
+            "reason": str(payload.get("reason") or "").strip(),
+        }
+        if isinstance(extra_details, dict) and extra_details:
+            details.update(extra_details)
+        _audit_log_event(
+            module="corporate_reconciliation",
+            action="bill_unsubmit",
+            status="failed",
+            entity_type="corp_bill",
+            entity_id=str(payload.get("bill_id") or ""),
+            unit=str(raw_unit or "").strip().upper(),
+            summary=message,
+            details=details,
+            request_id=request_id,
+            username=actor_username,
+        )
+        return jsonify({"status": "error", "message": message}), status_code
+
+    if not _corp_recon_can_unsubmit_bill_session():
+        return _audit_failure(
+            "You do not have the corporate bill unsubmit right.",
+            403,
+        )
+
+    unit, unit_err = _corp_recon_resolve_unit(raw_unit)
+    if unit_err:
+        _audit_log_event(
+            module="corporate_reconciliation",
+            action="bill_unsubmit",
+            status="failed",
+            entity_type="corp_bill",
+            entity_id=str(payload.get("bill_id") or ""),
+            unit=str(raw_unit or "").strip().upper(),
+            summary="Corporate bill unsubmit failed during unit validation",
+            details={
+                "unit": str(raw_unit or "").strip().upper(),
+                "bill_id": payload.get("bill_id"),
+                "reason": str(payload.get("reason") or "").strip(),
+                "message": "No unit access assigned or invalid unit.",
+            },
+            request_id=request_id,
+            username=actor_username,
+        )
+        return unit_err
+
+    bill_id = _corp_recon_parse_int(payload.get("bill_id"), 0, 0, None)
+    if bill_id <= 0:
+        return _audit_failure("Invalid bill_id", 400, {"unit": unit})
+
+    requested_source = str(payload.get("bill_source_key") or "").strip().upper()
+    reason = str(payload.get("reason") or "").strip()
+    if not reason:
+        return _audit_failure(
+            "Please enter a reason for unsubmit.",
+            400,
+            {"unit": unit, "bill_id": int(bill_id)},
+        )
+
+    try:
+        before_result = _corp_recon_query(
+            unit,
+            include_cancelled=False,
+            page=1,
+            page_size=CORP_RECON_PAGE_SIZE_MAX,
+            sort_by="bill_id",
+            sort_dir="asc",
+            bill_ids={bill_id},
+            force_refresh=True,
+            apply_paging=False,
+        )
+    except Exception as exc:
+        return _audit_failure(
+            f"Failed to validate bill for unsubmit: {exc}",
+            500,
+            {"unit": unit, "bill_id": int(bill_id)},
+        )
+
+    before_rows = before_result.get("rows_df") if isinstance(before_result, dict) else None
+    if before_rows is None or before_rows.empty:
+        return _audit_failure(
+            f"Bill {bill_id} not found in reconciliation scope",
+            404,
+            {"unit": unit, "bill_id": int(bill_id)},
+        )
+
+    before_row = before_rows.iloc[0]
+    source_key = str(before_row.get("BillSourceKey") or "").strip().upper()
+    if requested_source and source_key and requested_source != source_key:
+        return _audit_failure(
+            f"Bill source mismatch. Expected {source_key or 'unknown'} for bill {bill_id}.",
+            400,
+            {"unit": unit, "bill_id": int(bill_id), "resolved_source_key": source_key},
+        )
+
+    expected_source_key = _corp_recon_corporate_bill_source_key(unit)
+    if source_key != expected_source_key:
+        return _audit_failure(
+            "Unsubmit is supported only for Corporate Bill rows.",
+            400,
+            {
+                "unit": unit,
+                "bill_id": int(bill_id),
+                "resolved_source_key": source_key,
+                "expected_source_key": expected_source_key,
+            },
+        )
+
+    bill_status_raw = str(before_row.get("BillStatusRaw") or "").strip().upper()
+    submit_date_raw = _corp_recon_fmt_date(before_row.get("SubmitDateRaw"))
+    if bill_status_raw != "Y" or not submit_date_raw:
+        return _audit_failure(
+            f"Bill {bill_id} is already not submitted.",
+            400,
+            {
+                "unit": unit,
+                "bill_id": int(bill_id),
+                "bill_status_raw": bill_status_raw,
+                "submit_date_raw": submit_date_raw,
+            },
+        )
+
+    tolerance = 0.01
+    receipt_count = int(_corp_recon_parse_int(before_row.get("receipt_count_all_time"), 0, 0, None) or 0)
+    receipt_total = float(before_row.get("receipt_total_all_time") or 0.0)
+    tds_total = float(before_row.get("tds_total_all_time") or 0.0)
+    rebate_total = float(before_row.get("rebate_discount_all_time") or 0.0)
+    writeoff_total = float(before_row.get("writeoff_total_all_time") or 0.0)
+    if (
+        receipt_count > 0
+        or abs(receipt_total) > tolerance
+        or abs(tds_total) > tolerance
+        or abs(rebate_total) > tolerance
+        or abs(writeoff_total) > tolerance
+    ):
+        return _audit_failure(
+            "Only bills without receipts, TDS, rebate, or write-off activity can be unsubmitted.",
+            400,
+            {
+                "unit": unit,
+                "bill_id": int(bill_id),
+                "receipt_count_all_time": receipt_count,
+                "receipt_total_all_time": receipt_total,
+                "tds_total_all_time": tds_total,
+                "rebate_discount_all_time": rebate_total,
+                "writeoff_total_all_time": writeoff_total,
+            },
+        )
+
+    update_result = data_fetch.unsubmit_corporate_reconciliation_bill(
+        unit,
+        bill_id=int(bill_id),
+        source_key=source_key,
+        updated_by_id=_session_user_id(),
+    )
+    if not isinstance(update_result, dict) or str(update_result.get("status") or "").lower() != "success":
+        msg = (
+            update_result.get("message")
+            if isinstance(update_result, dict)
+            else "Failed to mark the corporate bill as unsubmitted."
+        )
+        return _audit_failure(
+            msg,
+            400,
+            {
+                "unit": unit,
+                "bill_id": int(bill_id),
+                "update_result": update_result if isinstance(update_result, dict) else str(update_result),
+            },
+        )
+
+    _corp_recon_cache_invalidate(unit)
+    _corp_recon_result_cache_invalidate(unit)
+
+    try:
+        after_result = _corp_recon_query(
+            unit,
+            include_cancelled=False,
+            page=1,
+            page_size=CORP_RECON_PAGE_SIZE_MAX,
+            sort_by="bill_id",
+            sort_dir="asc",
+            bill_ids={bill_id},
+            force_refresh=True,
+            apply_paging=False,
+        )
+        after_rows = after_result.get("rows_df") if isinstance(after_result, dict) else None
+    except Exception:
+        after_rows = None
+
+    removed_from_reconciliation = after_rows is None or after_rows.empty
+    before_submit_date = update_result.get("before_submit_date") or submit_date_raw
+    after_submit_date = update_result.get("after_submit_date") or ""
+    before_status = update_result.get("before_status") or bill_status_raw
+    after_status = update_result.get("after_status") or "N"
+    success_message = (
+        f"Bill {bill_id} marked unsubmitted and removed from reconciliation scope."
+        if removed_from_reconciliation
+        else f"Bill {bill_id} marked unsubmitted."
+    )
+
+    _audit_log_event(
+        module="corporate_reconciliation",
+        action="bill_unsubmit",
+        status="success",
+        entity_type="corp_bill",
+        entity_id=str(int(bill_id)),
+        unit=unit,
+        summary=success_message,
+        details={
+            "unit": unit,
+            "bill_id": int(bill_id),
+            "bill_no": str(before_row.get("BillNo") or "").strip(),
+            "bill_source_key": source_key,
+            "patient_id": _corp_recon_parse_int(before_row.get("PatientId"), 0, 0, None),
+            "patient_name": str(before_row.get("PatientName") or before_row.get("SourcePatientName") or "").strip(),
+            "patient_type": str(before_row.get("PatientType") or "").strip(),
+            "patient_subtype": str(before_row.get("PatientSubType") or "").strip(),
+            "reason": reason,
+            "before_status": before_status,
+            "after_status": after_status,
+            "before_submit_date": before_submit_date,
+            "after_submit_date": after_submit_date,
+            "receipt_count_all_time": receipt_count,
+            "receipt_total_all_time": receipt_total,
+            "tds_total_all_time": tds_total,
+            "rebate_discount_all_time": rebate_total,
+            "writeoff_total_all_time": writeoff_total,
+            "balance_all_time": float(before_row.get("balance_all_time") or 0.0),
+            "table_name": update_result.get("table_name"),
+            "updated_by_column": update_result.get("updated_by_column"),
+            "updated_on_column": update_result.get("updated_on_column"),
+            "removed_from_reconciliation": bool(removed_from_reconciliation),
+        },
+        request_id=request_id,
+        username=actor_username,
+    )
+
+    return jsonify(
+        {
+            "status": "success",
+            "message": success_message,
+            "unit": unit,
+            "bill_id": int(bill_id),
+            "bill_no": str(before_row.get("BillNo") or "").strip(),
+            "source_key": source_key,
+            "before_status": before_status,
+            "after_status": after_status,
+            "before_submit_date": before_submit_date,
+            "after_submit_date": after_submit_date,
+            "removed_from_reconciliation": bool(removed_from_reconciliation),
+            "updated_by": actor_username,
+            "updated_at": datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S"),
+        }
+    )
+
+
 @app.route('/api/corporate/reconciliation/suspense/audit', methods=["POST"])
 @login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
 def api_corporate_reconciliation_suspense_audit():
@@ -34774,12 +34966,13 @@ def api_corporate_receipt():
     unit, unit_err = _corp_recon_resolve_unit(raw_unit)
     if unit_err:
         return unit_err
-    if not _is_sharpsight_corp_unit(unit):
-        return jsonify({"status": "error", "message": "Receipt posting is currently enabled only for SharpSight."}), 400
 
     bill_id = _corp_recon_parse_int(payload.get("bill_id"), 0, 0, None)
     if bill_id <= 0:
         return jsonify({"status": "error", "message": "Invalid bill_id"}), 400
+    bill_source_key = str(payload.get("bill_source_key") or "").strip().upper()
+    if not bill_source_key:
+        return jsonify({"status": "error", "message": "Invalid bill_source_key"}), 400
 
     correction_month = str(payload.get("correction_month") or "").strip()
     receipt_date_txt = str(payload.get("receipt_date") or "").strip()
@@ -34823,11 +35016,11 @@ def api_corporate_receipt():
 
     tol = float(CORP_RECON_SETTLE_TOLERANCE)
     if bill_amount is not None and bill_amount > 0 and received_amount > bill_amount + tol:
-        return jsonify({"status": "error", "message": "Received Amt cannot be greater than C_amount."}), 400
+        return jsonify({"status": "error", "message": "Received Amt cannot be greater than Claim Amount."}), 400
     if abs((received_amount + tds_amount) - approved_amount) > tol:
         return jsonify({"status": "error", "message": "Approved Amt must match Received Amt + TDS Amt."}), 400
     if bill_amount is not None and bill_amount > 0 and abs((received_amount + tds_amount + rebate_amount) - bill_amount) > tol:
-        return jsonify({"status": "error", "message": "Split mismatch: Received Amt + TDS Amt + Rebate must match C_amount."}), 400
+        return jsonify({"status": "error", "message": "Split mismatch: Received Amt + TDS Amt + Rebate must match Claim Amount."}), 400
 
     visit_id = _corp_recon_parse_int(payload.get("visit_id"), 0, 0, None)
     patient_id = _corp_recon_parse_int(payload.get("patient_id"), 0, 0, None)
@@ -34837,6 +35030,7 @@ def api_corporate_receipt():
         result = data_fetch.create_corporate_receipt(
             unit,
             bill_id=bill_id,
+            bill_source_key=bill_source_key,
             receipt_date=receipt_date.isoformat(),
             payment_mode=payment_mode,
             approved_amount=approved_amount,
@@ -34855,6 +35049,15 @@ def api_corporate_receipt():
         msg = result.get("message") if isinstance(result, dict) else "Failed to create receipt"
         return jsonify({"status": "error", "message": msg}), 500
 
+    remembered_utr_no = str(payload.get("utr_no") or "").strip()
+    if remembered_utr_no:
+        utr_map = session.get("corp_last_receipt_utr_by_unit")
+        if not isinstance(utr_map, dict):
+            utr_map = {}
+        utr_map[str(unit or "").strip().upper()] = remembered_utr_no
+        session["corp_last_receipt_utr_by_unit"] = utr_map
+        session.modified = True
+
     _corp_recon_cache_invalidate(unit)
     _corp_recon_result_cache_invalidate(unit)
 
@@ -34863,32 +35066,11 @@ def api_corporate_receipt():
         "message": f"Receipt {result.get('receipt_no') or result.get('receipt_id')} saved successfully.",
         "unit": unit,
         "receipt": _sanitize_json_payload(result),
-        "print_url": url_for("api_corporate_receipt_print", receipt_id=int(result.get("receipt_id") or 0)),
+        "remembered_utr_no": remembered_utr_no,
         "updated_by": session.get("username") or session.get("user") or "Unknown",
         "updated_at": datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S"),
     }
     return jsonify(result_payload)
-
-
-@app.route('/api/corporate/receipt/<int:receipt_id>/print')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
-def api_corporate_receipt_print(receipt_id: int):
-    allowed_units = _corp_recon_allowed_units_for_session()
-    if allowed_units and "SHARPSIGHT" not in allowed_units:
-        return "Unit SHARPSIGHT not permitted", 403
-
-    payload = data_fetch.fetch_corporate_receipt_for_print("SHARPSIGHT", receipt_id)
-    if not isinstance(payload, dict):
-        return "Receipt not found", 404
-
-    return render_template(
-        'corporate_receipt_print.html',
-        receipt=payload,
-        unit_key="SHARPSIGHT",
-        unit_label=_unit_display_name("SHARPSIGHT"),
-        printed_by=session.get("username") or session.get("user") or "",
-        printed_at=datetime.now(tz=LOCAL_TZ).strftime("%d-%m-%Y %H:%M:%S"),
-    )
 
 
 @app.route('/api/corporate/receipts/daily_print')
@@ -34897,17 +35079,43 @@ def api_corporate_receipts_daily_print():
     raw_unit = request.args.get("unit")
     unit, unit_err = _corp_recon_resolve_unit(raw_unit)
     if unit_err:
-        return unit_err, 403
-    if not _is_sharpsight_corp_unit(unit):
-        return "Daily receipt print is currently enabled only for SharpSight.", 400
+        return unit_err
 
+    raw_filter_by = str(request.args.get("filter_by") or "entry_date").strip().lower()
+    filter_by = "receipt_date" if raw_filter_by in {"receipt", "receipt_date", "receiptdate"} else "entry_date"
+
+    entry_from, err = _corp_recon_parse_date(request.args.get("entry_from"), "entry_from")
+    if err:
+        return err, 400
+    entry_to, err = _corp_recon_parse_date(request.args.get("entry_to"), "entry_to")
+    if err:
+        return err, 400
     entry_date, err = _corp_recon_parse_date(request.args.get("entry_date"), "entry_date")
     if err:
         return err, 400
 
-    payload = data_fetch.fetch_corporate_receipts_day_print(unit, entry_date.isoformat())
+    if entry_from is None and entry_to is None and entry_date is not None:
+        entry_from = entry_date
+        entry_to = entry_date
+    else:
+        if entry_from is None and entry_to is not None:
+            entry_from = entry_to
+        if entry_to is None and entry_from is not None:
+            entry_to = entry_from
+
+    if entry_from is None or entry_to is None:
+        return "Please provide receipt entry date range.", 400
+    if entry_from > entry_to:
+        return "entry_from cannot be after entry_to.", 400
+
+    payload = data_fetch.fetch_corporate_receipts_day_print(
+        unit,
+        entry_from.isoformat(),
+        entry_to.isoformat(),
+        filter_by=filter_by,
+    )
     if not isinstance(payload, dict):
-        return "Unable to build daily receipt print.", 500
+        return "Unable to build receipt register print.", 500
 
     return render_template(
         'corporate_receipt_day_print.html',
@@ -34916,6 +35124,135 @@ def api_corporate_receipts_daily_print():
         unit_label=_unit_display_name(unit),
         printed_by=session.get("username") or session.get("user") or "",
         printed_at=datetime.now(tz=LOCAL_TZ).strftime("%d-%m-%Y %H:%M:%S"),
+        format_indian_currency=_format_indian_currency,
+        can_bulk_receipt_date_edit=bool(_corp_recon_can_bulk_receipt_date_edit_session()),
+    )
+
+
+@app.route('/api/corporate/receipts/bulk_update_date', methods=['POST'])
+@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
+def api_corporate_receipts_bulk_update_date():
+    if not _corp_recon_can_bulk_receipt_date_edit_session():
+        return jsonify({"status": "error", "message": "You do not have the corporate receipt-date correction right."}), 403
+
+    data = request.get_json(silent=True) or {}
+    unit, unit_err = _corp_recon_resolve_unit(data.get("unit"))
+    if unit_err:
+        return unit_err
+
+    filter_by = str(data.get("filter_by") or "entry_date").strip().lower()
+    if filter_by not in {"", "entry_date", "entrydate"}:
+        return jsonify({"status": "error", "message": "Bulk receipt date correction is available only in Entry Date mode."}), 400
+
+    new_receipt_date, err = _corp_recon_parse_date(data.get("new_receipt_date"), "new_receipt_date")
+    if err:
+        return jsonify({"status": "error", "message": err}), 400
+    if new_receipt_date is None:
+        return jsonify({"status": "error", "message": "Please select the new receipt date."}), 400
+
+    reason = str(data.get("reason") or "").strip()
+    if not reason:
+        return jsonify({"status": "error", "message": "Please enter a reason for the receipt date correction."}), 400
+
+    raw_receipt_ids = data.get("receipt_ids") or []
+    if not isinstance(raw_receipt_ids, (list, tuple, set)):
+        return jsonify({"status": "error", "message": "receipt_ids must be a list."}), 400
+
+    receipt_ids: list[int] = []
+    seen_ids: set[int] = set()
+    for raw_val in raw_receipt_ids:
+        try:
+            parsed = int(str(raw_val).strip())
+        except Exception:
+            continue
+        if parsed <= 0 or parsed in seen_ids:
+            continue
+        seen_ids.add(parsed)
+        receipt_ids.append(parsed)
+
+    if not receipt_ids:
+        return jsonify({"status": "error", "message": "Please select at least one receipt."}), 400
+    if len(receipt_ids) > 2000:
+        return jsonify({"status": "error", "message": "Please update at most 2000 receipts in one batch."}), 400
+
+    actor_username = (session.get("username") or session.get("user") or "").strip() or "Unknown"
+    request_id = token_hex(8)
+    update_result = data_fetch.bulk_update_corporate_receipt_dates(
+        unit=unit,
+        receipt_ids=receipt_ids,
+        new_receipt_date=new_receipt_date.isoformat(),
+    )
+    if str(update_result.get("status") or "").strip().lower() != "success":
+        _audit_log_event(
+            module="corporate_receipt",
+            action="bulk_receipt_date_change",
+            status="failed",
+            entity_type="corp_receipt_batch",
+            entity_id=request_id,
+            unit=unit,
+            summary="Corporate receipt date correction failed",
+            details={
+                "receipt_ids": receipt_ids,
+                "new_receipt_date": new_receipt_date.isoformat(),
+                "reason": reason,
+                "filter_by": "entry_date",
+                "entry_from": str(data.get("entry_from") or "").strip(),
+                "entry_to": str(data.get("entry_to") or "").strip(),
+                "message": update_result.get("message") or update_result.get("error") or "Unknown error",
+            },
+            request_id=request_id,
+        )
+        return jsonify({"status": "error", "message": update_result.get("message") or update_result.get("error") or "Unable to update receipt dates."}), 400
+
+    updated_receipts = list(update_result.get("updated_receipts") or [])
+    audit_context = {
+        "reason": reason,
+        "filter_by": "entry_date",
+        "entry_from": str(data.get("entry_from") or "").strip(),
+        "entry_to": str(data.get("entry_to") or "").strip(),
+        "selected_count": len(receipt_ids),
+        "updated_count": len(updated_receipts),
+        "new_receipt_date": new_receipt_date.isoformat(),
+    }
+    _audit_log_event(
+        module="corporate_receipt",
+        action="bulk_receipt_date_change",
+        status="success",
+        entity_type="corp_receipt_batch",
+        entity_id=request_id,
+        unit=unit,
+        summary=f"Corporate receipt date corrected for {len(updated_receipts)} receipts",
+        details={**audit_context, "receipts": updated_receipts},
+        request_id=request_id,
+        username=actor_username,
+    )
+    for item in updated_receipts:
+        _audit_log_event(
+            module="corporate_receipt",
+            action="receipt_date_change",
+            status="success",
+            entity_type="corp_receipt",
+            entity_id=str(item.get("receipt_id") or ""),
+            unit=unit,
+            summary=f"Receipt date changed for {item.get('receipt_no') or item.get('receipt_id')}",
+            details={
+                **audit_context,
+                "receipt_id": item.get("receipt_id"),
+                "receipt_no": item.get("receipt_no"),
+                "old_receipt_date": item.get("old_receipt_date"),
+                "new_receipt_date": item.get("new_receipt_date"),
+            },
+            request_id=request_id,
+            username=actor_username,
+        )
+
+    return jsonify(
+        {
+            "status": "success",
+            "message": f"Receipt date updated for {len(updated_receipts)} receipt(s).",
+            "updated_count": len(updated_receipts),
+            "updated_receipts": updated_receipts,
+        }
     )
 
 
@@ -34971,6 +35308,7 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
 
     if bill_id_filter is not None:
         rows_df = rows_df[rows_df["BillId"].isin(list(bill_id_filter))].copy()
+    rows_df = _corp_recon_filter_export_rows(rows_df, export_submitted_only)
 
     bill_context_source_df = bills_df if not bills_df.empty else rows_df
     bill_context_df = pd.DataFrame(
@@ -35012,7 +35350,8 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             bill_context_df["PatientSubType"]
         )
         bill_context_df["BillId"] = pd.to_numeric(bill_context_df["BillId"], errors="coerce").astype("Int64")
-        bill_context_df = bill_context_df.dropna(subset=["BillId"]).drop_duplicates(subset=["BillId"], keep="first").copy()
+        bill_context_df["BillSourceKey"] = bill_context_df["BillSourceKey"].fillna("").astype(str).str.strip().str.upper()
+        bill_context_df = bill_context_df.dropna(subset=["BillId"]).drop_duplicates(subset=["BillSourceKey", "BillId"], keep="first").copy()
         source_key_series = bill_context_df["BillSourceKey"].fillna("").astype(str).str.strip().str.upper()
         bill_context_df["ReceiptAgainstSource"] = np.where(source_key_series == "OPENING", "Opening", "Bill")
 
@@ -35021,6 +35360,9 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             return pd.DataFrame()
 
         work = detail_frame.copy()
+        if "receipt_bill_source_key" not in work.columns:
+            work["receipt_bill_source_key"] = ""
+        work["receipt_bill_source_key"] = work["receipt_bill_source_key"].fillna("").astype(str).str.strip().str.upper()
         if not bill_context_df.empty:
             work["bill_id_lookup"] = pd.to_numeric(work["bill_id"], errors="coerce").astype("Int64")
             work = work.merge(
@@ -35035,8 +35377,8 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
                     "ReceiptAgainstSource",
                 ]],
                 how="left",
-                left_on="bill_id_lookup",
-                right_on="BillId",
+                left_on=["receipt_bill_source_key", "bill_id_lookup"],
+                right_on=["BillSourceKey", "BillId"],
             )
         else:
             work["BillSource"] = ""
@@ -35045,7 +35387,11 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             work["PatientName"] = ""
             work["PatientSubType"] = ""
             work["PatientSubTypeKey"] = ""
-            work["ReceiptAgainstSource"] = "Bill"
+            work["ReceiptAgainstSource"] = np.where(
+                work["receipt_bill_source_key"].astype(str).str.upper() == "OPENING",
+                "Opening",
+                "Bill",
+            )
 
         source_query = str(bill_source or "").strip().lower()
         if source_query:
@@ -35179,7 +35525,9 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
     )
 
     receipt_window_bill_ids = set()
-    if bill_id_filter is not None:
+    if export_submitted_only:
+        receipt_window_bill_ids = set(detail_bill_ids)
+    elif bill_id_filter is not None:
         receipt_window_bill_id_series = pd.to_numeric(pd.Series(list(bill_id_filter)), errors="coerce").dropna()
         receipt_window_bill_ids = {int(v) for v in receipt_window_bill_id_series.tolist()}
     elif not receipts_df.empty and "BillId" in receipts_df.columns:
@@ -35194,8 +35542,7 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
         return None, None, "No data available to export"
 
     export_rows_df = rows_df.copy()
-    export_rows_df["BillDate"] = export_rows_df["BillDate"].apply(_corp_recon_fmt_date)
-    export_rows_df["DueDate"] = export_rows_df["DueDate"].apply(_corp_recon_fmt_date)
+    export_rows_df["BillDate"] = export_rows_df["BillDate"].apply(_corp_recon_fmt_excel_date)
     export_rows_df["VisitDate"] = export_rows_df["VisitDate"].apply(_corp_recon_fmt_date)
     export_rows_df["DischargeDate"] = export_rows_df["DischargeDate"].apply(_corp_recon_fmt_date)
     export_rows_df["last_receipt_date_all_time"] = export_rows_df["last_receipt_date_all_time_dt"].apply(_corp_recon_fmt_date)
@@ -35219,14 +35566,16 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             np.where(bill_status_raw_series == "N", "Not Submitted", bill_status_raw_series),
         ),
     )
+    rebate_writeoff_all_time_series = (
+        pd.to_numeric(export_rows_df["rebate_discount_all_time"], errors="coerce").fillna(0.0)
+        + pd.to_numeric(export_rows_df["writeoff_total_all_time"], errors="coerce").fillna(0.0)
+    )
 
     export_rows_df = pd.DataFrame(
         {
-            "Bill ID": export_rows_df["BillId"].astype(int),
             "Bill Source": export_rows_df["BillSource"],
             "Bill No": export_rows_df["BillNo"],
             "Submit Date": export_rows_df["BillDate"],
-            "Due Date": export_rows_df["DueDate"],
             "Patient ID": export_rows_df["PatientId"].astype("Int64"),
             "Patient Name": export_rows_df["PatientName"],
             "Patient Type": export_rows_df["PatientType"],
@@ -35236,43 +35585,25 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             "Visit Date": export_rows_df["VisitDate"],
             "Discharge Date": export_rows_df["DischargeDate"],
             "Dept": export_rows_df["Dept"],
-            "SubDept": export_rows_df["SubDept"],
             "Bill Updated By": export_rows_df["BillUpdatedByName"],
             "Bill Amount": export_rows_df["BillAmount"].astype(float),
             "Receipt All-time": export_rows_df["receipt_total_all_time"].astype(float),
             "TDS All-time": export_rows_df["tds_total_all_time"].astype(float),
-            "Rebate/Discount All-time": export_rows_df["rebate_discount_all_time"].astype(float),
-            "Write-off All-time": export_rows_df["writeoff_total_all_time"].astype(float),
+            "Rebate/Discount + Write-off All-time": rebate_writeoff_all_time_series.astype(float),
             "Settled All-time": export_rows_df["settled_total_all_time"].astype(float),
-            "Receipt In Window": export_rows_df["receipt_total_window"].astype(float),
-            "TDS In Window": export_rows_df["tds_total_window"].astype(float),
-            "Rebate/Discount In Window": export_rows_df["rebate_discount_window"].astype(float),
-            "Write-off In Window": export_rows_df["writeoff_total_window"].astype(float),
-            "Settled In Window": export_rows_df["settled_total_window"].astype(float),
             "Balance All-time": export_rows_df["balance_all_time"].astype(float),
-            "Balance In Window": export_rows_df["balance_window"].astype(float),
             "Status All-time": export_rows_df["status_all_time"],
-            "Settled Bill (All-time)": np.where(
-                export_rows_df["status_all_time"].astype(str).str.strip().str.lower() == "settled",
-                "Yes",
-                "No",
-            ),
-            "Status In Window": export_rows_df["status_window"],
-            "Settled Bill (Window)": np.where(
-                export_rows_df["status_window"].astype(str).str.strip().str.lower() == "settled",
-                "Yes",
-                "No",
-            ),
-            "Receipt Count All-time": export_rows_df["receipt_count_all_time"].astype(int),
-            "Receipt Count In Window": export_rows_df["receipt_count_window"].astype(int),
-            "Last Receipt Date All-time": export_rows_df["last_receipt_date_all_time"],
-            "Last Receipt Date In Window": export_rows_df["last_receipt_date_window"],
             "Bill Status Raw": bill_status_display_series,
-            "Bill Due Amount Raw": export_rows_df["BillDueAmountRaw"].astype(float),
+            "Bill ID": export_rows_df["BillId"].astype(int),
         }
     ).where(pd.notna, None)
     receipt_all_time_export_df = _build_receipt_export_df(details_df, include_bill_context=True)
     receipt_window_export_df = _build_receipt_export_df(receipt_window_all_df, include_bill_context=True)
+    if receipt_to is not None and not receipt_all_time_export_df.empty and "Receipt Date" in receipt_all_time_export_df.columns:
+        receipt_all_dates = pd.to_datetime(receipt_all_time_export_df["Receipt Date"], errors="coerce").dt.date
+        receipt_all_time_export_df = receipt_all_time_export_df[
+            receipt_all_dates.isna() | (receipt_all_dates <= receipt_to)
+        ].copy()
     if "In Receipt Window" in receipt_window_export_df.columns:
         receipt_window_export_df = receipt_window_export_df[
             receipt_window_export_df["In Receipt Window"].fillna("").astype(str).str.strip().str.upper() == "YES"
@@ -35324,20 +35655,48 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
         "Settled Count",
         "Settled Corporate",
         "Settled Opening",
-        "Partial Count",
-        "Partial Corporate",
-        "Partial Opening",
         "Unpaid Count",
         "Unpaid Corporate",
         "Unpaid Opening",
-        "Overpaid Count",
-        "Overpaid Corporate",
-        "Overpaid Opening",
         "Closing Qty",
         "Closing Balance",
     ]
     if subtype_summary_rows:
-        closing_export_df = pd.DataFrame(subtype_summary_rows).rename(
+        closing_export_df = pd.DataFrame(subtype_summary_rows)
+        for col in (
+            "settled_count",
+            "settled_corporate_count",
+            "settled_opening_count",
+            "partial_count",
+            "partial_corporate_count",
+            "partial_opening_count",
+            "overpaid_count",
+            "overpaid_corporate_count",
+            "overpaid_opening_count",
+            "unpaid_count",
+            "closing_qty",
+        ):
+            if col not in closing_export_df.columns:
+                closing_export_df[col] = 0
+        closing_export_df["settled_count"] = (
+            pd.to_numeric(closing_export_df["settled_count"], errors="coerce").fillna(0).astype(int)
+            + pd.to_numeric(closing_export_df["partial_count"], errors="coerce").fillna(0).astype(int)
+            + pd.to_numeric(closing_export_df["overpaid_count"], errors="coerce").fillna(0).astype(int)
+        )
+        closing_export_df["settled_corporate_count"] = (
+            pd.to_numeric(closing_export_df["settled_corporate_count"], errors="coerce").fillna(0).astype(int)
+            + pd.to_numeric(closing_export_df["partial_corporate_count"], errors="coerce").fillna(0).astype(int)
+            + pd.to_numeric(closing_export_df["overpaid_corporate_count"], errors="coerce").fillna(0).astype(int)
+        )
+        closing_export_df["settled_opening_count"] = (
+            pd.to_numeric(closing_export_df["settled_opening_count"], errors="coerce").fillna(0).astype(int)
+            + pd.to_numeric(closing_export_df["partial_opening_count"], errors="coerce").fillna(0).astype(int)
+            + pd.to_numeric(closing_export_df["overpaid_opening_count"], errors="coerce").fillna(0).astype(int)
+        )
+        closing_export_df["closing_qty"] = pd.to_numeric(
+            closing_export_df["unpaid_count"], errors="coerce"
+        ).fillna(0).astype(int)
+        closing_export_df = closing_export_df.rename(
             columns={
                 "subtype": "Subtype",
                 "bills": "Bills",
@@ -35352,15 +35711,9 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
                 "settled_count": "Settled Count",
                 "settled_corporate_count": "Settled Corporate",
                 "settled_opening_count": "Settled Opening",
-                "partial_count": "Partial Count",
-                "partial_corporate_count": "Partial Corporate",
-                "partial_opening_count": "Partial Opening",
                 "unpaid_count": "Unpaid Count",
                 "unpaid_corporate_count": "Unpaid Corporate",
                 "unpaid_opening_count": "Unpaid Opening",
-                "overpaid_count": "Overpaid Count",
-                "overpaid_corporate_count": "Overpaid Corporate",
-                "overpaid_opening_count": "Overpaid Opening",
                 "closing_qty": "Closing Qty",
                 "closing_balance": "Closing Balance",
             }
@@ -35383,15 +35736,9 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             "Settled Count": int(pd.to_numeric(closing_export_df["Settled Count"], errors="coerce").fillna(0).sum()),
             "Settled Corporate": int(pd.to_numeric(closing_export_df["Settled Corporate"], errors="coerce").fillna(0).sum()),
             "Settled Opening": int(pd.to_numeric(closing_export_df["Settled Opening"], errors="coerce").fillna(0).sum()),
-            "Partial Count": int(pd.to_numeric(closing_export_df["Partial Count"], errors="coerce").fillna(0).sum()),
-            "Partial Corporate": int(pd.to_numeric(closing_export_df["Partial Corporate"], errors="coerce").fillna(0).sum()),
-            "Partial Opening": int(pd.to_numeric(closing_export_df["Partial Opening"], errors="coerce").fillna(0).sum()),
             "Unpaid Count": int(pd.to_numeric(closing_export_df["Unpaid Count"], errors="coerce").fillna(0).sum()),
             "Unpaid Corporate": int(pd.to_numeric(closing_export_df["Unpaid Corporate"], errors="coerce").fillna(0).sum()),
             "Unpaid Opening": int(pd.to_numeric(closing_export_df["Unpaid Opening"], errors="coerce").fillna(0).sum()),
-            "Overpaid Count": int(pd.to_numeric(closing_export_df["Overpaid Count"], errors="coerce").fillna(0).sum()),
-            "Overpaid Corporate": int(pd.to_numeric(closing_export_df["Overpaid Corporate"], errors="coerce").fillna(0).sum()),
-            "Overpaid Opening": int(pd.to_numeric(closing_export_df["Overpaid Opening"], errors="coerce").fillna(0).sum()),
             "Closing Qty": int(pd.to_numeric(closing_export_df["Closing Qty"], errors="coerce").fillna(0).sum()),
             "Closing Balance": float(pd.to_numeric(closing_export_df["Closing Balance"], errors="coerce").fillna(0).sum()),
         }
@@ -35446,6 +35793,15 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
         if bill_id_filter is None
         else "All receipt rows in the selected receipt window for the selected bill set"
     )
+    if export_submitted_only:
+        client_scope_text = f"{client_scope_text}; submitted corporate bills + openings only"
+        bill_scope_logic_text = f"{bill_scope_logic_text}; unsubmitted corporate bills are excluded from this export"
+        receipt_lines_scope_text = f"{receipt_lines_scope_text}; limited to submitted corporate bills plus opening rows"
+        receipt_window_sheet_scope_text = (
+            "Only receipt rows in the selected receipt window for submitted corporate bills and opening rows in the export scope"
+            if bill_id_filter is None
+            else "Only receipt rows in the selected receipt window for the submitted portion of the selected bill set"
+        )
     footer_exported_by = str(exported_by or "Unknown").replace("&", "and")
     footer_exported_at = str(exported_at).replace("&", "and")
     footer_text = f"&LExported By: {footer_exported_by}&CPage &P of &N&RExported At: {footer_exported_at}"
@@ -35694,6 +36050,7 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             ("Source", bill_source or "All"),
             ("Patient SubType", patient_subtype or "All"),
             ("Include Cancelled", "Yes" if include_cancelled else "No"),
+            ("Submitted Bills Only", "Yes" if export_submitted_only else "No"),
             ("Search Query", q or "(none)"),
             ("Sort", f"{sort_by or 'balance_all_time'} ({sort_dir})"),
             ("KPI Filter", kpi_filter_label),
@@ -35752,6 +36109,7 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             ("Source", bill_source or "All Sources"),
             ("Patient SubType", patient_subtype or "All SubTypes"),
             ("Include Cancelled", "Yes" if include_cancelled else "No"),
+            ("Submitted Bills Only", "Yes" if export_submitted_only else "No"),
             ("Client Bill Scope", client_scope_text),
             ("Grid Page", f"{grid_page} / {grid_total_pages}"),
             ("Grid Filtered Rows", grid_total_rows),
@@ -35781,6 +36139,7 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             ("Source", bill_source or "All Sources"),
             ("Patient SubType", patient_subtype or "All SubTypes"),
             ("Include Cancelled", "Yes" if include_cancelled else "No"),
+            ("Submitted Bills Only", "Yes" if export_submitted_only else "No"),
             ("Client Bill Scope", client_scope_text),
             ("Grid Filtered Rows", grid_total_rows),
             ("Closing Formula", "Bill Amount - (Receipt All-time + TDS All-time + Rebate/Discount All-time + Write-off All-time)"),
@@ -35799,15 +36158,9 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
                 "Settled Count",
                 "Settled Corporate",
                 "Settled Opening",
-                "Partial Count",
-                "Partial Corporate",
-                "Partial Opening",
                 "Unpaid Count",
                 "Unpaid Corporate",
                 "Unpaid Opening",
-                "Overpaid Count",
-                "Overpaid Corporate",
-                "Overpaid Opening",
                 "Closing Qty",
             },
             date_columns=set(),
@@ -35822,24 +36175,16 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             "Bill Amount",
             "Receipt All-time",
             "TDS All-time",
-            "Rebate/Discount All-time",
-            "Write-off All-time",
+            "Rebate/Discount + Write-off All-time",
             "Settled All-time",
-            "Receipt In Window",
-            "TDS In Window",
-            "Rebate/Discount In Window",
-            "Write-off In Window",
-            "Settled In Window",
             "Balance All-time",
-            "Balance In Window",
-            "Bill Due Amount Raw",
         }
-        bill_int_columns = {"Bill ID", "Patient ID", "Visit ID", "Receipt Count All-time", "Receipt Count In Window"}
-        bill_date_columns = {"Submit Date", "Due Date", "Visit Date", "Discharge Date", "Last Receipt Date All-time", "Last Receipt Date In Window"}
-        bill_center_columns = {"Status All-time", "Status In Window", "Settled Bill (All-time)", "Settled Bill (Window)"}
+        bill_int_columns = {"Bill ID", "Patient ID", "Visit ID"}
+        bill_date_columns = {"Submit Date", "Visit Date", "Discharge Date"}
+        bill_center_columns = {"Status All-time"}
         bill_wrap_columns = {"Patient Name", "Patient Type", "Patient SubType"}
-        bill_status_columns = {"Status All-time", "Status In Window"}
-        bill_yes_no_columns = {"Settled Bill (All-time)", "Settled Bill (Window)"}
+        bill_status_columns = {"Status All-time"}
+        bill_yes_no_columns = set()
 
         bills_sheet_df = export_rows_df
         openings_sheet_df = export_rows_df.iloc[0:0].copy()
@@ -35868,6 +36213,8 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
                 opening_text_mask = source_text.eq("opening balance")
                 bills_sheet_df = export_rows_df.loc[~opening_text_mask].copy()
                 openings_sheet_df = export_rows_df.loc[opening_text_mask].copy()
+            if str(bill_source or "").strip().lower() == "opening balance" and not openings_sheet_df.empty:
+                bills_sheet_df = openings_sheet_df.copy()
         if export_submitted_only and "Bill Status Raw" in bills_sheet_df.columns:
             status_series = bills_sheet_df["Bill Status Raw"].fillna("").astype(str).str.strip().str.upper()
             bills_sheet_df = bills_sheet_df[status_series.isin({"Y", "SUBMITTED"})].copy()
@@ -35888,7 +36235,7 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             ("Grid Filtered Rows", bills_filtered_rows),
             ("Scope Rule", bill_scope_logic_text),
             ("KPI Filter", kpi_filter_label),
-            ("Settlement Formula", "Receipt + TDS + Rebate/Discount + Write-off"),
+            ("Settlement Formula", "Receipt + TDS + (Rebate/Discount + Write-off)"),
             ("Exported At", exported_at),
         ]
         _render_data_sheet(
@@ -35914,6 +36261,7 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
                 ("Source", bill_source or "All"),
                 ("Patient SubType", patient_subtype or "All"),
                 ("Include Cancelled", "Yes" if include_cancelled else "No"),
+                ("Submitted Bills Only", "Yes" if export_submitted_only else "No"),
                 ("Openings Sheet", "Only Opening Balance rows"),
                 ("Search Query", q or "(none)"),
                 ("Sort", f"{sort_by or 'balance_all_time'} ({sort_dir})"),
@@ -35921,7 +36269,7 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
                 ("Grid Filtered Rows", openings_filtered_rows),
                 ("Scope Rule", opening_scope_logic_text),
                 ("KPI Filter", kpi_filter_label),
-                ("Settlement Formula", "Receipt + TDS + Rebate/Discount + Write-off"),
+                ("Settlement Formula", "Receipt + TDS + (Rebate/Discount + Write-off)"),
                 ("Exported At", exported_at),
             ]
             _render_data_sheet(
@@ -35972,8 +36320,9 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             ("Unit", unit),
             ("Receipt Date Range", receipt_range),
             ("Include Cancelled", "Yes" if include_cancelled else "No"),
+            ("Submitted Bills Only", "Yes" if export_submitted_only else "No"),
             ("Client Bill Scope", client_scope_text),
-            ("Receipt All-time Scope", "All receipt rows linked to the exported reconciliation bill set"),
+            ("Receipt All-time Scope", receipt_lines_scope_text),
             ("Receipt Rows Exported", int(len(receipt_all_time_export_df))),
             ("Bill Grid Page (at export)", f"{grid_page} / {grid_total_pages}"),
             ("Bill Grid Filtered Rows", grid_total_rows),
@@ -36000,9 +36349,10 @@ def _build_corporate_reconciliation_excel(unit: str, filters: dict, exported_by:
             ("Unit", unit),
             ("Receipt Date Range", receipt_range),
             ("Include Cancelled", "Yes" if include_cancelled else "No"),
+            ("Submitted Bills Only", "Yes" if export_submitted_only else "No"),
             ("Source", bill_source or "All"),
             ("Patient SubType", patient_subtype or "All"),
-            ("Receipt Window Scope", "Only receipt rows whose receipt date falls inside the selected receipt range"),
+            ("Receipt Window Scope", receipt_window_sheet_scope_text),
             ("Receipt Rows Exported", int(len(receipt_window_export_df))),
             ("Client Bill Scope", client_scope_text),
             ("KPI Tie-out", "Receipt/TDS/Rebate/Write-off rows in the selected receipt window"),
@@ -36193,10 +36543,10 @@ def api_corporate_bill_summary():
 
         from_iso = from_dt.isoformat() if from_dt else ""
         to_iso = to_dt.isoformat() if to_dt else ""
-        sf = status_filter if status_filter in {"all", "final", "nonfinal"} else "all"
+        sf = status_filter if status_filter in CORP_BILL_ALLOWED_STATUS_FILTERS else "all"
         subtype_norm = patient_subtype.lower()
         q_norm = search_query.lower()
-        page_cache_key = ("sql_local_v2", unit, from_iso, to_iso, int(vt_int), sf, subtype_norm, q_norm, int(page), int(page_size))
+        page_cache_key = ("sql_local_v3", unit, from_iso, to_iso, int(vt_int), sf, subtype_norm, q_norm, int(page), int(page_size))
         cached_page = _corp_bill_page_cache_get(page_cache_key)
         if isinstance(cached_page, dict) and isinstance(cached_page.get("payload"), dict):
             return jsonify(cached_page["payload"])
@@ -43533,550 +43883,6 @@ def _build_laboratory_details_df(df_raw: pd.DataFrame) -> pd.DataFrame:
     return details[LAB_DETAIL_COLUMNS]
 
 
-def _build_laboratory_summary_frames(details_df: pd.DataFrame):
-    if details_df is None or details_df.empty:
-        empty_summary = pd.DataFrame(columns=["Name", "Records", "Revenue"])
-        return empty_summary, empty_summary, 0.0, 0, 0.0
-
-    work = details_df.copy()
-    work["Doctor"] = work["Doctor"].replace("", "Unknown").fillna("Unknown")
-    work["PatientType"] = work["PatientType"].replace("", "Unknown").fillna("Unknown")
-
-    total_revenue = float(work["Amount"].sum())
-    total_records = int(len(work))
-    total_quantity = float(work["Quantity"].sum())
-
-    doctor_summary = (
-        work.groupby("Doctor", dropna=False)
-        .agg(Records=("Doctor", "size"), Revenue=("Amount", "sum"))
-        .reset_index()
-        .rename(columns={"Doctor": "Name"})
-        .sort_values("Revenue", ascending=False)
-    )
-
-    patient_summary = (
-        work.groupby("PatientType", dropna=False)
-        .agg(Records=("PatientType", "size"), Revenue=("Amount", "sum"))
-        .reset_index()
-        .rename(columns={"PatientType": "Name"})
-        .sort_values("Revenue", ascending=False)
-    )
-
-    return doctor_summary, patient_summary, total_revenue, total_records, total_quantity
-
-
-@app.route('/api/mis/laboratory_summary')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_mis_laboratory_summary():
-    unit = (request.args.get("unit") or "").strip().upper()
-    from_date = request.args.get("from") or datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-    to_date = request.args.get("to") or datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-
-    allowed_units = _analytics_allowed_units_for_session()
-    target_unit = unit or (allowed_units[0] if allowed_units else None)
-
-    if not target_unit or (allowed_units and target_unit not in allowed_units):
-        return jsonify({"status": "error", "message": "Unauthorized Unit Access"}), 403
-
-    df_raw = data_fetch.fetch_laboratory_summary(target_unit, from_date, to_date)
-    if df_raw is None:
-        return jsonify({"status": "error", "message": "Database error"}), 500
-
-    details_df = _build_laboratory_details_df(df_raw)
-    doctor_summary, patient_summary, total_revenue, total_records, total_quantity = _build_laboratory_summary_frames(details_df)
-
-    details_records = details_df.where(pd.notna(details_df), None).to_dict(orient="records")
-    doctor_records = doctor_summary.to_dict(orient="records")
-    patient_records = patient_summary.to_dict(orient="records")
-
-    return jsonify({
-        "status": "success",
-        "unit": target_unit,
-        "from_date": from_date,
-        "to_date": to_date,
-        "total_revenue": total_revenue,
-        "total_records": total_records,
-        "total_quantity": total_quantity,
-        "doctor_summary": doctor_records,
-        "patienttype_summary": patient_records,
-        "details": details_records,
-    })
-
-
-def _build_laboratory_summary_excel(unit: str, from_date: str, to_date: str, exported_by: str):
-    df_raw = data_fetch.fetch_laboratory_summary(unit, from_date, to_date)
-    if df_raw is None or df_raw.empty:
-        return None, None, "No data available to export"
-
-    details_df = _build_laboratory_details_df(df_raw)
-    doctor_summary, patient_summary, total_revenue, total_records, total_quantity = _build_laboratory_summary_frames(details_df)
-
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        workbook = writer.book
-
-        title_fmt = workbook.add_format({
-            "bold": True,
-            "font_size": 14,
-            "align": "center",
-            "valign": "vcenter",
-            "bg_color": "#1e3a8a",
-            "font_color": "white",
-        })
-        subtitle_fmt = workbook.add_format({
-            "bold": True,
-            "font_size": 10,
-            "align": "center",
-            "valign": "vcenter",
-            "bg_color": "#e2e8f0",
-        })
-        meta_fmt = workbook.add_format({
-            "font_size": 9,
-            "align": "center",
-            "valign": "vcenter",
-            "font_color": "#475569",
-        })
-        section_fmt = workbook.add_format({
-            "bold": True,
-            "font_size": 10,
-            "align": "left",
-            "valign": "vcenter",
-            "bg_color": "#f1f5f9",
-        })
-        header_fmt = workbook.add_format({
-            "bold": True,
-            "font_size": 9,
-            "align": "center",
-            "valign": "vcenter",
-            "bg_color": "#1e3a8a",
-            "font_color": "white",
-            "border": 1,
-        })
-        text_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "left"})
-        int_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "right", "num_format": "#,##,##0"})
-        pct_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "right", "num_format": "0.00%"})
-        money_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "right", "num_format": "#,##,##0.00"})
-        text_col_fmt = workbook.add_format({"font_size": 9, "align": "left"})
-        int_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "num_format": "#,##,##0"})
-        money_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "num_format": "#,##,##0.00"})
-        border_only_fmt = workbook.add_format({"border": 1})
-
-        exported_at = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
-        unit_header = _lab_unit_header_text(unit)
-
-        # Summary Sheet
-        summary_ws = workbook.add_worksheet("Summary")
-        writer.sheets["Summary"] = summary_ws
-
-        summary_last_col = 3
-        summary_ws.merge_range(0, 0, 0, summary_last_col, "Diagnostics & Laboratory MIS - Revenue Summary", title_fmt)
-        summary_ws.merge_range(1, 0, 1, summary_last_col, f"Unit: {unit_header}", subtitle_fmt)
-        summary_ws.merge_range(2, 0, 2, summary_last_col, f"Date Range: {from_date} to {to_date}", subtitle_fmt)
-        summary_ws.merge_range(3, 0, 3, summary_last_col, f"Exported By: {exported_by} | Exported At: {exported_at}", meta_fmt)
-
-        summary_ws.write(5, 0, "Total Revenue (INR)", section_fmt)
-        summary_ws.write(5, 1, total_revenue, money_fmt)
-        summary_ws.write(6, 0, "Total Records", section_fmt)
-        summary_ws.write(6, 1, total_records, int_fmt)
-        summary_ws.write(7, 0, "Total Quantity", section_fmt)
-        summary_ws.write(7, 1, total_quantity, int_fmt)
-
-        row_ptr = 9
-        summary_ws.merge_range(row_ptr, 0, row_ptr, summary_last_col, "Doctor-wise Revenue Summary", section_fmt)
-        row_ptr += 1
-        summary_ws.write_row(row_ptr, 0, ["Doctor", "Records", "Revenue (INR)", "Share %"], header_fmt)
-        row_ptr += 1
-        for _, row in doctor_summary.iterrows():
-            share = (float(row["Revenue"]) / total_revenue) if total_revenue else 0.0
-            summary_ws.write(row_ptr, 0, row["Name"], text_fmt)
-            summary_ws.write(row_ptr, 1, int(row["Records"]), int_fmt)
-            summary_ws.write(row_ptr, 2, float(row["Revenue"]), money_fmt)
-            summary_ws.write(row_ptr, 3, share, pct_fmt)
-            row_ptr += 1
-
-        row_ptr += 2
-        summary_ws.merge_range(row_ptr, 0, row_ptr, summary_last_col, "Patient Type-wise Revenue Summary", section_fmt)
-        row_ptr += 1
-        summary_ws.write_row(row_ptr, 0, ["Patient Type", "Records", "Revenue (INR)", "Share %"], header_fmt)
-        row_ptr += 1
-        for _, row in patient_summary.iterrows():
-            share = (float(row["Revenue"]) / total_revenue) if total_revenue else 0.0
-            summary_ws.write(row_ptr, 0, row["Name"], text_fmt)
-            summary_ws.write(row_ptr, 1, int(row["Records"]), int_fmt)
-            summary_ws.write(row_ptr, 2, float(row["Revenue"]), money_fmt)
-            summary_ws.write(row_ptr, 3, share, pct_fmt)
-            row_ptr += 1
-
-        summary_ws.merge_range(row_ptr + 1, 0, row_ptr + 1, summary_last_col, "Copyright: (c) ASARFI HOSPITAL", meta_fmt)
-        summary_ws.set_column(0, 0, 34)
-        summary_ws.set_column(1, 1, 14)
-        summary_ws.set_column(2, 2, 18)
-        summary_ws.set_column(3, 3, 12)
-        summary_ws.freeze_panes(5, 0)
-
-        # Details Sheet
-        details_df.to_excel(writer, sheet_name="Details", index=False, startrow=5)
-        details_ws = writer.sheets["Details"]
-        details_last_col = len(details_df.columns) - 1
-        details_ws.merge_range(0, 0, 0, details_last_col, "Diagnostics & Laboratory MIS - Detail Report", title_fmt)
-        details_ws.merge_range(1, 0, 1, details_last_col, f"Unit: {unit_header} | Date Range: {from_date} to {to_date}", subtitle_fmt)
-        details_ws.merge_range(2, 0, 2, details_last_col, f"Exported By: {exported_by} | Exported At: {exported_at}", meta_fmt)
-
-        for col_num, col_name in enumerate(details_df.columns):
-            details_ws.write(5, col_num, col_name, header_fmt)
-            if col_name == "Amount":
-                details_ws.set_column(col_num, col_num, 16, money_col_fmt)
-            elif col_name == "Quantity":
-                details_ws.set_column(col_num, col_num, 10, int_col_fmt)
-            elif col_name == "BillDate":
-                details_ws.set_column(col_num, col_num, 14, text_col_fmt)
-            elif col_name in {"Patient", "Service_Name"}:
-                details_ws.set_column(col_num, col_num, 28, text_col_fmt)
-            else:
-                details_ws.set_column(col_num, col_num, 20, text_col_fmt)
-
-        data_start_row = 6
-        data_end_row = 5 + len(details_df)
-        if len(details_df) > 0:
-            details_ws.conditional_format(
-                data_start_row, 0, data_end_row, details_last_col,
-                {"type": "formula", "criteria": "=TRUE", "format": border_only_fmt}
-            )
-
-        footer_row = 6 + len(details_df)
-        details_ws.merge_range(footer_row, 0, footer_row, details_last_col, "Copyright: (c) ASARFI HOSPITAL", meta_fmt)
-        details_ws.freeze_panes(6, 0)
-
-    output.seek(0)
-    filename = f"Laboratory_Summary_{unit}_{from_date}_to_{to_date}.xlsx"
-    return output.getvalue(), filename, None
-
-
-def _run_laboratory_summary_excel_job(job_id: str, unit: str, from_date: str, to_date: str, exported_by: str):
-    _excel_job_update(job_id, state="running")
-    try:
-        data, filename, err = _build_laboratory_summary_excel(unit, from_date, to_date, exported_by)
-        if not data:
-            _excel_job_update(job_id, state="error", error=err or "No data available to export")
-            return
-        _export_cache_put_bytes("lab_summary_xlsx_job", data, job_id)
-        _excel_job_update(job_id, state="done", filename=filename)
-    except Exception as exc:
-        _excel_job_update(job_id, state="error", error=str(exc))
-
-
-@app.route('/api/mis/laboratory_summary/export_excel')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_mis_laboratory_summary_export_excel():
-    unit = (request.args.get("unit") or "").strip().upper()
-    from_date = (request.args.get("from") or "").strip()
-    to_date = (request.args.get("to") or "").strip()
-    allowed_units = _analytics_allowed_units_for_session()
-
-    if not allowed_units:
-        return "No unit access assigned", 403
-    if not unit:
-        if len(allowed_units) == 1:
-            unit = allowed_units[0]
-        else:
-            return "Please select a unit", 400
-    if unit not in allowed_units:
-        return f"Unit {unit} not permitted", 403
-    if not from_date or not to_date:
-        return "Please select a valid date range", 400
-
-    exported_by = session.get("username") or session.get("user") or "Unknown"
-    data, filename, err = _build_laboratory_summary_excel(unit, from_date, to_date, exported_by)
-    if not data:
-        return err or "No data available to export", 404
-    return send_file(
-        io.BytesIO(data),
-        as_attachment=True,
-        download_name=filename,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-
-
-@app.route('/api/mis/laboratory_summary/export_excel_job', methods=["POST"])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_mis_laboratory_summary_export_excel_job():
-    payload = request.get_json(silent=True) or {}
-    unit = (payload.get("unit") or request.args.get("unit") or "").strip().upper()
-    from_date = (payload.get("from") or payload.get("from_date") or request.args.get("from") or "").strip()
-    to_date = (payload.get("to") or payload.get("to_date") or request.args.get("to") or "").strip()
-    allowed_units = _allowed_units_for_session()
-
-    if not allowed_units:
-        return jsonify({"status": "error", "message": "No unit access assigned"}), 403
-    if not unit:
-        if len(allowed_units) == 1:
-            unit = allowed_units[0]
-        else:
-            return jsonify({"status": "error", "message": "Please select a unit"}), 400
-    if unit not in allowed_units:
-        return jsonify({"status": "error", "message": f"Unit {unit} not permitted"}), 403
-    if not from_date or not to_date:
-        return jsonify({"status": "error", "message": "Please select a valid date range"}), 400
-
-    exported_by = session.get("username") or session.get("user") or "Unknown"
-    job_id = token_hex(16)
-    _excel_job_update(job_id, state="queued", filename=None)
-    EXPORT_EXECUTOR.submit(_run_laboratory_summary_excel_job, job_id, unit, from_date, to_date, exported_by)
-    return jsonify({"status": "queued", "job_id": job_id})
-
-
-@app.route('/api/mis/laboratory_summary/export_excel_job_status')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_mis_laboratory_summary_export_excel_job_status():
-    job_id = (request.args.get("job_id") or "").strip()
-    if not job_id:
-        return jsonify({"status": "error", "message": "Missing job id"}), 400
-    entry = _excel_job_get(job_id)
-    if not entry:
-        return jsonify({"status": "error", "message": "Job not found"}), 404
-    return jsonify({
-        "status": "success",
-        "state": entry.get("state"),
-        "error": entry.get("error"),
-        "filename": entry.get("filename"),
-    })
-
-
-@app.route('/api/mis/laboratory_summary/export_excel_job_result')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_mis_laboratory_summary_export_excel_job_result():
-    job_id = (request.args.get("job_id") or "").strip()
-    if not job_id:
-        return "Missing job id", 400
-    entry = _excel_job_get(job_id)
-    if not entry:
-        return "Job not found", 404
-    if entry.get("state") != "done":
-        return "Job not ready", 409
-    data = _export_cache_get_bytes("lab_summary_xlsx_job", job_id)
-    if not data:
-        return "Export expired", 404
-    filename = entry.get("filename") or "Laboratory_Summary.xlsx"
-    return send_file(
-        io.BytesIO(data),
-        as_attachment=True,
-        download_name=filename,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-
-
-def _build_laboratory_summary_pdf_buffer(unit: str, from_date: str, to_date: str, exported_by: str):
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib import colors
-    from reportlab.lib.units import mm
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
-    from xml.sax.saxutils import escape
-
-    df_raw = data_fetch.fetch_laboratory_summary(unit, from_date, to_date)
-    if df_raw is None or df_raw.empty:
-        return None
-
-    details_df = _build_laboratory_details_df(df_raw)
-    doctor_summary, patient_summary, total_revenue, total_records, total_quantity = _build_laboratory_summary_frames(details_df)
-
-    def _format_inr(number) -> str:
-        try:
-            n = float(number)
-        except Exception:
-            return "0.00"
-        sign = "-" if n < 0 else ""
-        n = abs(n)
-        s = f"{n:.2f}"
-        whole, frac = s.split(".")
-        if len(whole) <= 3:
-            grouped = whole
-        else:
-            last = whole[-3:]
-            rest = whole[:-3]
-            parts = []
-            while rest:
-                parts.append(rest[-2:])
-                rest = rest[:-2]
-            grouped = ",".join(reversed(parts)) + "," + last
-        return f"{sign}{grouped}.{frac}"
-
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=landscape(A4),
-        topMargin=14 * mm,
-        bottomMargin=14 * mm,
-        leftMargin=12 * mm,
-        rightMargin=12 * mm,
-    )
-
-    styles = getSampleStyleSheet()
-    style_title = ParagraphStyle("RptTitle", parent=styles["Heading2"], fontSize=12, alignment=TA_CENTER, textColor=colors.HexColor("#1e3a8a"))
-    style_sub = ParagraphStyle("RptSub", parent=styles["Normal"], fontSize=9, alignment=TA_CENTER, textColor=colors.HexColor("#475569"))
-    style_meta = ParagraphStyle("RptMeta", parent=styles["Normal"], fontSize=8, alignment=TA_CENTER, textColor=colors.HexColor("#475569"))
-    style_th = ParagraphStyle("RptTh", parent=styles["Normal"], fontSize=8, textColor=colors.white, alignment=TA_CENTER)
-    style_td = ParagraphStyle("RptTd", parent=styles["Normal"], fontSize=6.5, textColor=colors.black, leading=8)
-    style_td_wrap = ParagraphStyle(
-        "RptTdWrap",
-        parent=styles["Normal"],
-        fontSize=6.5,
-        textColor=colors.black,
-        leading=8,
-        wordWrap="CJK",
-    )
-    style_td_right = ParagraphStyle("RptTdRight", parent=styles["Normal"], fontSize=6.5, textColor=colors.black, alignment=TA_RIGHT, leading=8)
-
-    elements = []
-    logo_path = os.path.join(app.root_path, "static", "logo", "asarfi.png")
-    if os.path.exists(logo_path):
-        logo = Image(logo_path, width=18 * mm, height=18 * mm, mask="auto")
-        logo.hAlign = "CENTER"
-        elements.append(logo)
-
-    exported_at = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    unit_header = _lab_unit_header_text(unit)
-    elements.append(Spacer(1, 6))
-    elements.append(Paragraph("Diagnostics & Laboratory MIS - Revenue Summary", style_title))
-    elements.append(Paragraph(f"Unit: {unit_header}", style_sub))
-    elements.append(Paragraph(f"Date Range: {from_date} to {to_date}", style_sub))
-    elements.append(Paragraph(f"Exported By: {exported_by} | Exported At: {exported_at}", style_meta))
-    elements.append(Spacer(1, 8))
-
-    summary_rows = [
-        [Paragraph("Metric", style_th), Paragraph("Value", style_th)],
-        [Paragraph("Total Revenue (INR)", style_td), Paragraph(_format_inr(total_revenue), style_td_right)],
-        [Paragraph("Total Records", style_td), Paragraph(f"{total_records:,}", style_td_right)],
-        [Paragraph("Total Quantity", style_td), Paragraph(f"{total_quantity:,.0f}", style_td_right)],
-    ]
-    summary_table = Table(summary_rows, colWidths=[70 * mm, 40 * mm])
-    summary_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e3a8a")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#1f2937")),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-    ]))
-    elements.append(summary_table)
-    elements.append(Spacer(1, 10))
-
-    def _summary_table(title: str, frame: pd.DataFrame):
-        rows = [[Paragraph(title, style_th), Paragraph("Records", style_th), Paragraph("Revenue (INR)", style_th)]]
-        for _, row in frame.iterrows():
-            rows.append([
-                Paragraph(escape(str(row["Name"] or "")), style_td),
-                Paragraph(str(int(row["Records"])), style_td_right),
-                Paragraph(_format_inr(row["Revenue"]), style_td_right),
-            ])
-        tbl = Table(rows, colWidths=[90 * mm, 25 * mm, 35 * mm], repeatRows=1)
-        tbl.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e3a8a")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#1f2937")),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ]))
-        return tbl
-
-    elements.append(_summary_table("Doctor-wise Revenue", doctor_summary))
-    elements.append(Spacer(1, 8))
-    elements.append(_summary_table("Patient Type-wise Revenue", patient_summary))
-    elements.append(PageBreak())
-
-    detail_headers = [
-        Paragraph("Bill Date", style_th),
-        Paragraph("Reg No", style_th),
-        Paragraph("Patient", style_th),
-        Paragraph("Patient Type", style_th),
-        Paragraph("Visit Type", style_th),
-        Paragraph("Doctor", style_th),
-        Paragraph("Sub Dept", style_th),
-        Paragraph("Service", style_th),
-        Paragraph("Qty", style_th),
-        Paragraph("Amount (INR)", style_th),
-    ]
-    detail_rows = [detail_headers]
-    for _, row in details_df.iterrows():
-        bill_date = str(row.get("BillDate") or "")
-        reg_no = str(row.get("Registration_No") or "")
-        patient = str(row.get("Patient") or "")
-        patient_type = str(row.get("PatientType") or "")
-        visit_type = str(row.get("TypeOfVisit") or "")
-        doctor = str(row.get("Doctor") or "")
-        sub_dept = str(row.get("SubDepartment_Name") or "")
-        service = str(row.get("Service_Name") or "")
-        qty_val = f"{float(row.get('Quantity') or 0):,.0f}"
-        amt_val = _format_inr(row.get("Amount") or 0)
-        detail_rows.append([
-            Paragraph(escape(bill_date), style_td),
-            Paragraph(escape(reg_no), style_td),
-            Paragraph(escape(patient), style_td_wrap),
-            Paragraph(escape(patient_type), style_td_wrap),
-            Paragraph(escape(visit_type), style_td),
-            Paragraph(escape(doctor), style_td_wrap),
-            Paragraph(escape(sub_dept), style_td_wrap),
-            Paragraph(escape(service), style_td_wrap),
-            Paragraph(escape(qty_val), style_td_right),
-            Paragraph(escape(amt_val), style_td_right),
-        ])
-
-    detail_tbl = Table(
-        detail_rows,
-        colWidths=[18 * mm, 20 * mm, 32 * mm, 24 * mm, 16 * mm, 30 * mm, 22 * mm, 40 * mm, 12 * mm, 20 * mm],
-        repeatRows=1,
-    )
-    detail_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e3a8a")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 6.5),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#1f2937")),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("ALIGN", (-2, 1), (-1, -1), "RIGHT"),
-    ]))
-    elements.append(detail_tbl)
-
-    def _draw_page_number(canvas, doc_obj):
-        canvas.saveState()
-        width, _ = doc.pagesize
-        canvas.setFont("Helvetica", 8)
-        canvas.setFillColor(colors.HexColor("#64748b"))
-        canvas.drawRightString(width - 12 * mm, 10 * mm, f"Page {doc_obj.page}")
-        canvas.drawString(12 * mm, 10 * mm, "Copyright (c) ASARFI HOSPITAL")
-        canvas.restoreState()
-
-    doc.build(elements, onFirstPage=_draw_page_number, onLaterPages=_draw_page_number)
-    buffer.seek(0)
-    return buffer
-
-
-@app.route('/api/mis/laboratory_summary/export_pdf')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_mis_laboratory_summary_export_pdf():
-    unit = (request.args.get("unit") or "").strip().upper()
-    from_date = (request.args.get("from") or "").strip()
-    to_date = (request.args.get("to") or "").strip()
-    allowed_units = _allowed_units_for_session()
-
-    if not allowed_units:
-        return "No unit access assigned", 403
-    if not unit:
-        if len(allowed_units) == 1:
-            unit = allowed_units[0]
-        else:
-            return "Please select a unit", 400
-    if unit not in allowed_units:
-        return f"Unit {unit} not permitted", 403
-    if not from_date or not to_date:
-        return "Please select a valid date range", 400
-
-    exported_by = session.get("username") or session.get("user") or "Unknown"
-    buffer = _build_laboratory_summary_pdf_buffer(unit, from_date, to_date, exported_by)
-    if buffer is None:
-        return "No data available to export", 404
-    filename = f"Laboratory_Summary_{unit}_{from_date}_to_{to_date}.pdf"
-    return send_file(buffer, mimetype="application/pdf", as_attachment=True, download_name=filename)
-
-
 # ============================================================
 # MIS: Radiology & Imaging Summary
 # ============================================================
@@ -44156,552 +43962,6 @@ def _build_radiology_details_df(df_raw: pd.DataFrame) -> pd.DataFrame:
     return details[RADIO_DETAIL_COLUMNS]
 
 
-def _build_radiology_summary_frames(details_df: pd.DataFrame):
-    if details_df is None or details_df.empty:
-        empty_summary = pd.DataFrame(columns=["Name", "Records", "Revenue"])
-        return empty_summary, empty_summary, empty_summary, 0.0, 0, 0.0
-
-    work = details_df.copy()
-    work["Doctor"] = work["Doctor"].replace("", "Unknown").fillna("Unknown")
-    work["PatientType"] = work["PatientType"].replace("", "Unknown").fillna("Unknown")
-    work["Service_Name"] = work["Service_Name"].replace("", "Unknown").fillna("Unknown")
-
-    total_revenue = float(work["Amount"].sum())
-    total_records = int(len(work))
-    total_quantity = float(work["Quantity"].sum())
-
-    doctor_summary = (
-        work.groupby("Doctor", dropna=False)
-        .agg(Records=("Doctor", "size"), Revenue=("Amount", "sum"))
-        .reset_index()
-        .rename(columns={"Doctor": "Name"})
-        .sort_values("Revenue", ascending=False)
-    )
-
-    patient_summary = (
-        work.groupby("PatientType", dropna=False)
-        .agg(Records=("PatientType", "size"), Revenue=("Amount", "sum"))
-        .reset_index()
-        .rename(columns={"PatientType": "Name"})
-        .sort_values("Revenue", ascending=False)
-    )
-
-    service_summary = (
-        work.groupby("Service_Name", dropna=False)
-        .agg(Records=("Service_Name", "size"), Revenue=("Amount", "sum"))
-        .reset_index()
-        .rename(columns={"Service_Name": "Name"})
-        .sort_values("Revenue", ascending=False)
-    )
-
-    return doctor_summary, patient_summary, service_summary, total_revenue, total_records, total_quantity
-
-
-@app.route('/api/mis/radiology_summary')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_mis_radiology_summary():
-    unit = (request.args.get("unit") or "").strip().upper()
-    from_date = request.args.get("from") or datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-    to_date = request.args.get("to") or datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
-
-    allowed_units = _analytics_allowed_units_for_session()
-    target_unit = unit or (allowed_units[0] if allowed_units else None)
-
-    if not target_unit or (allowed_units and target_unit not in allowed_units):
-        return jsonify({"status": "error", "message": "Unauthorized Unit Access"}), 403
-
-    df_raw = data_fetch.fetch_radiology_summary(target_unit, from_date, to_date)
-    if df_raw is None:
-        return jsonify({"status": "error", "message": "Database error"}), 500
-
-    details_df = _build_radiology_details_df(df_raw)
-    doctor_summary, patient_summary, service_summary, total_revenue, total_records, total_quantity = _build_radiology_summary_frames(details_df)
-
-    details_records = details_df.where(pd.notna(details_df), None).to_dict(orient="records")
-    doctor_records = doctor_summary.to_dict(orient="records")
-    patient_records = patient_summary.to_dict(orient="records")
-    service_records = service_summary.to_dict(orient="records")
-
-    return jsonify({
-        "status": "success",
-        "unit": target_unit,
-        "from_date": from_date,
-        "to_date": to_date,
-        "total_revenue": total_revenue,
-        "total_records": total_records,
-        "total_quantity": total_quantity,
-        "doctor_summary": doctor_records,
-        "patienttype_summary": patient_records,
-        "service_summary": service_records,
-        "details": details_records,
-    })
-
-
-def _build_radiology_summary_excel(unit: str, from_date: str, to_date: str, exported_by: str):
-    df_raw = data_fetch.fetch_radiology_summary(unit, from_date, to_date)
-    if df_raw is None or df_raw.empty:
-        return None, None, "No data available to export"
-
-    details_df = _build_radiology_details_df(df_raw)
-    doctor_summary, patient_summary, service_summary, total_revenue, total_records, total_quantity = _build_radiology_summary_frames(details_df)
-
-    output = io.BytesIO()
-    with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
-        workbook = writer.book
-
-        title_fmt = workbook.add_format({
-            "bold": True,
-            "font_size": 14,
-            "align": "center",
-            "valign": "vcenter",
-            "bg_color": "#1e3a8a",
-            "font_color": "white",
-        })
-        subtitle_fmt = workbook.add_format({
-            "bold": True,
-            "font_size": 10,
-            "align": "center",
-            "valign": "vcenter",
-            "bg_color": "#e2e8f0",
-        })
-        meta_fmt = workbook.add_format({
-            "font_size": 9,
-            "align": "center",
-            "valign": "vcenter",
-            "font_color": "#475569",
-        })
-        section_fmt = workbook.add_format({
-            "bold": True,
-            "font_size": 10,
-            "align": "left",
-            "valign": "vcenter",
-            "bg_color": "#f1f5f9",
-        })
-        header_fmt = workbook.add_format({
-            "bold": True,
-            "font_size": 9,
-            "align": "center",
-            "valign": "vcenter",
-            "bg_color": "#1e3a8a",
-            "font_color": "white",
-            "border": 1,
-        })
-        text_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "left"})
-        int_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "right", "num_format": "#,##,##0"})
-        pct_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "right", "num_format": "0.00%"})
-        money_fmt = workbook.add_format({"font_size": 9, "border": 1, "align": "right", "num_format": "#,##,##0.00"})
-        text_col_fmt = workbook.add_format({"font_size": 9, "align": "left"})
-        int_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "num_format": "#,##,##0"})
-        money_col_fmt = workbook.add_format({"font_size": 9, "align": "right", "num_format": "#,##,##0.00"})
-        border_only_fmt = workbook.add_format({"border": 1})
-
-        exported_at = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
-        unit_header = _lab_unit_header_text(unit)
-
-        # Summary Sheet
-        summary_ws = workbook.add_worksheet("Summary")
-        writer.sheets["Summary"] = summary_ws
-
-        summary_last_col = 3
-        summary_ws.merge_range(0, 0, 0, summary_last_col, "Radiology & Imaging MIS - Revenue Summary", title_fmt)
-        summary_ws.merge_range(1, 0, 1, summary_last_col, f"Unit: {unit_header}", subtitle_fmt)
-        summary_ws.merge_range(2, 0, 2, summary_last_col, f"Date Range: {from_date} to {to_date}", subtitle_fmt)
-        summary_ws.merge_range(3, 0, 3, summary_last_col, f"Exported By: {exported_by} | Exported At: {exported_at}", meta_fmt)
-
-        summary_ws.write(5, 0, "Total Revenue (INR)", section_fmt)
-        summary_ws.write(5, 1, total_revenue, money_fmt)
-        summary_ws.write(6, 0, "Total Records", section_fmt)
-        summary_ws.write(6, 1, total_records, int_fmt)
-        summary_ws.write(7, 0, "Total Quantity", section_fmt)
-        summary_ws.write(7, 1, total_quantity, int_fmt)
-
-        row_ptr = 9
-        summary_ws.merge_range(row_ptr, 0, row_ptr, summary_last_col, "Doctor-wise Revenue Summary", section_fmt)
-        row_ptr += 1
-        summary_ws.write_row(row_ptr, 0, ["Doctor", "Records", "Revenue (INR)", "Share %"], header_fmt)
-        row_ptr += 1
-        for _, row in doctor_summary.iterrows():
-            share = (float(row["Revenue"]) / total_revenue) if total_revenue else 0.0
-            summary_ws.write(row_ptr, 0, row["Name"], text_fmt)
-            summary_ws.write(row_ptr, 1, int(row["Records"]), int_fmt)
-            summary_ws.write(row_ptr, 2, float(row["Revenue"]), money_fmt)
-            summary_ws.write(row_ptr, 3, share, pct_fmt)
-            row_ptr += 1
-
-        row_ptr += 2
-        summary_ws.merge_range(row_ptr, 0, row_ptr, summary_last_col, "Patient Type-wise Revenue Summary", section_fmt)
-        row_ptr += 1
-        summary_ws.write_row(row_ptr, 0, ["Patient Type", "Records", "Revenue (INR)", "Share %"], header_fmt)
-        row_ptr += 1
-        for _, row in patient_summary.iterrows():
-            share = (float(row["Revenue"]) / total_revenue) if total_revenue else 0.0
-            summary_ws.write(row_ptr, 0, row["Name"], text_fmt)
-            summary_ws.write(row_ptr, 1, int(row["Records"]), int_fmt)
-            summary_ws.write(row_ptr, 2, float(row["Revenue"]), money_fmt)
-            summary_ws.write(row_ptr, 3, share, pct_fmt)
-            row_ptr += 1
-
-        summary_ws.merge_range(row_ptr + 1, 0, row_ptr + 1, summary_last_col, "Copyright: (c) ASARFI HOSPITAL", meta_fmt)
-        summary_ws.set_column(0, 0, 34)
-        summary_ws.set_column(1, 1, 14)
-        summary_ws.set_column(2, 2, 18)
-        summary_ws.set_column(3, 3, 12)
-        summary_ws.freeze_panes(5, 0)
-
-        # Details Sheet
-        details_df.to_excel(writer, sheet_name="Details", index=False, startrow=5)
-        details_ws = writer.sheets["Details"]
-        details_last_col = len(details_df.columns) - 1
-        details_ws.merge_range(0, 0, 0, details_last_col, "Radiology & Imaging MIS - Detail Report", title_fmt)
-        details_ws.merge_range(1, 0, 1, details_last_col, f"Unit: {unit_header} | Date Range: {from_date} to {to_date}", subtitle_fmt)
-        details_ws.merge_range(2, 0, 2, details_last_col, f"Exported By: {exported_by} | Exported At: {exported_at}", meta_fmt)
-
-        for col_num, col_name in enumerate(details_df.columns):
-            details_ws.write(5, col_num, col_name, header_fmt)
-            if col_name == "Amount":
-                details_ws.set_column(col_num, col_num, 16, money_col_fmt)
-            elif col_name == "Quantity":
-                details_ws.set_column(col_num, col_num, 10, int_col_fmt)
-            elif col_name == "BillDate":
-                details_ws.set_column(col_num, col_num, 14, text_col_fmt)
-            elif col_name in {"Patient", "SubDepartment_Name", "Doctor", "Service_Name"}:
-                details_ws.set_column(col_num, col_num, 28, text_col_fmt)
-            else:
-                details_ws.set_column(col_num, col_num, 20, text_col_fmt)
-
-        data_start_row = 6
-        data_end_row = 5 + len(details_df)
-        if len(details_df) > 0:
-            details_ws.conditional_format(
-                data_start_row, 0, data_end_row, details_last_col,
-                {"type": "formula", "criteria": "=TRUE", "format": border_only_fmt}
-            )
-
-        footer_row = 6 + len(details_df)
-        details_ws.merge_range(footer_row, 0, footer_row, details_last_col, "Copyright: (c) ASARFI HOSPITAL", meta_fmt)
-        details_ws.freeze_panes(6, 0)
-
-    output.seek(0)
-    filename = f"Radiology_Summary_{unit}_{from_date}_to_{to_date}.xlsx"
-    return output.getvalue(), filename, None
-
-
-def _run_radiology_summary_excel_job(job_id: str, unit: str, from_date: str, to_date: str, exported_by: str):
-    _excel_job_update(job_id, state="running")
-    try:
-        data, filename, err = _build_radiology_summary_excel(unit, from_date, to_date, exported_by)
-        if not data:
-            _excel_job_update(job_id, state="error", error=err or "No data available to export")
-            return
-        _export_cache_put_bytes("radiology_summary_xlsx_job", data, job_id)
-        _excel_job_update(job_id, state="done", filename=filename)
-    except Exception as exc:
-        _excel_job_update(job_id, state="error", error=str(exc))
-
-
-@app.route('/api/mis/radiology_summary/export_excel')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_mis_radiology_summary_export_excel():
-    unit = (request.args.get("unit") or "").strip().upper()
-    from_date = (request.args.get("from") or "").strip()
-    to_date = (request.args.get("to") or "").strip()
-    allowed_units = _analytics_allowed_units_for_session()
-
-    if not allowed_units:
-        return "No unit access assigned", 403
-    if not unit:
-        if len(allowed_units) == 1:
-            unit = allowed_units[0]
-        else:
-            return "Please select a unit", 400
-    if unit not in allowed_units:
-        return f"Unit {unit} not permitted", 403
-    if not from_date or not to_date:
-        return "Please select a valid date range", 400
-
-    exported_by = session.get("username") or session.get("user") or "Unknown"
-    data, filename, err = _build_radiology_summary_excel(unit, from_date, to_date, exported_by)
-    if not data:
-        return err or "No data available to export", 404
-    return send_file(
-        io.BytesIO(data),
-        as_attachment=True,
-        download_name=filename,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-
-
-@app.route('/api/mis/radiology_summary/export_excel_job', methods=["POST"])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_mis_radiology_summary_export_excel_job():
-    payload = request.get_json(silent=True) or {}
-    unit = (payload.get("unit") or request.args.get("unit") or "").strip().upper()
-    from_date = (payload.get("from") or payload.get("from_date") or request.args.get("from") or "").strip()
-    to_date = (payload.get("to") or payload.get("to_date") or request.args.get("to") or "").strip()
-    allowed_units = _analytics_allowed_units_for_session()
-
-    if not allowed_units:
-        return jsonify({"status": "error", "message": "No unit access assigned"}), 403
-    if not unit:
-        if len(allowed_units) == 1:
-            unit = allowed_units[0]
-        else:
-            return jsonify({"status": "error", "message": "Please select a unit"}), 400
-    if unit not in allowed_units:
-        return jsonify({"status": "error", "message": f"Unit {unit} not permitted"}), 403
-    if not from_date or not to_date:
-        return jsonify({"status": "error", "message": "Please select a valid date range"}), 400
-
-    exported_by = session.get("username") or session.get("user") or "Unknown"
-    job_id = token_hex(16)
-    _excel_job_update(job_id, state="queued", filename=None)
-    EXPORT_EXECUTOR.submit(_run_radiology_summary_excel_job, job_id, unit, from_date, to_date, exported_by)
-    return jsonify({"status": "queued", "job_id": job_id})
-
-
-@app.route('/api/mis/radiology_summary/export_excel_job_status')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_mis_radiology_summary_export_excel_job_status():
-    job_id = (request.args.get("job_id") or "").strip()
-    if not job_id:
-        return jsonify({"status": "error", "message": "Missing job id"}), 400
-    entry = _excel_job_get(job_id)
-    if not entry:
-        return jsonify({"status": "error", "message": "Job not found"}), 404
-    return jsonify({
-        "status": "success",
-        "state": entry.get("state"),
-        "error": entry.get("error"),
-        "filename": entry.get("filename"),
-    })
-
-
-@app.route('/api/mis/radiology_summary/export_excel_job_result')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_mis_radiology_summary_export_excel_job_result():
-    job_id = (request.args.get("job_id") or "").strip()
-    if not job_id:
-        return "Missing job id", 400
-    entry = _excel_job_get(job_id)
-    if not entry:
-        return "Job not found", 404
-    if entry.get("state") != "done":
-        return "Job not ready", 409
-    data = _export_cache_get_bytes("radiology_summary_xlsx_job", job_id)
-    if not data:
-        return "Export expired", 404
-    filename = entry.get("filename") or "Radiology_Summary.xlsx"
-    return send_file(
-        io.BytesIO(data),
-        as_attachment=True,
-        download_name=filename,
-        mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
-    )
-
-
-def _build_radiology_summary_pdf_buffer(unit: str, from_date: str, to_date: str, exported_by: str):
-    from reportlab.lib.pagesizes import A4, landscape
-    from reportlab.lib import colors
-    from reportlab.lib.units import mm
-    from reportlab.platypus import SimpleDocTemplate, Table, TableStyle, Paragraph, Spacer, PageBreak, Image
-    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
-    from reportlab.lib.enums import TA_CENTER, TA_RIGHT
-    from xml.sax.saxutils import escape
-
-    df_raw = data_fetch.fetch_radiology_summary(unit, from_date, to_date)
-    if df_raw is None or df_raw.empty:
-        return None
-
-    details_df = _build_radiology_details_df(df_raw)
-    doctor_summary, patient_summary, service_summary, total_revenue, total_records, total_quantity = _build_radiology_summary_frames(details_df)
-
-    def _format_inr(number) -> str:
-        try:
-            n = float(number)
-        except Exception:
-            return "0.00"
-        sign = "-" if n < 0 else ""
-        n = abs(n)
-        s = f"{n:.2f}"
-        whole, frac = s.split(".")
-        if len(whole) <= 3:
-            grouped = whole
-        else:
-            last = whole[-3:]
-            rest = whole[:-3]
-            parts = []
-            while rest:
-                parts.append(rest[-2:])
-                rest = rest[:-2]
-            grouped = ",".join(reversed(parts)) + "," + last
-        return f"{sign}{grouped}.{frac}"
-
-    buffer = io.BytesIO()
-    doc = SimpleDocTemplate(
-        buffer,
-        pagesize=landscape(A4),
-        topMargin=14 * mm,
-        bottomMargin=14 * mm,
-        leftMargin=12 * mm,
-        rightMargin=12 * mm,
-    )
-
-    styles = getSampleStyleSheet()
-    style_title = ParagraphStyle("RptTitle", parent=styles["Heading2"], fontSize=12, alignment=TA_CENTER, textColor=colors.HexColor("#1e3a8a"))
-    style_sub = ParagraphStyle("RptSub", parent=styles["Normal"], fontSize=9, alignment=TA_CENTER, textColor=colors.HexColor("#475569"))
-    style_meta = ParagraphStyle("RptMeta", parent=styles["Normal"], fontSize=8, alignment=TA_CENTER, textColor=colors.HexColor("#475569"))
-    style_th = ParagraphStyle("RptTh", parent=styles["Normal"], fontSize=8, textColor=colors.white, alignment=TA_CENTER)
-    style_td = ParagraphStyle("RptTd", parent=styles["Normal"], fontSize=6.5, textColor=colors.black, leading=8)
-    style_td_wrap = ParagraphStyle("RptTdWrap", parent=styles["Normal"], fontSize=6.5, textColor=colors.black, leading=8, wordWrap="CJK")
-    style_td_right = ParagraphStyle("RptTdRight", parent=styles["Normal"], fontSize=6.5, textColor=colors.black, alignment=TA_RIGHT, leading=8)
-
-    elements = []
-    logo_path = os.path.join(app.root_path, "static", "logo", "asarfi.png")
-    if os.path.exists(logo_path):
-        logo = Image(logo_path, width=18 * mm, height=18 * mm, mask="auto")
-        logo.hAlign = "CENTER"
-        elements.append(logo)
-
-    exported_at = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
-    unit_header = _lab_unit_header_text(unit)
-    elements.append(Spacer(1, 6))
-    elements.append(Paragraph("Radiology & Imaging MIS - Revenue Summary", style_title))
-    elements.append(Paragraph(f"Unit: {unit_header}", style_sub))
-    elements.append(Paragraph(f"Date Range: {from_date} to {to_date}", style_sub))
-    elements.append(Paragraph(f"Exported By: {exported_by} | Exported At: {exported_at}", style_meta))
-    elements.append(Spacer(1, 8))
-
-    summary_rows = [
-        [Paragraph("Metric", style_th), Paragraph("Value", style_th)],
-        [Paragraph("Total Revenue (INR)", style_td), Paragraph(_format_inr(total_revenue), style_td_right)],
-        [Paragraph("Total Records", style_td), Paragraph(f"{total_records:,}", style_td_right)],
-        [Paragraph("Total Quantity", style_td), Paragraph(f"{total_quantity:,.0f}", style_td_right)],
-    ]
-    summary_table = Table(summary_rows, colWidths=[70 * mm, 40 * mm])
-    summary_table.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e3a8a")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#1f2937")),
-        ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
-    ]))
-    elements.append(summary_table)
-    elements.append(Spacer(1, 10))
-
-    def _summary_table(title: str, frame: pd.DataFrame):
-        rows = [[Paragraph(title, style_th), Paragraph("Records", style_th), Paragraph("Revenue (INR)", style_th)]]
-        for _, row in frame.iterrows():
-            rows.append([
-                Paragraph(escape(str(row["Name"] or "")), style_td_wrap),
-                Paragraph(str(int(row["Records"])), style_td_right),
-                Paragraph(_format_inr(row["Revenue"]), style_td_right),
-            ])
-        tbl = Table(rows, colWidths=[90 * mm, 25 * mm, 35 * mm], repeatRows=1)
-        tbl.setStyle(TableStyle([
-            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e3a8a")),
-            ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-            ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#1f2937")),
-            ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ]))
-        return tbl
-
-    elements.append(_summary_table("Doctor-wise Revenue", doctor_summary))
-    elements.append(Spacer(1, 8))
-    elements.append(_summary_table("Patient Type-wise Revenue", patient_summary))
-    elements.append(PageBreak())
-
-    detail_headers = [
-        Paragraph("Bill Date", style_th),
-        Paragraph("Reg No", style_th),
-        Paragraph("Patient", style_th),
-        Paragraph("Patient Type", style_th),
-        Paragraph("Visit Type", style_th),
-        Paragraph("Doctor", style_th),
-        Paragraph("Sub Dept", style_th),
-        Paragraph("Service", style_th),
-        Paragraph("Qty", style_th),
-        Paragraph("Amount (INR)", style_th),
-    ]
-    detail_rows = [detail_headers]
-    for _, row in details_df.iterrows():
-        bill_date = str(row.get("BillDate") or "")
-        reg_no = str(row.get("Registration_No") or "")
-        patient = str(row.get("Patient") or "")
-        patient_type = str(row.get("PatientType") or "")
-        visit_type = str(row.get("TypeOfVisit") or "")
-        doctor = str(row.get("Doctor") or "")
-        sub_dept = str(row.get("SubDepartment_Name") or "")
-        service = str(row.get("Service_Name") or "")
-        qty_val = f"{float(row.get('Quantity') or 0):,.0f}"
-        amt_val = _format_inr(row.get("Amount") or 0)
-        detail_rows.append([
-            Paragraph(escape(bill_date), style_td),
-            Paragraph(escape(reg_no), style_td),
-            Paragraph(escape(patient), style_td_wrap),
-            Paragraph(escape(patient_type), style_td_wrap),
-            Paragraph(escape(visit_type), style_td),
-            Paragraph(escape(doctor), style_td_wrap),
-            Paragraph(escape(sub_dept), style_td_wrap),
-            Paragraph(escape(service), style_td_wrap),
-            Paragraph(escape(qty_val), style_td_right),
-            Paragraph(escape(amt_val), style_td_right),
-        ])
-
-    detail_tbl = Table(
-        detail_rows,
-        colWidths=[18 * mm, 20 * mm, 32 * mm, 24 * mm, 16 * mm, 30 * mm, 22 * mm, 40 * mm, 12 * mm, 20 * mm],
-        repeatRows=1,
-    )
-    detail_tbl.setStyle(TableStyle([
-        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#1e3a8a")),
-        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
-        ("FONTNAME", (0, 0), (-1, 0), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 6.5),
-        ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#1f2937")),
-        ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("ALIGN", (-2, 1), (-1, -1), "RIGHT"),
-    ]))
-    elements.append(detail_tbl)
-
-    def _draw_page_number(canvas, doc_obj):
-        canvas.saveState()
-        width, _ = doc.pagesize
-        canvas.setFont("Helvetica", 8)
-        canvas.setFillColor(colors.HexColor("#64748b"))
-        canvas.drawRightString(width - 12 * mm, 10 * mm, f"Page {doc_obj.page}")
-        canvas.drawString(12 * mm, 10 * mm, "Copyright (c) ASARFI HOSPITAL")
-        canvas.restoreState()
-
-    doc.build(elements, onFirstPage=_draw_page_number, onLaterPages=_draw_page_number)
-    buffer.seek(0)
-    return buffer
-
-
-@app.route('/api/mis/radiology_summary/export_pdf')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
-def api_mis_radiology_summary_export_pdf():
-    unit = (request.args.get("unit") or "").strip().upper()
-    from_date = (request.args.get("from") or "").strip()
-    to_date = (request.args.get("to") or "").strip()
-    allowed_units = _analytics_allowed_units_for_session()
-
-    if not allowed_units:
-        return "No unit access assigned", 403
-    if not unit:
-        if len(allowed_units) == 1:
-            unit = allowed_units[0]
-        else:
-            return "Please select a unit", 400
-    if unit not in allowed_units:
-        return f"Unit {unit} not permitted", 403
-    if not from_date or not to_date:
-        return "Please select a valid date range", 400
-
-    exported_by = session.get("username") or session.get("user") or "Unknown"
-    buffer = _build_radiology_summary_pdf_buffer(unit, from_date, to_date, exported_by)
-    if buffer is None:
-        return "No data available to export", 404
-    filename = f"Radiology_Summary_{unit}_{from_date}_to_{to_date}.pdf"
-    return send_file(buffer, mimetype="application/pdf", as_attachment=True, download_name=filename)
 # ============================================================
 # NEW: Collections PDF Export
 # ============================================================
@@ -46102,6 +45362,7 @@ def user_management():
     username = (session.get("username") or "").strip()
     requests = _fetch_user_requests(role, username)
     allowed_units = _allowed_units_for_session()
+    purchase_scope_units = _allowed_purchase_scope_units_for_session()
     scope_units = _user_management_scope_units_for_session()
     fund_acl = _allowed_fund_firms_for_session()
     firm_choices = _fund_tracker_known_firms() if fund_acl.get("all") else (fund_acl.get("firms") or [])
@@ -46147,6 +45408,7 @@ def user_management():
         fund_position_recipients=fund_position_recipients,
         it_direct_users=it_direct_users,
         allowed_units=allowed_units,
+        purchase_scope_units=purchase_scope_units,
         scope_units=scope_units,
         allowed_firms=firm_choices,
     )
@@ -46189,9 +45451,8 @@ def user_management_request():
     )
     if unit_err:
         return _user_management_error(unit_err, 403)
-    purchase_unit_scope, purchase_err = _validated_user_scope_units(
+    purchase_unit_scope, purchase_err = _validated_purchase_scope_units(
         purchase_unit_scope,
-        include_corporate_only=False,
         field_label="purchase units",
     )
     if purchase_err:
@@ -46329,9 +45590,8 @@ def user_management_update_user():
     )
     if unit_err:
         return _user_management_error(unit_err, 403)
-    purchase_unit_scope, purchase_err = _validated_user_scope_units(
+    purchase_unit_scope, purchase_err = _validated_purchase_scope_units(
         purchase_unit_scope,
-        include_corporate_only=False,
         field_label="purchase units",
     )
     if purchase_err:
@@ -46427,9 +45687,8 @@ def user_management_it_user_update():
     )
     if unit_err:
         return _user_management_error(unit_err, 403)
-    purchase_unit_scope, purchase_err = _validated_user_scope_units(
+    purchase_unit_scope, purchase_err = _validated_purchase_scope_units(
         purchase_unit_scope,
-        include_corporate_only=False,
         field_label="purchase units",
     )
     if purchase_err:
@@ -54075,7 +53334,7 @@ def _build_name_lookup(rows):
     return lookup
 
 
-PURCHASE_MASTER_MEDICAL_UNITS = ("AHL", "ACI", "BALLIA")
+PURCHASE_MASTER_MEDICAL_UNITS = ("AHL", "ACI", "BALLIA", "SHARPSIGHT")
 PURCHASE_MASTER_NON_MEDICAL_UNITS = ("AHLSTORE", "CANCERUNITSTORE", "BALLIASTORE")
 
 
@@ -57487,11 +56746,14 @@ def session_remaining():
 def session_keepalive():
     username = session.get('username')
     role = session.get('role')
+    sid = session.get('sid')
     if not username or not role:
         return jsonify({'status': 'error', 'message': 'Unauthorized'}), 401
 
     now = int(time.time())
     session['last_activity'] = now
+    if sid:
+        _session_store_touch(username, sid)
     return jsonify({'status': 'success', 'remaining_seconds': IDLE_TIMEOUT_SECONDS})
 
 @app.route('/_bg_status')
@@ -57967,14 +57229,41 @@ def api_corporate_export_excel():
         total_due_amount = float(df["DueAmount"].sum()) if "DueAmount" in df.columns else 0.0
         total_old_bill_amount = float(df["Old_Bill_Amt"].sum()) if "Old_Bill_Amt" in df.columns else 0.0
         status_lower = df["Status"].astype(str).str.strip().str.lower() if "Status" in df.columns else pd.Series([], dtype=str)
-        final_count = int((status_lower == "final submitted").sum()) if not status_lower.empty else 0
-        nonfinal_count = int(total_rows - final_count)
+        fetch_meta = fetch_result.get("meta") if isinstance(fetch_result.get("meta"), dict) else {}
+        status_counts_meta = fetch_meta.get("status_counts") if isinstance(fetch_meta.get("status_counts"), dict) else {}
+        scoped_total_rows = int(_corp_recon_parse_int(fetch_meta.get("scoped_total_rows"), total_rows, 0, None))
+        final_count = int(_corp_recon_parse_int(
+            status_counts_meta.get("final_submitted"),
+            int((status_lower == "final submitted").sum()) if not status_lower.empty else 0,
+            0,
+            None,
+        ))
+        submission_pending_count = int(_corp_recon_parse_int(
+            status_counts_meta.get("submission_pending"),
+            int((status_lower == "submission pending").sum()) if not status_lower.empty else 0,
+            0,
+            None,
+        ))
+        not_worked_count = int(_corp_recon_parse_int(
+            status_counts_meta.get("not_worked"),
+            int((status_lower == "not worked").sum()) if not status_lower.empty else 0,
+            0,
+            None,
+        ))
+        nonfinal_count = int(_corp_recon_parse_int(
+            status_counts_meta.get("other_status"),
+            max(0, scoped_total_rows - final_count),
+            0,
+            None,
+        ))
 
         exported_by = session.get("username") or session.get("user") or "Unknown"
         exported_at = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
         from_label = from_dt.isoformat() if from_dt else "All"
         to_label = to_dt.isoformat() if to_dt else "All"
-        sf_label = status_filter if status_filter in {"all", "final", "nonfinal"} else "all"
+        sf_key = status_filter if status_filter in CORP_BILL_ALLOWED_STATUS_FILTERS else "all"
+        sf_label = _corp_bill_status_filter_label(sf_key)
+        date_scope_label = str(fetch_meta.get("date_scope_label") or "Bill Date").strip() or "Bill Date"
 
         output = io.BytesIO()
         with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
@@ -58070,6 +57359,20 @@ def api_corporate_export_excel():
                 "font_color": "#92400E",
                 "bg_color": "#FFF7ED",
             })
+            status_pending_fmt = wb.add_format({
+                "border": 1,
+                "align": "center",
+                "bold": True,
+                "font_color": "#92400E",
+                "bg_color": "#FEF3C7",
+            })
+            status_notworked_fmt = wb.add_format({
+                "border": 1,
+                "align": "center",
+                "bold": True,
+                "font_color": "#9A3412",
+                "bg_color": "#FFEDD5",
+            })
 
             summary_ws = wb.add_worksheet("Summary")
             writer.sheets["Summary"] = summary_ws
@@ -58079,15 +57382,19 @@ def api_corporate_export_excel():
 
             meta_rows = [
                 ("Unit", unit, "text"),
-                ("Bill Date From", from_label, "text"),
-                ("Bill Date To", to_label, "text"),
+                ("Date From", from_label, "text"),
+                ("Date To", to_label, "text"),
+                ("Date Scope", date_scope_label, "text"),
                 ("Visit Type", str(vt_int), "text"),
                 ("Patient SubType", patient_subtype or "All", "text"),
-                ("Status Filter", sf_label.title(), "text"),
+                ("Status Filter", sf_label, "text"),
                 ("Search Query", search_query or "(none)", "text"),
-                ("Total Rows", total_rows, "int"),
-                ("Final Submitted", final_count, "int"),
-                ("Other Status", nonfinal_count, "int"),
+                ("Rows in Export", total_rows, "int"),
+                ("Rows in Current Scope", scoped_total_rows, "int"),
+                ("Final Submitted in Scope", final_count, "int"),
+                ("Submission Pending in Scope", submission_pending_count, "int"),
+                ("Not Worked in Scope", not_worked_count, "int"),
+                ("Other Status in Scope", nonfinal_count, "int"),
                 ("Total CAmount", total_c_amount, "money"),
                 ("Total DueAmount", total_due_amount, "money"),
                 ("Total Old Bill Amount", total_old_bill_amount, "money"),
@@ -58115,7 +57422,7 @@ def api_corporate_export_excel():
             writer.sheets["Corporate Summary"] = data_ws
             data_ws.hide_gridlines(2)
             data_ws.merge_range(0, 0, 0, max(1, len(df.columns) - 1), f"Corporate Bill Summary - {unit}", title_fmt)
-            data_ws.merge_range(1, 0, 1, max(1, len(df.columns) - 1), f"Bill Date: {from_label} to {to_label} | Status: {sf_label.title()} | Rows: {total_rows}", subtitle_fmt)
+            data_ws.merge_range(1, 0, 1, max(1, len(df.columns) - 1), f"Date Range: {from_label} to {to_label} | Date Scope: {date_scope_label} | Status: {sf_label} | Rows: {total_rows}", subtitle_fmt)
 
             write_df = df.copy()
             write_df.to_excel(writer, sheet_name="Corporate Summary", index=False, header=False, startrow=3)
@@ -58177,11 +57484,16 @@ def api_corporate_export_excel():
                 })
                 data_ws.conditional_format(first_data_row, sidx, last_data_row, sidx, {
                     "type": "text",
-                    "criteria": "not containing",
-                    "value": "Final Submitted",
-                    "format": status_nonfinal_fmt,
+                    "criteria": "containing",
+                    "value": "Submission Pending",
+                    "format": status_pending_fmt,
                 })
-
+                data_ws.conditional_format(first_data_row, sidx, last_data_row, sidx, {
+                    "type": "text",
+                    "criteria": "containing",
+                    "value": "Not Worked",
+                    "format": status_notworked_fmt,
+                })
             data_ws.set_footer(
                 f"&LExported By: {str(exported_by).replace('&', 'and')}"
                 f"&CPage &P of &N&RExported At: {str(exported_at).replace('&', 'and')}"
@@ -58190,7 +57502,7 @@ def api_corporate_export_excel():
         output.seek(0)
         from_token = from_dt.isoformat() if from_dt else "all"
         to_token = to_dt.isoformat() if to_dt else "all"
-        filename = f"{unit}_CorpSummary_{from_token}_{to_token}_{sf_label}.xlsx"
+        filename = f"{unit}_CorpSummary_{from_token}_{to_token}_{sf_key}.xlsx"
         return send_file(
             output,
             as_attachment=True,
@@ -58243,6 +57555,10 @@ def api_corporate_export_excel():
             df = df[df["Status"].astype(str).str.strip().str.lower() == "final submitted"]
         elif status_filter == "nonfinal":
             df = df[df["Status"].astype(str).str.strip().str.lower() != "final submitted"]
+        elif status_filter == "pending":
+            df = df[df["Status"].astype(str).str.strip().str.lower() == "submission pending"]
+        elif status_filter == "notworked":
+            df = df[df["Status"].astype(str).str.strip().str.lower() == "not worked"]
 
     # Search Filter
     if search_query:
@@ -58417,6 +57733,154 @@ def mis_store():
 
 
 
+def _register_mod_reports_dashboard_route_module():
+    register_mod_reports_dashboard_routes(
+        app,
+        login_required=login_required,
+        analytics_allowed_units_for_session=_analytics_allowed_units_for_session,
+        allowed_units_for_session=_allowed_units_for_session,
+        mod_summary_default_limit=_mod_summary_default_limit,
+        mod_summary_pick_lookback_days=_mod_summary_pick_lookback_days,
+        fetch_mod_summary_daily_rows=_fetch_mod_summary_daily_rows,
+        aggregate_mod_summary_rows=_aggregate_mod_summary_rows,
+        fetch_mod_summary_department_insights=_fetch_mod_summary_department_insights,
+        is_truthy=_is_truthy,
+        resolve_mod_export_date_range=_resolve_mod_export_date_range,
+        fetch_ahl_sequence_export_extras=_fetch_ahl_sequence_export_extras,
+        mod_seq_export_key=_mod_seq_export_key,
+        build_mod_sequence_audit_excel=_build_mod_sequence_audit_excel,
+        fetch_night_snapshot_audit_rows=_fetch_night_snapshot_audit_rows,
+        fetch_morning_snapshot_audit_rows=_fetch_morning_snapshot_audit_rows,
+        local_tz=LOCAL_TZ,
+        morning_report_investigation_map=MORNING_REPORT_INVESTIGATION_MAP,
+        morning_report_key_procedures=MORNING_REPORT_KEY_PROCEDURES,
+    )
+
+
+def _register_mod_reports_night_route_module():
+    register_mod_reports_night_routes(
+        app,
+        login_required=login_required,
+        analytics_allowed_units_for_session=_analytics_allowed_units_for_session,
+        allowed_units_for_session=_allowed_units_for_session,
+        get_login_db_connection=_get_login_db_connection,
+        ensure_night_report_detail_table=_ensure_night_report_detail_table,
+        ensure_night_report_ward_table=_ensure_night_report_ward_table,
+        coerce_local_dt=_coerce_local_dt,
+        fetch_previous_night_snapshot_date=_fetch_previous_night_snapshot_date,
+        night_payload_has_core_values=_night_payload_has_core_values,
+        mod_report_cache_get=_mod_report_cache_get,
+        mod_report_cache_set=_mod_report_cache_set,
+        mod_report_cache_clear=_mod_report_cache_clear,
+        attach_mod_report_lock=_attach_mod_report_lock,
+        build_night_report_payload=_build_night_report_payload,
+        build_night_report_excel=_build_night_report_excel,
+        build_night_report_pdf=_build_night_report_pdf,
+        build_night_report_jpg=_build_night_report_jpg,
+        save_night_report_snapshot_atomic=_save_night_report_snapshot_atomic,
+        build_night_report_diff=_build_night_report_diff,
+        mod_report_edit_lock_info=_mod_report_edit_lock_info,
+        is_truthy=_is_truthy,
+        audit_log_event=_audit_log_event,
+        local_tz=LOCAL_TZ,
+        night_report_equipment_cols=NIGHT_REPORT_EQUIPMENT_COLS,
+    )
+
+
+def _register_mod_reports_morning_route_module():
+    register_mod_reports_morning_routes(
+        app,
+        login_required=login_required,
+        analytics_allowed_units_for_session=_analytics_allowed_units_for_session,
+        allowed_units_for_session=_allowed_units_for_session,
+        resolve_morning_unit=_resolve_morning_unit,
+        get_login_db_connection=_get_login_db_connection,
+        ensure_morning_report_tables=_ensure_morning_report_tables,
+        fetch_morning_report_snapshot=_fetch_morning_report_snapshot,
+        apply_morning_staff_non_med_prefill=_apply_morning_staff_non_med_prefill,
+        ensure_morning_death_summary_row=_ensure_morning_death_summary_row,
+        build_morning_report_payload=_build_morning_report_payload,
+        build_morning_report_excel=_build_morning_report_excel,
+        build_morning_report_pdf=_build_morning_report_pdf,
+        build_morning_report_jpg=_build_morning_report_jpg,
+        save_morning_report_snapshot_to_aci=_save_morning_report_snapshot_to_aci,
+        build_morning_report_diff=_build_morning_report_diff,
+        mod_report_edit_lock_info=_mod_report_edit_lock_info,
+        attach_mod_report_lock=_attach_mod_report_lock,
+        mod_report_cache_get=_mod_report_cache_get,
+        mod_report_cache_set=_mod_report_cache_set,
+        mod_report_cache_clear=_mod_report_cache_clear,
+        rows_have_any_value=_rows_have_any_value,
+        audit_log_event=_audit_log_event,
+        local_tz=LOCAL_TZ,
+    )
+
+
+def _register_mis_laboratory_summary_route_module():
+    register_mis_laboratory_summary_routes(
+        app,
+        login_required=login_required,
+        analytics_allowed_units_for_session=_analytics_allowed_units_for_session,
+        allowed_units_for_session=_allowed_units_for_session,
+        build_laboratory_details_df=_build_laboratory_details_df,
+        lab_unit_header_text=_lab_unit_header_text,
+        excel_job_update=_excel_job_update,
+        excel_job_get=_excel_job_get,
+        export_cache_get_bytes=_export_cache_get_bytes,
+        export_cache_put_bytes=_export_cache_put_bytes,
+        export_executor=EXPORT_EXECUTOR,
+        local_tz=LOCAL_TZ,
+    )
+
+
+def _register_mis_radiology_summary_route_module():
+    register_mis_radiology_summary_routes(
+        app,
+        login_required=login_required,
+        analytics_allowed_units_for_session=_analytics_allowed_units_for_session,
+        build_radiology_details_df=_build_radiology_details_df,
+        lab_unit_header_text=_lab_unit_header_text,
+        excel_job_update=_excel_job_update,
+        excel_job_get=_excel_job_get,
+        export_cache_get_bytes=_export_cache_get_bytes,
+        export_cache_put_bytes=_export_cache_put_bytes,
+        export_executor=EXPORT_EXECUTOR,
+        local_tz=LOCAL_TZ,
+    )
+
+
+def _register_mis_pharmacy_stock_ledger_route_module():
+    register_mis_pharmacy_stock_ledger_routes(
+        app,
+        login_required=login_required,
+        allowed_units_for_session=_allowed_units_for_session,
+        clean_df_columns=_clean_df_columns,
+        safe_float=_safe_float,
+        export_cache_get_bytes=_export_cache_get_bytes,
+        export_cache_put_bytes=_export_cache_put_bytes,
+        excel_job_get=_excel_job_get,
+        excel_job_update=_excel_job_update,
+        export_executor=EXPORT_EXECUTOR,
+        local_tz=LOCAL_TZ,
+    )
+
+
+def _register_mis_pharmacy_department_issue_route_module():
+    register_mis_pharmacy_department_issue_routes(
+        app,
+        login_required=login_required,
+        allowed_units_for_session=_allowed_units_for_session,
+        clean_df_columns=_clean_df_columns,
+        safe_float=_safe_float,
+        export_cache_get_bytes=_export_cache_get_bytes,
+        export_cache_put_bytes=_export_cache_put_bytes,
+        excel_job_get=_excel_job_get,
+        excel_job_update=_excel_job_update,
+        export_executor=EXPORT_EXECUTOR,
+        local_tz=LOCAL_TZ,
+    )
+
+
 def _register_occupancy_route_module():
     register_occupancy_routes(
         app,
@@ -58459,6 +57923,7 @@ def _register_purchase_route_modules():
         allowed_purchase_units_for_session=_allowed_purchase_units_for_session,
         role_base=_role_base,
         can_use_def_po_print_format=_can_use_def_po_print_format,
+        can_use_trust_po_print_format=_can_use_trust_po_print_format,
         get_purchase_unit=_get_purchase_unit,
         build_purchase_department_payload=_build_purchase_department_payload,
         clean_df_columns=_clean_df_columns,
@@ -58505,6 +57970,18 @@ def _register_purchase_route_modules():
         local_tz=LOCAL_TZ,
     )
 
+    register_purchase_grn_routes(
+        app,
+        login_required=login_required,
+        allowed_purchase_units_for_session=_allowed_purchase_units_for_session,
+        clean_df_columns=_clean_df_columns,
+        sanitize_json_payload=_sanitize_json_payload,
+        safe_float=_safe_float,
+        safe_int=_safe_int,
+        audit_log_event=_audit_log_event,
+        local_tz=LOCAL_TZ,
+    )
+
     register_purchase_po_routes(
         app,
         login_required=login_required,
@@ -58539,6 +58016,7 @@ def _register_purchase_route_modules():
         purchase_is_valid_email=_purchase_is_valid_email,
         send_graph_mail_with_attachment=_send_graph_mail_with_attachment,
         build_po_supplier_dispatch_email_body=_build_po_supplier_dispatch_email_body,
+        build_po_cancellation_email_body=_build_po_cancellation_email_body,
         normalize_po_header_for_audit=_normalize_po_header_for_audit,
         diff_simple_fields=_diff_simple_fields,
         diff_po_items=_diff_po_items,
@@ -58602,6 +58080,13 @@ def _register_purchase_route_modules():
         local_tz=LOCAL_TZ,
     )
 
+_register_mod_reports_dashboard_route_module()
+_register_mod_reports_night_route_module()
+_register_mod_reports_morning_route_module()
+_register_mis_laboratory_summary_route_module()
+_register_mis_radiology_summary_route_module()
+_register_mis_pharmacy_stock_ledger_route_module()
+_register_mis_pharmacy_department_issue_route_module()
 _register_occupancy_route_module()
 _register_patient_journey_route_module()
 _register_purchase_route_modules()

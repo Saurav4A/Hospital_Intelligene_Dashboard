@@ -110,6 +110,7 @@
 
     const WARNING_THRESHOLD = 300; // 5 minutes
     const POLL_INTERVAL = 60000;   // 60 seconds
+    const ACTIVITY_PING_THROTTLE_MS = 60000;
 
     let pollTimer = null;
     let countdownTimer = null;
@@ -117,6 +118,8 @@
     let disabled = false;
     let pending = false;
     let lastRemainingSeconds = null;
+    let lastActivityPingAt = 0;
+    let activityPing = null;
 
     function publishRemaining(secs) {
       if (!Number.isFinite(secs)) return;
@@ -279,6 +282,53 @@
       }
     }
 
+    function publishRefresh(data) {
+      const secs = Number(data && data.remaining_seconds);
+      if (!Number.isFinite(secs)) return;
+      publishRemaining(secs);
+      window.dispatchEvent(new CustomEvent('sessionRefreshed', {
+        detail: { remaining_seconds: secs }
+      }));
+    }
+
+    async function sendActivityPing(force = false) {
+      if (disabled || promptVisible || pending) return;
+      const nowMs = Date.now();
+      if (!force && nowMs - lastActivityPingAt < ACTIVITY_PING_THROTTLE_MS) {
+        return;
+      }
+      if (activityPing) return activityPing;
+
+      lastActivityPingAt = nowMs;
+      activityPing = (async () => {
+        try {
+          const res = await fetch('/session_keepalive', {
+            method: 'POST',
+            headers: {
+              'Content-Type': 'application/json',
+              'X-Session-Activity': 'active'
+            },
+            body: '{}'
+          });
+          if (!res.ok) {
+            if (res.status === 401) {
+              disabled = true;
+              hidePrompt();
+            }
+            return;
+          }
+          const data = await res.json().catch(() => ({}));
+          publishRefresh(data);
+        } catch (err) {
+          // ignore
+        } finally {
+          activityPing = null;
+        }
+      })();
+
+      return activityPing;
+    }
+
     async function keepAlive() {
       if (disabled || pending) return;
       pending = true;
@@ -286,7 +336,10 @@
       try {
         const res = await fetch('/session_keepalive', {
           method: 'POST',
-          headers: { 'Content-Type': 'application/json' },
+          headers: {
+            'Content-Type': 'application/json',
+            'X-Session-Activity': 'active'
+          },
           body: '{}'
         });
         if (!res.ok) {
@@ -298,13 +351,8 @@
         }
         const data = await res.json().catch(() => ({}));
         hidePrompt();
-        if (data.remaining_seconds) {
-          updateCountdownDisplay(data.remaining_seconds);
-          publishRemaining(Number(data.remaining_seconds) || 0);
-        }
-        window.dispatchEvent(new CustomEvent('sessionRefreshed', {
-          detail: { remaining_seconds: Number(data.remaining_seconds) || 0 }
-        }));
+        lastActivityPingAt = Date.now();
+        publishRefresh(data);
       } catch (err) {
         // ignore
       } finally {
@@ -320,6 +368,14 @@
       }
     }
 
+    function handleUserActivity(event) {
+      if (promptVisible || disabled) return;
+      if (event?.type === 'keydown' && event.isComposing) return;
+      sendActivityPing();
+    }
+
+    document.addEventListener('pointerdown', handleUserActivity, { capture: true, passive: true });
+    document.addEventListener('keydown', handleUserActivity, true);
     document.addEventListener('click', globalClickHandler, true);
     document.addEventListener('visibilitychange', () => {
       if (!document.hidden) {
