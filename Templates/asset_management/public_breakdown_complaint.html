@@ -1,0 +1,555 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Asset Breakdown Complaint | Asarfi Hospital</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="{{ url_for('static', filename='logo/asarfi.png') }}">
+  <style>
+    :root{
+      --bg:#f4f7fb;
+      --brand:#1e3a8a;
+      --brand2:#3b82f6;
+      --ink:#0f172a;
+      --muted:#64748b;
+      --line:#dbe5f2;
+      --card:#ffffff;
+      --ok:#16a34a;
+      --warn:#d97706;
+      --danger:#dc2626;
+      --shadow:0 14px 34px rgba(15,23,42,.1);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:"Segoe UI",system-ui,-apple-system,sans-serif;
+      color:var(--ink);
+      background:
+        radial-gradient(900px 420px at -20% -10%, #dbeafe 0, transparent 50%),
+        radial-gradient(900px 420px at 120% 0%, #e0f2fe 0, transparent 45%),
+        var(--bg);
+      min-height:100vh;
+    }
+    .page{width:min(1180px,calc(100% - 32px));margin:0 auto;padding:32px 0 34px}
+    .brand{display:flex;align-items:center;gap:12px;padding:0 2px 20px}
+    .brand img{width:58px;height:58px;object-fit:contain;border-radius:14px;background:#fff;box-shadow:0 10px 24px rgba(15,23,42,.16)}
+    .brand h1{margin:0;font-size:26px;color:var(--brand);line-height:1.15}
+    .brand p{margin:4px 0 0;color:var(--muted);font-size:14px}
+    .content-shell{display:grid;grid-template-columns:330px minmax(0,1fr);gap:22px;align-items:start}
+    .side-card{position:sticky;top:18px;background:rgba(255,255,255,.92);border:1px solid rgba(30,58,138,.1);border-radius:20px;box-shadow:var(--shadow);padding:20px}
+    .side-card h2{font-size:22px;margin:0 0 8px}
+    .side-card p{margin:0;color:var(--muted);font-size:14px}
+    .side-steps{display:grid;gap:10px;margin-top:18px}
+    .side-step{display:grid;grid-template-columns:34px 1fr;gap:10px;align-items:start;padding:10px;border-radius:14px;background:#f8fbff;border:1px solid #e3ecfb;transition:background .18s ease,border-color .18s ease,box-shadow .18s ease,transform .18s ease}
+    .side-step.active{background:#eef4ff;border-color:#93b8ff;box-shadow:0 10px 24px rgba(37,99,235,.13);transform:translateY(-1px)}
+    .side-step.complete{background:#f0fdf4;border-color:#bbf7d0}
+    .side-step b{width:34px;height:34px;border-radius:12px;display:grid;place-items:center;color:#fff;background:linear-gradient(135deg,var(--brand),var(--brand2));font-size:13px}
+    .side-step.complete b{background:#16a34a}
+    .side-step.active b{box-shadow:0 8px 18px rgba(37,99,235,.25)}
+    .side-step strong{display:block;color:#10213d;font-size:14px;line-height:1.25}
+    .side-step.active strong{color:var(--brand)}
+    .side-step span{display:block;color:var(--muted);font-size:12px;margin-top:2px;line-height:1.35}
+    .trust-note{margin-top:16px;padding:12px;border-radius:14px;background:#ecfdf5;border:1px solid #bbf7d0;color:#047857;font-weight:800;font-size:13px;line-height:1.4}
+    .flow{min-width:0}
+    .panel{background:rgba(255,255,255,.96);border:1px solid rgba(30,58,138,.1);border-radius:20px;box-shadow:var(--shadow);padding:24px;margin-bottom:16px}
+    .step-label{display:inline-flex;align-items:center;padding:6px 10px;border-radius:999px;background:#eef4ff;color:var(--brand);font-weight:800;font-size:12px;margin-bottom:10px}
+    h2{margin:0 0 8px;font-size:26px;color:var(--brand)}
+    p{line-height:1.5}
+    .muted{color:var(--muted);margin:0 0 14px}
+    label{display:block;font-weight:800;color:#10213d;font-size:13px;margin:12px 0 7px}
+    input,select,textarea{width:100%;border:1px solid var(--line);border-radius:14px;padding:14px 15px;font:inherit;background:#fff;color:var(--ink);outline:none}
+    input:focus,select:focus,textarea:focus{border-color:#93c5fd;box-shadow:0 0 0 4px rgba(59,130,246,.12)}
+    textarea{min-height:150px;resize:vertical}
+    .row{display:grid;grid-template-columns:minmax(0,1fr) 170px;gap:10px}
+    .two-row{display:grid;grid-template-columns:1fr 1fr;gap:10px}
+    .action-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+    .btn{width:100%;border:none;border-radius:14px;padding:14px 16px;font-weight:900;cursor:pointer;color:#fff;background:linear-gradient(135deg,var(--brand),var(--brand2));box-shadow:0 10px 24px rgba(37,99,235,.22)}
+    .btn.secondary{color:var(--brand);background:#f0f5ff;border:1px solid #dbe7ff;box-shadow:none}
+    .btn:disabled{opacity:.65;cursor:not-allowed}
+    .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+    .choice{width:100%;text-align:left;background:#fff;border:1px solid var(--line);border-radius:16px;padding:16px;cursor:pointer;display:grid;gap:8px;min-height:94px;transition:border-color .18s ease,box-shadow .18s ease,transform .18s ease,background .18s ease}
+    .choice:hover,.choice.selected{border-color:#93c5fd;background:#f8fbff;box-shadow:0 10px 24px rgba(30,58,138,.08);transform:translateY(-1px)}
+    .instruction{display:flex;align-items:center;gap:10px;padding:12px 14px;margin:0 0 14px;border-radius:14px;background:#eef4ff;border:1px solid #cfe0ff;color:#173a7a;font-size:13px;font-weight:800;line-height:1.4}
+    .instruction b{width:28px;height:28px;border-radius:10px;display:grid;place-items:center;flex:0 0 auto;color:#fff;background:linear-gradient(135deg,var(--brand),var(--brand2))}
+    .choice.rich-choice{position:relative;overflow:hidden;min-height:128px;border:1.5px solid #bfd6ff;background:linear-gradient(180deg,#fff 0%,#f8fbff 100%);box-shadow:0 10px 24px rgba(15,23,42,.06)}
+    .choice.rich-choice:before{content:"";position:absolute;left:0;top:0;bottom:0;width:5px;background:linear-gradient(180deg,var(--brand),var(--brand2))}
+    .choice.rich-choice:hover,.choice.rich-choice:focus-visible{border-color:#2563eb;background:#fff;box-shadow:0 16px 34px rgba(37,99,235,.16);transform:translateY(-2px)}
+    .choice-head{display:flex;align-items:flex-start;justify-content:space-between;gap:12px}
+    .choice strong{color:#10213d;font-size:16px;line-height:1.25}
+    .select-cue{display:inline-flex;align-items:center;justify-content:center;gap:6px;flex:0 0 auto;border-radius:999px;padding:7px 10px;background:#1d4ed8;color:#fff;font-size:12px;font-weight:900;box-shadow:0 8px 18px rgba(37,99,235,.22);white-space:nowrap}
+    .meta{display:flex;flex-wrap:wrap;gap:7px 10px;font-size:13px;color:var(--muted);line-height:1.35}
+    .pill{display:inline-flex;align-items:center;border-radius:999px;padding:5px 9px;background:#eef2ff;color:var(--brand);font-weight:800}
+    .pill.ok{background:#ecfdf5;color:#047857;border:1px solid #bbf7d0}
+    .pill.warn{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}
+    .error{display:none;padding:12px;border-radius:14px;background:#fef2f2;border:1px solid #fecaca;color:#991b1b;font-weight:700;margin:0 0 16px}
+    .empty{padding:16px;border-radius:14px;background:#f8fafc;border:1px dashed #cbd5e1;color:var(--muted);text-align:center;font-weight:700}
+    .success{text-align:center;padding:28px 18px}
+    .success-mark{width:68px;height:68px;border-radius:50%;display:grid;place-items:center;margin:0 auto 14px;background:#dcfce7;color:#15803d;font-size:36px;font-weight:900}
+    .ref{font-size:24px;font-weight:900;color:var(--brand);padding:12px;border-radius:14px;background:#eef4ff;margin:14px 0}
+    .hidden{display:none!important}
+
+    .readonly-status-card{
+      border:1px solid #bfdbfe;
+      background:linear-gradient(180deg,#f8fbff,#ffffff);
+      border-radius:18px;
+      padding:16px;
+      display:grid;
+      gap:10px;
+      box-shadow:0 10px 24px rgba(37,99,235,.08);
+    }
+    .readonly-status-card .status-title{
+      font-size:18px;
+      font-weight:900;
+      color:#10213d;
+    }
+    .readonly-status-card .status-row{
+      display:grid;
+      grid-template-columns:150px minmax(0,1fr);
+      gap:8px;
+      border-top:1px dashed #dbe5f2;
+      padding-top:8px;
+      color:#475569;
+      font-size:14px;
+    }
+    .readonly-status-card .status-row strong{
+      color:#10213d;
+    }
+    .readonly-status-card .warn-pill{
+      display:inline-flex;
+      width:max-content;
+      padding:6px 10px;
+      border-radius:999px;
+      background:#fff7ed;
+      color:#c2410c;
+      font-weight:900;
+      border:1px solid #fed7aa;
+    }
+
+    footer{text-align:center;color:var(--muted);font-size:12px;padding:18px 0}
+    @media (max-width:900px){
+      .page{width:min(720px,calc(100% - 24px));padding:18px 0 28px}
+      .content-shell{grid-template-columns:1fr}
+      .side-card{position:static}
+      .side-steps{grid-template-columns:repeat(2,minmax(0,1fr))}
+    }
+    @media (max-width:620px){
+      .page{width:100%;padding:14px 12px 24px}
+      .row,.two-row{grid-template-columns:1fr}
+      .brand{padding-bottom:14px}
+      .brand img{width:52px;height:52px;border-radius:13px}
+      .brand h1{font-size:21px}
+      .brand p{font-size:13px}
+      .panel{padding:16px}
+      h2{font-size:22px}
+      .side-card{display:none}
+      .cards{grid-template-columns:1fr}
+      .choice{min-height:0}
+      .instruction{align-items:flex-start}
+      .choice-head{display:grid;gap:8px}
+      .select-cue{width:max-content}
+      .btn{padding:13px 14px}
+      .action-row{grid-template-columns:1fr}
+      .readonly-status-card .status-row{
+      grid-template-columns:1fr;
+    }
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="brand">
+      <img src="{{ url_for('static', filename='logo/asarfi.png') }}" alt="Asarfi Hospital">
+      <div>
+        <h1>Asarfi Hospital</h1>
+        <p>Asset Breakdown Complaint</p>
+      </div>
+    </div>
+
+    <div class="content-shell">
+      <aside class="side-card">
+        <h2>Report a machine issue</h2>
+        <p>Your complaint is linked to the affected asset and routed to the Biomedical / Asset team for action.</p>
+        <div class="side-steps">
+          <div class="side-step" data-flow-step="stepSearch"><b>1</b><div><strong>Identify employee</strong><span>Use Emp ID.</span></div></div>
+          <div class="side-step" data-flow-step="stepEmployee"><b>2</b><div><strong>Confirm employee</strong><span>Select the correct employee record.</span></div></div>
+          <div class="side-step" data-flow-step="stepAsset"><b>3</b><div><strong>Select machine</strong><span>Search by asset code, name, serial, or location.</span></div></div>
+          <div class="side-step" data-flow-step="stepComplaint"><b>4</b><div><strong>Submit complaint</strong><span>Describe the issue and receive a reference.</span></div></div>
+        </div>
+        <div class="trust-note">No login is required.</div>
+      </aside>
+
+      <main class="flow">
+        <div class="error" id="errorBox"></div>
+
+        <section class="panel" id="stepSearch">
+          <span class="step-label">Step 1</span>
+          <h2>Asset Breakdown Complaint</h2>
+          <p class="muted">Please identify yourself and select the affected machine/equipment to report an issue.</p>
+          <label for="employeeQuery">Emp ID</label>
+          <input id="employeeQuery" autocomplete="off" inputmode="text" placeholder="Enter Emp ID">
+          <div style="margin-top:14px">
+            <button class="btn" id="employeeSearchBtn">Search / Continue</button>
+          </div>
+        </section>
+
+        <section class="panel hidden" id="stepEmployee">
+          <span class="step-label">Step 2</span>
+          <h2>Confirm employee</h2>
+          <p class="muted">Choose the employee record that matches your details.</p>
+          <div class="instruction"><b>i</b><span>Tap or click the correct employee card to continue.</span></div>
+          <div class="cards" id="employeeCards"></div>
+          <div class="action-row">
+            <button class="btn secondary" id="backToEmployeeSearch">Back to Search</button>
+          </div>
+        </section>
+
+        <section class="panel hidden" id="stepAsset">
+          <span class="step-label">Step 3</span>
+          <h2>Select machine/equipment</h2>
+          <p class="muted" id="selectedEmployeeLabel"></p>
+          <label for="assetQuery">Asset / Machine Search</label>
+          <div class="row">
+            <input id="assetQuery" autocomplete="off" placeholder="Asset code, name, serial number, unit, or location">
+            <button class="btn" id="assetSearchBtn">Search Asset</button>
+          </div>
+          <div class="instruction" style="margin-top:14px"><b>i</b><span>Select the affected machine/equipment from the list below.</span></div>
+          <div class="cards" id="assetCards"></div>
+          <div class="action-row">
+            <button class="btn secondary" id="backToEmployee">Back</button>
+          </div>
+        </section>
+        
+        <section class="panel hidden" id="stepBreakdownStatus">
+          <span class="step-label">Status</span>
+          <h2>Machine already under breakdown</h2>
+          <p class="muted">
+            This machine/equipment is already under an active breakdown cycle. A duplicate complaint cannot be submitted.
+          </p>
+
+          <div class="instruction">
+            <b>i</b>
+            <span>The current breakdown status is shown below in read-only mode.</span>
+          </div>
+
+          <div class="readonly-status-card" id="readonlyBreakdownStatus"></div>
+
+          <div class="action-row">
+            <button class="btn secondary" id="backFromStatusToAsset">Back to Asset Search</button>
+          </div>
+        </section>
+        
+        <section class="panel hidden" id="stepComplaint">
+          <span class="step-label">Step 4</span>
+          <h2>Describe issue</h2>
+          <p class="muted" id="selectedAssetLabel"></p>
+          <label for="reportedStatus">Current Status</label>
+          <select id="reportedStatus">
+            <option value="">Select current status</option>
+            {% for item in status_options %}
+            <option value="{{ item }}">{{ item }}</option>
+            {% endfor %}
+          </select>
+          <label for="issueDescription">Issue / Complaint Description</label>
+          <textarea id="issueDescription" placeholder="Please describe the issue with the machine/equipment..."></textarea>
+          <div class="two-row">
+            <div>
+              <label for="priority">Priority</label>
+              <select id="priority">
+                {% for item in priority_options %}
+                <option value="{{ item }}" {% if item == "Normal" %}selected{% endif %}>{{ item }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div>
+              <label for="contactMobile">Contact / alternate mobile number</label>
+              <input id="contactMobile" inputmode="tel" placeholder="Optional">
+            </div>
+          </div>
+          <div class="action-row">
+            <button class="btn secondary" id="backToAsset">Back</button>
+            <button class="btn" id="submitBtn">Submit Breakdown Complaint</button>
+          </div>
+        </section>
+
+        <section class="panel hidden success" id="stepSuccess">
+          <div class="success-mark">&#10003;</div>
+          <h2 id="successTitle">Registered successfully</h2>
+          <p class="muted" id="successDescription">Your breakdown complaint has been registered successfully.</p>
+          <div class="ref" id="refNo"></div>
+          <p class="muted" id="successMeta"></p>
+          <button class="btn secondary" onclick="window.location.reload()">Submit Another Complaint</button>
+        </section>
+      </main>
+    </div>
+
+    <footer>&copy; 2026 Asarfi Hospital Ltd.</footer>
+  </div>
+
+  <script>
+    const state = { employees: [], employee: null, assets: [], asset: null };
+    const $ = (id) => document.getElementById(id);
+
+    function showError(message){
+      const box = $("errorBox");
+      box.textContent = message || "Something went wrong. Please try again.";
+      box.style.display = "block";
+      setTimeout(() => { box.style.display = "none"; }, 5400);
+    }
+    function show(id){
+      const order = ["stepSearch","stepEmployee","stepAsset","stepBreakdownStatus","stepComplaint","stepSuccess"];
+      order.forEach(x => $(x).classList.add("hidden"));
+      $(id).classList.remove("hidden");
+      const activeIndex = order.indexOf(id);
+      document.querySelectorAll("[data-flow-step]").forEach(item => {
+        const itemIndex = order.indexOf(item.dataset.flowStep);
+        item.classList.toggle("active", item.dataset.flowStep === id);
+        item.classList.toggle("complete", itemIndex >= 0 && itemIndex < activeIndex);
+      });
+      window.scrollTo({top:0,behavior:"smooth"});
+    }
+    function setBusy(btn, busy, label){
+      btn.disabled = !!busy;
+      if (busy) {
+        btn.dataset.oldText = btn.textContent;
+        btn.textContent = label || "Please wait...";
+      } else {
+        btn.textContent = btn.dataset.oldText || btn.textContent;
+      }
+    }
+    function esc(value){
+      return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+    async function api(url, options){
+      const res = await fetch(url, options || {});
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.status === "error" || data.success === false) {
+        throw new Error(data.message || "Request failed");
+      }
+      return data;
+    }
+    function employeeMeta(e){
+      const phoneLabel = e.mobile_masked || maskPhone(e.mobile);
+      return [
+        e.employee_id ? `Emp ID: ${esc(e.employee_id)}` : "",
+        phoneLabel ? `Mobile: ${esc(phoneLabel)}` : "",
+        e.department ? `Department: ${esc(e.department)}` : "",
+        e.designation ? `Designation: ${esc(e.designation)}` : "",
+        e.deputation ? `Deputation: ${esc(e.deputation)}` : "",
+        e.unit ? `Unit: ${esc(e.unit)}` : ""
+      ].filter(Boolean).map(x => `<span>${x}</span>`).join("");
+    }
+    function maskPhone(value){
+      const digits = String(value || "").replace(/\D+/g, "");
+      if (!digits) return "";
+      if (digits.length <= 4) return digits;
+      return `${"X".repeat(Math.max(0, digits.length - 4))}${digits.slice(-4)}`;
+    }
+    function renderEmployees(){
+      const wrap = $("employeeCards");
+      if (!state.employees.length) {
+        wrap.innerHTML = `<div class="empty">No matching employee found. Please check Emp ID / Name / Mobile No. and try again.</div>`;
+        show("stepEmployee");
+        return;
+      }
+      wrap.innerHTML = state.employees.map((e, idx) => `
+        <button class="choice rich-choice" data-idx="${idx}" aria-label="Select employee ${esc(e.employee_name || "Employee")}">
+          <div class="choice-head">
+            <strong>${esc(e.employee_name || "Employee")}</strong>
+            <span class="select-cue">Select employee</span>
+          </div>
+          <div class="meta">
+            <span class="pill">${esc(e.source === "webhook" ? "Verified" : "Local")}</span>
+            ${employeeMeta(e)}
+          </div>
+        </button>
+      `).join("");
+      wrap.querySelectorAll(".choice").forEach(btn => btn.addEventListener("click", () => selectEmployee(Number(btn.dataset.idx))));
+      show("stepEmployee");
+    }
+    async function searchEmployees(){
+      const query = $("employeeQuery").value.trim();
+      if (query.length < 2 && !/\d/.test(query)) return showError("Please enter Emp ID, Name, or Mobile No.");
+      const btn = $("employeeSearchBtn");
+      setBusy(btn, true, "Searching...");
+      try {
+        const data = await api(`/api/asset-breakdown/public/employee-search?q=${encodeURIComponent(query)}`);
+        state.employees = data.employees || [];
+        renderEmployees();
+      } catch(e) {
+        showError(e.message);
+      } finally {
+        setBusy(btn, false);
+      }
+    }
+    async function selectEmployee(index){
+      state.employee = state.employees[index];
+      $("selectedEmployeeLabel").textContent = `${state.employee.employee_name || "Employee"} | Emp ID ${state.employee.employee_id || "-"}${state.employee.unit ? " | " + state.employee.unit : ""}${state.employee.department ? " | " + state.employee.department : ""}`;
+      $("contactMobile").value = state.employee.mobile || "";
+      $("assetQuery").value = "";
+      state.assets = [];
+      $("assetCards").innerHTML = `<div class="empty">Please search the affected machine/equipment by asset code, machine name, serial number, unit, or location.</div>`;
+      show("stepAsset");
+    }
+    function renderAssets(){
+      const wrap = $("assetCards");
+      if (!state.assets.length) {
+        wrap.innerHTML = `<div class="empty">No matching asset found. Please search by asset code, machine name, serial number, unit, or location.</div>`;
+        return;
+      }
+      wrap.innerHTML = state.assets.map((a, idx) => `
+        <button class="choice rich-choice" data-idx="${idx}" aria-label="Select asset ${esc(a.asset_code || "Asset")}">
+          <div class="choice-head">
+            <strong>${esc(a.asset_code || "Asset")} - ${esc(a.asset_name || a.equipment_name || "Machine")}</strong>
+            <span class="select-cue">${a.has_open_breakdown ? "View status" : "Select machine"}</span>
+          </div>
+          <div class="meta">
+            <span class="pill">${esc(a.location_code || "Unit")}</span>
+            ${a.machine_type_name ? `<span>${esc(a.machine_type_name)}</span>` : ""}
+            ${a.location_name ? `<span>${esc(a.location_name)}</span>` : ""}
+            ${a.serial_number ? `<span>Serial: ${esc(a.serial_number)}</span>` : ""}
+            ${a.has_open_breakdown ? `<span class="pill warn">Already under breakdown</span>` : (a.status_label ? `<span class="pill ok">${esc(a.status_label)}</span>` : "")}
+          </div>
+        </button>
+      `).join("");
+      wrap.querySelectorAll(".choice").forEach(btn => btn.addEventListener("click", () => selectAsset(Number(btn.dataset.idx))));
+    }
+    async function searchAssets(query){
+      const btn = $("assetSearchBtn");
+      setBusy(btn, true, "Searching...");
+      try {
+        const unit = state.employee?.unit || "";
+        const data = await api(`/api/asset-breakdown/public/assets?q=${encodeURIComponent(query == null ? $("assetQuery").value.trim() : query)}&unit=${encodeURIComponent(unit)}`);
+        state.assets = data.assets || [];
+        renderAssets();
+      } catch(e) {
+        showError(e.message);
+      } finally {
+        setBusy(btn, false);
+      }
+    }
+    function renderReadonlyBreakdownStatus(asset){
+      const ticket = asset.open_breakdown || {};
+      const box = $("readonlyBreakdownStatus");
+
+      box.innerHTML = `
+        <div class="status-title">${esc(asset.asset_code || "Asset")} - ${esc(asset.asset_name || asset.equipment_name || "Machine")}</div>
+        <span class="warn-pill">Duplicate submission blocked</span>
+
+        <div class="status-row">
+          <strong>Ticket No.</strong>
+          <span>${esc(ticket.ticket_no || "-")}</span>
+        </div>
+
+        <div class="status-row">
+          <strong>Current Status</strong>
+          <span>${esc(ticket.status_label || asset.status_label || "Open")}</span>
+        </div>
+
+        <div class="status-row">
+          <strong>Breakdown Date</strong>
+          <span>${esc(ticket.breakdown_datetime_display || ticket.created_at_display || "-")}</span>
+        </div>
+
+        <div class="status-row">
+          <strong>Reported Status</strong>
+          <span>${esc(ticket.reported_status || "-")}${ticket.priority ? " | Priority: " + esc(ticket.priority) : ""}</span>
+        </div>
+
+        <div class="status-row">
+          <strong>Issue / Reason</strong>
+          <span>${esc(ticket.breakdown_reason || "Breakdown reason not available.")}</span>
+        </div>
+
+        <div class="status-row">
+          <strong>Expected Visit</strong>
+          <span>${esc(ticket.expected_technician_visit_display || "Not scheduled")}</span>
+        </div>
+
+        ${
+          ticket.repair_verdict_label || ticket.repair_verdict_reason
+            ? `<div class="status-row">
+                <strong>Repair Update</strong>
+                <span>${esc(ticket.repair_verdict_label || "")}${ticket.repair_verdict_reason ? " - " + esc(ticket.repair_verdict_reason) : ""}</span>
+              </div>`
+            : ""
+        }
+      `;
+    }
+
+    function selectAsset(index){
+      state.asset = state.assets[index];
+
+      if (state.asset && state.asset.has_open_breakdown) {
+        renderReadonlyBreakdownStatus(state.asset);
+        show("stepBreakdownStatus");
+        return;
+      }
+
+      $("selectedAssetLabel").textContent = `${state.asset.asset_code || "Asset"} | ${state.asset.asset_name || state.asset.equipment_name || "Machine"} | ${state.asset.location_code || "Unit"}`;
+      show("stepComplaint");
+    }
+    $("employeeSearchBtn").addEventListener("click", searchEmployees);
+    $("employeeQuery").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") searchEmployees();
+    });
+    $("assetSearchBtn").addEventListener("click", () => searchAssets());
+    $("assetQuery").addEventListener("keydown", (event) => {
+      if (event.key === "Enter") searchAssets();
+    });
+    $("backToEmployeeSearch").addEventListener("click", () => show("stepSearch"));
+    $("backToEmployee").addEventListener("click", () => show("stepEmployee"));
+    $("backToAsset").addEventListener("click", () => show("stepAsset"));
+    $("backFromStatusToAsset").addEventListener("click", () => show("stepAsset"));
+    $("submitBtn").addEventListener("click", async () => {
+      if (!state.employee) return showError("Please identify the reporting employee.");
+      if (!state.asset) return showError("Please select the affected machine/equipment.");
+      if (!$("reportedStatus").value) return showError("Please select the current machine status.");
+      if ($("issueDescription").value.trim().length < 3) return showError("Please add a few more details about the issue.");
+      const btn = $("submitBtn");
+      setBusy(btn, true, "Submitting...");
+      try {
+        const data = await api("/api/asset-breakdown/public/submit", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            employee_id: state.employee.employee_id,
+            employee_name: state.employee.employee_name,
+            employee_mobile: state.employee.mobile,
+            employee_department: state.employee.department,
+            employee_designation: state.employee.designation,
+            employee_unit: state.employee.unit,
+            asset_id: state.asset.asset_id,
+            asset_code: state.asset.asset_code,
+            issue_description: $("issueDescription").value.trim(),
+            reported_status: $("reportedStatus").value,
+            priority: $("priority").value || "Normal",
+            contact_mobile: $("contactMobile").value.trim()
+          })
+        });
+        $("successTitle").textContent = data.existing_breakdown ? "Already under breakdown" : "Registered successfully";
+        $("successDescription").textContent = data.existing_breakdown
+          ? "This machine/equipment is already under an active breakdown cycle. Current status is shown below."
+          : "Your breakdown complaint has been registered successfully.";
+        $("refNo").textContent = data.complaint_no || data.complaint_id || "";
+        const existingExpectedVisit = data.ticket?.expected_technician_visit_display
+          ? ` | Expected visit: ${data.ticket.expected_technician_visit_display}`
+          : "";
+        $("successMeta").textContent = data.current_status
+          ? `${data.current_status}${existingExpectedVisit}`
+          : `${data.asset_code || state.asset.asset_code || ""} ${data.asset_name || state.asset.asset_name || ""}${data.submitted_at ? " | " + data.submitted_at : ""}`.trim();
+        show("stepSuccess");
+      } catch(e) {
+        showError(e.message);
+      } finally {
+        setBusy(btn, false);
+      }
+    });
+    show("stepSearch");
+  </script>
+</body>
+</html>

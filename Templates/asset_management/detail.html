@@ -1,0 +1,645 @@
+{% extends "asset_management/_base.html" %}
+
+{% block page_actions %}
+  <div class="asset-page-action-stack">
+    <div class="asset-page-action-row">
+      <a class="asset-btn secondary" href="{{ url_for('asset_management.register_page') }}">Back to Register</a>
+      <button type="button" class="asset-btn primary" id="detailEditBtn">Edit Asset</button>
+      <button type="button" class="asset-btn secondary" id="detailIssueBtn">Issue</button>
+      <button type="button" class="asset-btn secondary" id="detailReturnBtn">Return</button>
+      <button type="button" class="asset-btn secondary" id="detailTransferBtn">Transfer</button>
+    </div>
+    <div class="asset-page-action-row">
+      <button type="button" class="asset-btn warn" id="detailStatusBtn">Update Status</button>
+      <button type="button" class="asset-btn success" id="detailAttachBtn">Upload File</button>
+    </div>
+  </div>
+{% endblock %}
+
+{% block asset_page %}
+  <div class="asset-grid three">
+    <div class="asset-kpi">
+      <div class="asset-kpi__label">Asset Code</div>
+      <div class="asset-kpi__value" style="font-size:22px;">{{ asset.asset_code }}</div>
+      <div class="asset-kpi__sub">{{ asset.equipment_name }}</div>
+    </div>
+    <div class="asset-kpi">
+      <div class="asset-kpi__label">Current Holder</div>
+      <div class="asset-kpi__value" style="font-size:20px;">{{ asset.current_holder_label }}</div>
+      <div class="asset-kpi__sub">{{ asset.location_name }}</div>
+    </div>
+    <div class="asset-kpi">
+      <div class="asset-kpi__label">Status</div>
+      <div class="asset-kpi__value" style="font-size:20px;">{{ asset.asset_status_label }}</div>
+      <div class="asset-kpi__sub">Value: {{ asset.asset_value_display or "Not available" }}</div>
+    </div>
+  </div>
+
+  <section class="asset-card" style="margin-top:16px;">
+    <h3>Asset Summary</h3>
+    <div class="asset-detail-grid">
+      <div class="asset-detail-item"><span>Machine Type</span><strong>{{ asset.machine_type_name }}</strong></div>
+      <div class="asset-detail-item"><span>Model Name</span><strong>{{ asset.model_name or "Not available" }}</strong></div>
+      <div class="asset-detail-item"><span>Serial Number</span><strong>{{ asset.serial_number or "Not available" }}</strong></div>
+      <div class="asset-detail-item"><span>Manufacturer</span><strong>{{ asset.manufacturer_name }}</strong></div>
+      <div class="asset-detail-item"><span>Supplier</span><strong>{{ asset.supplier_name }}</strong></div>
+      <div class="asset-detail-item"><span>Invoice Number</span><strong>{{ asset.invoice_number or "Not available" }}</strong></div>
+      <div class="asset-detail-item"><span>Invoice Date</span><strong>{{ asset.invoice_date_display or "Not available" }}</strong></div>
+      <div class="asset-detail-item"><span>Asset Value</span><strong>{{ asset.asset_value_display or "Not available" }}</strong></div>
+      <div class="asset-detail-item"><span>Coverage</span><strong>{{ asset.coverage_status_label or "Pending Coverage Update" }}</strong></div>
+      <div class="asset-detail-item"><span>Coverage Vendor</span><strong>{{ asset.coverage_vendor or "Not available" }}</strong></div>
+      <div class="asset-detail-item"><span>Coverage Expiry</span><strong>{{ asset.coverage_expiry_date_display or "Not available" }}</strong></div>
+      <div class="asset-detail-item"><span>Purchase Order</span><strong>{{ asset.purchage_orderNo or "Not available" }}</strong></div>
+      <div class="asset-detail-item"><span>Purchase Order Date</span><strong>{{ asset.purchase_order_date_display or "Not available" }}</strong></div>
+      <div class="asset-detail-item"><span>Location</span><strong>{{ asset.location_name }}</strong></div>
+      <div class="asset-detail-item"><span>Warranty</span><strong>{{ asset.warranty or "Not available" }}</strong></div>
+      <div class="asset-detail-item"><span>Last Activity</span><strong>{{ asset.last_movement_at_display or "No movement recorded yet" }}</strong></div>
+    </div>
+  </section>
+
+  <div class="asset-detail-columns">
+    <section class="asset-card asset-card--maintenance">
+      <div class="asset-toolbar">
+        <div>
+          <h3 style="margin:0;">Maintenance</h3>
+          <p class="asset-maintenance-note">Update installation, warranty, AMC, and service-engineer details without leaving the asset page.</p>
+        </div>
+        <span class="asset-chip">Operational upkeep</span>
+      </div>
+      <form id="maintenanceForm" class="asset-maintenance-form">
+        <div class="asset-maintenance-panel">
+          <h4>Installation & Warranty</h4>
+          <div class="asset-maintenance-grid">
+            <div class="asset-field">
+              <label>Installation Date</label>
+              <input class="asset-input" type="date" name="installation_date" value="{{ maintenance.installation_date or '' }}">
+            </div>
+            <div class="asset-field">
+              <label>Installation Location</label>
+              <input class="asset-input" name="installation_location" value="{{ maintenance.installation_location or asset.location_name }}">
+            </div>
+            <div class="asset-field">
+              <label>Installed By</label>
+              <input class="asset-input" name="installedby_name" value="{{ maintenance.installedby_name or '' }}">
+            </div>
+            <div class="asset-field">
+              <label>Installed By Mobile</label>
+              <input class="asset-input" name="installedby_mobile" value="{{ maintenance.installedby_mobile or '' }}">
+            </div>
+            <div class="asset-field">
+              <label>Warranty Start</label>
+              <input class="asset-input" type="date" name="warranty_start_date" value="{{ maintenance.warranty_start_date or asset.invoice_date_display or '' }}">
+            </div>
+            <div class="asset-field">
+              <label>Warranty End</label>
+              <input class="asset-input" type="date" name="warranty_end_date" value="{{ maintenance.warranty_end_date or asset.warranty_end_date_display or '' }}">
+            </div>
+          </div>
+        </div>
+        <div class="asset-maintenance-panel">
+          <h4>AMC & Service Support</h4>
+          <div class="asset-maintenance-grid">
+            <div class="asset-field">
+              <label>AMC / CMC Status</label>
+              {% set amc_value = maintenance.amc_status or '' %}
+              <select class="asset-select" name="amc_status">
+                {% if amc_value and amc_value not in ['AMC', 'CMC', 'AMC / CMC', 'NO AMC', 'No AMC'] %}
+                  <option value="{{ amc_value }}" selected>{{ amc_value }}</option>
+                {% endif %}
+                <option value="" {% if not amc_value %}selected{% endif %}>Select AMC status</option>
+                <option value="AMC" {% if amc_value == 'AMC' %}selected{% endif %}>AMC</option>
+                <option value="CMC" {% if amc_value == 'CMC' %}selected{% endif %}>CMC</option>
+                <option value="AMC / CMC" {% if amc_value == 'AMC / CMC' %}selected{% endif %}>AMC / CMC</option>
+                <option value="No AMC" {% if amc_value in ['NO AMC', 'No AMC'] %}selected{% endif %}>No AMC</option>
+              </select>
+            </div>
+            <div class="asset-field">
+              <label>AMC Date</label>
+              <input class="asset-input" type="date" name="amc_date" value="{{ maintenance.amc_date or '' }}">
+            </div>
+            <div class="asset-field">
+              <label>AMC Value</label>
+              <input class="asset-input" name="amc_value" value="{{ maintenance.amc_value or '' }}" placeholder="Contract value">
+            </div>
+            <div class="asset-field">
+              <label>AMC Tax</label>
+              <input class="asset-input" name="amc_tax" value="{{ maintenance.amc_tax or '' }}" placeholder="Tax amount">
+            </div>
+            <div class="asset-field">
+              <label>AMC Amount</label>
+              <input class="asset-input" name="amc_amount" value="{{ maintenance.amc_amount or '' }}" placeholder="Total payable">
+            </div>
+            <div class="asset-field">
+              <label>Service Engineer</label>
+              <input class="asset-input" name="service_eng_name" value="{{ maintenance.service_eng_name or '' }}">
+            </div>
+            <div class="asset-field">
+              <label>Service Engineer Mobile</label>
+              <input class="asset-input" name="service_eng_mobile" value="{{ maintenance.service_eng_mobile or '' }}">
+            </div>
+            <div class="asset-field">
+              <label>Service Engineer Email</label>
+              <input class="asset-input" name="service_eng_email" value="{{ maintenance.service_eng_email or '' }}">
+            </div>
+          </div>
+        </div>
+        <div class="asset-maintenance-actions">
+          <button type="submit" class="asset-btn primary">Save Maintenance</button>
+        </div>
+      </form>
+    </section>
+
+    <section class="asset-card">
+      <div class="asset-toolbar">
+        <h3 style="margin:0;">Attachments</h3>
+        <button type="button" class="asset-btn secondary" id="detailAttachInlineBtn">Upload Attachment</button>
+      </div>
+      <div class="asset-table-wrap">
+        <table class="asset-table" style="min-width:620px;">
+          <thead>
+            <tr>
+              <th>File</th>
+              <th>Action</th>
+            </tr>
+          </thead>
+          <tbody>
+            {% for file in attachments %}
+              <tr>
+                <td>{{ file.file_name }}</td>
+                <td><a class="asset-link-btn" href="{{ url_for('asset_management.download_attachment', asset_id=asset.asset_id, file_id=file.file_id) }}">Download</a></td>
+              </tr>
+            {% else %}
+              <tr><td colspan="2"><div class="asset-empty">No attachments have been uploaded for this asset.</div></td></tr>
+            {% endfor %}
+          </tbody>
+        </table>
+      </div>
+    </section>
+  </div>
+
+  <section class="asset-card" style="margin-top:16px;">
+    <div class="asset-toolbar">
+      <h3 style="margin:0;">AMC / CMC / Warranty Lifecycle</h3>
+      <button type="button" class="asset-btn primary" id="detailCoverageBtn">Update Coverage</button>
+    </div>
+    <div class="asset-grid three">
+      <div class="asset-detail-item"><span>Status</span><strong>{{ asset.coverage_status_label or "Pending Coverage Update" }}</strong></div>
+      <div class="asset-detail-item"><span>Vendor / Company</span><strong>{{ asset.coverage_vendor or "Not available" }}</strong></div>
+      <div class="asset-detail-item"><span>Priority</span><strong>{{ asset.coverage_alert_label or "No Urgent Alert" }}</strong></div>
+      <div class="asset-detail-item"><span>Start Date</span><strong>{{ asset.coverage_start_date_display or "Not available" }}</strong></div>
+      <div class="asset-detail-item"><span>Expiry Date</span><strong>{{ asset.coverage_expiry_date_display or "Not available" }}</strong></div>
+      <div class="asset-detail-item"><span>Contract / Reference</span><strong>{{ asset.coverage_contract_no or "Not available" }}</strong></div>
+    </div>
+    <div class="asset-list" style="margin-top:12px;">
+      {% for row in detail.coverage_history or [] %}
+        <div class="asset-list-item">
+          <div class="asset-list-item__meta">
+            <strong>{{ row.coverage_type }}</strong>
+            <span>{{ row.updated_at_display or "" }}</span>
+          </div>
+          <p>{{ row.vendor or "Vendor not available" }} | {{ row.start_date_display or "-" }} to {{ row.expiry_date_display or "-" }}</p>
+          <p>{{ row.remarks or "No remarks recorded." }}</p>
+        </div>
+      {% else %}
+        <div class="asset-empty">Coverage history is pending for this asset.</div>
+      {% endfor %}
+    </div>
+  </section>
+
+  <section class="asset-card" style="margin-top:16px;">
+    <div class="asset-toolbar">
+      <h3 style="margin:0;">Movement History</h3>
+      <span class="asset-chip">{{ history|length }} event(s)</span>
+    </div>
+    <div class="asset-table-wrap">
+      <table class="asset-table">
+        <thead>
+          <tr>
+            <th>Time</th>
+            <th>Type</th>
+            <th>From</th>
+            <th>To</th>
+            <th>Status After</th>
+            <th>Updated By</th>
+            <th>Remarks</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in history %}
+            <tr>
+              <td>{{ row.created_at_display or "" }}</td>
+              <td>{{ row.movement_type }}</td>
+              <td>{{ row.from_entity_label or "-" }}</td>
+              <td>{{ row.to_entity_label or "-" }}</td>
+              <td>{{ row.status_after_label or "-" }}</td>
+              <td>{{ row.created_by_username or "-" }}</td>
+              <td>{{ row.remarks or "-" }}</td>
+            </tr>
+          {% else %}
+            <tr><td colspan="7"><div class="asset-empty">No movement history has been recorded for this asset yet.</div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  {% include "asset_management/_modals.html" %}
+
+  <<script type="application/json" id="detailAssetJson">{{ asset|tojson|safe }}</script>
+<script type="application/json" id="assetLookupsJson">{{ lookups|tojson|safe }}</script>
+
+<script>
+  const detailAssetJsonEl = document.getElementById('detailAssetJson');
+  const assetLookupsJsonEl = document.getElementById('assetLookupsJson');
+
+  const detailAsset = JSON.parse((detailAssetJsonEl && detailAssetJsonEl.textContent) || '{}');
+  window.assetLookups = JSON.parse((assetLookupsJsonEl && assetLookupsJsonEl.textContent) || '{}');
+
+  const assetLookups = window.assetLookups;
+  const locationOptions = assetLookups.locations || [];
+  const userOptions = assetLookups.users || [];
+  const departmentOptions = assetLookups.departments || [];
+  let assetFormMode = 'edit';
+  window.assetFormMode = assetFormMode;
+
+    function optionHtml(value, label, selectedValue = ''){
+      return `<option value="${String(value)}" ${String(selectedValue) === String(value) ? 'selected' : ''}>${label}</option>`;
+    }
+
+    function populateAssignmentOptions(typeSelectId, keySelectId, selectedValue = ''){
+      const typeEl = document.getElementById(typeSelectId);
+      const keyEl = document.getElementById(keySelectId);
+      if (!typeEl || !keyEl) return;
+      const type = String(typeEl.value || '').toLowerCase();
+      let html = '<option value="">Select destination</option>';
+      if (type === 'user') {
+        userOptions.forEach((item) => { html += optionHtml(item.id || item.username, item.username, selectedValue); });
+      } else if (type === 'department') {
+        departmentOptions.forEach((item) => { html += optionHtml(item.id, item.name, selectedValue); });
+      } else if (type === 'location') {
+        locationOptions.forEach((item) => { html += optionHtml(item.id, `${item.code} - ${item.name}`, selectedValue); });
+      }
+      keyEl.innerHTML = html;
+    }
+
+  function assetNormalizeText(value){
+    return String(value || '')
+      .trim()
+      .toLowerCase()
+      .replace(/\s+/g, ' ');
+  }
+
+  let assetLastFetchedPo = null;
+
+  function assetSetPoLookupMessage(message, tone = 'muted'){
+      const el = document.getElementById('assetPoLookupMessage');
+      if (!el) return;
+      el.textContent = message || '';
+      if (tone === 'error') {
+        el.style.color = '#dc2626';
+      } else if (tone === 'success') {
+        el.style.color = '#047857';
+      } else {
+        el.style.color = '#64748b';
+      }
+    }
+
+    function assetRememberFetchedPo(row, unit){
+      assetLastFetchedPo = {
+        poNo: String(row?.po_no || '').trim(),
+        unit: String(unit || row?.source_unit || '').trim(),
+        poDate: String(row?.po_date || '').trim(),
+        poAmount: row?.po_amount && Number(row.po_amount) > 0 ? Number(row.po_amount).toFixed(2) : ''
+      };
+    }
+
+    function assetClearFetchedPoFieldsIfChanged(){
+      if (!assetLastFetchedPo) return;
+      const poInput = document.getElementById('assetFieldPoNo');
+      const unitSelect = document.getElementById('assetFieldPoSourceUnit');
+      const poDateEl = document.getElementById('assetFieldPoDate');
+      const valueEl = document.getElementById('assetFieldValue');
+      const currentPo = String((poInput && poInput.value) || '').trim();
+      const currentUnit = String((unitSelect && unitSelect.value) || '').trim();
+      const poChanged = assetNormalizeText(currentPo) !== assetNormalizeText(assetLastFetchedPo.poNo);
+      const unitChanged = Boolean(currentUnit && assetLastFetchedPo.unit && currentUnit !== assetLastFetchedPo.unit);
+      if (!poChanged && !unitChanged) return;
+      if (poDateEl && String(poDateEl.value || '').trim() === assetLastFetchedPo.poDate) {
+        poDateEl.value = '';
+      }
+      if (valueEl && assetLastFetchedPo.poAmount && Number(valueEl.value || 0).toFixed(2) === assetLastFetchedPo.poAmount) {
+        valueEl.value = '';
+      }
+      assetLastFetchedPo = null;
+      assetSetPoLookupMessage('');
+    }
+
+    function assetSelectSupplierByName(supplierName){
+      const supplierSelect = document.getElementById('assetFieldSupplier');
+      if (!supplierSelect || !supplierName) return false;
+
+      const target = assetNormalizeText(supplierName);
+      let matchedValue = '';
+
+      Array.from(supplierSelect.options || []).forEach((opt) => {
+        if (matchedValue) return;
+        if (assetNormalizeText(opt.textContent) === target) {
+          matchedValue = opt.value;
+        }
+      });
+
+      if (matchedValue) {
+        supplierSelect.value = matchedValue;
+        return true;
+      }
+
+      return false;
+    }
+
+    async function assetFetchPoDetails(){
+      const poInput = document.getElementById('assetFieldPoNo');
+      const unitSelect = document.getElementById('assetFieldPoSourceUnit');
+      const fetchBtn = document.getElementById('assetFetchPoBtn');
+
+      const poNo = String((poInput && poInput.value) || '').trim();
+      const unit = String((unitSelect && unitSelect.value) || '').trim();
+
+      if (!poNo) {
+        assetSetPoLookupMessage('Enter PO number first.', 'error');
+        if (poInput) poInput.focus();
+        return;
+      }
+
+      const oldText = fetchBtn ? fetchBtn.textContent : '';
+      if (fetchBtn) {
+        fetchBtn.disabled = true;
+        fetchBtn.textContent = 'Fetching...';
+      }
+      assetSetPoLookupMessage('Searching PO in store databases...', 'muted');
+
+      try {
+        const params = new URLSearchParams({ po_no: poNo });
+        if (unit) params.set('unit', unit);
+
+        const resp = await fetch(`/api/asset-management/po_lookup?${params.toString()}`, {
+          headers: { 'Accept': 'application/json' }
+        });
+
+        const data = await resp.json().catch(() => ({}));
+        if (!resp.ok || data.status !== 'success' || !(data.rows || []).length) {
+          assetSetPoLookupMessage(data.message || 'PO not found.', 'error');
+          return;
+        }
+
+        const row = data.rows[0];
+
+        if (row.po_no) {
+          document.getElementById('assetFieldPoNo').value = row.po_no;
+        }
+        if (row.po_date) {
+          document.getElementById('assetFieldPoDate').value = row.po_date;
+        }
+        if (row.po_amount && Number(row.po_amount) > 0) {
+          document.getElementById('assetFieldValue').value = Number(row.po_amount).toFixed(2);
+        }
+        assetRememberFetchedPo(row, unit);
+
+        let supplierNote = '';
+        if (row.supplier_name) {
+          const matched = assetSelectSupplierByName(row.supplier_name);
+          supplierNote = matched
+            ? ` Supplier matched: ${row.supplier_name}.`
+            : ` Supplier from PO: ${row.supplier_name}. Please select/add this supplier in Asset Supplier Master if not already mapped.`;
+        }
+
+        assetSetPoLookupMessage(
+          `PO found from ${row.source_unit}.${supplierNote}`,
+          'success'
+        );
+      } catch (err) {
+        assetSetPoLookupMessage(`PO lookup failed: ${err}`, 'error');
+      } finally {
+        if (fetchBtn) {
+          fetchBtn.disabled = false;
+          fetchBtn.textContent = oldText || 'Fetch PO';
+        }
+      }
+    }
+
+    document.addEventListener('click', function(event){
+      const btn = event.target.closest('#assetFetchPoBtn');
+      if (!btn) return;
+      assetFetchPoDetails();
+    });
+
+    document.addEventListener('keydown', function(event){
+      if (event.key !== 'Enter') return;
+      const target = event.target;
+      if (!target || target.id !== 'assetFieldPoNo') return;
+      event.preventDefault();
+      assetFetchPoDetails();
+    });
+
+    document.addEventListener('input', function(event){
+      if (event.target && event.target.id === 'assetFieldPoNo') {
+        assetClearFetchedPoFieldsIfChanged();
+      }
+    });
+
+    document.addEventListener('change', function(event){
+      if (event.target && event.target.id === 'assetFieldPoSourceUnit') {
+        assetClearFetchedPoFieldsIfChanged();
+      }
+    });
+
+    function fillAssetForm(asset){
+      document.getElementById('assetFormAssetId').value = asset.asset_id || '';
+      document.getElementById('assetFieldMachineType').value = asset.machine_type || '';
+      if (window.assetFilterEquipmentOptions) {
+        window.assetFilterEquipmentOptions(asset.equ_id || '');
+      } else {
+        document.getElementById('assetFieldEquipment').value = asset.equ_id || '';
+      }
+      document.getElementById('assetFieldModel').value = asset.model_name || '';
+      document.getElementById('assetFieldSerial').value = asset.serial_number || '';
+      document.getElementById('assetFieldManufacturer').value = asset.brand_id || '';
+      document.getElementById('assetFieldSupplier').value = asset.supplier_id || '';
+      document.getElementById('assetFieldPoSourceUnit').value = '';
+      document.getElementById('assetFieldPoNo').value = asset.purchage_orderNo || '';
+      document.getElementById('assetFieldPoDate').value = asset.purchase_order_date_display || '';
+      assetLastFetchedPo = asset.purchage_orderNo
+        ? { poNo: asset.purchage_orderNo || '', unit: '', poDate: asset.purchase_order_date_display || '', poAmount: '' }
+        : null;
+      document.getElementById('assetFieldInvoiceNo').value = asset.invoice_number || '';
+      document.getElementById('assetFieldInvoiceDate').value = asset.invoice_date_display || '';
+      document.getElementById('assetFieldValue').value = asset.asset_value || '';
+      document.getElementById('assetFieldWarranty').value = asset.warranty || '';
+      document.getElementById('assetFieldLocation').value = asset.locationId || '';
+      document.getElementById('assetFieldStatus').value = asset.asset_status_code || '1';
+      document.getElementById('assetFieldCoverageType').value = asset.coverage_type || '';
+      document.getElementById('assetFieldCoverageVendor').value = asset.coverage_vendor || '';
+      document.getElementById('assetFieldCoverageStart').value = asset.coverage_start_date_display || '';
+      document.getElementById('assetFieldCoverageExpiry').value = asset.coverage_expiry_date_display || '';
+      document.getElementById('assetFieldCoverageContract').value = asset.coverage_contract_no || '';
+      document.getElementById('assetFieldCoverageRemarks').value = asset.coverage_remarks || '';
+      document.getElementById('assetFieldCoverageDocumentFileId').value = asset.coverage_document_file_id || '';
+      assetApplyCoverageRules('edit');
+    }
+
+    function prepareModal(kind){
+      if (kind === 'edit') {
+        fillAssetForm(detailAsset);
+        document.getElementById('assetFieldValue').required = false;
+        document.getElementById('assetModalTitle').textContent = `Edit ${detailAsset.asset_code}`;
+        document.getElementById('assetModalSubtitle').textContent = 'Update the asset master details from the detail page.';
+        assetOpenModal('assetModal');
+      } else if (kind === 'issue') {
+        document.getElementById('issueForm').reset();
+        document.getElementById('issueAssetId').value = detailAsset.asset_id;
+        const locationField = document.querySelector('#issueForm select[name="location_id"]');
+        if (locationField) locationField.value = detailAsset.locationId || '';
+        assetOpenModal('issueModal');
+      } else if (kind === 'return') {
+        document.getElementById('returnForm').reset();
+        document.getElementById('returnAssetId').value = detailAsset.asset_id;
+        document.getElementById('returnLocationKey').value = detailAsset.locationId || '';
+        assetOpenModal('returnModal');
+      } else if (kind === 'transfer') {
+        document.getElementById('transferForm').reset();
+        document.getElementById('transferAssetId').value = detailAsset.asset_id;
+        const locationField = document.querySelector('#transferForm select[name="location_id"]');
+        if (locationField) locationField.value = detailAsset.locationId || '';
+        assetOpenModal('transferModal');
+      } else if (kind === 'status') {
+        document.getElementById('statusForm').reset();
+        document.getElementById('statusAssetId').value = detailAsset.asset_id;
+        const statusField = document.querySelector('#statusForm select[name="status_after"]');
+        if (statusField) statusField.value = detailAsset.asset_status_code || '1';
+        assetOpenModal('statusModal');
+      } else if (kind === 'attach') {
+        document.getElementById('attachmentForm').reset();
+        document.getElementById('attachmentAssetId').value = detailAsset.asset_id;
+        assetOpenModal('attachmentModal');
+      }
+    }
+
+    document.getElementById('detailEditBtn').addEventListener('click', () => prepareModal('edit'));
+    document.getElementById('detailIssueBtn').addEventListener('click', () => prepareModal('issue'));
+    document.getElementById('detailReturnBtn').addEventListener('click', () => prepareModal('return'));
+    document.getElementById('detailTransferBtn').addEventListener('click', () => prepareModal('transfer'));
+    document.getElementById('detailStatusBtn').addEventListener('click', () => prepareModal('status'));
+    document.getElementById('detailAttachBtn').addEventListener('click', () => prepareModal('attach'));
+    document.getElementById('detailAttachInlineBtn').addEventListener('click', () => prepareModal('attach'));
+    document.getElementById('detailCoverageBtn').addEventListener('click', () => prepareModal('edit'));
+    document.getElementById('issueEntityType').addEventListener('change', () => populateAssignmentOptions('issueEntityType', 'issueEntityKey'));
+    document.getElementById('transferEntityType').addEventListener('change', () => populateAssignmentOptions('transferEntityType', 'transferEntityKey'));
+
+    document.getElementById('assetForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const fd = new FormData(event.currentTarget);
+      const payload = Object.fromEntries(fd.entries());
+      const assetId = payload.asset_id;
+      delete payload.asset_id;
+      const channel = 'asset-save';
+      assetNotify('Updating asset...', 'loading', channel);
+      try {
+        const result = await assetFetchJson(`{{ url_for("asset_management.api_update_asset", asset_id=asset.asset_id) }}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        assetClearLoading(channel);
+        assetNotify(result.message || 'Asset updated successfully.', 'success', channel);
+        assetCloseModal('assetModal');
+        window.location.reload();
+      } catch (error) {
+        assetClearLoading(channel);
+        assetNotify(error.message || 'Asset update failed.', 'error', channel);
+      }
+    });
+
+    async function submitMovement(formId, actionName){
+      const form = document.getElementById(formId);
+      const fd = new FormData(form);
+      const payload = Object.fromEntries(fd.entries());
+      delete payload.asset_id;
+      const channel = `asset-${actionName}`;
+      assetNotify(`Saving ${actionName} action...`, 'loading', channel);
+      try {
+        const result = await assetFetchJson(`{{ url_for("asset_management.api_issue_asset", asset_id=asset.asset_id) }}`.replace('/issue', `/${actionName}`), {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        assetClearLoading(channel);
+        assetNotify(result.message || 'Asset movement saved.', 'success', channel);
+        assetCloseModal(`${actionName}Modal`);
+        window.location.reload();
+      } catch (error) {
+        assetClearLoading(channel);
+        assetNotify(error.message || 'Asset movement failed.', 'error', channel);
+      }
+    }
+
+    document.getElementById('issueForm').addEventListener('submit', (event) => { event.preventDefault(); submitMovement('issueForm', 'issue'); });
+    document.getElementById('returnForm').addEventListener('submit', (event) => { event.preventDefault(); submitMovement('returnForm', 'return'); });
+    document.getElementById('transferForm').addEventListener('submit', (event) => { event.preventDefault(); submitMovement('transferForm', 'transfer'); });
+    document.getElementById('statusForm').addEventListener('submit', (event) => { event.preventDefault(); submitMovement('statusForm', 'status'); });
+    document.getElementById('statusOtpBtn').addEventListener('click', async () => {
+      assetNotify('Sending Asset-Purchase OTP...', 'loading', 'status-otp');
+      try {
+        const result = await assetFetchJson(`{{ url_for("asset_management.api_request_asset_action_otp", asset_id=asset.asset_id) }}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({ action_type: 'COND_DECOMM' })
+        });
+        assetClearLoading('status-otp');
+        assetNotify(result.message || 'OTP sent to Asset-Purchase.', 'success', 'status-otp');
+        if (result.otp_code) document.getElementById('statusOtpCode').value = result.otp_code;
+      } catch (error) {
+        assetClearLoading('status-otp');
+        assetNotify(error.message || 'Unable to send OTP.', 'error', 'status-otp');
+      }
+    });
+
+    document.getElementById('maintenanceForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+      const channel = 'asset-maintenance';
+      assetNotify('Saving maintenance details...', 'loading', channel);
+      try {
+        const result = await assetFetchJson(`{{ url_for("asset_management.api_upsert_maintenance", asset_id=asset.asset_id) }}`, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        assetClearLoading(channel);
+        assetNotify(result.message || 'Maintenance saved successfully.', 'success', channel);
+        window.location.reload();
+      } catch (error) {
+        assetClearLoading(channel);
+        assetNotify(error.message || 'Maintenance save failed.', 'error', channel);
+      }
+    });
+
+    document.getElementById('attachmentForm').addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const fd = new FormData(event.currentTarget);
+      const channel = 'asset-attachment';
+      assetNotify('Uploading attachment...', 'loading', channel);
+      try {
+        const result = await assetFetchJson(`{{ url_for("asset_management.api_upload_attachment", asset_id=asset.asset_id) }}`, {
+          method: 'POST',
+          body: fd
+        });
+        assetClearLoading(channel);
+        assetNotify(result.message || 'Attachment uploaded successfully.', 'success', channel);
+        assetCloseModal('attachmentModal');
+        window.location.reload();
+      } catch (error) {
+        assetClearLoading(channel);
+        assetNotify(error.message || 'Attachment upload failed.', 'error', channel);
+      }
+    });
+  </script>
+{% endblock %}

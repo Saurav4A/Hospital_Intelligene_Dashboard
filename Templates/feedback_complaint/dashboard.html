@@ -1,0 +1,816 @@
+{% extends "layout.html" %}
+{% block page_header %}{% endblock %}
+{% block page_footer %}
+<footer style="margin:28px 0 24px;color:#64748b;font-size:13px;">
+  &copy; 2026 Feedback / Complaint Management | Hospital Intelligence Dashboard
+</footer>
+{% endblock %}
+{% block content %}
+<style>
+  .fc-app{
+    width:min(1440px,98%);
+    padding:24px 0 40px;
+    color:#10213d;
+    --brand:#243b7b;
+    --brand2:#3558b8;
+    --line:#dbe5f2;
+    --muted:#5b6b86;
+    --card:rgba(255,255,255,.96);
+    --shadow:0 14px 32px rgba(15,23,42,.08);
+    --ok:#16a34a;
+    --warn:#d97706;
+    --danger:#dc2626;
+  }
+  .fc-app *{box-sizing:border-box}
+  .fc-hero{
+    display:flex;
+    justify-content:space-between;
+    gap:16px;
+    align-items:flex-start;
+    margin-bottom:16px;
+  }
+  .fc-hero h2{margin:0 0 6px;color:var(--brand);font-size:30px;font-weight:900}
+  .fc-hero p{margin:0;color:var(--muted);line-height:1.5}
+  .fc-actions{display:flex;gap:10px;flex-wrap:wrap;justify-content:flex-end}
+  .fc-btn{
+    border:none;
+    border-radius:12px;
+    padding:11px 16px;
+    font-weight:900;
+    cursor:pointer;
+    text-decoration:none;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+  }
+  .fc-btn.primary{color:#fff;background:linear-gradient(135deg,var(--brand),var(--brand2));box-shadow:0 10px 24px rgba(36,59,123,.22)}
+  .fc-btn.secondary{color:var(--brand);background:#f2f6ff;border:1px solid #dbe7ff}
+  .fc-btn.danger{color:#fff;background:linear-gradient(135deg,#b91c1c,#ef4444)}
+  .fc-btn.success{color:#fff;background:linear-gradient(135deg,#0f9f70,#10b981)}
+  .fc-btn.small{padding:7px 10px;border-radius:10px;font-size:12px}
+  .fc-inline-actions{display:flex;gap:8px;flex-wrap:wrap}
+  .fc-grid{display:grid;gap:16px}
+  .fc-grid.summary{grid-template-columns:repeat(6,minmax(0,1fr))}
+  .fc-card{
+    background:var(--card);
+    border:1px solid rgba(36,59,123,.08);
+    border-radius:18px;
+    box-shadow:var(--shadow);
+    padding:18px;
+  }
+  .fc-kpi-label{font-size:12px;text-transform:uppercase;letter-spacing:.05em;color:var(--muted);font-weight:900}
+  .fc-kpi-value{font-size:32px;color:var(--brand);font-weight:900;margin-top:5px}
+  .fc-kpi-sub{font-size:12px;color:var(--muted)}
+  .fc-filters{
+    display:grid;
+    grid-template-columns:repeat(7,minmax(0,1fr));
+    gap:10px;
+    align-items:end;
+  }
+  .fc-field label{display:block;font-size:12px;color:var(--muted);font-weight:900;margin:0 0 6px}
+  .fc-field input,.fc-field select,.fc-field textarea{
+    width:100%;
+    border:1px solid var(--line);
+    border-radius:12px;
+    padding:10px 11px;
+    font:inherit;
+    background:#fff;
+    color:#10213d;
+    outline:none;
+  }
+  .fc-field textarea{min-height:120px;resize:vertical}
+  .fc-table-wrap{overflow:auto;border:1px solid var(--line);border-radius:16px;background:#fff}
+  .fc-table{width:100%;border-collapse:separate;border-spacing:0;min-width:1180px}
+  .fc-table th{
+    position:sticky;
+    top:0;
+    background:#f8fbff;
+    color:var(--brand);
+    text-align:left;
+    font-size:12px;
+    padding:12px;
+    border-bottom:1px solid var(--line);
+    z-index:1;
+  }
+  .fc-table td{padding:12px;border-bottom:1px solid #eef2f7;font-size:13px;vertical-align:top}
+  .fc-table tr:last-child td{border-bottom:none}
+  .fc-row-warning td{background:#fff8ed}
+  .fc-row-danger td{background:#fff1f2}
+  .fc-row-success td{background:#f0fdf4}
+  .fc-badge{
+    display:inline-flex;
+    align-items:center;
+    padding:5px 9px;
+    border-radius:999px;
+    font-size:11px;
+    font-weight:900;
+    white-space:nowrap;
+    background:#eef4ff;
+    color:var(--brand);
+  }
+  .fc-badge.open{background:#eef4ff;color:#1e3a8a}
+  .fc-badge.in_progress{background:#eff6ff;color:#1d4ed8}
+  .fc-badge.pending_final_closure{background:#fff7ed;color:#9a3412}
+  .fc-badge.escalated_l1,.fc-badge.escalated_l2{background:#fee2e2;color:#991b1b}
+  .fc-badge.closed{background:#dcfce7;color:#166534}
+  .fc-badge.reopened{background:#fef3c7;color:#92400e}
+  .fc-empty{padding:28px;text-align:center;color:var(--muted);font-weight:800}
+  .fc-modal{
+    position:fixed;
+    inset:0;
+    background:rgba(15,23,42,.54);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    z-index:10000;
+    padding:18px;
+  }
+  .fc-modal.open{display:flex}
+  .fc-dialog{
+    width:min(1120px,100%);
+    max-height:90vh;
+    overflow:auto;
+    background:#fff;
+    border-radius:20px;
+    box-shadow:0 30px 90px rgba(15,23,42,.32);
+    border:1px solid rgba(255,255,255,.2);
+  }
+  .fc-dialog-head{
+    display:flex;
+    justify-content:space-between;
+    gap:16px;
+    align-items:center;
+    padding:18px 20px;
+    border-bottom:1px solid var(--line);
+    background:linear-gradient(180deg,#f8fbff 0%,#fff 100%);
+    position:sticky;
+    top:0;
+    z-index:2;
+  }
+  .fc-dialog-head h3{margin:0;color:#0f255f;font-size:24px;font-weight:900;letter-spacing:0}
+  .fc-dialog-head p{margin:6px 0 0;color:#64748b;font-size:13px}
+  .fc-dialog-close{min-width:84px}
+  .fc-modal-meta{display:flex;flex-wrap:wrap;gap:8px;margin-top:10px}
+  .fc-dialog-body{padding:20px;display:grid;gap:16px;background:#fff}
+  .fc-detail-grid{display:grid;grid-template-columns:repeat(3,minmax(0,1fr));gap:10px}
+  .fc-detail-item{
+    background:#f8fafc;
+    border:1px solid #e5edf7;
+    border-radius:14px;
+    padding:13px 14px;
+    min-height:74px;
+  }
+  .fc-detail-item span{display:block;color:#64748b;font-size:12px;font-weight:900;margin-bottom:7px}
+  .fc-detail-item strong{display:block;font-size:14px;color:#071834;line-height:1.35;word-break:break-word}
+  .fc-section-card{
+    border:1px solid #e5edf7;
+    background:#fff;
+    border-radius:16px;
+    padding:16px;
+    box-shadow:0 10px 24px rgba(15,23,42,.04);
+  }
+  .fc-section-title{
+    display:flex;
+    justify-content:space-between;
+    align-items:center;
+    gap:10px;
+    margin:0 0 12px;
+    color:#0f255f;
+    font-size:18px;
+    font-weight:900;
+  }
+  .fc-text-box{
+    white-space:pre-wrap;
+    background:#f8fbff;
+    border:1px solid #dbe7ff;
+    border-radius:14px;
+    padding:14px;
+    line-height:1.55;
+    color:#172554;
+    min-height:76px;
+  }
+  .fc-timeline{display:grid;gap:10px}
+  .fc-time-item{
+    position:relative;
+    border:1px solid #e3ebf8;
+    border-left:4px solid #93c5fd;
+    background:#f8fbff;
+    border-radius:14px;
+    padding:12px 14px;
+  }
+  .fc-time-item strong{color:#0f255f}
+  .fc-time-meta{font-size:12px;color:#64748b;margin-top:4px}
+  .fc-time-item p{margin:8px 0 0;color:#334155;line-height:1.45}
+  .fc-two{display:grid;grid-template-columns:minmax(320px,.9fr) minmax(0,1.1fr);gap:16px;align-items:start}
+  .fc-action-panel .fc-field{margin-bottom:12px}
+  .fc-action-panel textarea{min-height:132px}
+  .fc-action-panel .fc-btn{width:100%;margin-top:2px}
+  .fc-action-panel .fc-btn.primary{
+    color:#fff !important;
+    background:linear-gradient(135deg,var(--brand),var(--brand2)) !important;
+    border:1px solid rgba(36,59,123,.18);
+    box-shadow:0 12px 26px rgba(36,59,123,.24);
+  }
+  .fc-action-panel .fc-btn.primary:hover{
+    filter:brightness(1.03);
+    transform:translateY(-1px);
+  }
+  button#saveActionBtn.fc-btn.primary{
+    width:100% !important;
+    min-height:46px !important;
+    color:#ffffff !important;
+    background-color:#243b7b !important;
+    background-image:linear-gradient(135deg,#243b7b,#3558b8) !important;
+    border:1px solid rgba(36,59,123,.18) !important;
+    box-shadow:0 12px 26px rgba(36,59,123,.24) !important;
+    appearance:none !important;
+    -webkit-appearance:none !important;
+  }
+  .fc-assignment-panel{display:none;margin-top:16px}
+  .fc-assignment-panel.open{display:block}
+  .fc-assignment-panel{
+    border-color:rgba(36,59,123,.12);
+    background:linear-gradient(180deg,#ffffff 0%,#fbfdff 100%);
+  }
+  .fc-assignment-head{
+    display:flex;
+    align-items:flex-start;
+    justify-content:space-between;
+    gap:18px;
+    padding-bottom:16px;
+    margin-bottom:16px;
+    border-bottom:1px solid #e7eef8;
+  }
+  .fc-assignment-title{
+    display:flex;
+    align-items:flex-start;
+    gap:12px;
+  }
+  .fc-assignment-icon{
+    width:42px;
+    height:42px;
+    border-radius:14px;
+    display:grid;
+    place-items:center;
+    flex:0 0 auto;
+    color:#fff;
+    background:linear-gradient(135deg,var(--brand),var(--brand2));
+    box-shadow:0 12px 22px rgba(36,59,123,.22);
+    font-weight:900;
+  }
+  .fc-assignment-title h2{
+    margin:0 0 4px;
+    color:var(--brand);
+    font-size:22px;
+    font-weight:900;
+  }
+  .fc-assignment-title p{
+    margin:0;
+    color:var(--muted);
+    line-height:1.45;
+  }
+  .fc-assignment-hint{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    min-height:34px;
+    padding:8px 12px;
+    border-radius:999px;
+    background:#eef4ff;
+    color:var(--brand);
+    font-size:12px;
+    font-weight:900;
+    white-space:nowrap;
+  }
+  .fc-assignment-form{
+    display:grid;
+    grid-template-columns:1.15fr .8fr 1.2fr 1fr 1.15fr .75fr auto;
+    gap:12px;
+    align-items:end;
+    padding:14px;
+    border:1px solid #e3ebf8;
+    border-radius:16px;
+    background:#f8fbff;
+  }
+  .fc-assignment-form .fc-field label{color:#415372}
+  .fc-assignment-form .fc-field input,
+  .fc-assignment-form .fc-field select{
+    min-height:48px;
+    background:#fff;
+    border-color:#cfdbec;
+  }
+  .fc-assignment-actions{
+    display:grid;
+    grid-template-columns:120px;
+    gap:8px;
+  }
+  .fc-assignment-actions .fc-btn{
+    min-height:48px;
+    width:100%;
+  }
+  .fc-assignment-table{margin-top:16px}
+  @media (max-width:1100px){
+    .fc-grid.summary{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .fc-filters{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .fc-assignment-form{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .fc-assignment-actions{grid-template-columns:1fr 1fr}
+  }
+  @media (max-width:700px){
+    .fc-app{width:96%;padding-top:14px}
+    .fc-hero{display:grid}
+    .fc-actions{justify-content:flex-start}
+    .fc-grid.summary{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .fc-filters,.fc-detail-grid,.fc-two{grid-template-columns:1fr}
+    .fc-assignment-head{display:grid}
+    .fc-assignment-hint{width:max-content}
+    .fc-assignment-form{grid-template-columns:1fr;padding:12px}
+    .fc-assignment-actions{grid-template-columns:1fr}
+    .fc-dialog{max-height:94vh;border-radius:16px}
+    .fc-dialog-head{align-items:flex-start;padding:16px}
+    .fc-dialog-body{padding:14px}
+    .fc-dialog-head h3{font-size:20px}
+  }
+</style>
+
+<div class="fc-app">
+  <div class="fc-hero">
+    <div>
+      <h2>Feedback / Complaint</h2>
+      <p>TAT based patient feedback and complaint tracking across permitted HID units.</p>
+    </div>
+    <div class="fc-actions">
+      <a class="fc-btn secondary" href="{{ url_for('dashboard') }}">Dashboard</a>
+      <a class="fc-btn secondary" href="{{ url_for('feedback_complaint.public_feedback_page') }}" target="_blank">Patient QR Page</a>
+      <button class="fc-btn primary" id="refreshBtn">Refresh</button>
+      {% if can_manage_assignments %}
+      <button class="fc-btn secondary" id="assignmentToggle">Assignments</button>
+      <button class="fc-btn danger" id="runEscalationBtn">Run SLA Check</button>
+      {% endif %}
+    </div>
+  </div>
+
+  {% if scoped_notice %}
+  <section class="fc-card" style="margin-bottom:16px;color:#334155;">
+    You are viewing complaints assigned to your mapped department / escalation scope only.
+  </section>
+  {% endif %}
+
+  <div class="fc-grid summary" id="summaryCards">
+    {% for item in [
+      ("open", "Open"),
+      ("inProgress", "In Progress"),
+      ("escalated", "Escalated"),
+      ("pendingFinal", "Pending Final Closure"),
+      ("closedToday", "Closed Today"),
+      ("slaBreached", "SLA Breached")
+    ] %}
+    <section class="fc-card">
+      <div class="fc-kpi-label">{{ item[1] }}</div>
+      <div class="fc-kpi-value" id="kpi-{{ item[0] }}">0</div>
+      <div class="fc-kpi-sub">Live HID count</div>
+    </section>
+    {% endfor %}
+  </div>
+
+  <section class="fc-card" style="margin-top:16px;">
+    <div class="fc-filters">
+      <div class="fc-field">
+        <label>From</label>
+        <input type="date" id="fromDate">
+      </div>
+      <div class="fc-field">
+        <label>To</label>
+        <input type="date" id="toDate">
+      </div>
+      <div class="fc-field">
+        <label>Unit</label>
+        <select id="unitFilter">
+          <option value="">All</option>
+          {% for unit in units %}
+          <option value="{{ unit }}">{{ unit }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="fc-field">
+        <label>Department</label>
+        <select id="departmentFilter">
+          <option value="">All</option>
+          {% for dept in departments %}
+          <option value="{{ dept.department_id }}">{{ dept.department_name }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="fc-field">
+        <label>Status</label>
+        <select id="statusFilter">
+          <option value="">All</option>
+          {% for status in statuses %}
+          <option value="{{ status }}">{{ status.replace("_", " ") }}</option>
+          {% endfor %}
+        </select>
+      </div>
+      <div class="fc-field">
+        <label>Level</label>
+        <select id="levelFilter">
+          <option value="">All</option>
+          <option value="DEPARTMENT">Department</option>
+          <option value="CENTER_HEAD_VP">Center Head / VP</option>
+          <option value="DIRECTOR">Director</option>
+          <option value="CLOSED">Closed</option>
+        </select>
+      </div>
+      <div class="fc-field">
+        <label>Search</label>
+        <input id="qFilter" placeholder="Complaint no, reg no, mobile">
+      </div>
+    </div>
+  </section>
+
+  <section class="fc-card fc-assignment-panel" id="assignmentPanel">
+    <div class="fc-assignment-head">
+      <div class="fc-assignment-title">
+        <div class="fc-assignment-icon">A</div>
+        <div>
+          <h2>Department Assignment</h2>
+          <p>Map department users, escalation owners, alert emails, and unit-level access scopes.</p>
+        </div>
+      </div>
+      <div class="fc-assignment-hint">IT configuration</div>
+    </div>
+    <div class="fc-assignment-form">
+      <div class="fc-field">
+        <label>Department scope</label>
+        <select id="assignDept"></select>
+      </div>
+      <div class="fc-field">
+        <label>Unit</label>
+        <select id="assignUnit"></select>
+      </div>
+      <div class="fc-field">
+        <label>User</label>
+        <select id="assignUser"></select>
+      </div>
+      <div class="fc-field">
+        <label>Role level</label>
+        <select id="assignRole"></select>
+      </div>
+      <div class="fc-field">
+        <label>Email for alerts</label>
+        <input id="assignEmail" placeholder="name@example.com">
+      </div>
+      <div class="fc-field">
+        <label>Active</label>
+        <select id="assignActive">
+          <option value="1">Active</option>
+          <option value="0">Inactive</option>
+        </select>
+      </div>
+      <div class="fc-assignment-actions">
+        <button class="fc-btn primary" id="saveAssignmentBtn">Save</button>
+        <button class="fc-btn secondary hidden" id="cancelAssignmentEditBtn">Cancel Edit</button>
+      </div>
+    </div>
+    <div class="fc-table-wrap fc-assignment-table">
+      <table class="fc-table" style="min-width:980px;">
+        <thead>
+          <tr><th>Department</th><th>Unit</th><th>User</th><th>Email</th><th>Role</th><th>Status</th><th>Action</th></tr>
+        </thead>
+        <tbody id="assignmentRows"></tbody>
+      </table>
+    </div>
+  </section>
+
+  <section class="fc-card" style="margin-top:16px;">
+    <div class="fc-table-wrap">
+      <table class="fc-table">
+        <thead>
+          <tr>
+            <th>Complaint No</th>
+            <th>Submitted</th>
+            <th>Unit</th>
+            <th>Patient</th>
+            <th>Reg No</th>
+            <th>Visit</th>
+            <th>Visit Date</th>
+            <th>Department</th>
+            <th>Status</th>
+            <th>Level</th>
+            <th>Due / SLA</th>
+            <th>Assigned To</th>
+            <th>Actions</th>
+          </tr>
+        </thead>
+        <tbody id="complaintRows">
+          <tr><td colspan="13"><div class="fc-empty">Loading complaints...</div></td></tr>
+        </tbody>
+      </table>
+    </div>
+  </section>
+</div>
+
+<div class="fc-modal" id="detailModal">
+  <div class="fc-dialog">
+    <div class="fc-dialog-head">
+      <div>
+        <h3 id="modalTitle">Complaint</h3>
+        <p id="modalSub"></p>
+        <div class="fc-modal-meta" id="modalMeta"></div>
+      </div>
+      <button class="fc-btn secondary fc-dialog-close" id="closeModal">Close</button>
+    </div>
+    <div class="fc-dialog-body">
+      <div class="fc-detail-grid" id="detailGrid"></div>
+      <section class="fc-section-card">
+        <h3 class="fc-section-title">Complaint Details</h3>
+        <div class="fc-text-box" id="complaintText"></div>
+      </section>
+      <div class="fc-two">
+        <section class="fc-section-card fc-action-panel">
+          <h3 class="fc-section-title">Add Remark / Status</h3>
+          <div class="fc-field">
+            <label>Remark</label>
+            <textarea id="remarkText" placeholder="Write an internal remark or resolution note."></textarea>
+          </div>
+          <div class="fc-field">
+            <label>Change status</label>
+            <select id="newStatus">
+              <option value="">Only add remark</option>
+              {% for status in statuses %}
+              <option value="{{ status }}">{{ status.replace("_", " ") }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <button class="fc-btn primary" id="saveActionBtn" style="width:100%;min-height:46px;color:#fff;background-color:#243b7b;background-image:linear-gradient(135deg,#243b7b,#3558b8);border:1px solid rgba(36,59,123,.18);box-shadow:0 12px 26px rgba(36,59,123,.24);">Save Update</button>
+        </section>
+        <section class="fc-section-card">
+          <h3 class="fc-section-title">Timeline</h3>
+          <div class="fc-timeline" id="timeline"></div>
+        </section>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const fcState = { rows: [], currentId: null, departments: [], assignments: null, editingAssignmentId: null };
+  const canManageAssignments = {{ 'true' if can_manage_assignments else 'false' }};
+  const $ = (id) => document.getElementById(id);
+
+  function fmtDate(value){
+    if (!value) return "";
+    const dt = new Date(String(value).replace(" ", "T"));
+    if (Number.isNaN(dt.getTime())) return value;
+    return dt.toLocaleString("en-IN", {day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
+  }
+  function esc(value){
+    return String(value ?? "").replace(/[&<>"']/g, (m) => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[m]));
+  }
+  function statusClass(status){
+    return String(status || "").toLowerCase();
+  }
+  function slaText(minutes, status){
+    if (status === "CLOSED") return "Closed";
+    if (status === "ESCALATED_L2") return "Director level";
+    if (minutes === null || minutes === undefined || minutes === "") return "-";
+    const n = Number(minutes);
+    if (!Number.isFinite(n)) return "-";
+    if (n < 0) return `${Math.abs(n)} min breached`;
+    if (n < 60) return `${n} min left`;
+    return `${Math.floor(n / 60)}h ${n % 60}m left`;
+  }
+  function badge(value, extraClass=""){
+    const raw = String(value || "-");
+    return `<span class="fc-badge ${extraClass}">${esc(raw.replaceAll("_"," "))}</span>`;
+  }
+  function rowClass(row){
+    const status = row.status || "";
+    const minutes = Number(row.due_minutes);
+    if (status === "CLOSED") return "fc-row-success";
+    if (status === "ESCALATED_L1" || status === "ESCALATED_L2" || (Number.isFinite(minutes) && minutes < 0)) return "fc-row-danger";
+    if (Number.isFinite(minutes) && minutes <= 120) return "fc-row-warning";
+    return "";
+  }
+  async function api(url, options){
+    const res = await fetch(url, options || {});
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.status === "error") throw new Error(data.message || "Request failed");
+    return data;
+  }
+  function filterParams(){
+    const params = new URLSearchParams();
+    [
+      ["from_date", $("fromDate").value],
+      ["to_date", $("toDate").value],
+      ["unit", $("unitFilter").value],
+      ["department_id", $("departmentFilter").value],
+      ["status", $("statusFilter").value],
+      ["level", $("levelFilter").value],
+      ["q", $("qFilter").value.trim()]
+    ].forEach(([k,v]) => { if (v) params.set(k,v); });
+    return params.toString();
+  }
+  async function loadDashboard(){
+    $("complaintRows").innerHTML = `<tr><td colspan="13"><div class="fc-empty">Loading complaints...</div></td></tr>`;
+    try {
+      const data = await api(`/api/feedback/dashboard?${filterParams()}`);
+      const s = data.summary || {};
+      $("kpi-open").textContent = s.OpenCount || 0;
+      $("kpi-inProgress").textContent = s.InProgressCount || 0;
+      $("kpi-escalated").textContent = s.EscalatedCount || 0;
+      $("kpi-pendingFinal").textContent = s.PendingFinalClosureCount || 0;
+      $("kpi-closedToday").textContent = s.ClosedTodayCount || 0;
+      $("kpi-slaBreached").textContent = s.SlaBreachedCount || 0;
+      fcState.rows = data.rows || [];
+      renderRows();
+    } catch(e) {
+      $("complaintRows").innerHTML = `<tr><td colspan="13"><div class="fc-empty">${esc(e.message)}</div></td></tr>`;
+    }
+  }
+  function renderRows(){
+    if (!fcState.rows.length) {
+      $("complaintRows").innerHTML = `<tr><td colspan="13"><div class="fc-empty">No complaints found for the selected filters.</div></td></tr>`;
+      return;
+    }
+    $("complaintRows").innerHTML = fcState.rows.map(row => `
+      <tr class="${rowClass(row)}">
+        <td><strong>${esc(row.complaint_no)}</strong></td>
+        <td>${fmtDate(row.submitted_at)}</td>
+        <td>${esc(row.source_unit)}</td>
+        <td>${esc(row.patient_name)}</td>
+        <td>${esc(row.registration_no)}</td>
+        <td><span class="fc-badge">${esc(row.visit_type || "-")}</span></td>
+        <td>${fmtDate(row.visit_date)}</td>
+        <td>${esc(row.complaint_department)}</td>
+        <td><span class="fc-badge ${statusClass(row.status)}">${esc(String(row.status || "").replaceAll("_"," "))}</span></td>
+        <td>${esc(String(row.current_level || "").replaceAll("_"," "))}</td>
+        <td>${esc(slaText(row.due_minutes, row.status))}</td>
+        <td>${esc(row.AssignedTo || row.assigned_to || "Unassigned")}</td>
+        <td><button class="fc-btn secondary" data-view="${row.complaint_id}">View</button></td>
+      </tr>
+    `).join("");
+    document.querySelectorAll("[data-view]").forEach(btn => btn.addEventListener("click", () => openDetail(btn.dataset.view)));
+  }
+  async function openDetail(id){
+    fcState.currentId = id;
+    const data = await api(`/api/feedback/complaints/${id}`);
+    const c = data.complaint || {};
+    const effectiveStatus = c.EffectiveStatus || c.effective_status || c.Status || "-";
+    $("modalTitle").textContent = c.ComplaintNo || "Complaint";
+    $("modalSub").textContent = `${c.PatientName || "Patient"} | ${c.SourceUnit || "-"} | Submitted ${fmtDate(c.SubmittedAt) || "-"}`;
+    $("modalMeta").innerHTML = [
+      badge(effectiveStatus, statusClass(effectiveStatus)),
+      badge(c.CurrentLevel || "-", ""),
+      badge(`SLA ${slaText(c.DueMinutes, effectiveStatus)}`, Number(c.DueMinutes) < 0 ? "escalated_l1" : ""),
+      badge(c.ComplaintType || "COMPLAINT", "")
+    ].join("");
+    $("detailGrid").innerHTML = [
+      ["Patient", c.PatientName],
+      ["Registration No", c.RegistrationNo],
+      ["Mobile", c.MobileNo],
+      ["Unit", c.SourceUnit],
+      ["Visit", `${c.VisitType || ""} ${c.VisitNo || ""}`],
+      ["Visit Date", fmtDate(c.VisitDate)],
+      ["Doctor", c.DoctorName],
+      ["Clinical Dept", c.ClinicalDepartment],
+      ["Complaint Dept", c.ComplaintDepartmentName]
+    ].map(([k,v]) => `<div class="fc-detail-item"><span>${esc(k)}</span><strong>${esc(v || "-")}</strong></div>`).join("");
+    $("complaintText").textContent = c.Details || "";
+    $("timeline").innerHTML = (data.remarks || []).map(r => `
+      <div class="fc-time-item">
+        <strong>${esc(r.user_name || "System")} - ${esc(r.action_type || "")}</strong>
+        <div class="fc-time-meta">${fmtDate(r.created_at)} | ${esc(r.old_status || "")} ${r.new_status ? "to " + esc(r.new_status) : ""}</div>
+        <p>${esc(r.remark_text || "")}</p>
+      </div>
+    `).join("") || `<div class="fc-empty">No timeline entries yet.</div>`;
+    $("remarkText").value = "";
+    $("newStatus").value = "";
+    $("detailModal").classList.add("open");
+  }
+  async function saveAction(){
+    if (!fcState.currentId) return;
+    const payload = { remark: $("remarkText").value.trim(), status: $("newStatus").value };
+    await api(`/api/feedback/complaints/${fcState.currentId}/action`, {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify(payload)
+    });
+    await openDetail(fcState.currentId);
+    await loadDashboard();
+  }
+  async function loadAssignments(){
+    if (!canManageAssignments) return;
+    const data = await api("/api/feedback/assignments");
+    fcState.assignments = data;
+    $("assignDept").innerHTML = (data.departments || []).map(d => `<option value="${d.department_id}">${esc(d.department_name)}</option>`).join("");
+    $("assignUnit").innerHTML = (data.units || []).map(u => `<option value="${esc(u)}">${esc(u)}</option>`).join("");
+    $("assignUser").innerHTML = (data.users || []).map(u => `<option value="${u.user_id}" data-username="${esc(u.user_name || "")}" data-email="${esc(u.email || "")}">${esc(u.user_name)} (${esc(u.role_name || "")})</option>`).join("");
+    $("assignRole").innerHTML = (data.role_levels || []).map(r => `<option value="${esc(r)}">${esc(r.replaceAll("_"," "))}</option>`).join("");
+    const selectedUser = $("assignUser").selectedOptions[0];
+    $("assignEmail").value = selectedUser ? (selectedUser.dataset.email || "") : "";
+    applyAssignmentRoleDefaults();
+    $("assignmentRows").innerHTML = (data.assignments || []).map(a => `
+      <tr>
+        <td>${esc(a.department_name)}</td>
+        <td>${esc(a.unit)}</td>
+        <td>${esc(a.user_name)}</td>
+        <td>${esc(a.notification_email || a.assignment_email || "-")}</td>
+        <td><span class="fc-badge">${esc(String(a.role_level || "").replaceAll("_"," "))}</span></td>
+        <td>${a.is_active ? "Active" : "Inactive"}</td>
+        <td>
+          <div class="fc-inline-actions">
+            <button class="fc-btn secondary small" data-edit-assignment="${a.assignment_id}">Edit</button>
+            <button class="fc-btn danger small" data-remove-assignment="${a.assignment_id}">Remove</button>
+          </div>
+        </td>
+      </tr>
+    `).join("") || `<tr><td colspan="7"><div class="fc-empty">No assignments configured yet.</div></td></tr>`;
+    document.querySelectorAll("[data-edit-assignment]").forEach(btn => {
+      btn.addEventListener("click", () => editAssignment(btn.dataset.editAssignment));
+    });
+    document.querySelectorAll("[data-remove-assignment]").forEach(btn => {
+      btn.addEventListener("click", () => removeAssignment(btn.dataset.removeAssignment).catch(e => alert(e.message)));
+    });
+  }
+  async function saveAssignment(){
+    const selectedUser = $("assignUser").selectedOptions[0];
+    await api("/api/feedback/assignments", {
+      method:"POST",
+      headers:{"Content-Type":"application/json"},
+      body:JSON.stringify({
+        assignment_id: fcState.editingAssignmentId || 0,
+        department_id: $("assignDept").value,
+        unit: $("assignUnit").value,
+        user_id: $("assignUser").value,
+        user_name: selectedUser ? (selectedUser.dataset.username || "") : "",
+        role_level: $("assignRole").value,
+        notification_email: $("assignEmail").value.trim(),
+        is_active: $("assignActive").value === "1"
+      })
+    });
+    clearAssignmentEdit();
+    await loadAssignments();
+  }
+  function editAssignment(id){
+    const item = (fcState.assignments?.assignments || []).find(a => String(a.assignment_id) === String(id));
+    if (!item) return;
+    fcState.editingAssignmentId = item.assignment_id;
+    $("assignDept").value = String(item.department_id ?? 0);
+    $("assignUnit").value = item.unit || "ALL";
+    $("assignRole").value = item.role_level || "DEPARTMENT_USER";
+    $("assignActive").value = item.is_active ? "1" : "0";
+    $("assignEmail").value = item.assignment_email || item.notification_email || "";
+    const wantedName = String(item.assignment_user_name || item.user_name || "").toLowerCase();
+    const option = Array.from($("assignUser").options).find(opt => String(opt.dataset.username || "").toLowerCase() === wantedName)
+      || Array.from($("assignUser").options).find(opt => String(opt.value) === String(item.user_id));
+    if (option) $("assignUser").value = option.value;
+    $("saveAssignmentBtn").textContent = "Update";
+    $("cancelAssignmentEditBtn").classList.remove("hidden");
+    document.getElementById("assignmentPanel").scrollIntoView({behavior:"smooth", block:"start"});
+  }
+  function clearAssignmentEdit(){
+    fcState.editingAssignmentId = null;
+    $("saveAssignmentBtn").textContent = "Save";
+    $("cancelAssignmentEditBtn").classList.add("hidden");
+  }
+  async function removeAssignment(id){
+    if (!id) return;
+    if (!confirm("Remove this assignment mapping?")) return;
+    await api(`/api/feedback/assignments/${encodeURIComponent(id)}`, { method:"DELETE" });
+    await loadAssignments();
+  }
+  ["fromDate","toDate","unitFilter","departmentFilter","statusFilter","levelFilter"].forEach(id => $(id).addEventListener("change", loadDashboard));
+  $("qFilter").addEventListener("keydown", (e) => { if (e.key === "Enter") loadDashboard(); });
+  $("refreshBtn").addEventListener("click", loadDashboard);
+  $("closeModal").addEventListener("click", () => $("detailModal").classList.remove("open"));
+  $("saveActionBtn").addEventListener("click", () => saveAction().catch(e => alert(e.message)));
+  if (canManageAssignments) {
+    $("assignmentToggle").addEventListener("click", async () => {
+      $("assignmentPanel").classList.toggle("open");
+      if ($("assignmentPanel").classList.contains("open")) await loadAssignments().catch(e => alert(e.message));
+    });
+    $("assignUser").addEventListener("change", () => {
+      const opt = $("assignUser").selectedOptions[0];
+      $("assignEmail").value = opt ? (opt.dataset.email || "") : "";
+    });
+    $("assignRole").addEventListener("change", applyAssignmentRoleDefaults);
+    $("saveAssignmentBtn").addEventListener("click", () => saveAssignment().catch(e => alert(e.message)));
+    $("cancelAssignmentEditBtn").addEventListener("click", clearAssignmentEdit);
+    $("runEscalationBtn").addEventListener("click", async () => {
+      const data = await api("/api/feedback/run_escalation", {method:"POST"});
+      alert(`SLA check complete. L1: ${data.results?.l1 || 0}, L2: ${data.results?.l2 || 0}`);
+      loadDashboard();
+    });
+  }
+  function applyAssignmentRoleDefaults(){
+    if (!$("assignRole") || !$("assignDept")) return;
+    const role = $("assignRole").value;
+    if (role && role !== "DEPARTMENT_USER") {
+      $("assignDept").value = "0";
+    }
+  }
+  loadDashboard();
+</script>
+{% endblock %}

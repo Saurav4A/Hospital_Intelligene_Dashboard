@@ -167,6 +167,12 @@
   .unsubmit-btn{border:1px solid #fed7aa;background:#fff7ed;color:#9a3412;border-radius:8px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
   .unsubmit-btn:hover{background:#ffedd5}
   .unsubmit-btn:disabled{cursor:not-allowed;opacity:.65}
+  .receipt-cancel-btn{border:1px solid #fecaca;background:#fff1f2;color:#b91c1c;border-radius:8px;padding:4px 8px;font-size:11px;font-weight:700;cursor:pointer;white-space:nowrap}
+  .receipt-cancel-btn:hover{background:#ffe4e6}
+  .receipt-cancel-btn:disabled{cursor:not-allowed;opacity:.65}
+  .receipt-status-pill{display:inline-flex;align-items:center;justify-content:center;min-width:78px;border-radius:999px;padding:4px 8px;font-size:11px;font-weight:700;border:1px solid transparent}
+  .receipt-status-pill.active{color:#166534;background:#ecfdf3;border-color:#bbf7d0}
+  .receipt-status-pill.cancelled{color:#b91c1c;background:#fff1f2;border-color:#fecaca}
   .action-stack{display:flex;flex-direction:column;align-items:center;gap:6px}
   .drow td{background:#f8fbff;padding:10px 12px}
   .dinner{border:1px solid #dbe7f3;border-radius:10px;background:#fff;overflow:auto}
@@ -571,7 +577,7 @@
       <button class="updates-modal-close" type="button" id="receiptDeskModalClose">&times;</button>
     </div>
     <div class="action-desk-toolbar">
-      <div class="ctrl"><label for="receiptDeskSearch">Search</label><input type="text" id="receiptDeskSearch" placeholder="Bill / Patient / Visit / Dept or comma-separated Patient IDs"></div>
+      <div class="ctrl"><label for="receiptDeskSearch">Search</label><input type="text" id="receiptDeskSearch" placeholder="Bill / Claim / Patient / Visit / Dept or comma-separated Patient IDs"></div>
       <div class="ctrl"><label for="receiptDeskSource">Source</label><select id="receiptDeskSource"><option value="">All Sources</option></select></div>
       <div class="ctrl"><label for="receiptDeskPageSize">Page Size</label><select id="receiptDeskPageSize"><option value="25">25</option><option value="50">50</option><option value="100">100</option></select></div>
       <div class="action-desk-toolbar-actions">
@@ -582,7 +588,7 @@
     <div class="action-desk-summary" id="receiptDeskSummary">
       <div>
         <div class="summary-main">Search corporate bills or openings for receipt entry.</div>
-        <div class="summary-sub">The same comma-separated Patient ID search logic is available here for quick action work.</div>
+        <div class="summary-sub">Search by Bill No, Claim ID, patient or visit details, or use comma-separated Patient IDs for fast exact lookup.</div>
       </div>
       <div class="action-desk-pills" id="receiptDeskPills"></div>
     </div>
@@ -789,6 +795,49 @@
     </div>
   </div>
 </div>
+<div class="updates-modal" id="receiptCancelModal" aria-hidden="true">
+  <div class="updates-modal-card" style="width:min(780px,100%)">
+    <div class="updates-modal-head">
+      <h3 id="receiptCancelModalTitle">Cancel Corporate Receipt</h3>
+      <button class="updates-modal-close" type="button" id="receiptCancelModalClose">&times;</button>
+    </div>
+    <div class="receipt-context">
+      <div class="kv"><b>Receipt</b><div id="receiptCancelContextReceipt">-</div></div>
+      <div class="kv"><b>Bill</b><div id="receiptCancelContextBill">-</div></div>
+      <div class="kv"><b>Patient</b><div id="receiptCancelContextPatient">-</div></div>
+    </div>
+    <div class="decision-note">
+      This performs a soft cancellation. The receipt remains traceable in audit log, but it is removed from active reconciliation and the receipt register after refresh.
+    </div>
+    <div class="receipt-form">
+      <div class="receipt-field">
+        <label for="receiptCancelCurrentStatus">Current Status</label>
+        <input type="text" id="receiptCancelCurrentStatus" readonly>
+      </div>
+      <div class="receipt-field">
+        <label for="receiptCancelDate">Receipt Date</label>
+        <input type="text" id="receiptCancelDate" readonly>
+      </div>
+      <div class="receipt-field">
+        <label for="receiptCancelAmount">Receipt Amt</label>
+        <input type="text" id="receiptCancelAmount" readonly>
+      </div>
+      <div class="receipt-field">
+        <label for="receiptCancelMode">Payment Mode</label>
+        <input type="text" id="receiptCancelMode" readonly>
+      </div>
+      <div class="receipt-field wide">
+        <label for="receiptCancelReason">Reason (optional)</label>
+        <textarea id="receiptCancelReason" rows="4" placeholder="Add a cancellation reason for audit traceability, if available."></textarea>
+      </div>
+    </div>
+    <div class="receipt-hint" id="receiptCancelHint">This will soft-cancel the selected receipt. Active reconciliation totals and the receipt register will exclude it after refresh.</div>
+    <div class="receipt-actions">
+      <button class="btn sec" type="button" id="receiptCancelModalCancelBtn">Keep Receipt</button>
+      <button class="btn warn" type="button" id="receiptCancelSaveBtn">Cancel Receipt</button>
+    </div>
+  </div>
+</div>
 <script>
 (() => {
   const ALLOWED_UNITS = {{ (allowed_units or []) | tojson }};
@@ -797,6 +846,7 @@
   const SESSION_RECEIPT_UTR_BY_UNIT = {{ (session.get('corp_last_receipt_utr_by_unit') or {}) | tojson }};
   const CAN_RECEIPT = {{ (can_receipt or False) | tojson }};
   const CAN_WRITEOFF = {{ (can_writeoff or False) | tojson }};
+  const CAN_CANCEL_RECEIPT = {{ (can_cancel_receipt or False) | tojson }};
   const CAN_UNSUBMIT_BILL = {{ (can_unsubmit_bill or False) | tojson }};
   const fmtMoney = new Intl.NumberFormat("en-IN", { style: "currency", currency: "INR", minimumFractionDigits: 2, maximumFractionDigits: 2 });
   const fmtInt = new Intl.NumberFormat("en-IN", { maximumFractionDigits: 0 });
@@ -821,6 +871,7 @@
       baseDetails: {},
       baseMeta: {},
       writeoffBusy: false,
+      cancelReceiptBusy: false,
       unsubmitBusy: false,
       rowIndex: {},
       bulkSelected: {},
@@ -862,6 +913,13 @@
       activeBill: null,
       initialReason: "",
       parentDesk: "",
+    },
+    receiptCancel: {
+      open: false,
+      saving: false,
+      activeDetail: null,
+      activeBillKey: "",
+      initialReason: "",
     },
     actions: {
       receipt: {
@@ -1029,6 +1087,22 @@
       balanceAllTime: $("unsubmitBillBalanceAllTime"),
       reason: $("unsubmitBillReason"),
       hint: $("unsubmitBillHint"),
+    },
+    receiptCancel: {
+      modal: $("receiptCancelModal"),
+      title: $("receiptCancelModalTitle"),
+      close: $("receiptCancelModalClose"),
+      cancel: $("receiptCancelModalCancelBtn"),
+      save: $("receiptCancelSaveBtn"),
+      contextReceipt: $("receiptCancelContextReceipt"),
+      contextBill: $("receiptCancelContextBill"),
+      contextPatient: $("receiptCancelContextPatient"),
+      currentStatus: $("receiptCancelCurrentStatus"),
+      receiptDate: $("receiptCancelDate"),
+      amount: $("receiptCancelAmount"),
+      paymentMode: $("receiptCancelMode"),
+      reason: $("receiptCancelReason"),
+      hint: $("receiptCancelHint"),
     },
   };
   const receiptRememberedUtr = (unit = currentUnit()) => {
@@ -1861,7 +1935,7 @@
       if (String(kind) === "unsubmit") {
         ref.summary.innerHTML = '<div><div class="summary-main">Search submitted corporate bills and unsubmit the right records with audit-safe validation.</div><div class="summary-sub">Bills with receipt, TDS, rebate, or write-off activity remain visible but clearly blocked.</div></div><div class="action-desk-pills" id="unsubmitDeskPills"></div>';
       } else {
-        ref.summary.innerHTML = '<div><div class="summary-main">Search corporate bills or openings for receipt entry.</div><div class="summary-sub">The same comma-separated Patient ID search logic is available here for quick action work.</div></div><div class="action-desk-pills" id="receiptDeskPills"></div>';
+        ref.summary.innerHTML = '<div><div class="summary-main">Search corporate bills or openings for receipt entry.</div><div class="summary-sub">Search by Bill No, Claim ID, patient or visit details, or use comma-separated Patient IDs for fast exact lookup.</div></div><div class="action-desk-pills" id="receiptDeskPills"></div>';
       }
       ref.pills = document.getElementById(`${String(kind)}DeskPills`);
     }
@@ -2009,7 +2083,7 @@
       return `
         <tr>
           <td class="center">
-            <button class="${buttonClass}" type="button" data-desk-action="${esc(String(kind))}" data-bill-key="${esc(String(row?.bill_key || ""))}" ${canAct && !st.loading && !state.receipt.saving && !state.unsubmit.saving ? "" : "disabled"}>${esc(buttonLabel)}</button>
+            <button class="${buttonClass}" type="button" data-desk-action="${esc(String(kind))}" data-bill-key="${esc(String(row?.bill_key || ""))}" ${canAct && !st.loading && !state.receipt.saving && !state.unsubmit.saving && !state.receiptCancel.saving && !state.recon.cancelReceiptBusy ? "" : "disabled"}>${esc(buttonLabel)}</button>
             <div class="desk-note">${esc(receiptStateText)}</div>
           </td>
           ${String(kind) === "receipt" ? `<td>${esc(sourceText)}</td>` : ""}
@@ -2163,15 +2237,39 @@
   const detailHtmlFromMap = (detailsMap, billKey) => {
     const rows = detailsMap?.[billKey] || [];
     if (!rows.length) return '<div class="empty" style="padding:10px;text-align:left;font-size:12px;">No receipt lines for this bill.</div>';
-    const body = rows.map((r) => `<tr><td>${esc(r.receipt_against_source || "")}</td><td>${esc(r.receipt_detail_id ?? "")}</td><td>${esc(r.receipt_id ?? "")}</td><td>${esc(r.receipt_no || "")}</td><td>${esc(r.receipt_date || "")}</td><td class="num">${money(r.receipt_amount)}</td><td class="num">${money(r.bill_amount)}</td><td class="num">${money(r.due_amount)}</td><td class="num"><span class="tds">${money(r.tds_amount)}</span></td><td class="num"><span class="rebate">${money(r.rebate_discount_amount)}</span></td><td class="num"><span class="writeoff">${money(r.writeoff_amount)}</span></td><td class="center">${esc(r.payment_mode || r.payment_mode_id || "")}</td><td>${esc(r.inserted_by || r.inserted_by_id || "-")}</td><td>${esc(r.utr_no || "")}</td><td class="center">${esc(r.cancel_status ?? "")}</td></tr>`).join("");
-    return `<div class="dinner"><table class="dtable"><thead><tr><th>Against</th><th>RecDtl ID</th><th>Receipt ID</th><th>Receipt No</th><th>Date</th><th class="num">Receipt Amt</th><th class="num">Bill Amt (Dtl)</th><th class="num">Net Due Amt (Dtl)</th><th class="num">TDS Amt</th><th class="num">Rebate / Discount</th><th class="num">Write-off</th><th class="center">Mode</th><th>Entry By</th><th>UTR</th><th class="center">Cancel</th></tr></thead><tbody>${body}</tbody></table></div>`;
+    const receiptStatusHtml = (detail) => {
+      const cancelled = num(detail?.cancel_status) === 1;
+      return `<span class="receipt-status-pill ${cancelled ? "cancelled" : "active"}">${esc(cancelled ? "Cancelled" : "Active")}</span>`;
+    };
+    const receiptCancelActionHtml = (detail) => {
+      if (num(detail?.cancel_status) === 1) return '<span class="sub">Already cancelled</span>';
+      if (!CAN_CANCEL_RECEIPT) return '<span class="sub">No Access</span>';
+      if (num(detail?.receipt_id) <= 0 && !String(detail?.receipt_no || "").trim()) return '<span class="sub">Missing receipt ref</span>';
+      const disabled = state.recon.loading || state.receiptCancel.saving || state.recon.writeoffBusy || state.recon.unsubmitBusy || state.recon.cancelReceiptBusy;
+      return `<button class="receipt-cancel-btn" type="button" data-bill-key="${esc(billKey)}" data-receipt-id="${esc(detail?.receipt_id ?? "")}" data-receipt-no="${esc(detail?.receipt_no || "")}" ${disabled ? "disabled" : ""}>Cancel Receipt</button>`;
+    };
+    const body = rows.map((r) => `<tr><td>${esc(r.receipt_against_source || "")}</td><td>${esc(r.receipt_detail_id ?? "")}</td><td>${esc(r.receipt_id ?? "")}</td><td>${esc(r.receipt_no || "")}</td><td>${esc(r.receipt_date || "")}</td><td class="num">${money(r.receipt_amount)}</td><td class="num">${money(r.bill_amount)}</td><td class="num">${money(r.due_amount)}</td><td class="num"><span class="tds">${money(r.tds_amount)}</span></td><td class="num"><span class="rebate">${money(r.rebate_discount_amount)}</span></td><td class="num"><span class="writeoff">${money(r.writeoff_amount)}</span></td><td class="center">${esc(r.payment_mode || r.payment_mode_id || "")}</td><td>${esc(r.inserted_by || r.inserted_by_id || "-")}</td><td>${esc(r.utr_no || "")}</td><td class="center">${receiptStatusHtml(r)}</td><td class="center">${receiptCancelActionHtml(r)}</td></tr>`).join("");
+    return `<div class="dinner"><table class="dtable"><thead><tr><th>Against</th><th>RecDtl ID</th><th>Receipt ID</th><th>Receipt No</th><th>Date</th><th class="num">Receipt Amt</th><th class="num">Bill Amt (Dtl)</th><th class="num">Net Due Amt (Dtl)</th><th class="num">TDS Amt</th><th class="num">Rebate / Discount</th><th class="num">Write-off</th><th class="center">Mode</th><th>Entry By</th><th>UTR</th><th class="center">Status</th><th class="center">Action</th></tr></thead><tbody>${body}</tbody></table></div>`;
   };
   const detailHtml = (billKey) => detailHtmlFromMap(state.recon.details, billKey);
+  const findReceiptDetail = (billKey, receiptId, receiptNo = "") => {
+    const key = String(billKey || "").trim();
+    const rows = Array.isArray(state.recon.details?.[key])
+      ? state.recon.details[key]
+      : (Array.isArray(state.recon.baseSuspenseDetails?.[key]) ? state.recon.baseSuspenseDetails[key] : []);
+    const receiptIdNum = num(receiptId);
+    const receiptNoTxt = String(receiptNo || "").trim();
+    return rows.find((item) => {
+      if (receiptIdNum > 0 && num(item?.receipt_id) === receiptIdNum) return true;
+      return !!receiptNoTxt && String(item?.receipt_no || "").trim() === receiptNoTxt;
+    }) || null;
+  };
 
   const writeoffCapabilities = () => ({
     opening: !!state.recon.baseMeta?.has_opening_writeoff_column,
     receipt: !!state.recon.baseMeta?.has_receipt_writeoff_column,
   });
+  const corporateWriteoffBillSources = ["BILL_MST_POST", "BILL_MST_AHL"];
 
   const canWriteoffRow = (row) => {
     if (!CAN_WRITEOFF) return false;
@@ -2180,8 +2278,7 @@
     if (!sourceKey || bal <= 1) return false;
     const caps = writeoffCapabilities();
     if (sourceKey === "OPENING" && !caps.opening) return false;
-    if (sourceKey === "BILL_MST_POST" && !caps.receipt) return false;
-    if (sourceKey === "BILL_MST_POST" && num(row?.writeoff_target_receipt_id) <= 0) return false;
+    if (corporateWriteoffBillSources.includes(sourceKey) && !caps.receipt) return false;
     const status = String(row?.status_all_time || "").trim().toLowerCase();
     return status === "partial" || status === "unpaid";
   };
@@ -2191,10 +2288,9 @@
     const caps = writeoffCapabilities();
     if (!CAN_WRITEOFF) return '<span class="sub">No Access</span>';
     if (sourceKey === "OPENING" && !caps.opening) return '<span class="sub">Write-off col missing</span>';
-    if (sourceKey === "BILL_MST_POST" && !caps.receipt) return '<span class="sub">Write-off col missing</span>';
-    if (sourceKey === "BILL_MST_POST" && num(row?.writeoff_target_receipt_id) <= 0) return '<span class="sub">No Receipt Link</span>';
+    if (corporateWriteoffBillSources.includes(sourceKey) && !caps.receipt) return '<span class="sub">Write-off col missing</span>';
     if (canWriteoffRow(row)) {
-      const disabled = state.recon.loading || state.recon.writeoffBusy || state.recon.unsubmitBusy;
+      const disabled = state.recon.loading || state.recon.writeoffBusy || state.recon.unsubmitBusy || state.recon.cancelReceiptBusy;
       return `<button class="wo-btn" type="button" data-bill-key="${esc(row.bill_key || "")}" ${disabled ? "disabled" : ""}>Write-off Due</button>`;
     }
     return '<span class="sub">Not Required</span>';
@@ -2991,6 +3087,140 @@
       }
     }
   };
+  const lockReceiptCancelModal = (locked) => {
+    [
+      els.receiptCancel.close,
+      els.receiptCancel.cancel,
+      els.receiptCancel.save,
+      els.receiptCancel.reason,
+    ].forEach((node) => { if (node) node.disabled = !!locked; });
+  };
+  const receiptCancelModalHasUnsavedChanges = () => (
+    !!state.receiptCancel.open
+    && !!state.receiptCancel.activeDetail
+    && String(els.receiptCancel.reason?.value || "").trim() !== String(state.receiptCancel.initialReason || "").trim()
+  );
+  const closeReceiptCancelModal = (force = false) => {
+    if (!els.receiptCancel.modal) return;
+    if (state.receiptCancel.saving && !force) return;
+    if (!force && receiptCancelModalHasUnsavedChanges()) {
+      if (!window.confirm("Discard the receipt cancellation reason you entered?")) return;
+    }
+    els.receiptCancel.modal.classList.remove("open");
+    els.receiptCancel.modal.setAttribute("aria-hidden", "true");
+    state.receiptCancel.open = false;
+    state.receiptCancel.saving = false;
+    state.receiptCancel.activeDetail = null;
+    state.receiptCancel.activeBillKey = "";
+    state.receiptCancel.initialReason = "";
+    if (els.receiptCancel.reason) els.receiptCancel.reason.value = "";
+  };
+  const openReceiptCancelModal = (detail, billKey = "") => {
+    if (!detail || !els.receiptCancel.modal) return;
+    if (num(detail?.cancel_status) === 1) {
+      notify("Selected receipt is already cancelled.", "warn", "recon-receipt-cancel");
+      return;
+    }
+    if (!CAN_CANCEL_RECEIPT) {
+      notify("You do not have permission to cancel corporate receipts.", "warn", "recon-receipt-cancel");
+      return;
+    }
+    const billKeyTxt = String(billKey || "").trim();
+    const parentRow = billKeyTxt
+      ? (
+        state.recon.rowIndex?.[billKeyTxt]
+        || (Array.isArray(state.recon.baseRows) ? state.recon.baseRows.find((row) => String(row?.bill_key || "").trim() === billKeyTxt) : null)
+        || (Array.isArray(state.recon.baseSuspenseRows) ? state.recon.baseSuspenseRows.find((row) => String(row?.bill_key || "").trim() === billKeyTxt) : null)
+      )
+      : null;
+    state.receiptCancel.activeDetail = detail;
+    state.receiptCancel.activeBillKey = billKeyTxt;
+    state.receiptCancel.open = true;
+    state.receiptCancel.saving = false;
+    if (els.receiptCancel.title) els.receiptCancel.title.textContent = `Cancel Corporate Receipt - ${unitLabel(currentUnit())}`;
+    setTxt(els.receiptCancel.contextReceipt, `${detail?.receipt_no || "-"} | Receipt ID: ${detail?.receipt_id || "-"}`);
+    setTxt(els.receiptCancel.contextBill, `${parentRow?.bill_no || "-"} | Bill ID: ${parentRow?.bill_id || detail?.bill_id || "-"}`);
+    setTxt(els.receiptCancel.contextPatient, `${parentRow?.patient_name || "-"} | Patient ID: ${parentRow?.patient_id || detail?.patient_id || "-"}`);
+    if (els.receiptCancel.currentStatus) els.receiptCancel.currentStatus.value = num(detail?.cancel_status) === 1 ? "Cancelled" : "Active";
+    if (els.receiptCancel.receiptDate) els.receiptCancel.receiptDate.value = String(detail?.receipt_date || "").trim() || "-";
+    if (els.receiptCancel.amount) els.receiptCancel.amount.value = money(detail?.receipt_amount);
+    if (els.receiptCancel.paymentMode) els.receiptCancel.paymentMode.value = String(detail?.payment_mode || detail?.payment_mode_id || "").trim() || "-";
+    if (els.receiptCancel.reason) {
+      els.receiptCancel.reason.value = "";
+      els.receiptCancel.reason.focus();
+    }
+    state.receiptCancel.initialReason = "";
+    setTxt(
+      els.receiptCancel.hint,
+      "Optional reason is recorded in audit log when provided. The receipt is soft-cancelled and then excluded from active reconciliation views."
+    );
+    lockReceiptCancelModal(false);
+    els.receiptCancel.modal.classList.add("open");
+    els.receiptCancel.modal.setAttribute("aria-hidden", "false");
+  };
+  const postReceiptCancelRequest = async (detail, reason) => {
+    const unit = String(els.recon.unit?.value || "").trim().toUpperCase();
+    if (!unit) throw new Error("Please select a unit before cancelling a receipt.");
+    const billKey = String(state.receiptCancel.activeBillKey || "").trim();
+    const parentRow = billKey ? state.recon.rowIndex?.[billKey] : null;
+    const res = await fetch("/api/corporate/reconciliation/cancel_receipt", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        unit,
+        receipt_id: Number(detail?.receipt_id || 0),
+        receipt_no: String(detail?.receipt_no || "").trim(),
+        bill_id: Number(parentRow?.bill_id || detail?.bill_id || 0) || null,
+        reason: String(reason || "").trim(),
+      }),
+    });
+    const d = await res.json();
+    if (!res.ok || d.status !== "success") throw new Error(d.message || "Failed to cancel receipt.");
+    return d;
+  };
+  const saveReceiptCancel = async () => {
+    const detail = state.receiptCancel.activeDetail;
+    if (!detail || state.receiptCancel.saving || state.recon.loading) return;
+    if (num(detail?.cancel_status) === 1) {
+      notify("Selected receipt is already cancelled.", "warn", "recon-receipt-cancel");
+      return;
+    }
+    if (!CAN_CANCEL_RECEIPT) {
+      notify("You do not have permission to cancel corporate receipts.", "warn", "recon-receipt-cancel");
+      return;
+    }
+    const reason = String(els.receiptCancel.reason?.value || "").trim();
+    const receiptLabel = String(detail?.receipt_no || detail?.receipt_id || "").trim() || "this receipt";
+    const confirmMsg = `Cancel receipt ${receiptLabel} and remove it from active reconciliation?`;
+    if (!window.confirm(confirmMsg)) return;
+
+    state.receiptCancel.saving = true;
+    state.recon.cancelReceiptBusy = true;
+    lockReceiptCancelModal(true);
+    lockRecon(true);
+    notify("Cancelling corporate receipt...", "loading", "recon-receipt-cancel");
+    try {
+      const d = await postReceiptCancelRequest(detail, reason);
+      clearLoading("recon-receipt-cancel");
+      notify(d.message || "Receipt cancelled. Refreshing from database...", "success", "recon-receipt-cancel");
+      closeReceiptCancelModal(true);
+      if (els.recon.suspenseModal?.classList.contains("open")) closeSuspenseModal();
+      await loadRecon({ resetPage: false, forceRefresh: true });
+      await refreshOpenActionDesks({ forceRefresh: true });
+    } catch (e) {
+      clearLoading("recon-receipt-cancel");
+      notify(e?.message || "Failed to cancel receipt.", "error", "recon-receipt-cancel");
+      state.receiptCancel.saving = false;
+      lockReceiptCancelModal(false);
+    } finally {
+      state.recon.cancelReceiptBusy = false;
+      lockRecon(false);
+      if (state.recon.datasetLoaded) {
+        renderReconRows();
+        renderBulkBar();
+      }
+    }
+  };
 
   const selectedBillKeys = () => Object.keys(state.recon.bulkSelected || {}).filter((k) => !!state.recon.bulkSelected[k]);
   const clearBulkSelection = () => {
@@ -3029,8 +3259,8 @@
     } else {
       setTxt(els.recon.bulkMeta, `${integer(count)} bills selected | Total due: ${money(total)}`);
     }
-    if (els.recon.bulkPreviewBtn) els.recon.bulkPreviewBtn.disabled = !count || state.recon.loading || state.recon.writeoffBusy || state.recon.unsubmitBusy;
-    if (els.recon.bulkClearBtn) els.recon.bulkClearBtn.disabled = !selectedBillKeys().length || state.recon.loading || state.recon.writeoffBusy || state.recon.unsubmitBusy;
+    if (els.recon.bulkPreviewBtn) els.recon.bulkPreviewBtn.disabled = !count || state.recon.loading || state.recon.writeoffBusy || state.recon.unsubmitBusy || state.recon.cancelReceiptBusy;
+    if (els.recon.bulkClearBtn) els.recon.bulkClearBtn.disabled = !selectedBillKeys().length || state.recon.loading || state.recon.writeoffBusy || state.recon.unsubmitBusy || state.recon.cancelReceiptBusy;
   };
   const closeBulkModal = () => {
     if (!els.recon.bulkModal) return;
@@ -3170,7 +3400,7 @@
       const key = String(r.bill_key || "");
       const selectable = canWriteoffRow(r);
       const selected = !!state.recon.bulkSelected[key];
-      const disabledSel = (!selectable || state.recon.loading || state.recon.writeoffBusy) ? "disabled" : "";
+      const disabledSel = (!selectable || state.recon.loading || state.recon.writeoffBusy || state.recon.cancelReceiptBusy) ? "disabled" : "";
       const checkedSel = selected ? "checked" : "";
       const sourceText = String(r.bill_source || "-").trim() || "-";
       const sourceKeyText = String(r.bill_source_key || sourceText || "").trim().toUpperCase();
@@ -3217,6 +3447,21 @@
         await writeoffBill(row);
       });
     });
+    els.recon.body.querySelectorAll(".receipt-cancel-btn[data-receipt-id], .receipt-cancel-btn[data-receipt-no]").forEach((btn) => {
+      btn.addEventListener("click", () => {
+        const billKey = String(btn.getAttribute("data-bill-key") || "").trim();
+        const detail = findReceiptDetail(
+          billKey,
+          btn.getAttribute("data-receipt-id"),
+          btn.getAttribute("data-receipt-no"),
+        );
+        if (!detail) {
+          notify("Selected receipt line could not be resolved. Please refresh and try again.", "warn", "recon-receipt-cancel");
+          return;
+        }
+        openReceiptCancelModal(detail, billKey);
+      });
+    });
     els.recon.body.querySelectorAll(".recon-select-row[data-bill-key]").forEach((cb) => {
       cb.addEventListener("change", () => {
         const billKey = String(cb.getAttribute("data-bill-key") || "").trim();
@@ -3232,7 +3477,7 @@
     const visibleEligible = rows.filter((r) => canWriteoffRow(r)).map((r) => String(r.bill_key || "").trim()).filter((k) => !!k);
     if (els.recon.selectAllVisible) {
       const selectedVisible = visibleEligible.filter((k) => !!state.recon.bulkSelected[k]);
-      els.recon.selectAllVisible.disabled = !visibleEligible.length || state.recon.loading || state.recon.writeoffBusy;
+      els.recon.selectAllVisible.disabled = !visibleEligible.length || state.recon.loading || state.recon.writeoffBusy || state.recon.cancelReceiptBusy;
       els.recon.selectAllVisible.checked = !!visibleEligible.length && selectedVisible.length === visibleEligible.length;
       els.recon.selectAllVisible.indeterminate = selectedVisible.length > 0 && selectedVisible.length < visibleEligible.length;
       els.recon.selectAllVisible.onchange = () => {
@@ -4434,6 +4679,12 @@
       if (ev.target === els.unsubmit.modal) closeUnsubmitBillModal();
     });
     els.unsubmit.save?.addEventListener("click", saveUnsubmitBill);
+    els.receiptCancel.close?.addEventListener("click", closeReceiptCancelModal);
+    els.receiptCancel.cancel?.addEventListener("click", closeReceiptCancelModal);
+    els.receiptCancel.modal?.addEventListener("click", (ev) => {
+      if (ev.target === els.receiptCancel.modal) closeReceiptCancelModal();
+    });
+    els.receiptCancel.save?.addEventListener("click", saveReceiptCancel);
     els.receipt.close?.addEventListener("click", closeReceiptModal);
     els.receipt.cancel?.addEventListener("click", closeReceiptModal);
     els.receipt.modal?.addEventListener("click", (ev) => {
@@ -4557,6 +4808,7 @@
       closeActionDesk("unsubmit", { force: true });
       resetActionDesk("receipt", { clearFilters: false });
       resetActionDesk("unsubmit", { clearFilters: false });
+      closeReceiptCancelModal(true);
       closeUnsubmitBillModal(true);
       closeReceiptModal();
       setReconSourceOptions([], false);
@@ -4690,10 +4942,12 @@
       if (ev.key === "Escape" && els.updates.modal?.classList.contains("open")) closeUpdatesModal();
       if (ev.key === "Escape" && els.recon.bulkModal?.classList.contains("open")) closeBulkModal();
       if (ev.key === "Escape" && els.recon.suspenseModal?.classList.contains("open")) closeSuspenseModal();
+      if (ev.key === "Escape" && els.receiptCancel.modal?.classList.contains("open")) closeReceiptCancelModal();
       if (ev.key === "Escape" && els.unsubmit.modal?.classList.contains("open")) closeUnsubmitBillModal();
       if (ev.key === "Escape" && els.receipt.modal?.classList.contains("open")) closeReceiptModal();
       if (
         ev.key === "Escape"
+        && !els.receiptCancel.modal?.classList.contains("open")
         && !els.unsubmit.modal?.classList.contains("open")
         && !els.receipt.modal?.classList.contains("open")
       ) {

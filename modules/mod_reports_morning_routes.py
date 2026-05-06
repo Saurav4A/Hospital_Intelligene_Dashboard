@@ -17,6 +17,7 @@ def register_mod_reports_morning_routes(
     ensure_morning_report_tables,
     fetch_morning_report_snapshot,
     apply_morning_staff_non_med_prefill,
+    attach_morning_auto_sections,
     ensure_morning_death_summary_row,
     build_morning_report_payload,
     build_morning_report_excel,
@@ -41,6 +42,7 @@ def register_mod_reports_morning_routes(
     _ensure_morning_report_tables = ensure_morning_report_tables
     _fetch_morning_report_snapshot = fetch_morning_report_snapshot
     _apply_morning_staff_non_med_prefill = apply_morning_staff_non_med_prefill
+    _attach_morning_auto_sections = attach_morning_auto_sections
     _ensure_morning_death_summary_row = ensure_morning_death_summary_row
     _build_morning_report_payload = build_morning_report_payload
     _build_morning_report_excel = build_morning_report_excel
@@ -56,6 +58,20 @@ def register_mod_reports_morning_routes(
     _rows_have_any_value = rows_have_any_value
     _audit_log_event = audit_log_event
     LOCAL_TZ = local_tz
+
+    def _referral_reason_validation_error(payload: dict | None) -> str | None:
+        rows = (payload or {}).get("referral_rows") or []
+        for idx, row in enumerate(rows, start=1):
+            patient = str((row or {}).get("patient_name") or "").strip()
+            visit_time = str((row or {}).get("visit_time") or "").strip()
+            discharge_time = str((row or {}).get("discharge_time") or "").strip()
+            consultant = str((row or {}).get("consultant") or "").strip()
+            reason_type = str((row or {}).get("reason_type") or "").strip()
+            remarks = str((row or {}).get("reason") or "").strip()
+            has_any_value = any([patient, visit_time, discharge_time, consultant, remarks])
+            if has_any_value and not reason_type:
+                return f"Reason is mandatory for referral/daycare row {idx}."
+        return None
 
     @app.route('/mod_reports/morning_report')
     @login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
@@ -153,6 +169,7 @@ def register_mod_reports_morning_routes(
         _log("cache_check")
         if cached_payload:
             hydrated_payload = _apply_morning_staff_non_med_prefill(cached_payload, report_date_str, base_unit)
+            hydrated_payload = _attach_morning_auto_sections(hydrated_payload)
             if hydrated_payload:
                 hydrated_payload = dict(hydrated_payload)
                 hydrated_payload["summary_rows"] = _ensure_morning_death_summary_row(
@@ -171,6 +188,7 @@ def register_mod_reports_morning_routes(
             snapshot_payload = _fetch_morning_report_snapshot(report_date_str, base_unit)
             _log("fetch_snapshot")
             if snapshot_payload:
+                snapshot_payload = _attach_morning_auto_sections(snapshot_payload)
                 needs_live = (
                     not _rows_have_any_value(snapshot_payload.get("doctorwise_rows"), ("department", "opd", "ipd"))
                     or not _rows_have_any_value(snapshot_payload.get("occupancy_rows"), ("ward", "patient_count", "occupied_count", "clinically_discharged_count"))
@@ -218,6 +236,7 @@ def register_mod_reports_morning_routes(
         _log("build_live")
         if not live_payload:
             return jsonify({"status": "error", "message": "Failed to load data"}), 500
+        live_payload = _attach_morning_auto_sections(live_payload)
         live_payload = _apply_morning_staff_non_med_prefill(live_payload, report_date_str, base_unit)
         _mod_report_cache_set("morning", base_unit, report_date_str, mode, live_payload)
         _log("cache_set_live")
@@ -292,13 +311,23 @@ def register_mod_reports_morning_routes(
             "staff_rows": payload.get("staff_rows") or [],
             "non_medical_rows": payload.get("non_medical_rows") or [],
             "referral_rows": payload.get("referral_rows") or [],
+            "daycare_rows": payload.get("daycare_rows") or [],
+            "non_cured_discharge_rows": payload.get("non_cured_discharge_rows"),
+            "_non_cured_rows_supplied": "non_cured_discharge_rows" in payload,
+            "_non_cured_preserve_existing_remarks": not bool(payload.get("_non_cured_remarks_supported")),
         }
+        clean_payload = _attach_morning_auto_sections(clean_payload) or clean_payload
+        reason_error = _referral_reason_validation_error(clean_payload)
+        if reason_error:
+            return jsonify({"status": "error", "message": reason_error}), 400
 
         old_payload = None
         try:
             old_payload = _fetch_morning_report_snapshot(report_date, unit)
         except Exception:
             old_payload = None
+        if not clean_payload.get("_non_cured_rows_supplied"):
+            clean_payload["non_cured_discharge_rows"] = (old_payload or {}).get("non_cured_discharge_rows")
 
         try:
             _save_morning_report_snapshot_to_aci(clean_payload)
@@ -337,6 +366,10 @@ def register_mod_reports_morning_routes(
     def api_morning_report_export():
         if request.method == 'POST':
             payload = request.get_json(silent=True) or {}
+            payload = _attach_morning_auto_sections(payload) or payload
+            reason_error = _referral_reason_validation_error(payload)
+            if reason_error:
+                return jsonify({"status": "error", "message": reason_error}), 400
             exported_by = session.get("username") or session.get("user") or "Unknown"
             data = _build_morning_report_excel(payload, exported_by=exported_by)
             report_date = payload.get("report_date") or datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
@@ -394,6 +427,10 @@ def register_mod_reports_morning_routes(
     def api_morning_report_export_pdf():
         if request.method == 'POST':
             payload = request.get_json(silent=True) or {}
+            payload = _attach_morning_auto_sections(payload) or payload
+            reason_error = _referral_reason_validation_error(payload)
+            if reason_error:
+                return jsonify({"status": "error", "message": reason_error}), 400
             exported_by = session.get("username") or session.get("user") or "Unknown"
             data = _build_morning_report_pdf(payload, exported_by=exported_by)
             report_date = payload.get("report_date") or datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d")
@@ -441,6 +478,10 @@ def register_mod_reports_morning_routes(
     def api_morning_report_export_jpg():
         if request.method == 'POST':
             payload = request.get_json(silent=True) or {}
+            payload = _attach_morning_auto_sections(payload) or payload
+            reason_error = _referral_reason_validation_error(payload)
+            if reason_error:
+                return jsonify({"status": "error", "message": reason_error}), 400
             section = payload.get("section")
             try:
                 section = int(section) if section is not None else None
@@ -461,8 +502,10 @@ def register_mod_reports_morning_routes(
                     payload["staff_rows"] = snapshot_payload.get("staff_rows") or []
                 if not _rows_have_any_value(payload.get("non_medical_rows"), ("left_label", "left_count", "right_label", "right_count")):
                     payload["non_medical_rows"] = snapshot_payload.get("non_medical_rows") or []
-                if not _rows_have_any_value(payload.get("referral_rows"), ("patient_name", "visit_time", "consultant", "reason")):
+                if not _rows_have_any_value(payload.get("referral_rows"), ("patient_name", "visit_time", "discharge_time", "consultant", "reason_type", "reason")):
                     payload["referral_rows"] = snapshot_payload.get("referral_rows") or []
+                if not _rows_have_any_value(payload.get("non_cured_discharge_rows"), ("patient_name", "admission_time", "discharge_time", "doctor_name", "reason", "remarks")):
+                    payload["non_cured_discharge_rows"] = snapshot_payload.get("non_cured_discharge_rows") or []
 
             needs_live = (
                 not _rows_have_any_value(payload.get("doctorwise_rows"), ("department", "opd", "ipd"))

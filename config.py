@@ -5,6 +5,8 @@
 # ---------------------------
 # Source DBs for analytics
 # ---------------------------
+import os
+
 DB_CONFIGS = {
     "AHL": {
         "DRIVER": "{ODBC Driver 18 for SQL Server}",
@@ -78,6 +80,32 @@ DB_CONFIGS = {
     },
 }
 
+# ---------------------------
+# Dedicated legacy canteen DBs
+# ---------------------------
+CANTEEN_DB_CONFIGS = {
+    "AHL": {
+        "DRIVER": "{ODBC Driver 18 for SQL Server}",
+        "SERVER": "192.168.1.4,1433",
+        "DB": "EmpAtten20",
+        "USER": "sa",
+        "PWD": "Prodoc09",
+        "ENCRYPT": "yes",
+        "TRUST_CERT": "yes",
+        "TIMEOUT": 5,
+    },
+    "ACI": {
+        "DRIVER": "{ODBC Driver 18 for SQL Server}",
+        "SERVER": "192.168.20.100,1433",
+        "DB": "CanteenACI",
+        "USER": "sa",
+        "PWD": "Prodoc_23",
+        "ENCRYPT": "yes",
+        "TRUST_CERT": "yes",
+        "TIMEOUT": 5,
+    },
+}
+
 # Units that should be excluded from analytics/occupancy/revenue background jobs.
 ANALYTICS_EXCLUDE_UNITS = ["AHLSTORE", "CANCERUNITSTORE", "BALLIASTORE"]
 
@@ -116,6 +144,72 @@ SECRET_KEY = "asarfi_rid_secret_2025"
 ENABLE_OTP_MAIL_WORKER = True
 # Optional: tweak polling interval (seconds) for the worker loop
 OTP_WORKER_POLL_SECONDS = 5
+
+# ---------------------------
+# Booking payment receipt mail worker (Graph sender)
+# ---------------------------
+ENABLE_BOOKING_PAYMENT_MAIL_WORKER = False
+BOOKING_PAYMENT_MAIL_POLL_SECONDS = 5
+BOOKING_PAYMENT_EMAIL_DB = {
+    "DRIVER": "{ODBC Driver 18 for SQL Server}",
+    "SERVER": "192.168.1.102,1433",
+    "DATABASE": "Prodoc22",
+    "UID": "sa",
+    "PWD": "Prodoc_20",
+    "Encrypt": "yes",
+    "TrustServerCertificate": "yes",
+    "Connection Timeout": 5,
+    "ConnectRetryCount": 3,
+    "ConnectRetryInterval": 5,
+}
+
+# ---------------------------
+# SMS gateway (PRP Bulk SMS)
+# ---------------------------
+# Canteen billing queues SMS after the bill is saved. Any provider failure is
+# audit-logged but does not block counter billing.
+ENABLE_CANTEEN_BILL_SMS = os.getenv("ENABLE_CANTEEN_BILL_SMS", "true").strip().lower() in {"1", "true", "yes", "on"}
+PRP_SMS_API_KEY = os.getenv("PRP_SMS_API_KEY", "OpXAiuQyWB8KbWS").strip()
+PRP_SMS_USERNAME = os.getenv("PRP_SMS_USERNAME", "20160357").strip()
+PRP_SMS_SENDER = os.getenv("PRP_SMS_SENDER", "ARFHSP").strip()
+PRP_SMS_TEMPLATE_NAME_URL = os.getenv(
+    "PRP_SMS_TEMPLATE_NAME_URL",
+    "https://api.bulksmsadmin.com/BulkSMSapi/keyApiSendSMS/SendSmsTemplateName",
+).strip()
+PRP_SMS_TIMEOUT_SECONDS = float(os.getenv("PRP_SMS_TIMEOUT_SECONDS", "8") or "8")
+PRP_SMS_USER_AGENT = os.getenv(
+    "PRP_SMS_USER_AGENT",
+    "Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 "
+    "(KHTML, like Gecko) Chrome/147.0.0.0 Safari/537.36 HID/1.0",
+).strip()
+CANTEEN_BILL_SMS_TEMPLATE_NAME = os.getenv("CANTEEN_BILL_SMS_TEMPLATE_NAME", "CanteenBillCustomerUpdate").strip()
+
+# ---------------------------
+# Asset coverage lifecycle reminders (Graph sender)
+# ---------------------------
+ENABLE_ASSET_COVERAGE_REMINDER_WORKER = True
+ASSET_COVERAGE_REMINDER_POLL_SECONDS = 300
+# Optional direct recipients. Additional active recipients can be maintained in
+# dbo.HID_Asset_Coverage_Recipients.
+ASSET_COVERAGE_EMAIL_GROUPS = {
+    "AHL": [],
+    "ACI": [],
+}
+
+# ---------------------------
+# Public Asset Breakdown QR employee lookup webhook
+# ---------------------------
+# Optional backend-only integration for Emp ID lookup from the HR server.
+# HID signs each request as HMAC-SHA256 over "<employeeCode>:<timestamp>"
+# using EMP_LOOKUP_WEBHOOK_SECRET_KEY and sends:
+#   {"code": "...", "timestamp": 1714560000, "signature": "..."}
+# Never expose this key to browser/client-side code.
+EMP_LOOKUP_WEBHOOK_URL = os.getenv(
+    "EMP_LOOKUP_WEBHOOK_URL",
+    "https://hr.asarfi.in/api/external-access/get-active-employee-details",
+).strip()
+EMP_LOOKUP_WEBHOOK_SECRET_KEY = os.getenv("EMP_LOOKUP_WEBHOOK_SECRET_KEY", "AsarfiCall@!2345").strip()
+EMP_LOOKUP_WEBHOOK_TIMEOUT_SECS = int(os.getenv("EMP_LOOKUP_WEBHOOK_TIMEOUT_SECS", "8") or "8")
 
 # ---------------------------
 # Logging

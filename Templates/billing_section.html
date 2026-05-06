@@ -166,6 +166,7 @@
   th, td { padding:10px; border-bottom:1px solid #e5e7eb; text-align:left; font-size:13px; vertical-align:top; }
   th { background:#f0f4ff; color:#1e3a8a; font-weight:800; }
   .row-cashless { background:#fde2e4; }
+  .row-canteen { background:#fff7ed; }
   .row-pmu-approved { background:#ecfdf3; }
   .row-pmu-pending { background:#fffbeb; }
   .row-pmu-rejected { background:#fef2f2; }
@@ -1354,6 +1355,7 @@
                 <th>Patient Type</th>
                 <th>Visit Type</th>
                 <th>Doctor</th>
+                <th>Doctor In Charge</th>
                 <th>Secondary Doc</th>
                 <th>Service</th>
                 <th class="num">Qty</th>
@@ -1364,7 +1366,7 @@
               </tr>
             </thead>
             <tbody id="billShareTableBody">
-              <tr><td colspan="14" style="text-align:center; color:#94a3b8; padding:30px;">Load data to view details.</td></tr>
+              <tr><td colspan="15" style="text-align:center; color:#94a3b8; padding:30px;">Load data to view details.</td></tr>
             </tbody>
           </table>
         </div>
@@ -1662,6 +1664,7 @@
           <option value="hospital">Hospital Receipts</option>
           <option value="op_pharmacy">OP Pharmacy</option>
           <option value="ip_pharmacy">IP Pharmacy</option>
+          <option value="canteen">Canteen Receipts</option>
         </select>
       </div>
       <div>
@@ -2334,6 +2337,11 @@
         return 'Other';
       };
       const cleanText = (v)=> (v === null || v === undefined) ? '' : String(v).trim();
+      const isCanteenReceipt = (row)=> {
+        const source = cleanText(row?.ReceiptSource || row?.Source || row?.ReportGroup).toLowerCase();
+        const type = cleanText(row?.ReceiptType || row?.Type).toUpperCase();
+        return source === 'canteen' || type === 'CANTEEN';
+      };
       const escapeHtml = (value)=> String(value ?? '')
         .replace(/&/g, '&amp;')
         .replace(/</g, '&lt;')
@@ -3654,6 +3662,7 @@
           row.PatientType,
           row.TypeOfVisit,
           row.DoctorName,
+          row.DoctorInCharge,
           row.SecondaryDoc,
           row.Service_Name,
           row.BillQty,
@@ -3679,7 +3688,7 @@
           const emptyMessage = filteredRecordsKnown && filteredRecords
             ? 'No doctor share records on this page.'
             : 'No doctor share records.';
-          billShareTableBody.innerHTML = `<tr><td colspan="14" style="text-align:center; color:#94a3b8; padding:30px;">${emptyMessage}</td></tr>`;
+          billShareTableBody.innerHTML = `<tr><td colspan="15" style="text-align:center; color:#94a3b8; padding:30px;">${emptyMessage}</td></tr>`;
           if (billShareMeta) {
             if (searchQuery && filteredRecordsKnown && totalRecordsKnown) {
               billShareMeta.textContent = `${filteredRecords.toLocaleString('en-IN')} matching of ${totalRecords.toLocaleString('en-IN')} records`;
@@ -3707,6 +3716,7 @@
             <td>${escapeHtml(row.PatientType || '')}</td>
             <td>${escapeHtml(row.TypeOfVisit || '')}</td>
             <td>${escapeHtml(row.DoctorName || '')}</td>
+            <td>${escapeHtml(row.DoctorInCharge || '')}</td>
             <td>${escapeHtml(row.SecondaryDoc || '')}</td>
             <td>${escapeHtml(row.Service_Name || '')}</td>
             <td class="num">${Number(row.BillQty || 0).toLocaleString('en-IN')}</td>
@@ -3763,7 +3773,7 @@
           billShareHasNextPage = false;
         }
         if (includeSummary && billShareTableBody) {
-          billShareTableBody.innerHTML = '<tr><td colspan="14" style="text-align:center; color:#94a3b8; padding:30px;">Loading doctor share...</td></tr>';
+          billShareTableBody.innerHTML = '<tr><td colspan="15" style="text-align:center; color:#94a3b8; padding:30px;">Loading doctor share...</td></tr>';
         }
         try {
           const url = `/api/mis/billwise_doctorshare?unit=${encodeURIComponent(unit)}&from=${encodeURIComponent(from)}&to=${encodeURIComponent(to)}&doc_id=${encodeURIComponent(docId)}&vtype=${encodeURIComponent(vtype)}&page=${encodeURIComponent(requestedPage)}&page_size=${encodeURIComponent(billSharePageSize)}&search=${encodeURIComponent(searchQuery)}&include_summary=${includeSummary ? '1' : '0'}&mode=full`;
@@ -4162,10 +4172,18 @@
           const mode = cleanText(row.PModeName).toLowerCase();
           return (pay.includes('cashless') || pay==='2') && mode !== 'debit voucher';
         };
+        const canteenRows = collFiltered.filter(isCanteenReceipt);
+        const hospitalRows = collFiltered.filter((row)=> !isCanteenReceipt(row));
         const totalAmt = collFiltered.reduce((s,r)=> s + parseNumber(r.Amount), 0);
-        const advAmt = collFiltered.reduce((s,r)=> s + (cleanText(r.ReceiptCategory).toLowerCase()==='advance receipts' ? parseNumber(r.Amount) : 0), 0);
-        const billAmt = Math.max(0, totalAmt - advAmt);
-        const uniquePatients = new Set(collFiltered.map(r => cleanText(r.RegNo || r.Regno || r.PatientID || r.Patient_Id || r.Patient_ID))).size;
+        const hospitalAmt = hospitalRows.reduce((s,r)=> s + parseNumber(r.Amount), 0);
+        const canteenAmt = canteenRows.reduce((s,r)=> s + parseNumber(r.Amount), 0);
+        const advAmt = hospitalRows.reduce((s,r)=> s + (cleanText(r.ReceiptCategory).toLowerCase()==='advance receipts' ? parseNumber(r.Amount) : 0), 0);
+        const billAmt = Math.max(0, hospitalAmt - advAmt);
+        const uniquePatients = new Set(
+          hospitalRows
+            .map(r => cleanText(r.RegNo || r.Regno || r.PatientID || r.Patient_Id || r.Patient_ID))
+            .filter(Boolean)
+        ).size;
         const modeTotals = {};
         collFiltered.forEach(r=>{
           const m = cleanText(r.PModeName) || 'Unknown';
@@ -4174,18 +4192,20 @@
         const modeHtml = Object.entries(modeTotals).sort((a,b)=>b[1]-a[1]).map(([m,v])=>`<div class="kpi"><div class="kpi-label">${m}</div><div class="kpi-value">${formatINR(v)}</div></div>`).join('');
 
         // Segregations
-        const rtypeTotals = { PH:0, P:0, PI:0, Other:0 };
-        const rcatTotals = { "Advance Receipts":0, "Receipt Against Bill":0, Other:0 };
+        const rtypeTotals = { PH:0, P:0, PI:0, CANTEEN:0, Other:0 };
+        const rcatTotals = { "Advance Receipts":0, "Receipt Against Bill":0, "Canteen Receipts":0, Other:0 };
         const ptypeTotals = {};
         collFiltered.forEach(r=>{
           const rt = cleanText(r.ReceiptType).toUpperCase();
-          if(rt === 'PH') rtypeTotals.PH += parseNumber(r.Amount);
+          if(isCanteenReceipt(r)) rtypeTotals.CANTEEN += parseNumber(r.Amount);
+          else if(rt === 'PH') rtypeTotals.PH += parseNumber(r.Amount);
           else if(rt === 'P') rtypeTotals.P += parseNumber(r.Amount);
           else if(rt === 'PI') rtypeTotals.PI += parseNumber(r.Amount);
           else rtypeTotals.Other += parseNumber(r.Amount);
 
           const rc = cleanText(r.ReceiptCategory) || 'Other';
-          if(rc.toLowerCase() === 'advance receipts') rcatTotals["Advance Receipts"] += parseNumber(r.Amount);
+          if(isCanteenReceipt(r)) rcatTotals["Canteen Receipts"] += parseNumber(r.Amount);
+          else if(rc.toLowerCase() === 'advance receipts') rcatTotals["Advance Receipts"] += parseNumber(r.Amount);
           else if(rc.toLowerCase() === 'receipt against bill') rcatTotals["Receipt Against Bill"] += parseNumber(r.Amount);
           else rcatTotals.Other += parseNumber(r.Amount);
 
@@ -4195,13 +4215,14 @@
 
         kpiCollections.innerHTML = `
           ${renderKpiBox('Total Collections', totalAmt)}
+          ${renderKpiBox('Canteen Collections', canteenAmt)}
           ${renderKpiBox('Advance Receipts', advAmt)}
           ${renderKpiBox('Against Bills', billAmt)}
           <div class="kpi"><div class="kpi-label">Receipts</div><div class="kpi-value">${collFiltered.length.toLocaleString('en-IN')}</div><div class="kpi-label" style="margin-top:6px;">Unique Patients</div><div class="kpi-value kpi-value--accent">${uniquePatients.toLocaleString('en-IN')}</div></div>
           ${modeHtml}
         `;
 
-        const receiptTypeLabel = { PH:'OP Pharmacy', PI:'IP Pharmacy', P:'Hospital Receipts', Other:'Other' };
+        const receiptTypeLabel = { PH:'OP Pharmacy', PI:'IP Pharmacy', P:'Hospital Receipts', CANTEEN:'Canteen Receipts', Other:'Other' };
         const receiptTypeHtml = Object.entries(rtypeTotals).map(([k,v])=>`<div style="padding:6px 8px;">${receiptTypeLabel[k] || k}: <strong>${rupee(v)}</strong></div>`).join('');
         const categoryHtml = Object.entries(rcatTotals).map(([k,v])=>`<div style="padding:6px 8px;">${k}: <strong>${rupee(v)}</strong></div>`).join('');
         const ptypeHtml = Object.entries(ptypeTotals).sort((a,b)=>b[1]-a[1]).map(([k,v])=>`<div style="padding:6px 8px;">${k}: <strong>${rupee(v)}</strong></div>`).join('');
@@ -4210,9 +4231,9 @@
         collFiltered.forEach(r=>{
           const visit = getVisitType(r) || 'Unknown Visit';
           const rtRaw = cleanText(r.ReceiptType).toUpperCase();
-          const rtKey = rtRaw === 'PH' ? 'PH' : rtRaw === 'PI' ? 'PI' : rtRaw === 'P' ? 'P' : 'Other';
+          const rtKey = isCanteenReceipt(r) ? 'CANTEEN' : rtRaw === 'PH' ? 'PH' : rtRaw === 'PI' ? 'PI' : rtRaw === 'P' ? 'P' : 'Other';
           const amt = parseNumber(r.Amount);
-          if(!visitMap[visit]) visitMap[visit] = { total:0, receipts:{PH:0,PI:0,P:0,Other:0} };
+          if(!visitMap[visit]) visitMap[visit] = { total:0, receipts:{PH:0,PI:0,P:0,CANTEEN:0,Other:0} };
           visitMap[visit].total += amt;
           visitMap[visit].receipts[rtKey] += amt;
         });
@@ -4227,7 +4248,7 @@
         // Top collectors
         const collectorTotals = {};
         collFiltered.forEach(r=>{
-          const u = cleanText(r.UserName || r.User);
+          const u = cleanText(r.UserName || r.User || r.CollectionByName);
           if(u) collectorTotals[u] = (collectorTotals[u] || 0) + parseNumber(r.Amount);
         });
         const topCollectors = Object.entries(collectorTotals).sort((a,b)=>b[1]-a[1]).slice(0,3);
@@ -4243,17 +4264,19 @@
           const pat = cleanText(r.Patientname || r.Patient || r.PatientName);
           const bill = cleanText(r.BillNo);
           const rec = cleanText(r.Receipt_No);
-          const recCat = cleanText(r.ReceiptCategory);
-          const recType = cleanText(r.ReceiptType);
+          const canteenReceipt = isCanteenReceipt(r);
+          const recCat = canteenReceipt ? 'Canteen Receipts' : cleanText(r.ReceiptCategory);
+          const recType = canteenReceipt ? 'Canteen' : cleanText(r.ReceiptType);
           const payMode = cleanText(r.PModeName);
           const visit = getVisitType(r);
-          const user = cleanText(r.UserName);
+          const user = cleanText(r.UserName || r.User || r.CollectionByName);
           const payee = cleanText(r.PayeeId);
           const billDate = fmtDateCell(r.BillDate);
           const billNet = fmtNumberCell(r.NetAmount || r.BILLING_MST_NETAMOUNT || r.NETAMOUNT);
           const tov = getVisitType(r);
           const rowClasses = [];
           if(isCashlessRow(r)) rowClasses.push('row-cashless');
+          if(canteenReceipt) rowClasses.push('row-canteen');
           return `
             <tr class="${rowClasses.join(' ')}">
               <td>${rec}</td>
@@ -4280,7 +4303,7 @@
         collTable.innerHTML = `
           <div class="cards-grid" style="margin-bottom:10px;">
             <section class="card">
-              <div class="card-head"><h2>Receipt Type</h2><p>PH=OP Pharm, P=Hospital, PI=IP Pharm</p></div>
+              <div class="card-head"><h2>Receipt Type</h2><p>PH=OP Pharm, P=Hospital, PI=IP Pharm, Canteen=Counter receipts</p></div>
               <div style="display:flex; flex-wrap:wrap;">${receiptTypeHtml}</div>
             </section>
             <section class="card">
@@ -4349,9 +4372,11 @@
         if(typeFilter !== 'all'){
           working = working.filter(r=>{
             const rt = cleanText(r.ReceiptType).toUpperCase();
-            if(typeFilter === 'hospital') return rt === 'P';
-            if(typeFilter === 'op_pharmacy') return rt === 'PH';
-            if(typeFilter === 'ip_pharmacy') return rt === 'PI';
+            const canteenReceipt = isCanteenReceipt(r);
+            if(typeFilter === 'canteen') return canteenReceipt;
+            if(typeFilter === 'hospital') return !canteenReceipt && rt === 'P';
+            if(typeFilter === 'op_pharmacy') return !canteenReceipt && rt === 'PH';
+            if(typeFilter === 'ip_pharmacy') return !canteenReceipt && rt === 'PI';
             return true;
           });
         }
@@ -4359,7 +4384,8 @@
         if(q){
           const fields = [
             'Amount','Receipt_No','VisitNo','Receipt_Time','Receipt_Date',
-            'PModeName','BillDate','UserName','PatientTypes','PatientType','Patient_Types','Patient Type','Patient','PatientName','Patientname'
+            'PModeName','BillDate','UserName','User','PatientTypes','PatientType','Patient_Types','Patient Type','Patient','PatientName','Patientname',
+            'ReceiptSource','Source','CanteenBillCreatedBy','DepartmentName','Note','BillNo','RegNo'
           ];
           working = working.filter(r=>{
             return fields.some(f=>{

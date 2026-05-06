@@ -498,6 +498,14 @@
       <button id="exportBtn" class="action-btn export-btn">
         <span>Excel Export</span>
       </button>
+
+      {% set _rights = session.get('section_rights') or [] %}
+      {% if session.get('role') == 'IT' or '*' in _rights or 'investor_revenue_report' in _rights %}
+        <button id="investorExportBtn" class="action-btn export-btn" title="Investor-format revenue workbook">
+          <span>Investor Excel</span>
+        </button>
+      {% endif %}
+
       <button id="printBtn" class="action-btn export-btn">
         <span>Print PDF</span>
       </button>
@@ -631,6 +639,11 @@
 </div>
 
 <script src="https://cdn.plot.ly/plotly-2.32.0.min.js"></script>
+<script>
+  if (!window.Plotly) {
+    document.write('<script src="https://cdn.jsdelivr.net/npm/plotly.js-dist-min@2.32.0/plotly.min.js"><\\/script>');
+  }
+</script>
 
 <script>
 document.addEventListener("DOMContentLoaded", () => {
@@ -659,6 +672,7 @@ document.addEventListener("DOMContentLoaded", () => {
   const fetchBtn = document.getElementById('fetchBtn');
   const refreshTodayBtn = document.getElementById('refreshTodayBtn');
   const exportBtn = document.getElementById('exportBtn');
+  const investorExportBtn = document.getElementById('investorExportBtn');
   const exportDeptBtn = document.getElementById('exportDeptBtn');
   const printBtn = document.getElementById('printBtn');
   const sourceKpiCard = document.getElementById('sourceKpiCard');
@@ -749,26 +763,30 @@ document.addEventListener("DOMContentLoaded", () => {
     
     if(!from || !to) { alert("Please select a date range"); return; }
 
-    document.body.classList.add('is-busy');
-    setLoading(isForceUpdate ? refreshTodayBtn : fetchBtn, true);
-    
-    Plotly.purge('chartContainer');
-    Plotly.purge('splitChart');
-    showLoader('chartContainer', isForceUpdate ? 'Updating Live Data...' : 'Analyzing Revenue...');
-    
-    document.getElementById('summaryCards').innerHTML = '';
-    document.getElementById('splitWrap').style.display = 'none';
-    
-    mainChartDataCache = null;
-    cachedSegregationData = null;
-    patientSourceCache = null;
-    patientSourceVisibleRows = [];
-    forceRefreshFlag = isForceUpdate;
-    lastPopulatedUnit = null;
-    sourceKpiCard.style.display = 'none';
-    sourceSearch.value = '';
-
     try {
+      document.body.classList.add('is-busy');
+      setLoading(isForceUpdate ? refreshTodayBtn : fetchBtn, true);
+
+      if (!window.Plotly) {
+        throw new Error("Chart library did not load. Please refresh the page or check CDN access.");
+      }
+
+      Plotly.purge('chartContainer');
+      Plotly.purge('splitChart');
+      showLoader('chartContainer', isForceUpdate ? 'Updating Live Data...' : 'Analyzing Revenue...');
+
+      document.getElementById('summaryCards').innerHTML = '';
+      document.getElementById('splitWrap').style.display = 'none';
+
+      mainChartDataCache = null;
+      cachedSegregationData = null;
+      patientSourceCache = null;
+      patientSourceVisibleRows = [];
+      forceRefreshFlag = isForceUpdate;
+      lastPopulatedUnit = null;
+      sourceKpiCard.style.display = 'none';
+      sourceSearch.value = '';
+
       const fd = new FormData();
       fd.append("from_date", from);
       fd.append("to_date", to);
@@ -1418,6 +1436,29 @@ document.addEventListener("DOMContentLoaded", () => {
     const url = `/export_revenue_patient_source_pdf?from_date=${encodeURIComponent(from)}&to_date=${encodeURIComponent(to)}&unit=${encodeURIComponent(scope)}`;
     window.open(url, '_blank');
   });
+
+  if (investorExportBtn) {
+    investorExportBtn.addEventListener('click', () => {
+      const from = fromInput.value;
+      const to = toInput.value;
+
+      if (!from || !to) {
+        alert("Please select a date range");
+        return;
+      }
+
+      const params = new URLSearchParams({
+        from_date: from,
+        to_date: to
+      });
+
+      if (forceRefreshFlag) {
+        params.append("refresh", "1");
+      }
+
+      window.location.href = `/export_investor_revenue_excel?${params.toString()}`;
+    });
+  }
 
   exportBtn.addEventListener('click', () => {
      const u = `/export_revenue_excel?from_date=${fromInput.value}&to_date=${toInput.value}`;

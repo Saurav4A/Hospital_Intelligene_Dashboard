@@ -13,6 +13,7 @@ except Exception:
 
 # Build a small, conservative pool per unit.
 ENGINE_CACHE = {}
+CANTEEN_ENGINE_CACHE = {}
 
 
 def _env_int(name: str, default: int, *, minimum: int | None = None) -> int:
@@ -121,6 +122,12 @@ for _unit, _cfg in (getattr(config, "DB_CONFIGS", {}) or {}).items():
         if _engine:
             ENGINE_CACHE[_unit] = _engine
 
+for _unit, _cfg in (getattr(config, "CANTEEN_DB_CONFIGS", {}) or {}).items():
+    if isinstance(_cfg, dict):
+        _engine = _make_engine(_cfg)
+        if _engine:
+            CANTEEN_ENGINE_CACHE[_unit] = _engine
+
 
 def get_sql_connection(unit):
     try:
@@ -149,6 +156,35 @@ def get_sql_connection(unit):
         return _direct_connect(db)
     except Exception as e:
         print(f"�?O Connection failed for {unit}: {e}")
+        return None
+
+
+def get_canteen_sql_connection(unit):
+    try:
+        unit_key = str(unit or "").strip().upper()
+        db = (getattr(config, "CANTEEN_DB_CONFIGS", {}) or {})[unit_key]
+        eng = CANTEEN_ENGINE_CACHE.get(unit_key)
+        if eng:
+            conn = eng.raw_connection()
+            try:
+                conn.autocommit = True
+            except Exception:
+                pass
+            if _reset_session_state(conn):
+                return conn
+            try:
+                conn.close()
+            except Exception:
+                pass
+            try:
+                eng.dispose()
+            except Exception:
+                pass
+            return _direct_connect(db)
+
+        return _direct_connect(db)
+    except Exception as e:
+        print(f"Canteen connection failed for {unit}: {e}")
         return None
 
 

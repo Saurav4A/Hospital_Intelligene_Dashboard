@@ -67,6 +67,7 @@ BEGIN
                     NULLIF(CONVERT(NVARCHAR(80), b.Bill_No), N'')
                 ) AS NVARCHAR(80)
             ) AS BillNo,
+            CAST(ISNULL(CONVERT(NVARCHAR(120), b.claimid), N'') AS NVARCHAR(120)) AS ClaimId,
             CAST(NULLIF(b.PatientID, 0) AS INT) AS PatientId,
             CAST(NULLIF(b.Visit_ID, 0) AS INT) AS VisitId,
             CAST(NULLIF(b.PatientTypeId, 0) AS INT) AS PatientTypeId,
@@ -91,6 +92,7 @@ BEGIN
             CAST(o.DueDate AS DATETIME) AS DueDate,
             CAST(ISNULL(o.DueAmount, 0) AS FLOAT) AS BillAmount,
             CAST(ISNULL(o.RefNo, N'') AS NVARCHAR(80)) AS BillNo,
+            CAST(N'' AS NVARCHAR(120)) AS ClaimId,
             CAST(NULLIF(o.PatientId, 0) AS INT) AS PatientId,
             CAST(NULL AS INT) AS VisitId,
             CAST(NULLIF(o.PatientTypeId, 0) AS INT) AS PatientTypeId,
@@ -111,13 +113,15 @@ BEGIN
     SELECT
         c.*,
         LOWER(LTRIM(RTRIM(ISNULL(c.BillNo, N'')))) AS BillNoKey,
-        LOWER(REPLACE(LTRIM(RTRIM(ISNULL(c.BillNo, N''))), N' ', N'')) AS BillNoCompactKey
+        LOWER(REPLACE(LTRIM(RTRIM(ISNULL(c.BillNo, N''))), N' ', N'')) AS BillNoCompactKey,
+        LOWER(LTRIM(RTRIM(ISNULL(c.ClaimId, N'')))) AS ClaimIdKey
     INTO #canonical_base
     FROM canonical c;
 
     CREATE CLUSTERED INDEX IX_canonical_base_key ON #canonical_base(BillSourceKey, BillId);
     CREATE NONCLUSTERED INDEX IX_canonical_base_billno_key ON #canonical_base(BillNoKey) INCLUDE (BillId, BillSourceKey, PatientId, VisitId, BillNoCompactKey);
     CREATE NONCLUSTERED INDEX IX_canonical_base_billno_compact ON #canonical_base(BillNoCompactKey) INCLUDE (BillId, BillSourceKey, PatientId, VisitId);
+    CREATE NONCLUSTERED INDEX IX_canonical_base_claimid_key ON #canonical_base(ClaimIdKey) INCLUDE (BillId, BillSourceKey, PatientId, VisitId, BillNo);
     CREATE NONCLUSTERED INDEX IX_canonical_base_patient ON #canonical_base(PatientId) INCLUDE (BillId, BillSourceKey, BillNo, VisitId);
 
     CREATE TABLE #scope_seed (
@@ -154,6 +158,17 @@ BEGIN
                       AND s.BillId = c.BillId
               );
         END;
+
+        INSERT INTO #scope_seed(BillSourceKey, BillId)
+        SELECT c.BillSourceKey, c.BillId
+        FROM #canonical_base c
+        WHERE c.ClaimIdKey = @QSafe
+          AND NOT EXISTS (
+                SELECT 1
+                FROM #scope_seed s
+                WHERE s.BillSourceKey = c.BillSourceKey
+                  AND s.BillId = c.BillId
+          );
 
         IF @IsNumericSingleSearch = 1 AND @QInt IS NOT NULL
         BEGIN
@@ -379,6 +394,7 @@ BEGIN
                 @HasTermList = 0
                 AND LOWER(CONCAT(
                     ISNULL(r.BillNo, N''), N' ',
+                    ISNULL(r.ClaimId, N''), N' ',
                     ISNULL(r.Registration_No, N''), N' ',
                     ISNULL(r.PatientName, N''), N' ',
                     ISNULL(r.BillSource, N''), N' ',
@@ -415,6 +431,7 @@ BEGIN
         o.BillSourceKey AS bill_source_key,
         o.BillSource AS bill_source,
         o.BillNo AS bill_no,
+        o.ClaimId AS claim_id,
         o.Registration_No AS registration_no,
         CONVERT(NVARCHAR(10), o.BillDate, 23) AS bill_date,
         CONVERT(NVARCHAR(10), o.SubmitDateRaw, 23) AS submit_date_raw,

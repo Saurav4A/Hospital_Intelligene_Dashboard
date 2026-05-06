@@ -473,8 +473,15 @@
       {% endfor %}
     {% endif %}
     {% set allow_purchase = allow_all or ('purchase' in _sections) %}
+    {% set allow_pharmacy_sales = allow_all or ('pharmacy_sales' in _sections) %}
+    {% set allow_canteen = allow_all or ('canteen' in _sections) %}
     {% set allow_patient_care_journey = allow_all or ('patient_care_journey' in _sections) %}
+    {% set allow_asset_management = allow_all or ('asset_management' in _sections) %}
+    {% set allow_feedback_complaint = allow_all or ('feedback_complaint' in _sections) %}
     {% set allow_discount = allow_all or ('discount_module' in _sections) %}
+    {% set _unit_scope_text = ((session.get('unit_scope') or _role)|string).upper() %}
+    {% set has_govt_scheme_unit = (_role in ['IT', 'Management']) or ('AHL' in _unit_scope_text) or ('ACI' in _unit_scope_text) or ('BALLIA' in _unit_scope_text) %}
+    {% set allow_govt_scheme_tracker = (allow_all or ('govt_scheme_tracker' in _sections)) and has_govt_scheme_unit %}
 
     <div class="top-actions">
       <div class="fab-user">
@@ -547,6 +554,57 @@
       </a>
       {% endif %}
 
+      {% if allow_asset_management %}
+      <a class="card-link" href="{{ url_for('asset_management.home') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0f766e" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 7h16"></path>
+              <path d="M7 4h10v16H7z"></path>
+              <path d="M9.5 11h5"></path>
+              <path d="M9.5 15h5"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">Asset Management</div>
+            <p class="card-desc">Track asset register, issue-return-transfer workflow, movement history, and exports for all permitted hospital units.</p>
+            <div class="quick">
+              <span class="btn btn-blue">Open Module
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+
+      {% if allow_feedback_complaint %}
+      <a class="card-link" href="{{ url_for('feedback_complaint.dashboard_page') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#2563eb" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 5h16v10H7l-3 3z"></path>
+              <path d="M8 9h8"></path>
+              <path d="M8 12h5"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">Feedback / Complaint</div>
+            <p class="card-desc">Patient QR feedback flow with department TAT, escalation, remarks, and final closure tracking.</p>
+            <div class="quick">
+              <span class="btn btn-blue">Open Module
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+
       {% if allow_revenue %}
       <a class="card-link" href="{{ url_for('revenue_dashboard') }}">
         <div class="card-body">
@@ -586,6 +644,33 @@
             <p class="card-desc">Track OPD/IPD/Lab volumes and service category movements.</p>
             <div class="quick">
               <span class="btn btn-blue">View Trends
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+
+      {% if allow_govt_scheme_tracker %}
+      <a class="card-link" href="{{ url_for('govt_scheme_tracker.page') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0f766e" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 4h16v16H4z"></path>
+              <path d="M8 8h8"></path>
+              <path d="M8 12h5"></path>
+              <path d="M8 16h8"></path>
+              <path d="M16 11l2 2 3-4"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">Govt. Scheme Tracker</div>
+            <p class="card-desc">Track GSS / MGBUY patient count, visit type movement, unique patients, and revenue across AHL, ACI, and Ballia.</p>
+            <div class="quick">
+              <span class="btn btn-blue">Open Tracker
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
                 </svg>
@@ -862,6 +947,59 @@
         </div>
       </div>
     </a>
+      {% endif %}
+      {% if allow_pharmacy_sales %}
+      <a class="card-link" href="{{ url_for('pharmacy_sales_dashboard') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#059669" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <rect x="4" y="6" width="16" height="14" rx="2"></rect>
+              <path d="M9 4v4"></path>
+              <path d="M15 4v4"></path>
+              <path d="M8 12h8"></path>
+              <path d="M12 8v8"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">Pharmacy Sales</div>
+            <p class="card-desc">Sharpsight visit-linked medicine billing with OPD/IPD split, live stock checks, and polished invoice print.</p>
+            <div class="quick">
+              <span class="btn btn-blue">Open Sales
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path>
+                  <path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+      {% if allow_canteen %}
+      <a class="card-link" href="{{ url_for('canteen_dashboard') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#c96b14" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M5 5h12a3 3 0 0 1 0 6H7"></path>
+              <path d="M7 11h10a3 3 0 0 1 0 6H9"></path>
+              <path d="M5 5v14"></path>
+              <path d="M5 19h10"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">Canteen</div>
+            <p class="card-desc">Fast canteen billing, collections, reports, menu control, and customer ledger management for AHL and ACI.</p>
+            <div class="quick">
+              <span class="btn btn-blue">Open Canteen
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path>
+                  <path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
       {% endif %}
       {% if allow_discount %}
           <a class="card-link"

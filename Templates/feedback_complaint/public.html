@@ -1,0 +1,700 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Feedback / Complaint | Asarfi Hospital</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="{{ url_for('static', filename='logo/asarfi.png') }}">
+  <style>
+    :root{
+      --bg:#f4f7fb;
+      --brand:#1e3a8a;
+      --brand2:#3b82f6;
+      --ink:#0f172a;
+      --muted:#64748b;
+      --line:#dbe5f2;
+      --card:#ffffff;
+      --ok:#16a34a;
+      --warn:#d97706;
+      --danger:#dc2626;
+      --shadow:0 14px 34px rgba(15,23,42,.1);
+    }
+    *{box-sizing:border-box}
+    body{
+      margin:0;
+      font-family:"Segoe UI",system-ui,-apple-system,sans-serif;
+      color:var(--ink);
+      background:
+        radial-gradient(900px 420px at -20% -10%, #dbeafe 0, transparent 50%),
+        radial-gradient(900px 420px at 120% 0%, #e0f2fe 0, transparent 45%),
+        var(--bg);
+      min-height:100vh;
+    }
+    .page{
+      width:min(1180px,calc(100% - 32px));
+      margin:0 auto;
+      padding:32px 0 34px;
+    }
+    .brand{
+      display:flex;
+      align-items:center;
+      gap:12px;
+      padding:0 2px 20px;
+    }
+    .brand img{
+      width:58px;
+      height:58px;
+      object-fit:contain;
+      border-radius:14px;
+      background:#fff;
+      box-shadow:0 10px 24px rgba(15,23,42,.16);
+    }
+    .brand h1{
+      margin:0;
+      font-size:26px;
+      color:var(--brand);
+      line-height:1.15;
+    }
+    .brand p{margin:4px 0 0;color:var(--muted);font-size:14px}
+    .content-shell{
+      display:grid;
+      grid-template-columns:330px minmax(0,1fr);
+      gap:22px;
+      align-items:start;
+    }
+    .side-card{
+      position:sticky;
+      top:18px;
+      background:rgba(255,255,255,.92);
+      border:1px solid rgba(30,58,138,.1);
+      border-radius:20px;
+      box-shadow:var(--shadow);
+      padding:20px;
+    }
+    .side-card h2{
+      font-size:22px;
+      margin:0 0 8px;
+    }
+    .side-card p{
+      margin:0;
+      color:var(--muted);
+      font-size:14px;
+    }
+    .side-steps{
+      display:grid;
+      gap:10px;
+      margin-top:18px;
+    }
+    .side-step{
+      display:grid;
+      grid-template-columns:34px 1fr;
+      gap:10px;
+      align-items:start;
+      padding:10px;
+      border-radius:14px;
+      background:#f8fbff;
+      border:1px solid #e3ecfb;
+      transition:background .18s ease,border-color .18s ease,box-shadow .18s ease,transform .18s ease;
+    }
+    .side-step.active{
+      background:#eef4ff;
+      border-color:#93b8ff;
+      box-shadow:0 10px 24px rgba(37,99,235,.13);
+      transform:translateY(-1px);
+    }
+    .side-step.complete{
+      background:#f0fdf4;
+      border-color:#bbf7d0;
+    }
+    .side-step b{
+      width:34px;
+      height:34px;
+      border-radius:12px;
+      display:grid;
+      place-items:center;
+      color:#fff;
+      background:linear-gradient(135deg,var(--brand),var(--brand2));
+      font-size:13px;
+    }
+    .side-step.complete b{background:#16a34a}
+    .side-step.active b{box-shadow:0 8px 18px rgba(37,99,235,.25)}
+    .side-step strong{
+      display:block;
+      color:#10213d;
+      font-size:14px;
+      line-height:1.25;
+    }
+    .side-step.active strong{color:var(--brand)}
+    .side-step span{
+      display:block;
+      color:var(--muted);
+      font-size:12px;
+      margin-top:2px;
+      line-height:1.35;
+    }
+    .trust-note{
+      margin-top:16px;
+      padding:12px;
+      border-radius:14px;
+      background:#ecfdf5;
+      border:1px solid #bbf7d0;
+      color:#047857;
+      font-weight:800;
+      font-size:13px;
+      line-height:1.4;
+    }
+    .flow{min-width:0}
+    .panel{
+      background:rgba(255,255,255,.96);
+      border:1px solid rgba(30,58,138,.1);
+      border-radius:20px;
+      box-shadow:var(--shadow);
+      padding:24px;
+      margin-bottom:16px;
+    }
+    .step-label{
+      display:inline-flex;
+      align-items:center;
+      padding:6px 10px;
+      border-radius:999px;
+      background:#eef4ff;
+      color:var(--brand);
+      font-weight:800;
+      font-size:12px;
+      margin-bottom:10px;
+    }
+    h2{margin:0 0 8px;font-size:26px;color:var(--brand)}
+    p{line-height:1.5}
+    .muted{color:var(--muted);margin:0 0 14px}
+    label{display:block;font-weight:800;color:#10213d;font-size:13px;margin:12px 0 7px}
+    input,select,textarea{
+      width:100%;
+      border:1px solid var(--line);
+      border-radius:14px;
+      padding:14px 15px;
+      font:inherit;
+      background:#fff;
+      color:var(--ink);
+      outline:none;
+    }
+    input:focus,select:focus,textarea:focus{
+      border-color:#93c5fd;
+      box-shadow:0 0 0 4px rgba(59,130,246,.12);
+    }
+    textarea{min-height:150px;resize:vertical}
+    .row{display:grid;grid-template-columns:minmax(0,1fr) 150px;gap:10px}
+    .action-row{display:grid;grid-template-columns:1fr 1fr;gap:10px;margin-top:14px}
+    .btn{
+      width:100%;
+      border:none;
+      border-radius:14px;
+      padding:14px 16px;
+      font-weight:900;
+      cursor:pointer;
+      color:#fff;
+      background:linear-gradient(135deg,var(--brand),var(--brand2));
+      box-shadow:0 10px 24px rgba(37,99,235,.22);
+    }
+    .btn.secondary{
+      color:var(--brand);
+      background:#f0f5ff;
+      border:1px solid #dbe7ff;
+      box-shadow:none;
+    }
+    .btn:disabled{opacity:.65;cursor:not-allowed}
+    .cards{display:grid;grid-template-columns:repeat(auto-fit,minmax(280px,1fr));gap:12px}
+    .choice{
+      width:100%;
+      text-align:left;
+      background:#fff;
+      border:1px solid var(--line);
+      border-radius:16px;
+      padding:16px;
+      cursor:pointer;
+      display:grid;
+      gap:8px;
+      min-height:94px;
+      transition:border-color .18s ease, box-shadow .18s ease, transform .18s ease, background .18s ease;
+    }
+    .choice:hover,.choice.selected{
+      border-color:#93c5fd;
+      background:#f8fbff;
+      box-shadow:0 10px 24px rgba(30,58,138,.08);
+      transform:translateY(-1px);
+    }
+    .patient-instruction{
+      display:flex;
+      align-items:center;
+      gap:10px;
+      padding:12px 14px;
+      margin:0 0 14px;
+      border-radius:14px;
+      background:#eef4ff;
+      border:1px solid #cfe0ff;
+      color:#173a7a;
+      font-size:13px;
+      font-weight:800;
+      line-height:1.4;
+    }
+    .patient-instruction b{
+      width:28px;
+      height:28px;
+      border-radius:10px;
+      display:grid;
+      place-items:center;
+      flex:0 0 auto;
+      color:#fff;
+      background:linear-gradient(135deg,var(--brand),var(--brand2));
+    }
+    .choice.patient-choice{
+      position:relative;
+      overflow:hidden;
+      min-height:128px;
+      border:1.5px solid #bfd6ff;
+      background:linear-gradient(180deg,#fff 0%,#f8fbff 100%);
+      box-shadow:0 10px 24px rgba(15,23,42,.06);
+    }
+    .choice.patient-choice:before{
+      content:"";
+      position:absolute;
+      left:0;
+      top:0;
+      bottom:0;
+      width:5px;
+      background:linear-gradient(180deg,var(--brand),var(--brand2));
+    }
+    .choice.patient-choice:hover,
+    .choice.patient-choice:focus-visible{
+      border-color:#2563eb;
+      background:#fff;
+      box-shadow:0 16px 34px rgba(37,99,235,.16);
+      transform:translateY(-2px);
+    }
+    .choice-head{
+      display:flex;
+      align-items:flex-start;
+      justify-content:space-between;
+      gap:12px;
+    }
+    .choice strong{color:#10213d;font-size:16px;line-height:1.25}
+    .select-cue{
+      display:inline-flex;
+      align-items:center;
+      justify-content:center;
+      gap:6px;
+      flex:0 0 auto;
+      border-radius:999px;
+      padding:7px 10px;
+      background:#1d4ed8;
+      color:#fff;
+      font-size:12px;
+      font-weight:900;
+      box-shadow:0 8px 18px rgba(37,99,235,.22);
+      white-space:nowrap;
+    }
+    .meta{display:flex;flex-wrap:wrap;gap:7px 10px;font-size:13px;color:var(--muted);line-height:1.35}
+    .visit-summary{display:flex;flex-wrap:wrap;gap:7px;margin-top:2px}
+    .visit-group{
+      display:inline-flex;
+      align-items:center;
+      flex-wrap:wrap;
+      gap:5px;
+      border-radius:12px;
+      padding:6px 8px;
+      font-size:12px;
+      line-height:1.25;
+      font-weight:800;
+      border:1px solid #dbe7ff;
+      background:#f8fbff;
+      color:#31527d;
+    }
+    .visit-group b{color:#12377a}
+    .visit-group.inpatient{border-color:#fed7aa;background:#fff7ed;color:#8a4b14}
+    .visit-group.inpatient b{color:#9a3412}
+    .visit-group.admitted{border-color:#bbf7d0;background:#ecfdf5;color:#047857}
+    .visit-group.admitted b{color:#047857}
+    .visit-chip{
+      display:inline-flex;
+      align-items:center;
+      border-radius:999px;
+      padding:3px 7px;
+      background:#eef2ff;
+      color:var(--brand);
+      font-weight:900;
+    }
+    .visit-group.inpatient .visit-chip{background:#ffedd5;color:#9a3412}
+    .visit-group.admitted .visit-chip{background:#d1fae5;color:#047857}
+    .empty-summary{
+      color:var(--muted);
+      font-size:12px;
+      font-weight:700;
+    }
+    .pill{
+      display:inline-flex;
+      align-items:center;
+      border-radius:999px;
+      padding:5px 9px;
+      background:#eef2ff;
+      color:var(--brand);
+      font-weight:800;
+    }
+    .pill.ipd{background:#fff7ed;color:#9a3412;border:1px solid #fed7aa}
+    .pill.ok{background:#ecfdf5;color:#047857;border:1px solid #bbf7d0}
+    .error{
+      display:none;
+      padding:12px;
+      border-radius:14px;
+      background:#fef2f2;
+      border:1px solid #fecaca;
+      color:#991b1b;
+      font-weight:700;
+      margin:0 0 16px;
+    }
+    .empty{
+      padding:16px;
+      border-radius:14px;
+      background:#f8fafc;
+      border:1px dashed #cbd5e1;
+      color:var(--muted);
+      text-align:center;
+      font-weight:700;
+    }
+    .success{
+      text-align:center;
+      padding:28px 18px;
+    }
+    .success-mark{
+      width:68px;
+      height:68px;
+      border-radius:50%;
+      display:grid;
+      place-items:center;
+      margin:0 auto 14px;
+      background:#dcfce7;
+      color:#15803d;
+      font-size:36px;
+      font-weight:900;
+    }
+    .ref{
+      font-size:24px;
+      font-weight:900;
+      color:var(--brand);
+      padding:12px;
+      border-radius:14px;
+      background:#eef4ff;
+      margin:14px 0;
+    }
+    .hidden{display:none!important}
+    footer{text-align:center;color:var(--muted);font-size:12px;padding:18px 0}
+    @media (max-width:900px){
+      .page{width:min(720px,calc(100% - 24px));padding:18px 0 28px}
+      .content-shell{grid-template-columns:1fr}
+      .side-card{position:static}
+      .side-steps{grid-template-columns:repeat(2,minmax(0,1fr))}
+    }
+    @media (max-width:620px){
+      .page{width:100%;padding:14px 12px 24px}
+      .row{grid-template-columns:1fr}
+      .brand{padding-bottom:14px}
+      .brand img{width:52px;height:52px;border-radius:13px}
+      .brand h1{font-size:21px}
+      .brand p{font-size:13px}
+      .panel{padding:16px}
+      h2{font-size:22px}
+      .side-card{display:none}
+      .cards{grid-template-columns:1fr}
+      .choice{min-height:0}
+      .patient-instruction{align-items:flex-start}
+      .choice-head{display:grid;gap:8px}
+      .select-cue{width:max-content}
+      .visit-summary{gap:6px}
+      .visit-group{width:100%;align-items:flex-start}
+      .btn{padding:13px 14px}
+      .action-row{grid-template-columns:1fr}
+    }
+  </style>
+</head>
+<body>
+  <div class="page">
+    <div class="brand">
+      <img src="{{ url_for('static', filename='logo/asarfi.png') }}" alt="Asarfi Hospital">
+      <div>
+        <h1>Asarfi Hospital</h1>
+        <p>Feedback / Complaint Management</p>
+      </div>
+    </div>
+
+    <div class="content-shell">
+      <aside class="side-card">
+        <h2>Help us improve your care</h2>
+        <p>Your message is linked to your hospital visit and routed to the right team for review.</p>
+        <div class="side-steps">
+          <div class="side-step" data-flow-step="stepSearch"><b>1</b><div><strong>Find patient</strong><span>Use registration or mobile number.</span></div></div>
+          <div class="side-step" data-flow-step="stepPatient"><b>2</b><div><strong>Select patient</strong><span>System verifies the current or latest visit.</span></div></div>
+          <div class="side-step" data-flow-step="stepComplaint"><b>3</b><div><strong>Share details</strong><span>Select category and describe the issue.</span></div></div>
+          <div class="side-step" data-flow-step="stepSuccess"><b>4</b><div><strong>Submit</strong><span>Receive a tracking reference number.</span></div></div>
+        </div>
+        <div class="trust-note">No login is required.</div>
+      </aside>
+
+      <main class="flow">
+        <div class="error" id="errorBox"></div>
+
+        <section class="panel" id="stepSearch">
+          <span class="step-label">Step 1</span>
+          <h2>Find your patient record</h2>
+          <p class="muted">Enter your Registration No or registered Mobile No. This helps us connect your feedback to the right visit.</p>
+          <label for="query">Registration No / Mobile No</label>
+          <div class="row">
+            <input id="query" autocomplete="off" inputmode="text" placeholder="Example: AHL12345 or 98765xxxxx">
+            <select id="unit">
+              <option value="">All units</option>
+              {% for unit in units %}
+              <option value="{{ unit }}">{{ unit }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div style="margin-top:14px">
+            <button class="btn" id="searchBtn">Search Patient</button>
+          </div>
+        </section>
+
+        <section class="panel hidden" id="stepPatient">
+          <span class="step-label">Step 2</span>
+          <h2>Select patient</h2>
+          <p class="muted">Choose the card that matches the patient details. We will automatically use the current or latest eligible visit.</p>
+          <div class="patient-instruction"><b>i</b><span>Tap or click the correct patient card to continue.</span></div>
+          <div class="cards" id="patientCards"></div>
+          <div class="action-row">
+            <button class="btn secondary" id="backToSearch">Back to Find Patient</button>
+          </div>
+        </section>
+
+        <section class="panel hidden" id="stepComplaint">
+          <span class="step-label">Step 3</span>
+          <h2>Share details</h2>
+          <p class="muted" id="selectedVisitLabel"></p>
+          <label for="complaintType">Type</label>
+          <select id="complaintType">
+            <option value="COMPLAINT">Complaint</option>
+            <option value="FEEDBACK">Feedback</option>
+          </select>
+          <label for="department">Department / category</label>
+          <select id="department"></select>
+          <label for="details">Details</label>
+          <textarea id="details" placeholder="Please describe what happened, where it happened, and any detail that will help us resolve it."></textarea>
+          <div class="action-row">
+            <button class="btn secondary" id="backToVisit">Back</button>
+            <button class="btn" id="submitBtn">Submit</button>
+          </div>
+        </section>
+
+        <section class="panel hidden success" id="stepSuccess">
+          <div class="success-mark">&#10003;</div>
+          <h2>Thank you</h2>
+          <p class="muted">Your feedback has been submitted successfully. Please keep this reference number for tracking.</p>
+          <div class="ref" id="refNo"></div>
+          <button class="btn secondary" onclick="window.location.reload()">Submit another response</button>
+        </section>
+      </main>
+    </div>
+
+    <footer>&copy; 2026 Asarfi Hospital Ltd.</footer>
+  </div>
+
+  <script>
+    const state = { patients: [], visits: [], patient: null, visit: null, departments: [] };
+    const $ = (id) => document.getElementById(id);
+
+    function showError(message){
+      const box = $("errorBox");
+      box.textContent = message || "Something went wrong. Please try again.";
+      box.style.display = "block";
+      setTimeout(() => { box.style.display = "none"; }, 5200);
+    }
+    function show(id){
+      const order = ["stepSearch","stepPatient","stepComplaint","stepSuccess"];
+      order.forEach(x => $(x).classList.add("hidden"));
+      $(id).classList.remove("hidden");
+      const activeIndex = order.indexOf(id);
+      document.querySelectorAll("[data-flow-step]").forEach(item => {
+        const itemIndex = order.indexOf(item.dataset.flowStep);
+        item.classList.toggle("active", item.dataset.flowStep === id);
+        item.classList.toggle("complete", itemIndex >= 0 && itemIndex < activeIndex);
+      });
+      window.scrollTo({top:0,behavior:"smooth"});
+    }
+    function setBusy(btn, busy, label){
+      btn.disabled = !!busy;
+      if (busy) {
+        btn.dataset.oldText = btn.textContent;
+        btn.textContent = label || "Please wait...";
+      } else {
+        btn.textContent = btn.dataset.oldText || btn.textContent;
+      }
+    }
+    function fmtDate(value){
+      if (!value) return "";
+      const dt = new Date(String(value).replace(" ", "T"));
+      if (Number.isNaN(dt.getTime())) return value;
+      return dt.toLocaleString("en-IN", {day:"2-digit",month:"short",year:"numeric",hour:"2-digit",minute:"2-digit"});
+    }
+    function esc(value){
+      return String(value == null ? "" : value)
+        .replace(/&/g, "&amp;")
+        .replace(/</g, "&lt;")
+        .replace(/>/g, "&gt;")
+        .replace(/"/g, "&quot;")
+        .replace(/'/g, "&#39;");
+    }
+    function renderVisitSummary(p){
+      const groups = p.visit_type_groups || {};
+      const renderGroup = (title, key) => {
+        const values = Array.isArray(groups[key]) ? groups[key].filter(Boolean) : [];
+        if (!values.length) return "";
+        return `<span class="visit-group ${key}">
+          <b>${title}</b>
+          ${values.map(v => `<span class="visit-chip">${esc(v)}</span>`).join("")}
+        </span>`;
+      };
+      const html = [
+        (p.is_current_ipd || p.admission_status === "Admitted")
+          ? `<span class="visit-group admitted"><b>Admitted</b><span class="visit-chip">IPD</span></span>`
+          : "",
+        renderGroup("Outpatient", "outpatient"),
+        renderGroup("Inpatient", "inpatient"),
+        renderGroup("Other", "other")
+      ].filter(Boolean).join("");
+      return html || `<span class="empty-summary">No current or recent visit found</span>`;
+    }
+    async function api(url, options){
+      const res = await fetch(url, options || {});
+      const data = await res.json().catch(() => ({}));
+      if (!res.ok || data.status === "error") throw new Error(data.message || "Request failed");
+      return data;
+    }
+    async function loadDepartments(){
+      try {
+        const data = await api("/api/feedback/departments");
+        state.departments = data.departments || [];
+        $("department").innerHTML = state.departments.map(d => `<option value="${d.department_id}">${d.department_name}</option>`).join("");
+      } catch(e) {
+        $("department").innerHTML = `<option value="">Departments loading...</option>`;
+      }
+    }
+    function renderPatients(){
+      const wrap = $("patientCards");
+      if (!state.patients.length) {
+        wrap.innerHTML = `<div class="empty">No patient record was found. Please check the number and try again.</div>`;
+        show("stepPatient");
+        return;
+      }
+      const eligiblePatients = state.patients
+        .map((p, idx) => ({ p, idx }))
+        .filter(item => item.p.has_valid_visit);
+      if (!eligiblePatients.length) {
+        wrap.innerHTML = `<div class="empty">Patient record found, but there is no current admission or outpatient visit from the last 3 months. Please contact the hospital desk for assistance.</div>`;
+        show("stepPatient");
+        return;
+      }
+      wrap.innerHTML = eligiblePatients.map(({p, idx}) => `
+        <button class="choice patient-choice" data-idx="${idx}" aria-label="Select patient ${esc(p.patient_name || "Patient")}">
+          <div class="choice-head">
+            <strong>${esc(p.patient_name || "Patient")}</strong>
+            <span class="select-cue">Select this patient</span>
+          </div>
+          <div class="meta">
+            <span class="pill">${esc(p.source_unit || "")}</span>
+            <span>Reg No: ${esc(p.registration_no || "-")}</span>
+            <span>Mobile: ${esc(p.masked_mobile || "-")}</span>
+          </div>
+          <div class="visit-summary">${renderVisitSummary(p)}</div>
+        </button>
+      `).join("");
+      wrap.querySelectorAll(".choice").forEach(btn => btn.addEventListener("click", () => selectPatient(Number(btn.dataset.idx))));
+      show("stepPatient");
+    }
+    async function selectPatient(index){
+      state.patient = state.patients[index];
+      try {
+        const params = new URLSearchParams({
+          patient_id: state.patient.patient_id || "",
+          reg_no: state.patient.registration_no || "",
+          unit: state.patient.source_unit || ""
+        });
+        const data = await api(`/api/feedback/patient_visits?${params.toString()}`);
+        state.visits = data.visits || [];
+        if (!state.visits.length) {
+          showError("No current admission or outpatient visit from the last 3 months was found for this patient.");
+          return;
+        }
+        selectVisit(0);
+      } catch(e) {
+        showError(e.message);
+      }
+    }
+    function selectVisit(index){
+      state.visit = state.visits[index];
+      const dept = state.visit.clinical_department || "Department not available";
+      const admitted = state.visit.is_current_ipd ? "Admitted | " : "";
+      $("selectedVisitLabel").textContent = `${admitted}${state.visit.visit_type || "Visit"} ${state.visit.visit_no || ""} | ${fmtDate(state.visit.visit_date)} | ${dept}`;
+      show("stepComplaint");
+    }
+    $("searchBtn").addEventListener("click", async () => {
+      const query = $("query").value.trim();
+      if (query.length < 3) return showError("Please enter a valid Registration No or Mobile No.");
+      const btn = $("searchBtn");
+      setBusy(btn, true, "Searching...");
+      try {
+        if (!state.departments.length) loadDepartments();
+        const params = new URLSearchParams({ query, unit: $("unit").value || "" });
+        const data = await api(`/api/feedback/search_patient?${params.toString()}`);
+        state.patients = data.patients || [];
+        renderPatients();
+      } catch(e) {
+        showError(e.message);
+      } finally {
+        setBusy(btn, false);
+      }
+    });
+    $("backToSearch").addEventListener("click", () => {
+      state.patients = [];
+      state.visits = [];
+      state.patient = null;
+      state.visit = null;
+      $("patientCards").innerHTML = "";
+      show("stepSearch");
+    });
+    $("backToVisit").addEventListener("click", () => show("stepPatient"));
+    $("submitBtn").addEventListener("click", async () => {
+      if (!state.visit) return showError("Please select a visit.");
+      if (!$("department").value) return showError("Please select a department.");
+      if ($("details").value.trim().length < 3) return showError("Please add a few more details.");
+      const btn = $("submitBtn");
+      setBusy(btn, true, "Submitting...");
+      try {
+        const data = await api("/api/feedback/submit", {
+          method:"POST",
+          headers:{"Content-Type":"application/json"},
+          body:JSON.stringify({
+            source_unit: state.visit.source_unit,
+            patient_id: state.visit.patient_id,
+            visit_id: state.visit.visit_id,
+            complaint_department_id: $("department").value,
+            complaint_type: $("complaintType").value,
+            details: $("details").value.trim()
+          })
+        });
+        $("refNo").textContent = data.complaint_no || "";
+        show("stepSuccess");
+      } catch(e) {
+        showError(e.message);
+      } finally {
+        setBusy(btn, false);
+      }
+    });
+    loadDepartments();
+    show("stepSearch");
+  </script>
+</body>
+</html>

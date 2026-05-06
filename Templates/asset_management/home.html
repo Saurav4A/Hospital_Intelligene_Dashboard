@@ -1,0 +1,179 @@
+{% extends "asset_management/_base.html" %}
+
+{% block page_actions %}
+  <a class="asset-btn primary" href="{{ url_for('asset_management.register_page') }}">Open Register</a>
+  <a class="asset-btn secondary" href="{{ url_for('asset_management.breakdowns_page') }}">Breakdowns</a>
+  <a class="asset-btn secondary" href="{{ url_for('asset_management.public_breakdown_complaint_page') }}" target="_blank" rel="noopener">Public QR Page</a>
+  <a class="asset-btn secondary" href="{{ url_for('asset_management.masters_home') }}">Masters</a>
+  <a class="asset-btn secondary" href="{{ url_for('asset_management.reports_page') }}">Reports</a>
+{% endblock %}
+
+{% block asset_page %}
+  <div class="asset-grid three">
+    <div class="asset-kpi">
+      <div class="asset-kpi__label">Total Assets</div>
+      <div class="asset-kpi__value">{{ summary.total_assets or 0 }}</div>
+      <div class="asset-kpi__sub">Combined across your permitted units</div>
+    </div>
+    <div class="asset-kpi">
+      <div class="asset-kpi__label">In Use / In Store</div>
+      <div class="asset-kpi__value">{{ summary.in_use_count or 0 }} / {{ summary.in_store_count or 0 }}</div>
+      <div class="asset-kpi__sub">Operational issue-return balance</div>
+    </div>
+    <div class="asset-kpi">
+      <div class="asset-kpi__label">Repair / Expiring</div>
+      <div class="asset-kpi__value">{{ summary.repair_count or 0 }} / {{ summary.expiring_30_count or 0 }}</div>
+      <div class="asset-kpi__sub">Assets under repair and due warranty attention</div>
+    </div>
+  </div>
+
+  <div class="asset-grid two" style="margin-top:16px;">
+    <section class="asset-card">
+      <div class="asset-toolbar">
+        <h3 style="margin:0;">Status Snapshot</h3>
+        <a class="asset-btn secondary" href="{{ url_for('asset_management.register_page') }}">Work in Register</a>
+      </div>
+      <div class="asset-grid two">
+        {% for item in summary.status_counts %}
+          <div class="asset-detail-item">
+            <span>{{ item.status_label }}</span>
+            <strong>{{ item.count }}</strong>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+
+    <section class="asset-card">
+      <div class="asset-toolbar">
+        <h3 style="margin:0;">Location Coverage</h3>
+        <a class="asset-btn secondary" href="{{ url_for('asset_management.reports_page') }}">Open Reports</a>
+      </div>
+      <div class="asset-list">
+        {% if summary.location_counts %}
+          {% for item in summary.location_counts %}
+            <div class="asset-list-item">
+              <div class="asset-list-item__meta">
+                <strong>{{ item.location_code }}</strong>
+                <span>{{ item.count }} assets</span>
+              </div>
+              <p>{{ item.location_name }}</p>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="asset-empty">No location summary is available for the current scope.</div>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+
+  <div class="asset-grid two" style="margin-top:16px;">
+    <section class="asset-card">
+      <h3>Warranty & Repair Alerts</h3>
+      <div class="asset-coverage-priority-grid">
+        {% for item in summary.coverage_alert_counts or [] %}
+          <a class="asset-priority-tile asset-priority-{{ item.priority }}" href="{{ url_for('asset_management.register_page', coverage_alert=item.priority) }}">
+            <span>{{ item.label }}</span>
+            <strong>{{ item.count }}</strong>
+          </a>
+        {% endfor %}
+      </div>
+      <div class="asset-list">
+        {% if summary.coverage_alerts %}
+          {% for item in summary.coverage_alerts %}
+            <div class="asset-list-item">
+              <div class="asset-list-item__meta">
+                <strong>{{ item.asset_code }}</strong>
+                <span>{{ item.coverage_alert_label }}</span>
+              </div>
+              <p>{{ item.equipment_name }} | {{ item.location_name }}</p>
+              <p>{{ item.coverage_status_label }}{% if item.coverage_expiry_date_display %} | Expiry: {{ item.coverage_expiry_date_display }}{% endif %}</p>
+            </div>
+          {% endfor %}
+        {% elif summary.warranty_alerts %}
+          {% for item in summary.warranty_alerts %}
+            <div class="asset-list-item">
+              <div class="asset-list-item__meta">
+                <strong>{{ item.asset_code }}</strong>
+                <span>{{ item.warranty_bucket_label }}</span>
+              </div>
+              <p>{{ item.equipment_name }} | {{ item.location_name }}</p>
+              <p>Warranty end: {{ item.warranty_end_date_display or "Not available" }}{% if item.days_to_warranty_end is not none %} | {{ item.days_to_warranty_end }} day(s){% endif %}</p>
+            </div>
+          {% endfor %}
+        {% elif summary.repair_alerts %}
+          {% for item in summary.repair_alerts %}
+            <div class="asset-list-item">
+              <div class="asset-list-item__meta">
+                <strong>{{ item.asset_code }}</strong>
+                <span>Under Repair</span>
+              </div>
+              <p>{{ item.equipment_name }} | {{ item.location_name }}</p>
+              <p>{{ item.last_movement_remarks or "Waiting for updated repair note." }}</p>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="asset-empty">No immediate warranty or repair alerts for the selected scope.</div>
+        {% endif %}
+      </div>
+    </section>
+
+    <section class="asset-card">
+      <h3>Recent Activity</h3>
+      <div class="asset-list">
+        {% if recent_activity %}
+          {% for item in recent_activity %}
+            <div class="asset-list-item">
+              <div class="asset-list-item__meta">
+                <strong>{{ item.asset_code or "Asset" }}</strong>
+                <span>{{ item.created_at_display or item.last_movement_at_display or "" }}</span>
+              </div>
+              <p>{{ item.movement_summary or item.movement_type or "Asset activity recorded." }}</p>
+              <p>{{ item.equipment_name or "" }}{% if item.created_by_username %} | By {{ item.created_by_username }}{% endif %}</p>
+            </div>
+          {% endfor %}
+        {% else %}
+          <div class="asset-empty">No movement history is available yet. New workflow entries will appear here.</div>
+        {% endif %}
+      </div>
+    </section>
+  </div>
+
+  <section class="asset-card" style="margin-top:16px;">
+    <div class="asset-toolbar">
+      <h3 style="margin:0;">Recently Updated Assets</h3>
+      <a class="asset-btn success" href="{{ url_for('asset_management.register_page') }}">Manage Assets</a>
+    </div>
+    <div class="asset-table-wrap">
+      <table class="asset-table">
+        <thead>
+          <tr>
+            <th>Asset Code</th>
+            <th>Equipment</th>
+            <th>Location</th>
+            <th>Current Holder</th>
+            <th>Value</th>
+            <th>Status</th>
+            <th>Warranty End</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in recent_assets %}
+            <tr>
+              <td>{{ row.asset_code }}</td>
+              <td>{{ row.equipment_name }}</td>
+              <td>{{ row.location_name }}</td>
+              <td>{{ row.current_holder_label }}</td>
+              <td>{{ row.asset_value_display or "Not available" }}</td>
+              <td><span class="asset-status asset-status-{{ row.asset_status_code }}">{{ row.asset_status_label }}</span></td>
+              <td>{{ row.warranty_end_date_display or "Not available" }}</td>
+              <td><a class="asset-link-btn" href="{{ url_for('asset_management.asset_detail_page', asset_id=row.asset_id) }}">View</a></td>
+            </tr>
+          {% else %}
+            <tr><td colspan="8"><div class="asset-empty">No recent asset updates are available.</div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+{% endblock %}

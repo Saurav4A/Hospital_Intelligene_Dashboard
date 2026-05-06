@@ -187,3 +187,9 @@ out_after.txt
 snippet.txt
 Logs/
 data/
+*.err
+*.out
+tmp_*
+_tmp_*
+*token*.json
+*.log

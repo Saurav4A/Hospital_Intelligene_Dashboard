@@ -1,0 +1,422 @@
+{% extends "asset_management/_base.html" %}
+
+{% block page_actions %}
+  <a class="asset-btn secondary" href="{{ url_for('asset_management.masters_home') }}">All Masters</a>
+  <a class="asset-btn primary" href="{{ url_for('asset_management.register_page') }}">Back to Register</a>
+{% endblock %}
+
+{% block asset_page %}
+  <div class="asset-grid two asset-master-layout">
+    <section class="asset-card">
+      <div class="asset-toolbar">
+        <div>
+          <h3 style="margin:0 0 6px;">Available Records</h3>
+          <p class="asset-master-toolbar-note">
+            Source database: {{ master_source_unit }}.
+            {% if master_meta.source == 'equipment' %}
+              Use this list to maintain the equipment options shown in asset entry.
+            {% else %}
+              Use the list to review and edit existing {{ master_meta.title.lower() }} entries.
+            {% endif %}
+          </p>
+        </div>
+        <div class="asset-toolbar__group">
+          <input
+            class="asset-input"
+            id="referenceMasterSearch"
+            placeholder="{% if master_meta.source == 'equipment' %}Search by code, equipment name, or machine type{% else %}Search by code, name, contact, or phone{% endif %}"
+            value="{{ master_search }}"
+            style="width:min(320px,100%);height:46px;"
+          >
+          <button type="button" class="asset-btn secondary" id="referenceMasterResetBtn">New Entry</button>
+        </div>
+      </div>
+      <div class="asset-master-list-scroll" id="referenceMasterList"></div>
+    </section>
+
+    <section class="asset-card">
+      <div class="asset-toolbar">
+        <div>
+          <h3 style="margin:0 0 6px;">{{ master_meta.title }} Form</h3>
+          <p class="asset-master-toolbar-note">
+            {% if master_meta.source == 'equipment' %}
+              Add a professional equipment name once, map it to the correct machine type, and it becomes available in asset entry immediately.
+            {% else %}
+              Use this form to add a new record or update an existing one.
+            {% endif %}
+          </p>
+        </div>
+      </div>
+      <form id="referenceMasterPageForm">
+        <input type="hidden" name="id" id="referenceMasterId">
+
+        {% if master_meta.source == 'equipment' %}
+          <div class="asset-master-form-grid">
+            <div class="asset-field">
+              <label>Code</label>
+              <input class="asset-input" id="referenceMasterCode" name="code" readonly>
+            </div>
+            <div class="asset-field asset-field--span-2">
+              <label>Equipment Name</label>
+              <input class="asset-input" id="referenceMasterName" name="name" placeholder="Enter equipment name" required>
+            </div>
+            <div class="asset-field">
+              <label>Machine Type</label>
+              <select class="asset-select" id="referenceMasterMachineType" name="machine_type_id" required>
+                <option value="">Select machine type</option>
+                {% for item in master_machine_types %}
+                  <option value="{{ item.id }}">{{ item.name }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="asset-field">
+              <label>Status</label>
+              <select class="asset-select" id="referenceMasterActive" name="active">
+                <option value="1">Active</option>
+                <option value="0">Inactive</option>
+              </select>
+            </div>
+          </div>
+        {% else %}
+          <div class="asset-master-form-grid">
+            <div class="asset-field">
+              <label>Code</label>
+              <input class="asset-input" id="referenceMasterCode" name="code" readonly>
+            </div>
+            <div class="asset-field">
+              <label>Name</label>
+              <input class="asset-input" id="referenceMasterName" name="name" placeholder="Enter name" required>
+            </div>
+            <div class="asset-field">
+              <label>Contact Person</label>
+              <input class="asset-input" id="referenceMasterContactPerson" name="contact_person" placeholder="Enter contact person">
+            </div>
+            <div class="asset-field">
+              <label>Contact Designation</label>
+              <input class="asset-input" id="referenceMasterContactDesignation" name="contact_designation" placeholder="Enter designation">
+            </div>
+            <div class="asset-field">
+              <label>Phone 1</label>
+              <input class="asset-input" id="referenceMasterPhone1" name="phone1" placeholder="Primary phone number">
+            </div>
+            <div class="asset-field">
+              <label>Phone 2</label>
+              <input class="asset-input" id="referenceMasterPhone2" name="phone2" placeholder="Alternate phone number">
+            </div>
+            <div class="asset-field">
+              <label>Cell Phone</label>
+              <input class="asset-input" id="referenceMasterCellphone" name="cellphone" placeholder="Mobile number">
+            </div>
+            <div class="asset-field">
+              <label>Email</label>
+              <input class="asset-input" id="referenceMasterEmail" name="email" placeholder="Email address">
+            </div>
+            <div class="asset-field">
+              <label>State</label>
+              <select class="asset-select" id="referenceMasterState" name="state_id"></select>
+            </div>
+            <div class="asset-field">
+              <label>City</label>
+              <select class="asset-select" id="referenceMasterCity" name="city_id"></select>
+            </div>
+            <div class="asset-field">
+              <label>PIN</label>
+              <input class="asset-input" id="referenceMasterPin" name="pin" placeholder="PIN / postal code">
+            </div>
+            <div class="asset-field">
+              <label>Society</label>
+              <input class="asset-input" id="referenceMasterSociety" name="society" placeholder="Society / complex">
+            </div>
+            <div class="asset-field">
+              <label>Landmark</label>
+              <input class="asset-input" id="referenceMasterLandmark" name="landmark" placeholder="Nearby landmark">
+            </div>
+            {% if master_meta.source == 'supplier' %}
+              <div class="asset-field">
+                <label>Credit Period</label>
+                <input class="asset-input" id="referenceMasterCreditPeriod" name="credit_period" placeholder="Credit days">
+              </div>
+              <div class="asset-field">
+                <label>Date Of Association</label>
+                <input class="asset-input" type="date" id="referenceMasterDateOfAssociation" name="date_of_association">
+              </div>
+              <div class="asset-field">
+                <label>GST / CST</label>
+                <input class="asset-input" id="referenceMasterGstCst" name="gst_cst" placeholder="GST or CST number">
+              </div>
+              <div class="asset-field">
+                <label>TDS</label>
+                <input class="asset-input" id="referenceMasterTds" name="tds" placeholder="TDS value">
+              </div>
+              <div class="asset-field">
+                <label>Excise Code</label>
+                <input class="asset-input" id="referenceMasterExciseCode" name="excise_code" placeholder="Excise / license code">
+              </div>
+            {% else %}
+              <div class="asset-field">
+                <label>Status</label>
+                <select class="asset-select" id="referenceMasterActive" name="active">
+                  <option value="1">Active</option>
+                  <option value="0">Inactive</option>
+                </select>
+              </div>
+            {% endif %}
+            <div class="asset-field asset-field--span-full">
+              <label>Address</label>
+              <textarea class="asset-textarea" id="referenceMasterAddress" name="address" placeholder="Street address"></textarea>
+            </div>
+            <div class="asset-field asset-field--span-full">
+              <label>Note</label>
+              <textarea class="asset-textarea" id="referenceMasterNote" name="note" placeholder="Optional note for the master record"></textarea>
+            </div>
+          </div>
+        {% endif %}
+
+        <div class="asset-modal__footer">
+          <button type="button" class="asset-btn secondary" id="referenceMasterClearBtn">Reset</button>
+          <button type="submit" class="asset-btn primary">{{ master_meta.save_label }}</button>
+        </div>
+      </form>
+    </section>
+  </div>
+
+  <script>
+    const referenceMasterKind = {{ master_kind|tojson }};
+    const referenceMasterSource = {{ master_meta.source|tojson }};
+    const referenceMasterMeta = {{ master_meta|tojson }};
+    const referenceMasterInitialRows = {{ master_rows|tojson }};
+    const referenceMasterStates = {{ master_states|tojson }};
+    const referenceMasterInitialCities = {{ master_cities|tojson }};
+    const referenceMasterDefaultGeo = {{ master_default_geo|tojson }};
+    const referenceMasterMachineTypes = {{ master_machine_types|tojson }};
+    let referenceMasterRows = Array.isArray(referenceMasterInitialRows) ? referenceMasterInitialRows : [];
+    let referenceMasterCities = Array.isArray(referenceMasterInitialCities) ? referenceMasterInitialCities : [];
+    let referenceMasterNextCode = {{ master_next_code|tojson }};
+    let referenceMasterSelectedId = null;
+
+    const referenceMasterForm = document.getElementById('referenceMasterPageForm');
+    const referenceMasterList = document.getElementById('referenceMasterList');
+    const referenceMasterSearch = document.getElementById('referenceMasterSearch');
+    const referenceMasterState = document.getElementById('referenceMasterState');
+    const referenceMasterCity = document.getElementById('referenceMasterCity');
+    const referenceMasterMachineType = document.getElementById('referenceMasterMachineType');
+
+    const referenceMasterUrls = {
+      list: {{ url_for('asset_management.api_reference_master_list', kind=master_kind)|tojson }},
+      detail: {{ url_for('asset_management.api_reference_master_detail', kind=master_kind)|tojson }},
+      save: {{ url_for('asset_management.api_reference_master_save', kind=master_kind)|tojson }},
+      cities: {{ url_for('asset_management.api_reference_cities')|tojson }},
+    };
+
+    function referenceMasterEscape(value){
+      return String(value ?? '').replace(/[&<>"']/g, (ch) => ({ '&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;' }[ch]));
+    }
+
+    function referenceMasterRenderStateOptions(selectedValue = ''){
+      if (!referenceMasterState) return;
+      const selectedText = String(selectedValue || '');
+      let html = '<option value="">Select state</option>';
+      referenceMasterStates.forEach((item) => {
+        html += `<option value="${referenceMasterEscape(item.id)}" ${String(item.id) === selectedText ? 'selected' : ''}>${referenceMasterEscape(item.name)}</option>`;
+      });
+      referenceMasterState.innerHTML = html;
+    }
+
+    function referenceMasterRenderCityOptions(selectedValue = ''){
+      if (!referenceMasterCity) return;
+      const selectedText = String(selectedValue || '');
+      let html = '<option value="">Select city</option>';
+      referenceMasterCities.forEach((item) => {
+        html += `<option value="${referenceMasterEscape(item.id)}" ${String(item.id) === selectedText ? 'selected' : ''}>${referenceMasterEscape(item.name)}</option>`;
+      });
+      referenceMasterCity.innerHTML = html;
+    }
+
+    async function referenceMasterLoadCities(stateId, selectedValue = ''){
+      if (!referenceMasterState || !referenceMasterCity) return;
+      const chosenState = String(stateId || '');
+      if (!chosenState) {
+        referenceMasterCities = [];
+        referenceMasterRenderCityOptions('');
+        return;
+      }
+      try {
+        const result = await assetFetchJson(`${referenceMasterUrls.cities}?state_id=${encodeURIComponent(chosenState)}`);
+        referenceMasterCities = Array.isArray(result.cities) ? result.cities : [];
+        referenceMasterRenderCityOptions(selectedValue);
+      } catch (error) {
+        referenceMasterCities = [];
+        referenceMasterRenderCityOptions('');
+        assetNotify(error.message || 'Failed to load cities.', 'error', 'reference-master-cities');
+      }
+    }
+
+    function referenceMasterRenderRows(){
+      const needle = String(referenceMasterSearch.value || '').trim().toLowerCase();
+      const rows = referenceMasterRows.filter((row) => {
+        if (!needle) return true;
+        const haystack = referenceMasterSource === 'equipment'
+          ? [row.code, row.name, row.machine_type_name]
+          : [row.code, row.name, row.contact_person, row.phone1, row.email, row.state_name, row.city_name];
+        return haystack.some((value) => String(value || '').toLowerCase().includes(needle));
+      });
+
+      if (!rows.length) {
+        referenceMasterList.innerHTML = `<div class="asset-empty">${referenceMasterEscape(referenceMasterMeta.empty_label)}</div>`;
+        return;
+      }
+
+      referenceMasterList.innerHTML = rows.map((row) => {
+        if (referenceMasterSource === 'equipment') {
+          return `
+            <article class="asset-master-list-item ${String(row.id) === String(referenceMasterSelectedId || '') ? 'active' : ''}">
+              <div class="asset-master-list-item__top">
+                <div>
+                  <div class="asset-code-pill">${referenceMasterEscape(row.code || '')}</div>
+                  <div class="asset-master-list-item__name" style="margin-top:10px;">${referenceMasterEscape(row.name || '')}</div>
+                </div>
+                <button type="button" class="asset-link-btn" data-master-edit="${referenceMasterEscape(row.id)}">Edit</button>
+              </div>
+              <div class="asset-master-list-item__meta">
+                ${referenceMasterEscape(row.machine_type_name || 'Machine type not tagged')}
+              </div>
+              <div class="asset-master-list-item__meta">
+                ${(Number(row.active || 1) === 1) ? 'Active' : 'Inactive'}
+              </div>
+            </article>
+          `;
+        }
+        return `
+          <article class="asset-master-list-item ${String(row.id) === String(referenceMasterSelectedId || '') ? 'active' : ''}">
+            <div class="asset-master-list-item__top">
+              <div>
+                <div class="asset-code-pill">${referenceMasterEscape(row.code || '')}</div>
+                <div class="asset-master-list-item__name" style="margin-top:10px;">${referenceMasterEscape(row.name || '')}</div>
+              </div>
+              <button type="button" class="asset-link-btn" data-master-edit="${referenceMasterEscape(row.id)}">Edit</button>
+            </div>
+            <div class="asset-master-list-item__meta">
+              ${referenceMasterEscape(row.contact_person || 'No contact person')} | ${referenceMasterEscape(row.phone1 || 'No phone')}
+            </div>
+            <div class="asset-master-list-item__meta">
+              ${referenceMasterEscape(row.city_name || 'City not tagged')}${row.state_name ? `, ${referenceMasterEscape(row.state_name)}` : ''}
+            </div>
+          </article>
+        `;
+      }).join('');
+    }
+
+    async function referenceMasterResetForm(){
+      referenceMasterSelectedId = null;
+      referenceMasterForm.reset();
+      document.getElementById('referenceMasterId').value = '';
+      document.getElementById('referenceMasterCode').value = referenceMasterNextCode.next_code || '';
+
+      if (referenceMasterSource === 'equipment') {
+        if (referenceMasterMachineType) referenceMasterMachineType.value = '';
+        document.getElementById('referenceMasterActive').value = '1';
+        referenceMasterRenderRows();
+        return;
+      }
+
+      referenceMasterRenderStateOptions(referenceMasterDefaultGeo.state_id || '');
+      await referenceMasterLoadCities(referenceMasterDefaultGeo.state_id || '', referenceMasterDefaultGeo.city_id || '');
+      {% if master_meta.source == 'supplier' %}
+      document.getElementById('referenceMasterDateOfAssociation').value = new Date().toISOString().slice(0, 10);
+      {% else %}
+      document.getElementById('referenceMasterActive').value = '1';
+      {% endif %}
+      referenceMasterRenderRows();
+    }
+
+    async function referenceMasterFillForm(detail){
+      if (!detail) return;
+      referenceMasterSelectedId = detail.id || '';
+      document.getElementById('referenceMasterId').value = detail.id || '';
+      document.getElementById('referenceMasterCode').value = detail.code || '';
+      document.getElementById('referenceMasterName').value = detail.name || '';
+
+      if (referenceMasterSource === 'equipment') {
+        if (referenceMasterMachineType) referenceMasterMachineType.value = detail.machine_type_id || '';
+        document.getElementById('referenceMasterActive').value = String(detail.active ?? 1);
+        referenceMasterRenderRows();
+        return;
+      }
+
+      document.getElementById('referenceMasterContactPerson').value = detail.contact_person || '';
+      document.getElementById('referenceMasterContactDesignation').value = detail.contact_designation || '';
+      document.getElementById('referenceMasterPhone1').value = detail.phone1 || '';
+      document.getElementById('referenceMasterPhone2').value = detail.phone2 || '';
+      document.getElementById('referenceMasterCellphone').value = detail.cellphone || '';
+      document.getElementById('referenceMasterEmail').value = detail.email || '';
+      document.getElementById('referenceMasterPin').value = detail.pin || '';
+      document.getElementById('referenceMasterSociety').value = detail.society || '';
+      document.getElementById('referenceMasterLandmark').value = detail.landmark || '';
+      document.getElementById('referenceMasterAddress').value = detail.address || '';
+      document.getElementById('referenceMasterNote').value = detail.note || '';
+      referenceMasterRenderStateOptions(detail.state_id || referenceMasterDefaultGeo.state_id || '');
+      await referenceMasterLoadCities(detail.state_id || referenceMasterDefaultGeo.state_id || '', detail.city_id || '');
+      {% if master_meta.source == 'supplier' %}
+      document.getElementById('referenceMasterCreditPeriod').value = detail.credit_period || 0;
+      document.getElementById('referenceMasterDateOfAssociation').value = detail.date_of_association || '';
+      document.getElementById('referenceMasterGstCst').value = detail.gst_cst || '';
+      document.getElementById('referenceMasterTds').value = detail.tds || '';
+      document.getElementById('referenceMasterExciseCode').value = detail.excise_code || '';
+      {% else %}
+      document.getElementById('referenceMasterActive').value = String(detail.active ?? 1);
+      {% endif %}
+      referenceMasterRenderRows();
+    }
+
+    async function referenceMasterEdit(id){
+      try {
+        const result = await assetFetchJson(`${referenceMasterUrls.detail}?id=${encodeURIComponent(id)}`);
+        await referenceMasterFillForm(result.detail || {});
+      } catch (error) {
+        assetNotify(error.message || 'Failed to load record.', 'error', 'reference-master-detail');
+      }
+    }
+
+    referenceMasterSearch.addEventListener('input', referenceMasterRenderRows);
+    if (referenceMasterState) {
+      referenceMasterState.addEventListener('change', () => referenceMasterLoadCities(referenceMasterState.value, ''));
+    }
+    document.getElementById('referenceMasterResetBtn').addEventListener('click', referenceMasterResetForm);
+    document.getElementById('referenceMasterClearBtn').addEventListener('click', referenceMasterResetForm);
+
+    referenceMasterList.addEventListener('click', (event) => {
+      const editBtn = event.target.closest('[data-master-edit]');
+      if (!editBtn) return;
+      referenceMasterEdit(editBtn.getAttribute('data-master-edit'));
+    });
+
+    referenceMasterForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const payload = Object.fromEntries(new FormData(referenceMasterForm).entries());
+      const channel = `asset-master-${referenceMasterKind}`;
+      assetNotify(`Saving ${referenceMasterMeta.title.toLowerCase()}...`, 'loading', channel);
+      try {
+        const result = await assetFetchJson(referenceMasterUrls.save, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        assetClearLoading(channel);
+        assetNotify(result.message || referenceMasterMeta.success_label, 'success', channel);
+        referenceMasterRows = Array.isArray(result.rows) ? result.rows : [];
+        referenceMasterNextCode = result.next_code || referenceMasterNextCode;
+        await referenceMasterFillForm(result.detail || {});
+        referenceMasterRenderRows();
+      } catch (error) {
+        assetClearLoading(channel);
+        assetNotify(error.message || 'Failed to save master record.', 'error', channel);
+      }
+    });
+
+    if (referenceMasterState) {
+      referenceMasterRenderStateOptions(referenceMasterDefaultGeo.state_id || '');
+    }
+    referenceMasterRenderRows();
+    referenceMasterResetForm();
+  </script>
+{% endblock %}

@@ -1,0 +1,386 @@
+{% extends "layout.html" %}
+{% block page_header %}{% endblock %}
+{% block content %}
+<style>
+  .gst-wrap{width:min(1240px,96vw);margin:58px auto 34px;color:#0f172a;}
+  .gst-card{background:rgba(255,255,255,.95);border:1px solid rgba(226,232,240,.9);box-shadow:0 10px 30px rgba(15,23,42,.08);border-radius:16px;padding:16px 18px;margin-bottom:18px;position:relative;backdrop-filter:blur(10px);}
+  .gst-header{display:flex;align-items:center;justify-content:space-between;gap:16px;flex-wrap:wrap;}
+  .gst-title{display:flex;align-items:center;gap:12px;}
+  .gst-title-icon{width:48px;height:48px;border-radius:14px;background:linear-gradient(180deg,#eef2ff,#fff);border:1px solid #e6e9f8;display:grid;place-items:center;}
+  .gst-title-icon svg{width:28px;height:28px;}
+  .gst-title h1{font-size:22px;line-height:1.15;margin:0;color:#1e3a8a;}
+  .gst-title p{font-size:13px;color:#64748b;margin:4px 0 0;}
+  .gst-filters{display:flex;gap:10px;align-items:end;flex-wrap:wrap;}
+  .gst-field{display:flex;flex-direction:column;gap:5px;font-size:12px;font-weight:700;color:#475569;}
+  .gst-input{height:38px;border:1px solid #dbe3ef;background:#fff;border-radius:8px;padding:0 10px;font:inherit;font-size:14px;color:#0f172a;outline:none;min-width:142px;}
+  .gst-input:focus{border-color:#3b82f6;box-shadow:0 0 0 3px rgba(59,130,246,.12);}
+  .gst-btn{height:38px;border:0;border-radius:999px;padding:0 16px;background:linear-gradient(90deg,#1e40af,#3b82f6);color:#fff;font-weight:800;cursor:pointer;display:inline-flex;align-items:center;justify-content:center;gap:8px;box-shadow:0 8px 20px rgba(37,99,235,.22);transition:transform .18s ease,box-shadow .18s ease;}
+  .gst-btn:hover{transform:translateY(-1px);box-shadow:0 12px 24px rgba(37,99,235,.28);}
+  .gst-btn.secondary{background:linear-gradient(90deg,#0f766e,#14b8a6);box-shadow:0 8px 20px rgba(15,118,110,.2);}
+  .gst-btn:disabled{opacity:.62;cursor:not-allowed;transform:none;box-shadow:none;}
+  .gst-kpis{display:grid;grid-template-columns:repeat(4,minmax(180px,1fr));gap:14px;}
+  .gst-kpi{background:#f8fafc;border:1px solid #e2e8f0;border-radius:12px;padding:13px 14px;min-height:92px;display:flex;flex-direction:column;justify-content:space-between;}
+  .gst-kpi-label{font-size:11px;text-transform:uppercase;color:#64748b;font-weight:800;letter-spacing:.03em;}
+  .gst-kpi-value{font-size:24px;font-weight:850;color:#0f172a;margin-top:8px;}
+  .gst-kpi-sub{font-size:12px;color:#64748b;margin-top:4px;line-height:1.35;}
+  .gst-section-head{display:flex;align-items:center;justify-content:space-between;gap:12px;flex-wrap:wrap;margin-bottom:12px;}
+  .gst-section-title{font-size:16px;font-weight:850;color:#1e3a8a;margin:0;}
+  .gst-search{width:min(340px,100%);}
+  .gst-table-wrap{overflow:auto;border:1px solid #e2e8f0;border-radius:12px;background:#fff;min-height:130px;}
+  .gst-table{width:100%;border-collapse:collapse;font-size:12px;white-space:nowrap;}
+  .gst-table th{position:sticky;top:0;background:#1e3a8a;color:#fff;text-align:left;padding:10px 12px;font-size:11px;letter-spacing:.02em;z-index:1;}
+  .gst-table td{border-top:1px solid #e2e8f0;padding:9px 12px;color:#1f2937;vertical-align:top;}
+  .gst-table tbody tr:nth-child(even){background:#f8fafc;}
+  .gst-table tbody tr:hover{background:#eef6ff;}
+  .gst-col-number{text-align:right;font-variant-numeric:tabular-nums;}
+  .gst-col-date{font-variant-numeric:tabular-nums;color:#334155;}
+  .gst-col-unit,.gst-col-visit{text-align:center;}
+  .gst-table th.gst-col-number{text-align:right;}
+  .gst-table th.gst-col-unit,.gst-table th.gst-col-visit{text-align:center;}
+  .gst-grid-tools{display:flex;align-items:center;gap:10px;flex-wrap:wrap;}
+  .gst-page-size{min-width:92px;width:92px;}
+  .gst-pager{display:flex;align-items:center;justify-content:space-between;gap:12px;margin-top:10px;color:#64748b;font-size:12px;font-weight:700;flex-wrap:wrap;}
+  .gst-pager-actions{display:flex;align-items:center;gap:8px;}
+  .gst-page-btn{height:30px;border:1px solid #dbe3ef;background:#fff;color:#1e3a8a;border-radius:8px;padding:0 10px;font-weight:800;cursor:pointer;}
+  .gst-page-btn:disabled{opacity:.45;cursor:not-allowed;color:#64748b;}
+  .gst-empty{padding:28px;text-align:center;color:#94a3b8;font-weight:700;border:1px dashed #dbe3ef;border-radius:12px;background:#f8fafc;}
+  .gst-loader{position:absolute;inset:0;background:rgba(255,255,255,.86);display:none;place-items:center;border-radius:16px;z-index:5;color:#475569;font-weight:800;}
+  .gst-loader.show{display:grid;}
+  .gst-spinner{width:26px;height:26px;border-radius:50%;border:3px solid #cbd5e1;border-top-color:#2563eb;animation:gstSpin .8s linear infinite;margin:0 auto 8px;}
+  @keyframes gstSpin{to{transform:rotate(360deg);}}
+  .gst-toast{position:fixed;right:24px;bottom:24px;max-width:460px;background:linear-gradient(135deg,#1e293b,#0f172a);color:#e2e8f0;padding:14px 16px;border-radius:12px;box-shadow:0 12px 32px rgba(0,0,0,.25);z-index:1200;border:1px solid rgba(255,255,255,.12);transform:translateX(120%);opacity:0;transition:transform .24s ease,opacity .24s ease;}
+  .gst-toast.show{transform:translateX(0);opacity:1;}
+  .gst-toast strong{color:#fff;display:block;margin-bottom:2px;}
+  .top-actions{position:fixed;top:20px;right:20px;z-index:1100;display:flex;align-items:center;gap:14px;}
+  .fab-user{position:relative;display:flex;align-items:center;gap:10px;flex-shrink:0;}
+  .fab-btn{width:58px;height:58px;border-radius:50%;background:linear-gradient(135deg,#1e40af,#3b82f6);color:#fff;display:grid;place-items:center;font-size:22px;box-shadow:0 8px 20px rgba(37,99,235,.3);border:0;cursor:pointer;transition:transform .18s ease;}
+  .fab-btn:hover{transform:scale(1.06);}
+  .fab-menu{position:absolute;top:60px;right:0;background:rgba(255,255,255,.96);border-radius:12px;box-shadow:0 10px 30px rgba(0,0,0,.08);border:1px solid rgba(0,0,0,.06);backdrop-filter:blur(8px);padding:10px;display:none;min-width:210px;}
+  .fab-menu.open{display:block;animation:gstFade .18s ease both;}
+  @keyframes gstFade{from{opacity:0;transform:translateY(-4px);}to{opacity:1;transform:none;}}
+  .fab-menu a,.fab-menu div{display:block;padding:8px 12px;border-radius:8px;color:#0f172a;font-weight:700;text-decoration:none;font-size:14px;}
+  .fab-menu a:hover{background:#eef2ff;color:#1e40af;}
+  .fab-icon{display:flex;flex-direction:column;gap:5px;align-items:center;}
+  .fab-icon span{display:block;width:18px;height:3px;background:#fff;border-radius:2px;}
+  @media (max-width:1024px){.gst-wrap{margin-top:76px}.gst-kpis{grid-template-columns:repeat(2,minmax(160px,1fr));}.gst-filters{width:100%;}.gst-field{flex:1 1 160px}.gst-input,.gst-btn{width:100%;}.top-actions{top:10px;right:10px}.fab-btn{width:48px;height:48px}.gst-toast{left:12px;right:12px;max-width:none;}}
+  @media (max-width:640px){.gst-kpis{grid-template-columns:1fr}.gst-header{align-items:stretch}.gst-title h1{font-size:19px}.gst-section-head{align-items:stretch}.gst-search{width:100%;}.gst-table{font-size:11px}.gst-table th,.gst-table td{padding:8px 10px;}}
+</style>
+
+<div class="top-actions">
+  <div class="fab-user">
+    <button class="fab-btn" id="fabToggle" title="User Menu">
+      <span class="fab-icon"><span></span><span></span><span></span></span>
+    </button>
+    <div class="fab-menu" id="fabMenu">
+      <div>{{ session.get('username') or session.get('user') or 'User' }}</div>
+      <a href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+      <a href="{{ url_for('logout') }}">Logout</a>
+    </div>
+  </div>
+</div>
+
+<div class="gst-wrap">
+  <section class="gst-card gst-header">
+    <div class="gst-title">
+      <div class="gst-title-icon">
+        <svg viewBox="0 0 24 24" fill="none" stroke="#0f766e" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+          <path d="M4 4h16v16H4z"></path><path d="M8 8h8"></path><path d="M8 12h5"></path><path d="M8 16h8"></path><path d="M16 11l2 2 3-4"></path>
+        </svg>
+      </div>
+      <div>
+        <h1>Govt. Scheme Tracker</h1>
+        <p>GSS / MGBUY patient movement, unique patient revenue, and period billing audit.</p>
+      </div>
+    </div>
+    <div class="gst-filters">
+      <label class="gst-field">Unit
+        <select id="gst-unit" class="gst-input">
+          {% if allowed_units|length > 1 %}<option value="ALL">All</option>{% endif %}
+          {% for unit in allowed_units %}
+            <option value="{{ unit }}">{{ "Ballia" if unit == "BALLIA" else unit }}</option>
+          {% endfor %}
+        </select>
+      </label>
+      <label class="gst-field">From
+        <input id="gst-from" type="date" class="gst-input" value="{{ default_from }}">
+      </label>
+      <label class="gst-field">To
+        <input id="gst-to" type="date" class="gst-input" value="{{ default_to }}">
+      </label>
+      <button class="gst-btn" id="gst-load" type="button">Load</button>
+      <button class="gst-btn secondary" id="gst-export" type="button">Export Excel</button>
+    </div>
+  </section>
+
+  <section class="gst-card">
+    <div class="gst-loader" id="gst-kpi-loader"><div><div class="gst-spinner"></div>Loading tracker...</div></div>
+    <div class="gst-kpis" id="gst-kpis"></div>
+  </section>
+
+  <div id="gst-grids"></div>
+</div>
+
+<div id="gst-toast" class="gst-toast"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const GRID_DEFS = [
+    {key:'tracking', title:'Total MGBUY Patient Tracking', columns:['Unit','Patient Type','Patient SubType','Total Visits','Unique Patients','First Visit Date']},
+    {key:'visit_type', title:'New MGBUY Patients by Visit Type', columns:['Unit','Visit Type','Reg No','Patient Name','Visit No','First Visit Date','DocInCharge','Department','Patient Type','Patient SubType']},
+    {key:'new_patient_revenue', title:'Revenue per New / Unique MGBUY Patient', columns:['Unit','Reg No','Patient Name','Visit Type','First Visit Date','DocInCharge','Department','Total Revenue','PHAmount','PHReturnAmount','Billing Count']},
+    {key:'period_revenue', title:'All MGBUY Revenue in Date Range', columns:['Unit','Bill Date','Reg No','Patient Name','Visit No','Visit Type','DocInCharge','Department','Bill No','Gross Amount','Discount','Net Amount','PHAmount','PHReturnAmount','Paid Amount','Due Amount']},
+    {key:'exceptions', title:'Scheme Summary / Exception View', columns:['Unit','Reg No','Patient Name','Visit Type','Visit Date','DocInCharge','Department','Patient Type','Patient SubType','Billing Status','Revenue','Remarks / Exception Reason']}
+  ];
+  const state = {loaded:false, grids:{}};
+  const moneyCols = new Set(['Gross Amount','Discount','Net Amount','PHAmount','PHReturnAmount','Paid Amount','Due Amount','Total Revenue','Revenue']);
+  const countCols = new Set(['Total Visits','Unique Patients','Billing Count']);
+  const dateCols = new Set(['First Visit Date','Bill Date','Visit Date']);
+  const kpiEl = document.getElementById('gst-kpis');
+  const gridsEl = document.getElementById('gst-grids');
+  const loader = document.getElementById('gst-kpi-loader');
+  const toastEl = document.getElementById('gst-toast');
+  let toastTimer = null;
+
+  function filters(){
+    return {
+      unit: document.getElementById('gst-unit').value || 'ALL',
+      from: document.getElementById('gst-from').value,
+      to: document.getElementById('gst-to').value
+    };
+  }
+  function qs(){
+    const f = filters();
+    return new URLSearchParams({unit:f.unit, from:f.from, to:f.to}).toString();
+  }
+  function gridParams(def){
+    const gridState = state.grids[def.key] || {};
+    return new URLSearchParams({
+      unit: filters().unit,
+      from: filters().from,
+      to: filters().to,
+      grid: def.key,
+      page: String(gridState.page || 1),
+      page_size: String(gridState.pageSize || 25),
+      search: gridState.search || ''
+    }).toString();
+  }
+  function showToast(title, body){
+    toastEl.innerHTML = `<strong>${escapeHtml(title)}</strong><span>${escapeHtml(body || '')}</span>`;
+    toastEl.classList.add('show');
+    clearTimeout(toastTimer);
+    toastTimer = setTimeout(() => toastEl.classList.remove('show'), 4600);
+  }
+  function fmtInt(v){ return Number(v || 0).toLocaleString('en-IN', {maximumFractionDigits:0}); }
+  function fmtMoney(v){ return Number(v || 0).toLocaleString('en-IN', {minimumFractionDigits:2, maximumFractionDigits:2}); }
+  function escapeHtml(v){
+    return String(v ?? '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#039;'}[c]));
+  }
+  function formatCell(key, value){
+    if(value === null || value === undefined || value === '') return '';
+    if(moneyCols.has(key)) return fmtMoney(value);
+    if(countCols.has(key)) return fmtInt(value);
+    if(dateCols.has(key)) return String(value).replace('T',' ').slice(0,19);
+    return String(value);
+  }
+  function cellClass(key){
+    const classes = [];
+    if(moneyCols.has(key) || countCols.has(key)) classes.push('gst-col-number');
+    if(dateCols.has(key)) classes.push('gst-col-date');
+    if(key === 'Unit') classes.push('gst-col-unit');
+    if(key === 'Visit Type') classes.push('gst-col-visit');
+    return classes.length ? ` class="${classes.join(' ')}"` : '';
+  }
+  function renderKpis(kpis){
+    const total = kpis.total_tracking || {};
+    const visit = kpis.unique_by_visit_type || {};
+    const uniqueRev = kpis.revenue_per_new_patient || {};
+    const period = kpis.period_revenue || {};
+    const exceptions = kpis.exceptions || {};
+    const cards = [
+      ['Total MGBUY Tracking', fmtInt(total.total_visits), `${fmtInt(total.unique_patients)} unique patients`],
+      ['New Patients by Visit Type', fmtInt(visit.total_unique_patients), 'First-ever visit type in selected date range'],
+      ['Revenue per New / Unique Patient', fmtMoney(uniqueRev.total_revenue), `${fmtInt(uniqueRev.billing_count)} bills mapped`],
+      ['All MGBUY Revenue in Date Range', fmtMoney(period.total_revenue), `${fmtInt(period.bill_count)} bills, ${fmtInt(exceptions.count)} exceptions`]
+    ];
+    kpiEl.innerHTML = cards.map(card => `
+      <div class="gst-kpi">
+        <div class="gst-kpi-label">${escapeHtml(card[0])}</div>
+        <div>
+          <div class="gst-kpi-value">${escapeHtml(card[1])}</div>
+          <div class="gst-kpi-sub">${escapeHtml(card[2])}</div>
+        </div>
+      </div>
+    `).join('');
+  }
+  function renderShell(){
+    gridsEl.innerHTML = GRID_DEFS.map(def => `
+      <section class="gst-card" id="gst-card-${def.key}">
+        <div class="gst-section-head">
+          <h2 class="gst-section-title">${escapeHtml(def.title)}</h2>
+          <div class="gst-grid-tools">
+            <input class="gst-input gst-search" data-grid="${def.key}" placeholder="Search ${escapeHtml(def.title)}">
+            <select class="gst-input gst-page-size" data-grid-size="${def.key}">
+              <option value="10">10</option>
+              <option value="25" selected>25</option>
+              <option value="50">50</option>
+              <option value="100">100</option>
+            </select>
+          </div>
+        </div>
+        <div class="gst-table-wrap" id="gst-table-${def.key}">
+          <div class="gst-empty">Choose filters and click Load to view this grid.</div>
+        </div>
+        <div class="gst-pager" id="gst-pager-${def.key}" style="display:none;"></div>
+      </section>
+    `).join('');
+    document.querySelectorAll('.gst-search').forEach(input => {
+      let t = null;
+      input.addEventListener('input', () => {
+        clearTimeout(t);
+        t = setTimeout(() => {
+          const key = input.dataset.grid;
+          state.grids[key] = {...(state.grids[key] || {}), page:1, search:input.value || ''};
+          if(state.loaded) loadGrid(key);
+        }, 350);
+      });
+    });
+    document.querySelectorAll('[data-grid-size]').forEach(select => {
+      select.addEventListener('change', () => {
+        const key = select.dataset.gridSize;
+        state.grids[key] = {...(state.grids[key] || {}), page:1, pageSize:Number(select.value || 25)};
+        if(state.loaded) loadGrid(key);
+      });
+    });
+  }
+  function renderGrid(key, rows, meta){
+    const def = GRID_DEFS.find(item => item.key === key);
+    const target = document.getElementById(`gst-table-${key}`);
+    if(!target) return;
+    if(!rows || !rows.length){
+      target.innerHTML = '<div class="gst-empty">No data available for selected filters.</div>';
+      renderPager(key, meta || {page:1,total_pages:1,total_rows:0,page_size:25});
+      return;
+    }
+    const cols = (def && def.columns) || Object.keys(rows[0] || {});
+    const head = cols.map(col => `<th${cellClass(col)}>${escapeHtml(col)}</th>`).join('');
+    const body = rows.map(row => `<tr>${cols.map(col => `<td${cellClass(col)}>${escapeHtml(formatCell(col, row[col]))}</td>`).join('')}</tr>`).join('');
+    target.innerHTML = `<table class="gst-table"><thead><tr>${head}</tr></thead><tbody>${body}</tbody></table>`;
+    renderPager(key, meta);
+  }
+  function renderPager(key, meta){
+    const pager = document.getElementById(`gst-pager-${key}`);
+    if(!pager) return;
+    const page = Number(meta?.page || 1);
+    const totalPages = Number(meta?.total_pages || 1);
+    const totalRows = Number(meta?.total_rows || 0);
+    const pageSize = Number(meta?.page_size || 25);
+    const start = totalRows ? ((page - 1) * pageSize) + 1 : 0;
+    const end = Math.min(totalRows, page * pageSize);
+    pager.style.display = state.loaded ? 'flex' : 'none';
+    pager.innerHTML = `
+      <div>${fmtInt(start)}-${fmtInt(end)} of ${fmtInt(totalRows)} rows</div>
+      <div class="gst-pager-actions">
+        <button class="gst-page-btn" data-page-action="${key}:prev" ${page <= 1 ? 'disabled' : ''}>Prev</button>
+        <span>Page ${fmtInt(page)} of ${fmtInt(totalPages)}</span>
+        <button class="gst-page-btn" data-page-action="${key}:next" ${page >= totalPages ? 'disabled' : ''}>Next</button>
+      </div>
+    `;
+    pager.querySelectorAll('[data-page-action]').forEach(btn => {
+      btn.addEventListener('click', () => {
+        const [, action] = btn.dataset.pageAction.split(':');
+        const current = state.grids[key] || {};
+        const nextPage = action === 'next' ? page + 1 : page - 1;
+        state.grids[key] = {...current, page:Math.max(1, nextPage)};
+        loadGrid(key);
+      });
+    });
+  }
+  async function loadSummary(){
+    const res = await fetch(`/api/govt-scheme-tracker/summary?${qs()}`, {cache:'no-store'});
+    const data = await res.json();
+    if(!res.ok || !['success','partial'].includes(data.status)){
+      throw new Error(data.message || 'Tracker summary could not be loaded.');
+    }
+    renderKpis(data.kpis || {});
+    if(data.status === 'partial' && data.errors && data.errors.length){
+      showToast('Partial summary loaded', data.errors.map(e => `${e.unit}: ${e.message}`).join(' | '));
+    }
+  }
+  async function loadGrid(key){
+    const def = GRID_DEFS.find(item => item.key === key);
+    if(!def) return;
+    const card = document.getElementById(`gst-card-${key}`);
+    const target = document.getElementById(`gst-table-${key}`);
+    if(target) target.innerHTML = '<div class="gst-empty"><div class="gst-spinner"></div>Loading page...</div>';
+    try{
+      const res = await fetch(`/api/govt-scheme-tracker/grid?${gridParams(def)}`, {cache:'no-store'});
+      const data = await res.json();
+      if(!res.ok || !['success','partial'].includes(data.status)){
+        throw new Error(data.message || `${def.title} could not be loaded.`);
+      }
+      state.grids[key] = {
+        ...(state.grids[key] || {}),
+        page:data.page || 1,
+        pageSize:data.page_size || 25,
+        totalRows:data.total_rows || 0,
+        totalPages:data.total_pages || 1
+      };
+      renderGrid(key, data.rows || [], data);
+      if(data.status === 'partial' && data.errors && data.errors.length){
+        showToast(`Partial ${def.title}`, data.errors.map(e => `${e.unit}: ${e.message}`).join(' | '));
+      }
+    }catch(err){
+      if(card) card.querySelector('.gst-pager')?.setAttribute('style','display:none;');
+      if(target) target.innerHTML = `<div class="gst-empty">${escapeHtml(err.message || 'Grid failed to load.')}</div>`;
+    }
+  }
+  async function loadData(){
+    const f = filters();
+    if(!f.from || !f.to){
+      showToast('Date range needed', 'Select both From and To dates.');
+      return;
+    }
+    loader.classList.add('show');
+    document.getElementById('gst-load').disabled = true;
+    try{
+      state.loaded = true;
+      GRID_DEFS.forEach(def => {
+        const size = Number(document.querySelector(`[data-grid-size="${def.key}"]`)?.value || 25);
+        const search = document.querySelector(`.gst-search[data-grid="${def.key}"]`)?.value || '';
+        state.grids[def.key] = {page:1, pageSize:size, search};
+      });
+      const tasks = [loadSummary(), ...GRID_DEFS.map(def => loadGrid(def.key))];
+      const results = await Promise.allSettled(tasks);
+      const failed = results.filter(item => item.status === 'rejected');
+      if(failed.length === results.length){
+        throw new Error(failed[0]?.reason?.message || 'Tracker data could not be loaded.');
+      }
+      if(failed.length){
+        showToast('Some panels failed', failed.map(item => item.reason?.message || 'Panel failed').join(' | '));
+      }
+    }catch(err){
+      showToast('Loading failed', err.message || 'Unexpected tracker error.');
+    }finally{
+      loader.classList.remove('show');
+      document.getElementById('gst-load').disabled = false;
+    }
+  }
+  function exportExcel(){
+    const f = filters();
+    if(!f.from || !f.to){
+      showToast('Date range needed', 'Select both From and To dates.');
+      return;
+    }
+    window.location.href = `/api/govt-scheme-tracker/export?${qs()}`;
+  }
+  document.getElementById('gst-load').addEventListener('click', loadData);
+  document.getElementById('gst-export').addEventListener('click', exportExcel);
+  document.getElementById('fabToggle').addEventListener('click', () => document.getElementById('fabMenu').classList.toggle('open'));
+  document.addEventListener('click', e => { if(!e.target.closest('.fab-user')) document.getElementById('fabMenu').classList.remove('open'); });
+  renderShell();
+  kpiEl.innerHTML = '<div class="gst-empty" style="grid-column:1/-1;">Choose filters and click Load to view Govt. Scheme Tracker KPIs.</div>';
+})();
+</script>
+{% endblock %}

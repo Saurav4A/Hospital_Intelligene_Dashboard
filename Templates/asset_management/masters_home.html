@@ -1,0 +1,27 @@
+{% extends "asset_management/_base.html" %}
+
+{% block page_actions %}
+  <a class="asset-btn secondary" href="{{ url_for('asset_management.register_page') }}">Back to Register</a>
+  <a class="asset-btn primary" href="{{ url_for('asset_management.reference_master_page', kind='equipment') }}">Open Equipment Master</a>
+{% endblock %}
+
+{% block asset_page %}
+  <section class="asset-card">
+    <div class="asset-toolbar">
+      <div>
+        <h3 style="margin:0 0 6px;">Shared Reference Masters</h3>
+        <p class="asset-master-toolbar-note">These masters feed the asset-entry dropdowns so users can maintain reference data without leaving Asset Management.</p>
+      </div>
+    </div>
+    <div class="asset-master-home">
+      {% for card in master_cards %}
+        <article class="asset-master-home__card">
+          <h3>{{ card.title }}</h3>
+          <p>{{ card.subtitle }}</p>
+          <div class="asset-master-home__count">{{ card.count }}</div>
+          <a class="asset-btn primary" href="{{ card.href }}">Open {{ card.label }}</a>
+        </article>
+      {% endfor %}
+    </div>
+  </section>
+{% endblock %}

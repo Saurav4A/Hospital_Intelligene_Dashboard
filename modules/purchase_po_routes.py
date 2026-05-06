@@ -171,6 +171,43 @@ def register_purchase_po_routes(
 
         return {'duplicate_ids': duplicate_ids, 'duplicate_names': duplicate_names}
 
+    def _default_po_terms_for_unit(unit_name: str) -> tuple[str, str]:
+        delivery = "Deliveries shall be effected strictly between 9:00 AM and 6:00 PM."
+        payment_default = "\n".join([
+            "Billing shall strictly comply with the PO-approved quantity and rate.",
+            "Bonuses, discounts, and rates shall be only as commercially approved with the authorized representative.",
+        ])
+        payment_store = "\n".join([
+            "Billing shall strictly comply with the PO-approved quantity and rate.",
+            "Commercial terms, including discounts and bonuses, shall be only as approved with the authorized representative.",
+        ])
+        unit_key = str(unit_name or "").strip().upper().replace(" ", "")
+        if unit_key in {"AHLSTORE", "CANCERUNITSTORE", "BALLIASTORE"}:
+            return delivery, payment_store
+        return delivery, payment_default
+
+    def _apply_default_po_terms(unit_name: str, header: dict, existing_header: dict | None = None) -> dict:
+        normalized = dict(header or {})
+        existing_header = existing_header or {}
+        saved_delivery = str(
+            existing_header.get("DeliveryTerms")
+            or existing_header.get("delivery_terms")
+            or ""
+        ).strip()
+        saved_payment = str(
+            existing_header.get("PaymentsTerms")
+            or existing_header.get("payment_terms")
+            or ""
+        ).strip()
+        current_delivery = str(normalized.get("delivery_terms") or "").strip()
+        current_payment = str(normalized.get("payment_terms") or "").strip()
+        default_delivery, default_payment = _default_po_terms_for_unit(unit_name)
+        if not current_delivery:
+            normalized["delivery_terms"] = saved_delivery or default_delivery
+        if not current_payment:
+            normalized["payment_terms"] = saved_payment or default_payment
+        return normalized
+
 
     def _format_duplicate_item_labels(items: list, duplicate_ids: list[int]) -> list[str]:
         labels = []
@@ -188,6 +225,115 @@ def register_purchase_po_routes(
                     break
             labels.append(f'{dup_id} ({name})' if name else str(dup_id))
         return labels
+
+    def _purchase_item_row_has_input(item: dict) -> bool:
+        row = item or {}
+        item_id = _safe_int(row.get("item_id") or row.get("id") or row.get("ItemID") or row.get("ItemId"))
+        if item_id > 0:
+            return True
+        name = str(row.get("item_name") or row.get("name") or row.get("ItemName") or "").strip()
+        if name:
+            return True
+        numeric_values = (
+            row.get("qty"),
+            row.get("Qty"),
+            row.get("free_qty"),
+            row.get("FreeQty"),
+            row.get("rate"),
+            row.get("Rate"),
+            row.get("discount_pct"),
+            row.get("Discount"),
+            row.get("mrp"),
+            row.get("MRP"),
+            row.get("gst_pct"),
+            row.get("cgst_pct"),
+            row.get("sgst_pct"),
+            row.get("igst_pct"),
+            row.get("for_amt"),
+            row.get("net_amt"),
+        )
+        for value in numeric_values:
+            try:
+                if abs(float(value or 0)) > 0:
+                    return True
+            except Exception:
+                continue
+        return False
+
+    def _normalize_purchase_item_rows(items: list) -> tuple[list, list[str]]:
+        normalized = []
+        errors = []
+        for row_no, raw_item in enumerate(items or [], start=1):
+            item = dict(raw_item or {})
+            item_id = _safe_int(item.get("item_id") or item.get("id") or item.get("ItemID") or item.get("ItemId"))
+            name = str(item.get("item_name") or item.get("name") or item.get("ItemName") or "").strip()
+            item_code = str(item.get("item_code") or item.get("store_name") or item.get("ItemCode") or "").strip()
+            unit_name = str(item.get("unit") or item.get("UnitName") or "").strip()
+            item["item_id"] = item_id
+            item["item_name"] = name
+            item["item_code"] = item_code
+            item["unit"] = unit_name
+            item["_source_row_no"] = row_no
+            if not _purchase_item_row_has_input(item):
+                continue
+            if item_id <= 0 and not name:
+                errors.append(f"Row {row_no}: item name is required.")
+                continue
+            normalized.append(item)
+        return normalized, errors
+
+    def _fetch_existing_purchase_item_ids(unit: str, item_ids: list[int]) -> set[int]:
+        normalized_ids = sorted({_safe_int(item_id) for item_id in (item_ids or []) if _safe_int(item_id) > 0})
+        if not normalized_ids:
+            return set()
+        df = data_fetch.fetch_item_master_rate_mrp(unit, normalized_ids)
+        if df is None or df.empty:
+            return set()
+        df = _clean_df_columns(df)
+        cols = {str(c).strip().lower(): c for c in df.columns}
+        id_col = cols.get("itemid") or cols.get("id")
+        existing_ids = set()
+        if not id_col:
+            return existing_ids
+        for _, row in df.iterrows():
+            item_id = _safe_int(row.get(id_col))
+            if item_id > 0:
+                existing_ids.add(item_id)
+        return existing_ids
+
+    def _normalize_invalid_purchase_item_refs(unit: str, items: list) -> list[str]:
+        existing_ids = _fetch_existing_purchase_item_ids(
+            unit,
+            [_safe_int((item or {}).get("item_id")) for item in (items or [])],
+        )
+        errors = []
+        for item in items or []:
+            item_id = _safe_int((item or {}).get("item_id"))
+            if item_id <= 0 or item_id in existing_ids:
+                continue
+            row_no = _safe_int((item or {}).get("_source_row_no"))
+            name = str((item or {}).get("item_name") or "").strip()
+            if name:
+                item["item_id"] = 0
+                continue
+            errors.append(f"Row {row_no}: item reference {item_id} is not available in Item Master.")
+        return errors
+
+    def _find_missing_purchase_item_refs(unit: str, items: list) -> list[str]:
+        existing_ids = _fetch_existing_purchase_item_ids(
+            unit,
+            [_safe_int((item or {}).get("item_id")) for item in (items or [])],
+        )
+        errors = []
+        for item in items or []:
+            item_id = _safe_int((item or {}).get("item_id"))
+            if item_id <= 0 or item_id in existing_ids:
+                continue
+            row_no = _safe_int((item or {}).get("_source_row_no"))
+            name = str((item or {}).get("item_name") or "").strip()
+            label = f" ({name})" if name else ""
+            errors.append(f"Row {row_no}{label}: item reference {item_id} could not be verified in Item Master.")
+        return errors
 
     def _po_status_label(status_code) -> str:
         code = str(status_code or "").strip().upper()
@@ -1790,10 +1936,12 @@ def register_purchase_po_routes(
             data_fetch.ensure_po_senior_approval_designation_column(unit)
         except Exception:
             pass
+        if not data_fetch.ensure_po_detail_unit_name_column(unit):
+            return jsonify({"status": "error", "message": "PO detail unit field is not available in the selected unit database."}), 500
 
         payload = request.get_json(silent=True) or {}
-        header = payload.get("header") or {}
-        items = payload.get("items") or []
+        header = _apply_default_po_terms(unit, payload.get("header") or {})
+        items, item_row_errors = _normalize_purchase_item_rows(payload.get("items") or [])
 
         supplier_id = int(header.get("supplier_id") or 0)
         if not supplier_id:
@@ -1818,6 +1966,29 @@ def register_purchase_po_routes(
                 details={"po_no": header.get("po_no")},
             )
             return jsonify({"status": "error", "message": "At least one item is required"}), 400
+        if item_row_errors:
+            _audit_log_event(
+                "purchase",
+                "po_create",
+                status="error",
+                entity_type="po",
+                unit=unit,
+                summary="Invalid PO item rows",
+                details={"errors": item_row_errors, "po_no": header.get("po_no")},
+            )
+            return jsonify({"status": "error", "message": "Invalid PO item rows", "errors": item_row_errors}), 400
+        invalid_item_ref_errors = _normalize_invalid_purchase_item_refs(unit, items)
+        if invalid_item_ref_errors:
+            _audit_log_event(
+                "purchase",
+                "po_create",
+                status="error",
+                entity_type="po",
+                unit=unit,
+                summary="Invalid PO item references",
+                details={"errors": invalid_item_ref_errors, "po_no": header.get("po_no")},
+            )
+            return jsonify({"status": "error", "message": "Invalid PO item references", "errors": invalid_item_ref_errors}), 400
         dup_check = _find_duplicate_purchase_item_refs(items, require_positive_qty=False)
         if dup_check["duplicate_ids"] or dup_check["duplicate_names"]:
             dup_labels = _format_duplicate_item_labels(items, dup_check["duplicate_ids"])
@@ -1915,6 +2086,18 @@ def register_purchase_po_routes(
                 details={"errors": item_errors, "po_no": header.get("po_no")},
             )
             return jsonify({"status": "error", "message": "Item master creation failed", "errors": item_errors}), 400
+        missing_item_ref_errors = _find_missing_purchase_item_refs(unit, items)
+        if missing_item_ref_errors:
+            _audit_log_event(
+                "purchase",
+                "po_create",
+                status="error",
+                entity_type="po",
+                unit=unit,
+                summary="PO item references could not be verified",
+                details={"errors": missing_item_ref_errors, "po_no": header.get("po_no")},
+            )
+            return jsonify({"status": "error", "message": "PO item references could not be verified", "errors": missing_item_ref_errors}), 400
 
         def _num_or_text(val):
             try:
@@ -1976,8 +2159,12 @@ def register_purchase_po_routes(
             "POPrintFormat": selected_po_print_format,
         }
 
-        mst_result = data_fetch.add_iv_po_mst_with_autonumber(unit, po_params)
-        if mst_result.get("error"):
+        detail_errors = []
+        detail_params = []
+        po_id = 0
+        po_no = ""
+        po_write_conn = data_fetch.get_sql_connection(unit)
+        if not po_write_conn:
             _audit_log_event(
                 "purchase",
                 "po_create",
@@ -1985,23 +2172,145 @@ def register_purchase_po_routes(
                 entity_type="po",
                 unit=unit,
                 summary="PO creation failed",
-                details={"error": mst_result.get("error"), "po_no": header.get("po_no")},
+                details={"error": f"Could not connect to {unit}", "po_no": header.get("po_no")},
             )
-            return jsonify({"status": "error", "message": mst_result["error"]}), 500
-        po_id = mst_result.get("po_id")
-        if not po_id:
+            return jsonify({"status": "error", "message": f"Could not connect to {unit}"}), 500
+
+        try:
+            try:
+                po_write_conn.autocommit = False
+            except Exception:
+                try:
+                    po_write_conn.driver_connection.autocommit = False
+                except Exception:
+                    pass
+
+            mst_result = data_fetch.add_iv_po_mst_with_autonumber(
+                unit,
+                po_params,
+                conn=po_write_conn,
+                manage_transaction=False,
+            )
+            if mst_result.get("error"):
+                detail_errors.append(str(mst_result.get("error")))
+            else:
+                po_id = _safe_int(mst_result.get("po_id"))
+                po_no = str(mst_result.get("po_no") or "").strip()
+                if po_id <= 0:
+                    detail_errors.append("Failed to create PO header.")
+
+            if po_id > 0:
+                for row_idx, item in enumerate(items, start=1):
+                    try:
+                        cgst_pct = float(item.get("cgst_pct") or 0)
+                        sgst_pct = float(item.get("sgst_pct") or 0)
+                        igst_pct = float(item.get("igst_pct") or 0)
+                        cgst_amt = float(item.get("cgst_amt") or 0)
+                        sgst_amt = float(item.get("sgst_amt") or 0)
+                        igst_amt = float(item.get("igst_amt") or 0)
+
+                        if igst_pct and not (cgst_pct or sgst_pct):
+                            cgst_pct = igst_pct / 2
+                            sgst_pct = igst_pct / 2
+                        if igst_amt and not (cgst_amt or sgst_amt):
+                            cgst_amt = igst_amt / 2
+                            sgst_amt = igst_amt / 2
+
+                        item_params = {
+                            "pId": int(item.get("id") or 0),
+                            "pPoid": int(po_id),
+                            "pItemid": int(item.get("item_id") or 0),
+                            "pQty": float(item.get("qty") or 0),
+                            "pPackSizeId": int(item.get("pack_size_id") or 0),
+                            "UnitName": str(item.get("unit") or "").strip(),
+                            "pRate": float(item.get("rate") or 0),
+                            "pFreeqty": float(item.get("free_qty") or 0),
+                            "pDiscount": float(item.get("discount_pct") or 0),
+                            "pTax": sgst_pct,
+                            "pTaxamount": sgst_amt,
+                            "pMRP": float(item.get("mrp") or 0),
+                            "pVATOn": item.get("vat_on"),
+                            "pVAT": item.get("vat"),
+                            "pCustom1": item.get("custom1"),
+                            "pCustom2": item.get("custom2"),
+                            "pInsertedByUserID": session.get("username") or session.get("user"),
+                            "pInsertedON": now.strftime("%Y-%m-%d %H:%M:%S"),
+                            "pInsertedMacName": item.get("mac_name"),
+                            "pInsertedMacID": item.get("mac_id"),
+                            "pInsertedIPAddress": request.remote_addr,
+                            "Fore": float(item.get("for_amt") or 0),
+                            "Excisetax": cgst_pct,
+                            "ExciseTaxamt": cgst_amt,
+                            "NetAmount": float(item.get("net_amt") or 0),
+                            "lendingRate": float(item.get("lending_rate") or 0),
+                            "UnitFor": float(item.get("unit_for") or 0),
+                            "UnitDiscount": float(item.get("unit_discount") or 0),
+                            "_row_no": row_idx,
+                            "_item_name": item.get("item_name"),
+                        }
+                        detail_params.append(item_params)
+                    except Exception as e:
+                        detail_errors.append(f"Row {row_idx}: {e}")
+
+            if not detail_errors and detail_params:
+                bulk_result = data_fetch.add_iv_po_dtl_many(
+                    unit,
+                    detail_params,
+                    conn=po_write_conn,
+                    manage_transaction=False,
+                )
+                if bulk_result.get("error"):
+                    detail_errors.extend(list(bulk_result.get("errors") or [str(bulk_result.get("error"))]))
+                else:
+                    detail_errors.extend(list(bulk_result.get("errors") or []))
+
+            if detail_errors:
+                try:
+                    po_write_conn.rollback()
+                except Exception:
+                    pass
+                _audit_log_event(
+                    "purchase",
+                    "po_create",
+                    status="error",
+                    entity_type="po",
+                    unit=unit,
+                    summary="PO save failed and was rolled back",
+                    details={"errors": detail_errors, "po_no": po_no or header.get("po_no")},
+                )
+                return jsonify({
+                    "status": "error",
+                    "message": "PO save failed. No PO data was saved.",
+                    "errors": detail_errors,
+                }), 500
+
+            po_write_conn.commit()
+        except Exception as e:
+            try:
+                po_write_conn.rollback()
+            except Exception:
+                pass
+            detail_errors = detail_errors or [str(e)]
             _audit_log_event(
                 "purchase",
                 "po_create",
                 status="error",
                 entity_type="po",
                 unit=unit,
-                summary="PO creation failed (missing PO ID)",
-                details={"po_no": header.get("po_no")},
+                summary="PO save failed and was rolled back",
+                details={"errors": detail_errors, "po_no": po_no or header.get("po_no")},
             )
-            return jsonify({"status": "error", "message": "Failed to create PO"}), 500
+            return jsonify({
+                "status": "error",
+                "message": "PO save failed. No PO data was saved.",
+                "errors": detail_errors,
+            }), 500
+        finally:
+            try:
+                po_write_conn.close()
+            except Exception:
+                pass
 
-        po_no = str(mst_result.get("po_no") or "").strip()
         if not po_no:
             try:
                 saved_header_df = data_fetch.fetch_purchase_po_header(unit, po_id=po_id)
@@ -2021,83 +2330,6 @@ def register_purchase_po_routes(
                 po_no = ensured_po_no
         except Exception:
             pass
-
-        detail_errors = []
-        detail_params = []
-        for row_idx, item in enumerate(items, start=1):
-            try:
-                cgst_pct = float(item.get("cgst_pct") or 0)
-                sgst_pct = float(item.get("sgst_pct") or 0)
-                igst_pct = float(item.get("igst_pct") or 0)
-                cgst_amt = float(item.get("cgst_amt") or 0)
-                sgst_amt = float(item.get("sgst_amt") or 0)
-                igst_amt = float(item.get("igst_amt") or 0)
-
-                if igst_pct and not (cgst_pct or sgst_pct):
-                    cgst_pct = igst_pct / 2
-                    sgst_pct = igst_pct / 2
-                if igst_amt and not (cgst_amt or sgst_amt):
-                    cgst_amt = igst_amt / 2
-                    sgst_amt = igst_amt / 2
-
-                item_params = {
-                    "pId": int(item.get("id") or 0),
-                    "pPoid": int(po_id),
-                    "pItemid": int(item.get("item_id") or 0),
-                    "pQty": float(item.get("qty") or 0),
-                    "pPackSizeId": int(item.get("pack_size_id") or 0),
-                    "pRate": float(item.get("rate") or 0),
-                    "pFreeqty": float(item.get("free_qty") or 0),
-                    "pDiscount": float(item.get("discount_pct") or 0),
-                    "pTax": sgst_pct,
-                    "pTaxamount": sgst_amt,
-                    "pMRP": float(item.get("mrp") or 0),
-                    "pVATOn": item.get("vat_on"),
-                    "pVAT": item.get("vat"),
-                    "pCustom1": item.get("custom1"),
-                    "pCustom2": item.get("custom2"),
-                    "pInsertedByUserID": session.get("username") or session.get("user"),
-                    "pInsertedON": now.strftime("%Y-%m-%d %H:%M:%S"),
-                    "pInsertedMacName": item.get("mac_name"),
-                    "pInsertedMacID": item.get("mac_id"),
-                    "pInsertedIPAddress": request.remote_addr,
-                    "Fore": float(item.get("for_amt") or 0),
-                    "Excisetax": cgst_pct,
-                    "ExciseTaxamt": cgst_amt,
-                    "NetAmount": float(item.get("net_amt") or 0),
-                    "lendingRate": float(item.get("lending_rate") or 0),
-                    "UnitFor": float(item.get("unit_for") or 0),
-                    "UnitDiscount": float(item.get("unit_discount") or 0),
-                    "_row_no": row_idx,
-                    "_item_name": item.get("item_name"),
-                }
-                detail_params.append(item_params)
-            except Exception as e:
-                detail_errors.append(f"Row {row_idx}: {e}")
-        if detail_params:
-            bulk_result = data_fetch.add_iv_po_dtl_many(unit, detail_params)
-            if bulk_result.get("error"):
-                detail_errors.append(str(bulk_result.get("error")))
-            else:
-                detail_errors.extend(list(bulk_result.get("errors") or []))
-
-        if detail_errors:
-            _audit_log_event(
-                "purchase",
-                "po_create",
-                status="partial",
-                entity_type="po",
-                entity_id=str(po_id),
-                unit=unit,
-                summary="PO created but some items failed",
-                details={"errors": detail_errors, "po_no": po_no},
-            )
-            return jsonify({
-                "status": "partial",
-                "po_id": po_id,
-                "message": "PO created but some items failed",
-                "errors": detail_errors,
-            }), 207
 
         otp_request_id = None
         if status_code == "P":
@@ -2190,10 +2422,12 @@ def register_purchase_po_routes(
             data_fetch.ensure_po_senior_approval_designation_column(unit)
         except Exception:
             pass
+        if not data_fetch.ensure_po_detail_unit_name_column(unit):
+            return jsonify({"status": "error", "message": "PO detail unit field is not available in the selected unit database."}), 500
 
         payload = request.get_json(silent=True) or {}
         header = payload.get("header") or {}
-        items = payload.get("items") or []
+        items, item_row_errors = _normalize_purchase_item_rows(payload.get("items") or [])
 
         po_id = int(header.get("po_id") or 0)
         if not po_id:
@@ -2219,6 +2453,31 @@ def register_purchase_po_routes(
                 details={"po_no": header.get("po_no")},
             )
             return jsonify({"status": "error", "message": "At least one item is required"}), 400
+        if item_row_errors:
+            _audit_log_event(
+                "purchase",
+                "po_update",
+                status="error",
+                entity_type="po",
+                entity_id=str(po_id),
+                unit=unit,
+                summary="Invalid PO item rows",
+                details={"errors": item_row_errors, "po_no": header.get("po_no")},
+            )
+            return jsonify({"status": "error", "message": "Invalid PO item rows", "errors": item_row_errors}), 400
+        invalid_item_ref_errors = _normalize_invalid_purchase_item_refs(unit, items)
+        if invalid_item_ref_errors:
+            _audit_log_event(
+                "purchase",
+                "po_update",
+                status="error",
+                entity_type="po",
+                entity_id=str(po_id),
+                unit=unit,
+                summary="Invalid PO item references",
+                details={"errors": invalid_item_ref_errors, "po_no": header.get("po_no")},
+            )
+            return jsonify({"status": "error", "message": "Invalid PO item references", "errors": invalid_item_ref_errors}), 400
         dup_check = _find_duplicate_purchase_item_refs(items, require_positive_qty=False)
         if dup_check["duplicate_ids"] or dup_check["duplicate_names"]:
             dup_labels = _format_duplicate_item_labels(items, dup_check["duplicate_ids"])
@@ -2281,6 +2540,7 @@ def register_purchase_po_routes(
             return jsonify({"status": "error", "message": "PO not found"}), 404
         header_df = _clean_df_columns(header_df)
         existing_header = header_df.iloc[0].to_dict()
+        header = _apply_default_po_terms(unit, header, existing_header)
         current_status = str(header_df.iloc[0].get("Status") or "").strip().upper()
         if current_status not in {"D", "P"}:
             _audit_log_event(
@@ -2366,6 +2626,19 @@ def register_purchase_po_routes(
                 details={"errors": item_errors, "po_no": header.get("po_no")},
             )
             return jsonify({"status": "error", "message": "Item master creation failed", "errors": item_errors}), 400
+        missing_item_ref_errors = _find_missing_purchase_item_refs(unit, items)
+        if missing_item_ref_errors:
+            _audit_log_event(
+                "purchase",
+                "po_update",
+                status="error",
+                entity_type="po",
+                entity_id=str(po_id),
+                unit=unit,
+                summary="PO item references could not be verified",
+                details={"errors": missing_item_ref_errors, "po_no": header.get("po_no")},
+            )
+            return jsonify({"status": "error", "message": "PO item references could not be verified", "errors": missing_item_ref_errors}), 400
 
         def _num_or_text(val):
             try:
@@ -2422,8 +2695,14 @@ def register_purchase_po_routes(
             "pUpdatedon": now.strftime("%Y-%m-%d %H:%M:%S"),
         }
 
-        mst_result = data_fetch.update_iv_po_mst(unit, po_params)
-        if mst_result.get("error"):
+        po_no = str(header.get("po_no") or existing_header.get("PONo") or "").strip()
+        if not po_no:
+            po_no = f"PO-{po_id}"
+
+        detail_errors = []
+        detail_params = []
+        po_write_conn = data_fetch.get_sql_connection(unit)
+        if not po_write_conn:
             _audit_log_event(
                 "purchase",
                 "po_update",
@@ -2432,24 +2711,140 @@ def register_purchase_po_routes(
                 entity_id=str(po_id),
                 unit=unit,
                 summary="PO update failed",
-                details={"error": mst_result.get("error"), "po_no": header.get("po_no")},
+                details={"error": f"Could not connect to {unit}", "po_no": po_no},
             )
-            return jsonify({"status": "error", "message": mst_result["error"]}), 500
+            return jsonify({"status": "error", "message": f"Could not connect to {unit}"}), 500
 
-        po_no = str(header.get("po_no") or existing_header.get("PONo") or "").strip()
         try:
-            po_no_fix = data_fetch.ensure_purchase_po_number(unit, int(po_id), preferred_po_no=po_no)
-            ensured_po_no = str(po_no_fix.get("po_no") or "").strip()
-            if ensured_po_no:
-                po_no = ensured_po_no
-        except Exception:
-            pass
-        if not po_no:
-            po_no = f"PO-{po_id}"
+            try:
+                po_write_conn.autocommit = False
+            except Exception:
+                try:
+                    po_write_conn.driver_connection.autocommit = False
+                except Exception:
+                    pass
 
+            mst_result = data_fetch.update_iv_po_mst(
+                unit,
+                po_params,
+                conn=po_write_conn,
+                manage_transaction=False,
+            )
+            if mst_result.get("error"):
+                detail_errors.append(str(mst_result.get("error")))
 
-        clear_result = data_fetch.clear_iv_po_dtl(unit, po_id)
-        if clear_result.get("error"):
+            if not detail_errors:
+                clear_result = data_fetch.clear_iv_po_dtl(
+                    unit,
+                    po_id,
+                    conn=po_write_conn,
+                    manage_transaction=False,
+                )
+                if clear_result.get("error"):
+                    detail_errors.append(str(clear_result.get("error")))
+
+            if not detail_errors:
+                for row_idx, item in enumerate(items, start=1):
+                    try:
+                        cgst_pct = float(item.get("cgst_pct") or 0)
+                        sgst_pct = float(item.get("sgst_pct") or 0)
+                        igst_pct = float(item.get("igst_pct") or 0)
+                        cgst_amt = float(item.get("cgst_amt") or 0)
+                        sgst_amt = float(item.get("sgst_amt") or 0)
+                        igst_amt = float(item.get("igst_amt") or 0)
+
+                        if igst_pct and not (cgst_pct or sgst_pct):
+                            cgst_pct = igst_pct / 2
+                            sgst_pct = igst_pct / 2
+                        if igst_amt and not (cgst_amt or sgst_amt):
+                            cgst_amt = igst_amt / 2
+                            sgst_amt = igst_amt / 2
+
+                        item_params = {
+                            "pId": int(item.get("id") or 0),
+                            "pPoid": int(po_id),
+                            "pItemid": int(item.get("item_id") or 0),
+                            "pQty": float(item.get("qty") or 0),
+                            "pPackSizeId": int(item.get("pack_size_id") or 0),
+                            "UnitName": str(item.get("unit") or "").strip(),
+                            "pRate": float(item.get("rate") or 0),
+                            "pFreeqty": float(item.get("free_qty") or 0),
+                            "pDiscount": float(item.get("discount_pct") or 0),
+                            "pTax": sgst_pct,
+                            "pTaxamount": sgst_amt,
+                            "pMRP": float(item.get("mrp") or 0),
+                            "pVATOn": item.get("vat_on"),
+                            "pVAT": item.get("vat"),
+                            "pCustom1": item.get("custom1"),
+                            "pCustom2": item.get("custom2"),
+                            "pInsertedByUserID": session.get("username") or session.get("user"),
+                            "pInsertedON": now.strftime("%Y-%m-%d %H:%M:%S"),
+                            "pInsertedMacName": item.get("mac_name"),
+                            "pInsertedMacID": item.get("mac_id"),
+                            "pInsertedIPAddress": request.remote_addr,
+                            "Fore": float(item.get("for_amt") or 0),
+                            "Excisetax": cgst_pct,
+                            "ExciseTaxamt": cgst_amt,
+                            "NetAmount": float(item.get("net_amt") or 0),
+                            "lendingRate": float(item.get("lending_rate") or 0),
+                            "UnitFor": float(item.get("unit_for") or 0),
+                            "UnitDiscount": float(item.get("unit_discount") or 0),
+                            "_row_no": row_idx,
+                            "_item_name": item.get("item_name"),
+                        }
+                        detail_params.append(item_params)
+                    except Exception as e:
+                        detail_errors.append(f"Row {row_idx}: {e}")
+
+            if not detail_errors and detail_params:
+                bulk_result = data_fetch.add_iv_po_dtl_many(
+                    unit,
+                    detail_params,
+                    conn=po_write_conn,
+                    manage_transaction=False,
+                )
+                if bulk_result.get("error"):
+                    detail_errors.extend(list(bulk_result.get("errors") or [str(bulk_result.get("error"))]))
+                else:
+                    detail_errors.extend(list(bulk_result.get("errors") or []))
+
+            if detail_errors:
+                try:
+                    po_write_conn.rollback()
+                except Exception:
+                    pass
+                old_header = _normalize_po_header_for_audit(existing_header)
+                new_header = _normalize_po_header_for_audit(header, totals, status_code)
+                _audit_log_event(
+                    "purchase",
+                    "po_update",
+                    status="error",
+                    entity_type="po",
+                    entity_id=str(po_id),
+                    unit=unit,
+                    summary="PO update failed and was rolled back",
+                    details={
+                        "po_no": po_no,
+                        "header_changes": _diff_simple_fields(old_header, new_header, ["supplier_id", "supplier_name", "purchasing_dept_id", "senior_approval_authority_name", "senior_approval_authority_designation", "po_date", "status", "amount", "tax_total", "discount_total", "cmc_amc_warranty"]),
+                        "items": _diff_po_items(existing_items, items),
+                        "errors": detail_errors,
+                    },
+                )
+                return jsonify({
+                    "status": "error",
+                    "message": "PO update failed. No PO changes were saved.",
+                    "errors": detail_errors,
+                }), 500
+
+            po_write_conn.commit()
+        except Exception as e:
+            try:
+                po_write_conn.rollback()
+            except Exception:
+                pass
+            detail_errors = detail_errors or [str(e)]
+            old_header = _normalize_po_header_for_audit(existing_header)
+            new_header = _normalize_po_header_for_audit(header, totals, status_code)
             _audit_log_event(
                 "purchase",
                 "po_update",
@@ -2457,81 +2852,7 @@ def register_purchase_po_routes(
                 entity_type="po",
                 entity_id=str(po_id),
                 unit=unit,
-                summary="Failed to clear PO items before update",
-                details={"error": clear_result.get("error")},
-            )
-            return jsonify({"status": "error", "message": clear_result["error"]}), 500
-
-        detail_errors = []
-        detail_params = []
-        for row_idx, item in enumerate(items, start=1):
-            try:
-                cgst_pct = float(item.get("cgst_pct") or 0)
-                sgst_pct = float(item.get("sgst_pct") or 0)
-                igst_pct = float(item.get("igst_pct") or 0)
-                cgst_amt = float(item.get("cgst_amt") or 0)
-                sgst_amt = float(item.get("sgst_amt") or 0)
-                igst_amt = float(item.get("igst_amt") or 0)
-
-                if igst_pct and not (cgst_pct or sgst_pct):
-                    cgst_pct = igst_pct / 2
-                    sgst_pct = igst_pct / 2
-                if igst_amt and not (cgst_amt or sgst_amt):
-                    cgst_amt = igst_amt / 2
-                    sgst_amt = igst_amt / 2
-
-                item_params = {
-                    "pId": int(item.get("id") or 0),
-                    "pPoid": int(po_id),
-                    "pItemid": int(item.get("item_id") or 0),
-                    "pQty": float(item.get("qty") or 0),
-                    "pPackSizeId": int(item.get("pack_size_id") or 0),
-                    "pRate": float(item.get("rate") or 0),
-                    "pFreeqty": float(item.get("free_qty") or 0),
-                    "pDiscount": float(item.get("discount_pct") or 0),
-                    "pTax": sgst_pct,
-                    "pTaxamount": sgst_amt,
-                    "pMRP": float(item.get("mrp") or 0),
-                    "pVATOn": item.get("vat_on"),
-                    "pVAT": item.get("vat"),
-                    "pCustom1": item.get("custom1"),
-                    "pCustom2": item.get("custom2"),
-                    "pInsertedByUserID": session.get("username") or session.get("user"),
-                    "pInsertedON": now.strftime("%Y-%m-%d %H:%M:%S"),
-                    "pInsertedMacName": item.get("mac_name"),
-                    "pInsertedMacID": item.get("mac_id"),
-                    "pInsertedIPAddress": request.remote_addr,
-                    "Fore": float(item.get("for_amt") or 0),
-                    "Excisetax": cgst_pct,
-                    "ExciseTaxamt": cgst_amt,
-                    "NetAmount": float(item.get("net_amt") or 0),
-                    "lendingRate": float(item.get("lending_rate") or 0),
-                    "UnitFor": float(item.get("unit_for") or 0),
-                    "UnitDiscount": float(item.get("unit_discount") or 0),
-                    "_row_no": row_idx,
-                    "_item_name": item.get("item_name"),
-                }
-                detail_params.append(item_params)
-            except Exception as e:
-                detail_errors.append(f"Row {row_idx}: {e}")
-        if detail_params:
-            bulk_result = data_fetch.add_iv_po_dtl_many(unit, detail_params)
-            if bulk_result.get("error"):
-                detail_errors.append(str(bulk_result.get("error")))
-            else:
-                detail_errors.extend(list(bulk_result.get("errors") or []))
-
-        if detail_errors:
-            old_header = _normalize_po_header_for_audit(existing_header)
-            new_header = _normalize_po_header_for_audit(header, totals, status_code)
-            _audit_log_event(
-                "purchase",
-                "po_update",
-                status="partial",
-                entity_type="po",
-                entity_id=str(po_id),
-                unit=unit,
-                summary="PO updated but some items failed",
+                summary="PO update failed and was rolled back",
                 details={
                     "po_no": po_no,
                     "header_changes": _diff_simple_fields(old_header, new_header, ["supplier_id", "supplier_name", "purchasing_dept_id", "senior_approval_authority_name", "senior_approval_authority_designation", "po_date", "status", "amount", "tax_total", "discount_total", "cmc_amc_warranty"]),
@@ -2540,11 +2861,23 @@ def register_purchase_po_routes(
                 },
             )
             return jsonify({
-                "status": "partial",
-                "po_id": po_id,
-                "message": "PO updated but some items failed",
+                "status": "error",
+                "message": "PO update failed. No PO changes were saved.",
                 "errors": detail_errors,
-            }), 207
+            }), 500
+        finally:
+            try:
+                po_write_conn.close()
+            except Exception:
+                pass
+
+        try:
+            po_no_fix = data_fetch.ensure_purchase_po_number(unit, int(po_id), preferred_po_no=po_no)
+            ensured_po_no = str(po_no_fix.get("po_no") or "").strip()
+            if ensured_po_no:
+                po_no = ensured_po_no
+        except Exception:
+            pass
 
         otp_request_id = None
         if status_code == "P":

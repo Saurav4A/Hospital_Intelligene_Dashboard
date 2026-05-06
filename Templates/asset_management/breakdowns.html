@@ -1,0 +1,444 @@
+{% extends "asset_management/_base.html" %}
+
+{% block page_actions %}
+  <button type="button" class="asset-btn primary" id="openBreakdownBtn">Open Ticket</button>
+  <a class="asset-btn secondary" href="{{ url_for('asset_management.public_breakdown_complaint_page') }}" target="_blank" rel="noopener">Public QR Page</a>
+  <a class="asset-btn secondary" href="{{ url_for('asset_management.register_page') }}">Asset Register</a>
+{% endblock %}
+
+{% block asset_page %}
+  <div class="asset-grid three">
+    <div class="asset-kpi">
+      <div class="asset-kpi__label">Open Tickets</div>
+      <div class="asset-kpi__value">{{ open_count or 0 }}</div>
+      <div class="asset-kpi__sub">Awaiting repair or verdict</div>
+    </div>
+    <div class="asset-kpi">
+      <div class="asset-kpi__label">Closed Tickets</div>
+      <div class="asset-kpi__value">{{ closed_count or 0 }}</div>
+      <div class="asset-kpi__sub">Completed or non-repairable</div>
+    </div>
+    <div class="asset-kpi">
+      <div class="asset-kpi__label">Reminder</div>
+      <div class="asset-kpi__value">10:15</div>
+      <div class="asset-kpi__sub">Daily PDF until ticket closure</div>
+    </div>
+  </div>
+
+  <section class="asset-card" style="margin-top:16px;">
+    <div class="asset-toolbar">
+      <div>
+        <h3 style="margin:0;">Breakdown Tickets</h3>
+        <p style="margin:6px 0 0;color:#64748b;">Track breakdowns by asset, unit, and machine type in a ticket workflow.</p>
+      </div>
+      <div class="asset-toolbar__group">
+        <a class="asset-btn {% if status == 'OPEN' %}primary{% else %}secondary{% endif %}" href="{{ url_for('asset_management.breakdowns_page', status='OPEN') }}">Open</a>
+        <a class="asset-btn {% if status == 'CLOSED' %}primary{% else %}secondary{% endif %}" href="{{ url_for('asset_management.breakdowns_page', status='CLOSED') }}">Closed</a>
+        <a class="asset-btn {% if not status %}primary{% else %}secondary{% endif %}" href="{{ url_for('asset_management.breakdowns_page', status='') }}">All</a>
+      </div>
+    </div>
+    <div class="asset-table-wrap asset-breakdown-table-wrap">
+      <table class="asset-table asset-breakdown-table">
+        <colgroup>
+          <col class="asset-breakdown-col-ticket">
+          <col class="asset-breakdown-col-asset">
+          <col class="asset-breakdown-col-reporter">
+          <col class="asset-breakdown-col-machine">
+          <col class="asset-breakdown-col-unit">
+          <col class="asset-breakdown-col-breakdown">
+          <col class="asset-breakdown-col-visit">
+          <col class="asset-breakdown-col-status">
+          <col class="asset-breakdown-col-action">
+        </colgroup>
+        <thead>
+          <tr>
+            <th>Ticket</th>
+            <th>Asset</th>
+            <th>Reported By</th>
+            <th>Machine Type</th>
+            <th>Unit</th>
+            <th>Breakdown</th>
+            <th>Expected Visit</th>
+            <th>Status</th>
+            <th>Action</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in tickets %}
+            <tr>
+              <td data-label="Ticket"><strong class="asset-breakdown-ticket">{{ row.ticket_no }}</strong></td>
+              <td data-label="Asset">
+                <strong class="asset-breakdown-primary">{{ row.asset_code }}</strong>
+                <span class="asset-breakdown-meta">{{ row.asset_name }}</span>
+                {% if row.complaint_source %}
+                  <br><span class="asset-code-pill" style="margin-top:6px;">{{ row.complaint_source }}</span>
+                {% endif %}
+              </td>
+              <td data-label="Reported By">
+                {% set reporter_phone = row.contact_mobile or row.reporter_mobile %}
+                <strong class="asset-breakdown-primary">{{ row.reporter_employee_name or row.created_by_username or "Not captured" }}</strong>
+                {% if row.reporter_employee_id %}
+                  <span class="asset-breakdown-meta">Emp ID: {{ row.reporter_employee_id }}</span>
+                {% endif %}
+                {% if reporter_phone %}
+                  <span class="asset-breakdown-meta">Contact: {{ reporter_phone }}</span>
+                {% endif %}
+                {% if row.reporter_department %}
+                  <span class="asset-breakdown-meta">{{ row.reporter_department }}</span>
+                {% endif %}
+              </td>
+              <td data-label="Machine Type">{{ row.machine_type_name or "Not tagged" }}</td>
+              <td data-label="Unit">{{ row.unit_code }}</td>
+              <td data-label="Breakdown">
+                <strong class="asset-breakdown-date">{{ row.breakdown_datetime_display or "-" }}</strong>
+                <span class="asset-breakdown-meta">{{ row.breakdown_reason }}</span>
+                {% if row.reported_status or row.priority %}
+                  <span class="asset-breakdown-meta">{{ row.reported_status or "Status not stated" }}{% if row.priority %} | {{ row.priority }}{% endif %}</span>
+                {% endif %}
+              </td>
+              <td data-label="Expected Visit">{{ row.expected_technician_visit_display or "Not scheduled" }}</td>
+              <td data-label="Status" class="asset-breakdown-status-cell">
+                <span class="asset-status asset-breakdown-status asset-status-{{ 4 if row.status == 'OPEN' else 5 if row.non_repairable else 1 }}">{{ row.status_label }}</span>
+                {% if row.repair_verdict_label %}
+                  <div class="asset-breakdown-verdict">Verdict: {{ row.repair_verdict_label }}</div>
+                {% endif %}
+                {% if row.repair_done_date_display %}
+                  <div class="asset-breakdown-status-note">{{ row.repair_done_date_display }}</div>
+                {% endif %}
+                {% if row.repair_verdict_reason %}
+                  <div class="asset-breakdown-status-note">{{ row.repair_verdict_reason }}</div>
+                {% endif %}
+              </td>
+              <td data-label="Action">
+                {% if row.status == 'OPEN' %}
+                  <button type="button" class="asset-link-btn asset-breakdown-action close-ticket-btn" data-ticket='{{ row|tojson }}'>Update Repair</button>
+                {% else %}
+                  <span style="color:#64748b;">Closed</span>
+                {% endif %}
+              </td>
+            </tr>
+          {% else %}
+            <tr><td colspan="9"><div class="asset-empty">No breakdown tickets found for this view.</div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <div class="asset-modal" id="breakdownModal">
+    <div class="asset-modal__dialog asset-modal__dialog--wide">
+      <div class="asset-modal__header">
+        <div>
+          <h3>Open Breakdown Ticket</h3>
+          <p>Record the breakdown and notify unit stakeholders immediately.</p>
+        </div>
+        <button type="button" class="asset-modal-close" data-close-modal="breakdownModal">&times;</button>
+      </div>
+      <form id="breakdownForm" class="asset-modal__body">
+        <div class="asset-modal-grid asset-modal-grid--asset">
+          <div class="asset-field asset-field--span-2">
+            <label>Asset Number / Name</label>
+            <div class="asset-search-picker" id="breakdownAssetPicker">
+              <input class="asset-input asset-search-picker__input" id="breakdownAssetSearch" placeholder="Search by asset number, name, unit, or machine type" autocomplete="off" required>
+              <input type="hidden" name="asset_id" id="breakdownAssetId">
+              <div class="asset-search-picker__menu" id="breakdownAssetResults" role="listbox"></div>
+            </div>
+          </div>
+          <div class="asset-field">
+            <label>Unit</label>
+            <input class="asset-input" id="breakdownUnit" readonly>
+          </div>
+          <div class="asset-field">
+            <label>Machine Type</label>
+            <input class="asset-input" id="breakdownMachineType" readonly>
+          </div>
+          <div class="asset-field">
+            <label>Breakdown Date Time</label>
+            <input class="asset-input" type="datetime-local" name="breakdown_datetime" id="breakdownDateTime" required>
+          </div>
+          <div class="asset-field">
+            <label>Expected Technician Visit</label>
+            <input class="asset-input" type="datetime-local" name="expected_technician_visit">
+          </div>
+          <div class="asset-field asset-field--span-2">
+            <label>Breakdown Reason</label>
+            <textarea class="asset-textarea" name="breakdown_reason" placeholder="Describe the fault, error, or operational impact" required></textarea>
+          </div>
+        </div>
+        <div class="asset-modal__footer">
+          <button type="button" class="asset-btn secondary" data-close-modal="breakdownModal">Cancel</button>
+          <button type="submit" class="asset-btn primary">Open Ticket</button>
+        </div>
+      </form>
+    </div>
+  </div>
+
+  <div class="asset-modal" id="repairModal">
+    <div class="asset-modal__dialog">
+      <div class="asset-modal__header">
+        <div>
+          <h3 id="repairModalTitle">Update Repair</h3>
+          <p>Save the repair outcome. A No verdict keeps the ticket open unless it is marked non-repairable with OTP approval.</p>
+        </div>
+        <button type="button" class="asset-modal-close" data-close-modal="repairModal">&times;</button>
+      </div>
+      <form id="repairForm" class="asset-modal__body">
+        <input type="hidden" name="ticket_id" id="repairTicketId">
+        <input type="hidden" name="asset_id" id="repairAssetId">
+        <div class="asset-modal-grid">
+          <div class="asset-field">
+            <label>Repair Update Date</label>
+            <input class="asset-input" type="datetime-local" name="repair_done_date">
+          </div>
+          <div class="asset-field">
+            <label>Repair Verdict</label>
+            <select class="asset-select" name="repair_verdict">
+              <option value="">Choose verdict</option>
+              <option value="yes">Yes</option>
+              <option value="no">No</option>
+            </select>
+          </div>
+          <div class="asset-field">
+            <label>Expected Technician Visit</label>
+            <input class="asset-input" type="datetime-local" name="expected_technician_visit" id="repairExpectedVisit">
+          </div>
+          <div class="asset-field asset-field--span-2">
+            <label>Repair Verdict Reason</label>
+            <textarea class="asset-textarea" name="repair_verdict_reason" placeholder="Repair note, diagnosis, or reason if not repaired"></textarea>
+          </div>
+          <div class="asset-field">
+            <label>Non-Repairable</label>
+            <select class="asset-select" name="non_repairable" id="repairNonRepairable">
+              <option value="">No</option>
+              <option value="yes">Yes, mark non-repairable</option>
+            </select>
+          </div>
+          <div class="asset-field">
+            <label>Asset-Purchase OTP</label>
+            <div style="display:flex;gap:8px;">
+              <input class="asset-input" name="otp_code" id="repairOtpCode" placeholder="OTP if required">
+              <button type="button" class="asset-btn secondary" id="requestRepairOtpBtn" style="white-space:nowrap;">Send OTP</button>
+            </div>
+          </div>
+        </div>
+        <div class="asset-modal__footer">
+          <button type="button" class="asset-btn secondary" data-close-modal="repairModal">Cancel</button>
+          <button type="submit" class="asset-btn primary">Save Repair Update</button>
+        </div>
+      </form>
+    </div>
+  </div>
+{% endblock %}
+
+{% block asset_scripts %}
+<script>
+  const breakdownAssets = {{ breakdown_asset_options|tojson }};
+
+  const nowLocalValue = () => {
+    const now = new Date();
+    now.setMinutes(now.getMinutes() - now.getTimezoneOffset());
+    return now.toISOString().slice(0, 16);
+  };
+
+  const assetPicker = document.getElementById('breakdownAssetPicker');
+  const assetSearch = document.getElementById('breakdownAssetSearch');
+  const assetResults = document.getElementById('breakdownAssetResults');
+  const assetHiddenId = document.getElementById('breakdownAssetId');
+  let assetMatches = [];
+  let activeAssetIndex = -1;
+
+  const normalizeAssetText = (value) => String(value || '').toLowerCase().trim();
+
+  const assetDisplay = (asset) => `${asset.asset_code || ''} - ${asset.equipment_name || ''} | ${asset.location_code || ''}`;
+
+  const escapeAssetHtml = (value) => String(value || '').replace(/[&<>"']/g, (char) => ({
+    '&': '&amp;',
+    '<': '&lt;',
+    '>': '&gt;',
+    '"': '&quot;',
+    "'": '&#39;'
+  }[char]));
+
+  const clearBreakdownAsset = () => {
+    assetHiddenId.value = '';
+    document.getElementById('breakdownUnit').value = '';
+    document.getElementById('breakdownMachineType').value = '';
+  };
+
+  const selectBreakdownAsset = (asset) => {
+    if (!asset) return;
+    assetSearch.value = assetDisplay(asset);
+    assetHiddenId.value = asset.asset_id || '';
+    document.getElementById('breakdownUnit').value = asset.location_code || '';
+    document.getElementById('breakdownMachineType').value = asset.machine_type_name || '';
+    assetPicker.classList.remove('open');
+    activeAssetIndex = -1;
+  };
+
+  const renderAssetResults = (query) => {
+    const q = normalizeAssetText(query);
+    const tokens = q.split(/\s+/).filter(Boolean);
+    assetMatches = breakdownAssets
+      .filter((asset) => {
+        if (!tokens.length) return true;
+        const haystack = normalizeAssetText([
+          asset.asset_code,
+          asset.equipment_name,
+          asset.location_code,
+          asset.machine_type_name
+        ].join(' '));
+        return tokens.every((token) => haystack.includes(token));
+      })
+      .slice(0, 40);
+
+    activeAssetIndex = assetMatches.length ? 0 : -1;
+    if (!assetResults) return;
+    if (!assetMatches.length) {
+      assetResults.innerHTML = '<div class="asset-search-picker__empty">No matching asset found.</div>';
+      assetPicker.classList.add('open');
+      return;
+    }
+    assetResults.innerHTML = assetMatches.map((asset, index) => `
+      <button type="button" class="asset-search-picker__option ${index === activeAssetIndex ? 'active' : ''}" data-index="${index}" role="option">
+        <span class="asset-search-picker__code">${escapeAssetHtml(asset.asset_code || 'Asset')} - ${escapeAssetHtml(asset.equipment_name || 'Unnamed asset')}</span>
+        <span class="asset-search-picker__meta">${escapeAssetHtml(asset.location_code || 'No unit')}${asset.machine_type_name ? ' | ' + escapeAssetHtml(asset.machine_type_name) : ''}</span>
+      </button>
+    `).join('');
+    assetPicker.classList.add('open');
+  };
+
+  const updateActiveAssetOption = () => {
+    assetResults?.querySelectorAll('.asset-search-picker__option').forEach((btn, index) => {
+      btn.classList.toggle('active', index === activeAssetIndex);
+      if (index === activeAssetIndex) btn.scrollIntoView({block: 'nearest'});
+    });
+  };
+
+  document.getElementById('openBreakdownBtn')?.addEventListener('click', () => {
+    document.getElementById('breakdownForm').reset();
+    document.getElementById('breakdownDateTime').value = nowLocalValue();
+    if (assetSearch) assetSearch.value = '';
+    clearBreakdownAsset();
+    renderAssetResults('');
+    assetOpenModal('breakdownModal');
+    setTimeout(() => assetSearch?.focus(), 80);
+  });
+
+  assetSearch?.addEventListener('input', (event) => {
+    clearBreakdownAsset();
+    renderAssetResults(event.target.value);
+  });
+
+  assetSearch?.addEventListener('focus', () => renderAssetResults(assetSearch.value));
+
+  assetSearch?.addEventListener('keydown', (event) => {
+    if (!assetPicker?.classList.contains('open') && ['ArrowDown', 'ArrowUp'].includes(event.key)) {
+      renderAssetResults(assetSearch.value);
+      event.preventDefault();
+      return;
+    }
+    if (event.key === 'ArrowDown') {
+      activeAssetIndex = Math.min(activeAssetIndex + 1, assetMatches.length - 1);
+      updateActiveAssetOption();
+      event.preventDefault();
+    } else if (event.key === 'ArrowUp') {
+      activeAssetIndex = Math.max(activeAssetIndex - 1, 0);
+      updateActiveAssetOption();
+      event.preventDefault();
+    } else if (event.key === 'Enter' && activeAssetIndex >= 0) {
+      selectBreakdownAsset(assetMatches[activeAssetIndex]);
+      event.preventDefault();
+    } else if (event.key === 'Escape') {
+      assetPicker.classList.remove('open');
+    }
+  });
+
+  assetResults?.addEventListener('mousedown', (event) => {
+    const btn = event.target.closest('.asset-search-picker__option');
+    if (!btn) return;
+    selectBreakdownAsset(assetMatches[Number(btn.dataset.index)]);
+    event.preventDefault();
+  });
+
+  document.addEventListener('click', (event) => {
+    if (!assetPicker?.contains(event.target)) assetPicker?.classList.remove('open');
+  });
+
+  document.getElementById('breakdownForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const payload = Object.fromEntries(new FormData(event.currentTarget).entries());
+    if (!payload.asset_id) {
+      assetNotify('Please select an asset from the search results.', 'warn', 'breakdown-open');
+      assetSearch?.focus();
+      return;
+    }
+    assetNotify('Opening breakdown ticket...', 'loading', 'breakdown-open');
+    try {
+      const result = await assetFetchJson('{{ url_for("asset_management.api_create_breakdown") }}', {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      assetClearLoading('breakdown-open');
+      assetNotify(result.message || 'Breakdown ticket opened.', 'success', 'breakdown-open');
+      setTimeout(() => window.location.reload(), 800);
+    } catch (error) {
+      assetClearLoading('breakdown-open');
+      assetNotify(error.message || 'Unable to open breakdown ticket.', 'error', 'breakdown-open');
+    }
+  });
+
+  document.querySelectorAll('.close-ticket-btn').forEach((btn) => {
+    btn.addEventListener('click', () => {
+      const ticket = JSON.parse(btn.dataset.ticket || '{}');
+      document.getElementById('repairForm').reset();
+      document.getElementById('repairTicketId').value = ticket.ticket_id || '';
+      document.getElementById('repairAssetId').value = ticket.asset_id || '';
+      document.getElementById('repairExpectedVisit').value = ticket.expected_technician_visit_input || '';
+      document.getElementById('repairModalTitle').textContent = `Update ${ticket.ticket_no || 'Ticket'}`;
+      assetOpenModal('repairModal');
+    });
+  });
+
+  document.getElementById('requestRepairOtpBtn')?.addEventListener('click', async () => {
+    const assetId = document.getElementById('repairAssetId').value;
+    const ticketId = document.getElementById('repairTicketId').value;
+    if (!assetId || !ticketId) return;
+    assetNotify('Sending Asset-Purchase OTP...', 'loading', 'breakdown-otp');
+    try {
+      const result = await assetFetchJson(`{{ url_for("asset_management.api_request_asset_action_otp", asset_id=0) }}`.replace('/0/', `/${assetId}/`), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({ action_type: 'NON_REPAIRABLE', ticket_id: ticketId })
+      });
+      assetClearLoading('breakdown-otp');
+      assetNotify(result.message || 'OTP sent to Asset-Purchase.', 'success', 'breakdown-otp');
+      if (result.otp_code) document.getElementById('repairOtpCode').value = result.otp_code;
+    } catch (error) {
+      assetClearLoading('breakdown-otp');
+      assetNotify(error.message || 'Unable to send OTP.', 'error', 'breakdown-otp');
+    }
+  });
+
+  document.getElementById('repairForm')?.addEventListener('submit', async (event) => {
+    event.preventDefault();
+    const fd = new FormData(event.currentTarget);
+    const ticketId = fd.get('ticket_id');
+    const payload = Object.fromEntries(fd.entries());
+    assetNotify('Saving repair update...', 'loading', 'breakdown-close');
+    try {
+      const result = await assetFetchJson(`{{ url_for("asset_management.api_close_breakdown", ticket_id=0) }}`.replace('/0/', `/${ticketId}/`), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify(payload)
+      });
+      assetClearLoading('breakdown-close');
+      assetNotify(result.message || 'Repair update saved.', 'success', 'breakdown-close');
+      setTimeout(() => window.location.reload(), 800);
+    } catch (error) {
+      assetClearLoading('breakdown-close');
+      assetNotify(error.message || 'Unable to save repair update.', 'error', 'breakdown-close');
+    }
+  });
+</script>
+{% endblock %}

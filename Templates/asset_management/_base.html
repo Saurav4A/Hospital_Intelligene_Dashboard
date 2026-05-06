@@ -1,0 +1,1817 @@
+{% extends "layout.html" %}
+{% block page_header %}{% endblock %}
+{% block page_footer %}
+<footer style="margin:28px 0 24px;color:#64748b;font-size:13px;">
+  &copy; 2026 Asset Management | Hospital Intelligence Dashboard
+</footer>
+{% endblock %}
+{% block content %}
+<style>
+  .asset-app{
+    width:min(1360px,98%);
+    padding:24px 0 40px;
+    color:#10213d;
+  }
+  .asset-app *{box-sizing:border-box}
+  .asset-app{
+    --asset-brand:#243b7b;
+    --asset-brand-2:#3558b8;
+    --asset-accent:#10b981;
+    --asset-warn:#d97706;
+    --asset-danger:#dc2626;
+    --asset-bg:#f4f7fb;
+    --asset-card:rgba(255,255,255,0.96);
+    --asset-line:#dbe5f2;
+    --asset-muted:#5b6b86;
+    --asset-shadow:0 14px 32px rgba(15,23,42,.08);
+    --asset-radius:18px;
+  }
+  .asset-hero{
+    display:flex;
+    justify-content:space-between;
+    gap:16px;
+    align-items:flex-start;
+    margin-bottom:16px;
+    padding:6px 2px;
+  }
+  .asset-hero h2{
+    margin:0 0 6px;
+    font-size:30px;
+    font-weight:800;
+    color:var(--asset-brand);
+    letter-spacing:.2px;
+  }
+  .asset-hero p{
+    margin:0;
+    color:var(--asset-muted);
+    line-height:1.5;
+    max-width:820px;
+  }
+  .asset-chip-row{
+    display:flex;
+    flex-wrap:wrap;
+    gap:8px;
+    margin-top:12px;
+  }
+  .asset-chip{
+    display:inline-flex;
+    align-items:center;
+    gap:6px;
+    padding:7px 12px;
+    border-radius:999px;
+    background:#eef4ff;
+    color:var(--asset-brand);
+    font-weight:700;
+    font-size:12px;
+    border:1px solid #d8e2fb;
+  }
+  .asset-nav{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    margin-bottom:18px;
+  }
+  .asset-nav a{
+    text-decoration:none;
+    color:var(--asset-brand);
+    font-weight:700;
+    padding:10px 16px;
+    border-radius:12px;
+    background:#f0f5ff;
+    border:1px solid #d8e2fb;
+  }
+  .asset-nav a.active{
+    background:linear-gradient(135deg,var(--asset-brand),var(--asset-brand-2));
+    color:#fff;
+    box-shadow:0 10px 24px rgba(36,59,123,.22);
+  }
+  .asset-nav a.dashboard{
+    background:#ffffff;
+    border-color:#cbdaf7;
+    color:var(--asset-brand);
+  }
+  .asset-master-home{
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:16px;
+  }
+  .asset-master-home__card{
+    display:flex;
+    flex-direction:column;
+    gap:12px;
+    padding:18px;
+    border-radius:18px;
+    background:#fff;
+    border:1px solid rgba(36,59,123,.08);
+    box-shadow:var(--asset-shadow);
+  }
+  .asset-master-home__card h3{
+    margin:0;
+    color:var(--asset-brand);
+  }
+  .asset-master-home__card p{
+    margin:0;
+    color:var(--asset-muted);
+    line-height:1.5;
+  }
+  .asset-master-home__count{
+    font-size:30px;
+    font-weight:800;
+    color:var(--asset-brand);
+  }
+  .asset-grid{
+    display:grid;
+    gap:16px;
+  }
+  .asset-grid.two{
+    grid-template-columns:repeat(2,minmax(0,1fr));
+  }
+  .asset-grid.three{
+    grid-template-columns:repeat(3,minmax(0,1fr));
+  }
+  .asset-card{
+    background:var(--asset-card);
+    border:1px solid rgba(36,59,123,.08);
+    border-radius:var(--asset-radius);
+    box-shadow:var(--asset-shadow);
+    padding:18px;
+  }
+  .asset-card h3{
+    margin:0 0 12px;
+    font-size:18px;
+    color:var(--asset-brand);
+  }
+  .asset-card h4{
+    margin:0 0 10px;
+    font-size:15px;
+    color:#10213d;
+  }
+  .asset-toolbar{
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+    align-items:center;
+    flex-wrap:wrap;
+    margin-bottom:14px;
+  }
+  .asset-toolbar__group{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:center;
+  }
+  .asset-page-action-stack{
+    display:grid;
+    gap:10px;
+    justify-items:end;
+    width:min(560px,100%);
+  }
+  .asset-page-action-row{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    justify-content:flex-end;
+    width:100%;
+  }
+  .asset-page-action-row .asset-btn{
+    min-width:124px;
+  }
+  .asset-btn{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    gap:8px;
+    border:none;
+    cursor:pointer;
+    text-decoration:none;
+    font-weight:800;
+    border-radius:12px;
+    padding:11px 16px;
+    transition:transform .18s ease,box-shadow .18s ease,opacity .18s ease;
+  }
+  .asset-btn:hover{transform:translateY(-1px)}
+  .asset-btn.primary{
+    color:#fff;
+    background:linear-gradient(135deg,var(--asset-brand),var(--asset-brand-2));
+    box-shadow:0 10px 24px rgba(36,59,123,.22);
+  }
+  .asset-btn.secondary{
+    color:var(--asset-brand);
+    background:#f2f6ff;
+    border:1px solid #dbe7ff;
+  }
+  .asset-btn.success{
+    color:#fff;
+    background:linear-gradient(135deg,#0f9f70,#10b981);
+    box-shadow:0 10px 24px rgba(16,185,129,.22);
+  }
+  .asset-btn.warn{
+    color:#7c2d12;
+    background:#fff4e8;
+    border:1px solid #fed7aa;
+  }
+  .asset-btn.danger{
+    color:#fff;
+    background:linear-gradient(135deg,#b91c1c,#ef4444);
+  }
+  .asset-kpi{
+    padding:16px;
+    border-radius:16px;
+    border:1px solid #edf2fb;
+    background:#fff;
+  }
+  .asset-kpi__label{
+    font-size:12px;
+    font-weight:800;
+    color:var(--asset-muted);
+    text-transform:uppercase;
+    letter-spacing:.6px;
+  }
+  .asset-kpi__value{
+    margin-top:8px;
+    font-size:30px;
+    font-weight:800;
+    color:var(--asset-brand);
+    line-height:1;
+  }
+  .asset-kpi__sub{
+    margin-top:8px;
+    font-size:13px;
+    color:#1d4ed8;
+    font-weight:700;
+  }
+  .asset-filter-grid{
+    display:grid;
+    grid-template-columns:repeat(6,minmax(0,1fr));
+    gap:12px;
+  }
+  .asset-field{
+    display:flex;
+    flex-direction:column;
+    gap:6px;
+  }
+  .asset-field label{
+    font-size:12px;
+    color:var(--asset-muted);
+    font-weight:800;
+    text-transform:uppercase;
+    letter-spacing:.6px;
+  }
+  .asset-input,
+  .asset-select,
+  .asset-textarea{
+    width:100%;
+    border:1px solid #cfd9ea;
+    border-radius:12px;
+    padding:0 14px;
+    font-size:14px;
+    line-height:1.35;
+    color:#10213d;
+    background:#fff;
+    outline:none;
+  }
+  .asset-input,
+  .asset-select{
+    height:58px;
+  }
+  .asset-input::placeholder,
+  .asset-textarea::placeholder{
+    color:#7a8aa7;
+    opacity:1;
+  }
+  .asset-select{
+    appearance:none;
+    -webkit-appearance:none;
+    -moz-appearance:none;
+    padding-right:42px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' viewBox='0 0 20 20' fill='none'%3E%3Cpath d='M5 7.5L10 12.5L15 7.5' stroke='%23243b7b' stroke-width='1.8' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;
+    background-position:right 14px center;
+    background-size:15px 15px;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    overflow:hidden;
+  }
+  .asset-input[type="date"]{
+    padding-right:14px;
+  }
+  .asset-input[type="file"]{
+    height:auto;
+    padding:14px;
+    line-height:1.4;
+  }
+  .asset-input[type="date"]::-webkit-date-and-time-value{
+    text-align:left;
+  }
+  .asset-input:focus,
+  .asset-select:focus,
+  .asset-textarea:focus{
+    border-color:#5b7be0;
+    box-shadow:0 0 0 3px rgba(91,123,224,.12);
+  }
+  .asset-textarea{
+    min-height:110px;
+    resize:vertical;
+    padding:12px 14px;
+  }
+  .asset-search-picker{
+    position:relative;
+  }
+  .asset-search-picker__input{
+    padding-right:42px;
+    background-image:url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='20' height='20' viewBox='0 0 24 24' fill='none' stroke='%23243b7b' stroke-width='2' stroke-linecap='round' stroke-linejoin='round'%3E%3Ccircle cx='11' cy='11' r='8'/%3E%3Cpath d='m21 21-4.35-4.35'/%3E%3C/svg%3E");
+    background-repeat:no-repeat;
+    background-position:right 14px center;
+    background-size:18px 18px;
+  }
+  .asset-search-picker__menu{
+    position:absolute;
+    z-index:30;
+    top:calc(100% + 6px);
+    left:0;
+    right:0;
+    max-height:300px;
+    overflow:auto;
+    padding:6px;
+    border:1px solid #cfd9ea;
+    border-radius:14px;
+    background:#fff;
+    box-shadow:0 18px 36px rgba(15,23,42,.16);
+    display:none;
+  }
+  .asset-search-picker.open .asset-search-picker__menu{
+    display:block;
+  }
+  .asset-search-picker__option{
+    width:100%;
+    border:none;
+    cursor:pointer;
+    text-align:left;
+    padding:10px 12px;
+    border-radius:10px;
+    background:#fff;
+    color:#10213d;
+  }
+  .asset-search-picker__option:hover,
+  .asset-search-picker__option.active{
+    background:#eef4ff;
+  }
+  .asset-search-picker__code{
+    display:block;
+    font-weight:800;
+    color:var(--asset-brand);
+    line-height:1.35;
+  }
+  .asset-search-picker__meta{
+    display:block;
+    margin-top:2px;
+    color:#64748b;
+    font-size:12px;
+    line-height:1.35;
+  }
+  .asset-search-picker__empty{
+    padding:12px;
+    color:#64748b;
+    font-size:13px;
+  }
+  .asset-table-wrap{
+    width:100%;
+    overflow:auto;
+    border-radius:16px;
+    border:1px solid #ebf0f8;
+    background:#fff;
+  }
+  .asset-table{
+    width:100%;
+    border-collapse:collapse;
+    min-width:1080px;
+  }
+  .asset-table th{
+    background:#2d468d;
+    color:#fff;
+    text-align:left;
+    padding:12px 12px;
+    font-size:13px;
+    font-weight:800;
+    white-space:nowrap;
+  }
+  .asset-table td{
+    padding:12px 12px;
+    border-bottom:1px solid #edf2fb;
+    font-size:13px;
+    vertical-align:top;
+    color:#18304e;
+  }
+  .asset-table tr:hover td{background:#f8fbff}
+  .asset-status{
+    display:inline-flex;
+    align-items:center;
+    padding:6px 10px;
+    border-radius:999px;
+    font-size:12px;
+    font-weight:800;
+  }
+  .asset-status-1{background:#eef7ff;color:#1d4ed8}
+  .asset-status-2{background:#ecfdf5;color:#047857}
+  .asset-status-3{background:#f8fafc;color:#334155}
+  .asset-status-4{background:#fff7ed;color:#c2410c}
+  .asset-status-5{background:#fef2f2;color:#b91c1c}
+  .asset-status-6{background:#f5f3ff;color:#6d28d9}
+  .asset-breakdown-table{
+    min-width:1580px;
+    table-layout:fixed;
+  }
+  .asset-breakdown-col-ticket{width:105px}
+  .asset-breakdown-col-asset{width:250px}
+  .asset-breakdown-col-reporter{width:235px}
+  .asset-breakdown-col-machine{width:175px}
+  .asset-breakdown-col-unit{width:68px}
+  .asset-breakdown-col-breakdown{width:360px}
+  .asset-breakdown-col-visit{width:145px}
+  .asset-breakdown-col-status{width:170px}
+  .asset-breakdown-col-action{width:150px}
+  .asset-breakdown-table th{
+    padding:14px 14px;
+    font-size:13px;
+    letter-spacing:.1px;
+  }
+  .asset-breakdown-table td{
+    padding:16px 14px;
+    line-height:1.35;
+    overflow-wrap:anywhere;
+    word-break:normal;
+  }
+  .asset-breakdown-table tbody tr:nth-child(even) td{
+    background:#fbfdff;
+  }
+  .asset-breakdown-table tbody tr:hover td{
+    background:#f5f8ff;
+  }
+  .asset-breakdown-ticket,
+  .asset-breakdown-primary,
+  .asset-breakdown-date{
+    display:block;
+    color:#10213d;
+    font-weight:800;
+    line-height:1.3;
+  }
+  .asset-breakdown-ticket{
+    letter-spacing:.2px;
+  }
+  .asset-breakdown-meta{
+    display:block;
+    margin-top:4px;
+    color:#64748b;
+    line-height:1.35;
+  }
+  .asset-breakdown-status-cell{
+    min-width:0;
+  }
+  .asset-breakdown-status{
+    max-width:100%;
+    min-width:76px;
+    justify-content:center;
+    white-space:normal;
+    overflow-wrap:anywhere;
+    text-align:center;
+    line-height:1.25;
+    border-radius:18px;
+  }
+  .asset-breakdown-verdict{
+    margin-top:10px;
+    color:#10213d;
+    font-size:12px;
+    font-weight:800;
+    line-height:1.25;
+  }
+  .asset-breakdown-status-note{
+    margin-top:5px;
+    color:#64748b;
+    font-size:12px;
+    line-height:1.35;
+  }
+  .asset-breakdown-action{
+    width:100%;
+    display:flex;
+    align-items:center;
+    justify-content:center;
+    text-align:center;
+    white-space:normal;
+    line-height:1.25;
+    padding:10px 12px;
+    border-radius:12px;
+  }
+  .asset-inline-actions{
+    display:flex;
+    gap:6px;
+    flex-wrap:wrap;
+  }
+  .asset-code-pill{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    padding:7px 12px;
+    border-radius:999px;
+    background:#eef4ff;
+    color:var(--asset-brand);
+    font-weight:800;
+    font-size:12px;
+    line-height:1.2;
+    text-decoration:none;
+  }
+  .asset-register-intro{
+    display:flex;
+    justify-content:space-between;
+    gap:14px;
+    flex-wrap:wrap;
+    align-items:flex-start;
+    margin-bottom:16px;
+  }
+  .asset-register-intro h3{
+    margin:0 0 6px;
+  }
+  .asset-register-intro p{
+    margin:0;
+    color:var(--asset-muted);
+    line-height:1.5;
+    max-width:760px;
+  }
+  .asset-master-layout{
+    align-items:start;
+  }
+  .asset-master-list-scroll{
+    max-height:620px;
+    overflow:auto;
+    display:grid;
+    gap:10px;
+    padding-right:4px;
+  }
+  .asset-master-list-item{
+    border:1px solid #e5edf8;
+    border-radius:16px;
+    background:#fff;
+    padding:14px;
+    display:grid;
+    gap:8px;
+  }
+  .asset-master-list-item.active{
+    border-color:#bfd2fb;
+    box-shadow:0 10px 22px rgba(36,59,123,.10);
+    background:#f8fbff;
+  }
+  .asset-master-list-item__top{
+    display:flex;
+    justify-content:space-between;
+    gap:10px;
+    align-items:flex-start;
+    flex-wrap:wrap;
+  }
+  .asset-master-list-item__name{
+    font-size:15px;
+    font-weight:800;
+    color:#10213d;
+  }
+  .asset-master-list-item__meta{
+    color:#5b6b86;
+    font-size:12px;
+    line-height:1.5;
+  }
+  .asset-master-form-grid{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:12px 14px;
+  }
+  .asset-field--span-full{
+    grid-column:span 2;
+  }
+  .asset-master-access{
+    display:flex;
+    gap:8px;
+    flex-wrap:wrap;
+    margin-bottom:16px;
+    padding:12px 14px;
+    border-radius:14px;
+    background:#f8fbff;
+    border:1px solid #e3ecf8;
+  }
+  .asset-master-access__btn{
+    border:none;
+    cursor:pointer;
+    border-radius:10px;
+    padding:8px 12px;
+    font-size:12px;
+    font-weight:800;
+    color:var(--asset-brand);
+    background:#eaf1ff;
+  }
+  .asset-master-toolbar-note{
+    margin:0;
+    color:var(--asset-muted);
+    font-size:13px;
+    line-height:1.5;
+  }
+  .asset-register-stats{
+    display:flex;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:stretch;
+  }
+  .asset-mini-stat{
+    min-width:150px;
+    padding:12px 14px;
+    border-radius:14px;
+    border:1px solid #e3ecf8;
+    background:linear-gradient(180deg,#ffffff,#f8fbff);
+  }
+  .asset-mini-stat__label{
+    font-size:11px;
+    font-weight:800;
+    text-transform:uppercase;
+    letter-spacing:.6px;
+    color:var(--asset-muted);
+  }
+  .asset-mini-stat__value{
+    margin-top:8px;
+    font-size:24px;
+    line-height:1;
+    font-weight:800;
+    color:var(--asset-brand);
+  }
+  .asset-mini-stat__sub{
+    margin-top:8px;
+    font-size:12px;
+    color:#5b6b86;
+  }
+  .asset-register-table .asset-table{
+    min-width:1220px;
+  }
+  .asset-table tbody tr.asset-row-location-ahl td.asset-cell-code{
+    box-shadow:inset 4px 0 0 #3558b8;
+  }
+  .asset-table tbody tr.asset-row-location-aci td.asset-cell-code{
+    box-shadow:inset 4px 0 0 #0f9f70;
+  }
+  .asset-table tbody tr.asset-row-location-ballia td.asset-cell-code{
+    box-shadow:inset 4px 0 0 #d97706;
+  }
+  .asset-table td.asset-cell-code{min-width:150px}
+  .asset-table td.asset-cell-equipment{min-width:220px}
+  .asset-table td.asset-cell-entity{min-width:160px}
+  .asset-table td.asset-cell-location{min-width:170px}
+  .asset-table td.asset-cell-holder{min-width:180px}
+  .asset-table td.asset-cell-value{min-width:140px}
+  .asset-table td.asset-cell-actions{min-width:170px}
+  .asset-cell-stack{
+    display:grid;
+    gap:4px;
+  }
+  .asset-cell-stack strong{
+    color:#10213d;
+    font-size:14px;
+    line-height:1.45;
+  }
+  .asset-cell-stack span:not(.asset-location-pill){
+    color:#64748b;
+    font-size:12px;
+    line-height:1.45;
+  }
+  .asset-cell-stack .asset-location-pill{
+    margin-top:2px;
+  }
+  .asset-cell-subtle{
+    color:#64748b;
+    font-size:12px;
+    line-height:1.45;
+  }
+  .asset-location-pill{
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    width:max-content;
+    padding:5px 10px;
+    border-radius:999px;
+    font-size:11px;
+    font-weight:800;
+    letter-spacing:.04em;
+    text-transform:uppercase;
+    border:1px solid transparent;
+  }
+  .asset-location-pill-ahl{
+    background:#eef4ff;
+    border-color:#cfdbfb;
+    color:#29499f;
+  }
+  .asset-location-pill-aci{
+    background:#ecfdf5;
+    border-color:#bdebd7;
+    color:#047857;
+  }
+  .asset-location-pill-ballia{
+    background:#fff7ed;
+    border-color:#fed7aa;
+    color:#b45309;
+  }
+  .asset-location-pill-other{
+    background:#f8fafc;
+    border-color:#dbe5f2;
+    color:#475569;
+  }
+  .asset-action-grid{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:6px;
+  }
+  .asset-action-grid .asset-link-btn{
+    width:100%;
+    text-align:center;
+    padding:8px 10px;
+  }
+  .asset-register-cards{
+    display:none;
+    gap:14px;
+  }
+  .asset-register-card{
+    border:1px solid #e6eef9;
+    border-radius:18px;
+    background:#fff;
+    box-shadow:0 10px 24px rgba(15,23,42,.06);
+    padding:16px;
+  }
+  .asset-register-card--ahl{border-top:4px solid #3558b8}
+  .asset-register-card--aci{border-top:4px solid #10b981}
+  .asset-register-card--ballia{border-top:4px solid #d97706}
+  .asset-register-card__top{
+    display:flex;
+    justify-content:space-between;
+    gap:10px;
+    flex-wrap:wrap;
+    align-items:flex-start;
+    margin-bottom:12px;
+  }
+  .asset-register-card__grid{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:10px;
+    margin-bottom:12px;
+  }
+  .asset-register-card__item{
+    padding:10px 12px;
+    border-radius:14px;
+    background:#f8fbff;
+    border:1px solid #edf2fb;
+  }
+  .asset-register-card__item > span:not(.asset-location-pill){
+    display:block;
+    font-size:11px;
+    font-weight:800;
+    text-transform:uppercase;
+    letter-spacing:.55px;
+    color:var(--asset-muted);
+    margin-bottom:6px;
+  }
+  .asset-register-card__item .asset-location-pill{
+    margin-top:8px;
+  }
+  .asset-register-card__item strong{
+    display:block;
+    font-size:13px;
+    line-height:1.45;
+    color:#10213d;
+    word-break:break-word;
+  }
+  .asset-register-card__actions{
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:8px;
+  }
+  .asset-register-card__actions .asset-link-btn{
+    width:100%;
+    text-align:center;
+    padding:9px 8px;
+  }
+  .asset-link-btn{
+    border:none;
+    background:#eef4ff;
+    color:var(--asset-brand);
+    font-weight:800;
+    border-radius:10px;
+    padding:7px 10px;
+    cursor:pointer;
+    text-decoration:none;
+    font-size:12px;
+  }
+  .asset-empty{
+    text-align:center;
+    padding:36px 18px;
+    color:var(--asset-muted);
+  }
+  .asset-detail-grid{
+    display:grid;
+    grid-template-columns:repeat(4,minmax(0,1fr));
+    gap:12px;
+  }
+  .asset-detail-columns{
+    display:grid;
+    grid-template-columns:minmax(0,1.8fr) minmax(300px,1fr);
+    gap:16px;
+    margin-top:16px;
+    align-items:start;
+  }
+  .asset-detail-item{
+    border:1px solid #edf2fb;
+    border-radius:14px;
+    padding:13px 14px;
+    background:#fff;
+  }
+  .asset-detail-item span{
+    display:block;
+    font-size:11px;
+    font-weight:800;
+    color:var(--asset-muted);
+    text-transform:uppercase;
+    letter-spacing:.6px;
+    margin-bottom:8px;
+  }
+  .asset-detail-item strong{
+    font-size:14px;
+    color:#10213d;
+    line-height:1.5;
+  }
+  .asset-list{
+    display:grid;
+    gap:10px;
+  }
+  .asset-list-item{
+    border:1px solid #edf2fb;
+    border-radius:14px;
+    padding:14px;
+    background:#fff;
+  }
+  .asset-list-item__meta{
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+    align-items:center;
+    flex-wrap:wrap;
+    margin-bottom:8px;
+  }
+  .asset-list-item__meta strong{color:var(--asset-brand)}
+  .asset-list-item p{
+    margin:0;
+    color:#304764;
+    line-height:1.45;
+    font-size:13px;
+  }
+  .asset-coverage-priority-grid{
+    display:grid;
+    grid-template-columns:repeat(5,minmax(0,1fr));
+    gap:8px;
+    margin-bottom:12px;
+  }
+  .asset-priority-tile{
+    text-decoration:none;
+    border:1px solid #e2e8f0;
+    border-radius:12px;
+    padding:10px;
+    background:#fff;
+    color:#10213d;
+  }
+  .asset-priority-tile strong{display:block;font-size:20px;color:#10213d}
+  .asset-priority-tile span{display:block;font-size:10px;font-weight:800;text-transform:uppercase;color:#64748b}
+  .asset-priority-red{border-color:#fecaca;background:#fff5f5}
+  .asset-priority-orange{border-color:#fed7aa;background:#fff7ed}
+  .asset-priority-yellow{border-color:#fde68a;background:#fffbeb}
+  .asset-priority-blue{border-color:#bfdbfe;background:#eff6ff}
+  .asset-priority-green{border-color:#bbf7d0;background:#f0fdf4}
+  .asset-pager{
+    display:flex;
+    justify-content:flex-end;
+    gap:10px;
+    align-items:center;
+    margin-top:14px;
+    color:var(--asset-muted);
+    font-weight:700;
+  }
+  .asset-card--maintenance{
+    padding:20px;
+  }
+  .asset-maintenance-note{
+    margin:0;
+    color:var(--asset-muted);
+    font-size:13px;
+    line-height:1.55;
+    max-width:560px;
+  }
+  .asset-maintenance-form{
+    display:grid;
+    gap:14px;
+  }
+  .asset-maintenance-panel{
+    border:1px solid #e8eef9;
+    border-radius:16px;
+    background:linear-gradient(180deg,#ffffff,#f8fbff);
+    padding:16px;
+  }
+  .asset-maintenance-panel h4{
+    margin:0 0 12px;
+    font-size:15px;
+    color:var(--asset-brand);
+  }
+  .asset-maintenance-grid{
+    display:grid;
+    grid-template-columns:repeat(3,minmax(0,1fr));
+    gap:12px 14px;
+  }
+  .asset-maintenance-actions{
+    display:flex;
+    justify-content:flex-end;
+    gap:10px;
+    flex-wrap:wrap;
+  }
+  .asset-modal{
+    position:fixed;
+    inset:0;
+    background:rgba(9,18,38,.48);
+    display:none;
+    align-items:center;
+    justify-content:center;
+    padding:20px;
+    z-index:2200;
+  }
+  .asset-modal.open{display:flex}
+  .asset-modal__dialog{
+    width:min(960px,100%);
+    max-height:92vh;
+    overflow:auto;
+    border-radius:22px;
+    background:#fff;
+    box-shadow:0 24px 60px rgba(9,18,38,.24);
+    border:1px solid rgba(36,59,123,.12);
+  }
+  .asset-modal__header{
+    display:flex;
+    justify-content:space-between;
+    gap:12px;
+    align-items:flex-start;
+    padding:18px 20px 14px;
+    border-bottom:1px solid #ebf0f8;
+  }
+  .asset-modal__header h3{
+    margin:0 0 6px;
+    color:var(--asset-brand);
+  }
+  .asset-modal__header p{
+    margin:0;
+    color:var(--asset-muted);
+    font-size:13px;
+  }
+  .asset-modal__body{padding:18px 20px 20px}
+  .asset-modal-grid{
+    display:grid;
+    grid-template-columns:repeat(2,minmax(0,1fr));
+    gap:14px 16px;
+    align-items:start;
+  }
+  .asset-modal-grid--asset{
+    grid-template-columns:repeat(4,minmax(0,1fr));
+  }
+  .asset-modal__dialog--wide{
+    width:min(1140px,100%);
+  }
+  .asset-modal__dialog--compact{
+    width:min(520px,100%);
+  }
+  .asset-field--span-2{
+    grid-column:span 2;
+  }
+  .asset-field-section{
+    grid-column:1 / -1;
+    margin:4px 0 -2px;
+    padding-top:10px;
+    border-top:1px solid #e8eef8;
+    color:#1f3f8f;
+    font-size:12px;
+    font-weight:900;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+  }
+  .asset-confirm-copy{
+    margin:0;
+    color:#475569;
+    line-height:1.55;
+  }
+  .asset-modal__footer{
+    display:flex;
+    justify-content:flex-end;
+    gap:10px;
+    flex-wrap:wrap;
+    padding-top:16px;
+  }
+  .asset-modal-close{
+    border:none;
+    background:#f3f6fd;
+    color:#405375;
+    width:38px;
+    height:38px;
+    border-radius:999px;
+    cursor:pointer;
+    font-size:18px;
+    font-weight:800;
+  }
+  .asset-toast-viewport{
+    position:fixed;
+    top:20px;
+    right:16px;
+    width:min(380px,calc(100vw - 24px));
+    display:flex;
+    flex-direction:column;
+    gap:10px;
+    z-index:2600;
+    pointer-events:none;
+  }
+  .asset-toast{
+    pointer-events:auto;
+    display:flex;
+    align-items:flex-start;
+    gap:10px;
+    border:1px solid #d9e2ef;
+    border-left:4px solid #1d4ed8;
+    border-radius:12px;
+    background:#fff;
+    box-shadow:0 12px 26px rgba(15,23,42,.14);
+    padding:12px 12px 12px 14px;
+    transform:translateX(calc(100% + 20px));
+    opacity:0;
+    transition:transform .24s ease,opacity .24s ease;
+  }
+  .asset-toast.show{transform:translateX(0);opacity:1}
+  .asset-toast.hide{transform:translateX(calc(100% + 20px));opacity:0}
+  .asset-toast.success{border-left-color:#16a34a;background:#f6fff9}
+  .asset-toast.warn{border-left-color:#d97706;background:#fffaf2}
+  .asset-toast.error{border-left-color:#dc2626;background:#fff8f8}
+  .asset-toast.loading{border-left-color:#1d4ed8;background:#f8fbff}
+  .asset-toast__body{flex:1;min-width:0;display:flex;align-items:flex-start;gap:10px}
+  .asset-toast__spinner{
+    width:14px;height:14px;border:2px solid rgba(29,78,216,.24);
+    border-top-color:#1d4ed8;border-radius:50%;animation:assetSpin .8s linear infinite;margin-top:2px;flex:0 0 auto
+  }
+  .asset-toast__message{font-size:13px;font-weight:800;line-height:1.4;color:#10213d;word-break:break-word}
+  .asset-toast__close{border:none;background:transparent;color:#64748b;font-size:18px;line-height:1;padding:0 2px;cursor:pointer}
+  .asset-notification-dock{
+    position:fixed;
+    right:16px;
+    bottom:18px;
+    z-index:2300;
+    display:grid;
+    justify-items:end;
+    gap:10px;
+  }
+  .asset-notification-bell{
+    border:none;
+    cursor:pointer;
+    display:none;
+    align-items:center;
+    gap:8px;
+    padding:11px 14px;
+    border-radius:999px;
+    color:#fff;
+    background:linear-gradient(135deg,var(--asset-brand),var(--asset-brand-2));
+    box-shadow:0 14px 32px rgba(36,59,123,.24);
+    font-weight:900;
+  }
+  .asset-notification-bell.show{display:inline-flex}
+  .asset-notification-inline{
+    display:none;
+    align-items:center;
+    gap:8px;
+    color:#7c2d12;
+    background:#fff7ed;
+    border:1px solid #fed7aa;
+    box-shadow:0 10px 24px rgba(217,119,6,.12);
+  }
+  .asset-notification-inline.show{display:inline-flex}
+  .asset-notification-count{
+    min-width:22px;
+    height:22px;
+    display:inline-flex;
+    align-items:center;
+    justify-content:center;
+    border-radius:999px;
+    color:#8a1f11;
+    background:#fff7ed;
+    font-size:12px;
+    padding:0 7px;
+  }
+  .asset-notification-panel{
+    width:min(380px,calc(100vw - 24px));
+    max-height:430px;
+    overflow:auto;
+    display:none;
+    border:1px solid #dbe5f2;
+    border-radius:16px;
+    background:#fff;
+    box-shadow:0 22px 54px rgba(15,23,42,.18);
+    padding:10px;
+  }
+  .asset-notification-panel.open{display:grid;gap:8px}
+  .asset-notification-item{
+    border:1px solid #e5edf8;
+    border-radius:12px;
+    background:#f8fbff;
+    padding:11px 12px;
+    text-align:left;
+    cursor:pointer;
+  }
+  .asset-notification-item strong{display:block;color:var(--asset-brand);font-size:13px;line-height:1.35}
+  .asset-notification-item span{display:block;color:#475569;font-size:12px;line-height:1.45;margin-top:4px}
+  .asset-notification-empty{padding:12px;color:#64748b;font-size:13px}
+  @keyframes assetSpin{to{transform:rotate(360deg)}}
+  @media (max-width:1180px){
+    .asset-filter-grid{grid-template-columns:repeat(3,minmax(0,1fr))}
+    .asset-grid.three,.asset-grid.two,.asset-detail-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .asset-detail-columns{grid-template-columns:1fr}
+    .asset-master-home{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .asset-master-form-grid{grid-template-columns:1fr}
+    .asset-field--span-full{grid-column:auto}
+    .asset-register-card__actions{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .asset-modal-grid--asset{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .asset-maintenance-grid{grid-template-columns:repeat(2,minmax(0,1fr))}
+    .asset-page-action-stack{
+      justify-items:stretch;
+      width:100%;
+    }
+    .asset-page-action-row{
+      justify-content:flex-start;
+    }
+  }
+  @media (max-width:720px){
+    .asset-app{width:min(100%,98%)}
+    .asset-hero{flex-direction:column}
+    .asset-hero h2{font-size:26px}
+    .asset-toolbar__group{width:100%}
+    .asset-toolbar__group .asset-btn{flex:1 1 160px}
+    .asset-nav a{flex:1 1 calc(50% - 10px);text-align:center}
+    .asset-filter-grid,.asset-grid.three,.asset-grid.two,.asset-detail-grid{grid-template-columns:1fr}
+    .asset-toast-viewport{left:12px;right:12px;width:auto;top:12px}
+    .asset-modal{padding:12px}
+    .asset-register-intro{flex-direction:column}
+    .asset-register-stats{width:100%}
+    .asset-mini-stat{flex:1 1 100%}
+    .asset-master-home{grid-template-columns:1fr}
+    .asset-register-table{display:none}
+    .asset-register-cards{display:grid}
+    .asset-register-card__grid,.asset-register-card__actions{grid-template-columns:1fr}
+    .asset-coverage-priority-grid{grid-template-columns:1fr 1fr}
+    .asset-modal-grid,
+    .asset-modal-grid--asset{
+      grid-template-columns:1fr;
+    }
+    .asset-maintenance-grid{
+      grid-template-columns:1fr;
+    }
+    .asset-page-action-row .asset-btn{
+      flex:1 1 180px;
+    }
+    .asset-field--span-2{
+      grid-column:auto;
+    }
+    .asset-master-access{
+      flex-direction:column;
+      align-items:stretch;
+    }
+    .asset-master-form-grid{
+      grid-template-columns:1fr;
+    }
+    .asset-field--span-full{
+      grid-column:auto;
+    }
+    .asset-table{min-width:860px}
+    .asset-breakdown-table-wrap{
+      overflow:visible;
+      border:none;
+      background:transparent;
+    }
+    .asset-table.asset-breakdown-table{
+      display:block;
+      min-width:0;
+      width:100%;
+      border-collapse:separate;
+      border-spacing:0;
+    }
+    .asset-breakdown-table colgroup,
+    .asset-breakdown-table thead{
+      display:none;
+    }
+    .asset-breakdown-table tbody{
+      display:grid;
+      gap:12px;
+    }
+    .asset-breakdown-table tr{
+      display:block;
+      overflow:hidden;
+      border:1px solid #dbe7ff;
+      border-radius:16px;
+      background:#fff;
+      box-shadow:0 10px 24px rgba(15,23,42,.06);
+    }
+    .asset-breakdown-table tbody tr:nth-child(even) td,
+    .asset-breakdown-table tbody tr:hover td{
+      background:transparent;
+    }
+    .asset-breakdown-table td{
+      display:grid;
+      grid-template-columns:minmax(106px,34%) minmax(0,1fr);
+      gap:12px;
+      align-items:start;
+      padding:11px 14px;
+      border-bottom:1px solid #edf2fb;
+      font-size:13px;
+    }
+    .asset-breakdown-table td:last-child{
+      border-bottom:none;
+    }
+    .asset-breakdown-table td[colspan]{
+      display:block;
+      border-bottom:none;
+    }
+    .asset-breakdown-table td[colspan]::before{
+      display:none;
+    }
+    .asset-breakdown-table td::before{
+      content:attr(data-label);
+      color:#5b6b86;
+      font-size:11px;
+      font-weight:900;
+      letter-spacing:.5px;
+      text-transform:uppercase;
+      line-height:1.35;
+    }
+    .asset-breakdown-table td[data-label="Ticket"]{
+      grid-template-columns:1fr auto;
+      align-items:center;
+      background:#f7faff;
+    }
+    .asset-breakdown-table td[data-label="Ticket"]::before{
+      content:"Breakdown Ticket";
+    }
+    .asset-breakdown-table td[data-label="Action"]{
+      display:block;
+      padding:14px;
+      background:#f8fbff;
+    }
+    .asset-breakdown-table td[data-label="Action"]::before{
+      display:none;
+    }
+    .asset-breakdown-table td[data-label="Status"]{
+      align-items:center;
+    }
+    .asset-breakdown-action{
+      min-height:44px;
+      font-size:13px;
+    }
+    .asset-breakdown-status{
+      justify-self:start;
+    }
+  }
+  @media (max-width:440px){
+    .asset-breakdown-table td{
+      grid-template-columns:1fr;
+      gap:5px;
+    }
+    .asset-breakdown-table td[data-label="Ticket"]{
+      grid-template-columns:1fr;
+    }
+    .asset-breakdown-table td::before{
+      margin-bottom:2px;
+    }
+  }
+</style>
+
+<div class="asset-app">
+  <section class="asset-hero">
+    <div>
+      <h2>{{ page_title }}</h2>
+      {% if page_subtitle %}
+        <p>{{ page_subtitle }}</p>
+      {% endif %}
+      <div class="asset-chip-row">
+        {% for code in scope_locations or [] %}
+          <span class="asset-chip">Scope: {{ code }}</span>
+        {% endfor %}
+      </div>
+    </div>
+    <div class="asset-toolbar__group">
+      <button type="button" class="asset-btn asset-notification-inline" id="assetNotificationHeaderBell">
+        Asset Notifications <span class="asset-notification-count" id="assetNotificationHeaderCount">0</span>
+      </button>
+      {% block page_actions %}{% endblock %}
+    </div>
+  </section>
+
+  <nav class="asset-nav">
+    <a href="{{ url_for('dashboard') }}" class="dashboard">Dashboard</a>
+    <a href="{{ url_for('asset_management.home') }}" class="{% if active_tab == 'home' %}active{% endif %}">Home</a>
+    <a href="{{ url_for('asset_management.register_page') }}" class="{% if active_tab == 'register' %}active{% endif %}">Asset Register</a>
+    <a href="{{ url_for('asset_management.breakdowns_page') }}" class="{% if active_tab == 'breakdowns' %}active{% endif %}">Breakdowns</a>
+    <a href="{{ url_for('asset_management.masters_home') }}" class="{% if active_tab == 'masters' %}active{% endif %}">Masters</a>
+    <a href="{{ url_for('asset_management.reports_page') }}" class="{% if active_tab == 'reports' %}active{% endif %}">Reports & Exports</a>
+  </nav>
+
+  {% block asset_page %}{% endblock %}
+</div>
+
+<div class="asset-toast-viewport" id="assetToastViewport" aria-live="polite"></div>
+
+<div class="asset-notification-dock" id="assetNotificationDock">
+  <div class="asset-notification-panel" id="assetNotificationPanel" aria-live="polite"></div>
+  <button type="button" class="asset-notification-bell" id="assetNotificationBell">
+    Asset Notifications <span class="asset-notification-count" id="assetNotificationCount">0</span>
+  </button>
+</div>
+
+<div class="asset-modal" id="assetIssueAcceptModal">
+  <div class="asset-modal__dialog asset-modal__dialog--compact">
+    <div class="asset-modal__header">
+      <div>
+        <h3>Accept Asset Receipt</h3>
+        <p id="assetIssueAcceptMeta">Review the cross-unit asset issue notification.</p>
+      </div>
+      <button type="button" class="asset-modal-close" data-close-modal="assetIssueAcceptModal">&times;</button>
+    </div>
+    <div class="asset-modal__body">
+      <p class="asset-confirm-copy" id="assetIssueAcceptMessage">Loading notification...</p>
+      <div class="asset-modal__footer">
+        <button type="button" class="asset-btn secondary" id="assetIssueMarkReadBtn">Mark Read</button>
+        <button type="button" class="asset-btn primary" id="assetIssueAcceptBtn">Accept Receipt</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<div class="asset-modal" id="assetDiscardConfirmModal">
+  <div class="asset-modal__dialog asset-modal__dialog--compact">
+    <div class="asset-modal__header">
+      <div>
+        <h3>Discard Changes?</h3>
+        <p id="assetDiscardConfirmTitle">You have unsaved changes in this form.</p>
+      </div>
+      <button type="button" class="asset-modal-close" data-close-modal="assetDiscardConfirmModal">&times;</button>
+    </div>
+    <div class="asset-modal__body">
+      <p class="asset-confirm-copy" id="assetDiscardConfirmMessage">Closing this modal now may discard the information you already entered. Do you want to stay on the form or discard those changes?</p>
+      <div class="asset-modal__footer">
+        <button type="button" class="asset-btn secondary" id="assetDiscardStayBtn">Stay On Form</button>
+        <button type="button" class="asset-btn danger" id="assetDiscardCloseBtn">Discard Changes</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<script>
+  const assetToastState = { seq: 0, timers: new Map(), loadingByChannel: new Map(), viewport: null };
+  const assetModalState = { pendingCloseModalId: null };
+
+  function assetToastViewport(){
+    if (assetToastState.viewport && document.body.contains(assetToastState.viewport)) return assetToastState.viewport;
+    const node = document.getElementById('assetToastViewport');
+    assetToastState.viewport = node;
+    return node;
+  }
+
+  function assetRemoveToast(id, immediate = false){
+    if (!id) return;
+    const timeout = assetToastState.timers.get(id);
+    if (timeout) {
+      clearTimeout(timeout);
+      assetToastState.timers.delete(id);
+    }
+    for (const [channel, loadingId] of assetToastState.loadingByChannel.entries()) {
+      if (loadingId === id) assetToastState.loadingByChannel.delete(channel);
+    }
+    const toast = assetToastViewport()?.querySelector(`[data-toast-id="${id}"]`);
+    if (!toast) return;
+    if (immediate) {
+      toast.remove();
+      return;
+    }
+    toast.classList.remove('show');
+    toast.classList.add('hide');
+    setTimeout(() => toast.remove(), 220);
+  }
+
+  function assetNotify(message, type = 'success', channel = 'asset'){
+    const text = String(message || '').trim();
+    if (!text) return;
+    const viewport = assetToastViewport();
+    const toastType = ['success', 'warn', 'error', 'loading'].includes(type) ? type : 'success';
+    const channelKey = String(channel || 'asset').trim().toLowerCase();
+
+    if (toastType === 'loading' && assetToastState.loadingByChannel.get(channelKey)) {
+      const existing = viewport.querySelector(`[data-toast-id="${assetToastState.loadingByChannel.get(channelKey)}"] .asset-toast__message`);
+      if (existing) {
+        existing.textContent = text;
+        return assetToastState.loadingByChannel.get(channelKey);
+      }
+    }
+
+    const id = `asset-toast-${++assetToastState.seq}`;
+    const toast = document.createElement('div');
+    toast.className = `asset-toast ${toastType}`;
+    toast.dataset.toastId = id;
+    toast.dataset.channel = channelKey;
+
+    const body = document.createElement('div');
+    body.className = 'asset-toast__body';
+    if (toastType === 'loading') {
+      const spinner = document.createElement('span');
+      spinner.className = 'asset-toast__spinner';
+      spinner.setAttribute('aria-hidden', 'true');
+      body.appendChild(spinner);
+    }
+
+    const msg = document.createElement('span');
+    msg.className = 'asset-toast__message';
+    msg.textContent = text;
+    body.appendChild(msg);
+
+    const close = document.createElement('button');
+    close.type = 'button';
+    close.className = 'asset-toast__close';
+    close.innerHTML = '&times;';
+    close.addEventListener('click', () => assetRemoveToast(id));
+
+    toast.appendChild(body);
+    toast.appendChild(close);
+    viewport.appendChild(toast);
+    requestAnimationFrame(() => toast.classList.add('show'));
+
+    if (toastType === 'loading') {
+      assetToastState.loadingByChannel.set(channelKey, id);
+      return id;
+    }
+
+    const timeout = setTimeout(() => assetRemoveToast(id), toastType === 'error' ? 7600 : 4400);
+    assetToastState.timers.set(id, timeout);
+    return id;
+  }
+
+  function assetClearLoading(channel){
+    const key = String(channel || 'asset').trim().toLowerCase();
+    const id = assetToastState.loadingByChannel.get(key);
+    if (id) assetRemoveToast(id);
+  }
+
+  function assetOpenModal(id){
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    modal.classList.add('open');
+    document.body.style.overflow = 'hidden';
+    assetCaptureModalSnapshot(id);
+  }
+
+  function assetCloseModal(id){
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    modal.classList.remove('open');
+    if (!document.querySelector('.asset-modal.open')) {
+      document.body.style.overflow = '';
+    }
+  }
+
+  function assetSerializeForm(form){
+    if (!form) return '';
+    const parts = [];
+    const formData = new FormData(form);
+    for (const [key, value] of formData.entries()) {
+      if (value instanceof File) {
+        parts.push(`${key}:${value.name || ''}:${value.size || 0}`);
+      } else {
+        parts.push(`${key}:${String(value ?? '')}`);
+      }
+    }
+    return parts.sort().join('|');
+  }
+
+  function assetCaptureModalSnapshot(id){
+    const modal = document.getElementById(id);
+    if (!modal) return;
+    modal.querySelectorAll('form').forEach((form) => {
+      form.dataset.assetInitialSnapshot = assetSerializeForm(form);
+    });
+  }
+
+  function assetModalHasUnsavedChanges(id){
+    const modal = document.getElementById(id);
+    if (!modal) return false;
+    return Array.from(modal.querySelectorAll('form')).some((form) => {
+      if (form.hasAttribute('data-ignore-dirty')) return false;
+      return (form.dataset.assetInitialSnapshot || '') !== assetSerializeForm(form);
+    });
+  }
+
+  function assetShowDiscardConfirm(targetModalId){
+    assetModalState.pendingCloseModalId = targetModalId;
+    const title = document.getElementById('assetDiscardConfirmTitle');
+    const body = document.getElementById('assetDiscardConfirmMessage');
+    if (title) title.textContent = 'You have unsaved changes in this form.';
+    if (body) body.textContent = 'Closing this modal now may discard the information you already entered. Do you want to stay on the form or discard those changes?';
+    const confirmModal = document.getElementById('assetDiscardConfirmModal');
+    if (confirmModal) {
+      confirmModal.classList.add('open');
+      document.body.style.overflow = 'hidden';
+    }
+  }
+
+  function assetAttemptModalClose(id, reason = 'button'){
+    if (!id) return;
+    if (id === 'assetDiscardConfirmModal') {
+      assetCloseModal(id);
+      assetModalState.pendingCloseModalId = null;
+      return;
+    }
+    if (assetModalHasUnsavedChanges(id)) {
+      assetShowDiscardConfirm(id);
+      return;
+    }
+    assetCloseModal(id);
+  }
+
+  function assetInitModalClose(){
+    document.querySelectorAll('[data-close-modal]').forEach((btn) => {
+      btn.addEventListener('click', () => assetAttemptModalClose(btn.getAttribute('data-close-modal'), 'button'));
+    });
+    document.querySelectorAll('.asset-modal').forEach((modal) => {
+      modal.addEventListener('click', (event) => {
+        if (event.target === modal) assetAttemptModalClose(modal.id, 'backdrop');
+      });
+    });
+    const stayBtn = document.getElementById('assetDiscardStayBtn');
+    const discardBtn = document.getElementById('assetDiscardCloseBtn');
+    if (stayBtn) {
+      stayBtn.addEventListener('click', () => {
+        assetCloseModal('assetDiscardConfirmModal');
+        assetModalState.pendingCloseModalId = null;
+      });
+    }
+    if (discardBtn) {
+      discardBtn.addEventListener('click', () => {
+        const targetId = assetModalState.pendingCloseModalId;
+        assetCloseModal('assetDiscardConfirmModal');
+        assetModalState.pendingCloseModalId = null;
+        if (targetId) assetCloseModal(targetId);
+      });
+    }
+  }
+
+  async function assetFetchJson(url, options = {}){
+    const response = await fetch(url, options);
+    const text = await response.text();
+    let payload = null;
+    try {
+      payload = text ? JSON.parse(text) : {};
+    } catch (error) {
+      throw new Error(text || 'Unexpected server response.');
+    }
+    if (!response.ok || payload.status === 'error') {
+      throw new Error(payload.message || 'Request failed.');
+    }
+    return payload;
+  }
+
+  function assetCollectFilterPayload(formId){
+    const form = document.getElementById(formId);
+    const payload = {};
+    if (!form) return payload;
+    const fd = new FormData(form);
+    for (const [key, value] of fd.entries()) payload[key] = value;
+    return payload;
+  }
+
+  const assetNotificationState = {
+    unreadCount: 0,
+    loadedOnce: false,
+    activeNotification: null,
+    activeItems: []
+  };
+
+  const assetNotificationUrls = {
+    list: '{{ url_for("asset_management.api_asset_notifications") }}',
+    detail: '{{ url_for("asset_management.api_asset_notification_detail", notification_id=0) }}',
+    read: '{{ url_for("asset_management.api_asset_notification_read", notification_id=0) }}',
+    accept: '{{ url_for("asset_management.api_asset_notification_accept", notification_id=0) }}'
+  };
+
+  function assetNotificationUrl(template, id){
+    return String(template || '').replace('/0', `/${encodeURIComponent(id)}`);
+  }
+
+  function assetNoticeLink(item){
+    const base = item?.link_url || '{{ url_for("asset_management.register_page") }}';
+    const sep = base.includes('?') ? '&' : '?';
+    return `${base}${sep}asset_notification=${encodeURIComponent(item.notification_id)}&asset_action=accept`;
+  }
+
+  function assetRenderNotificationPanel(items){
+    const panel = document.getElementById('assetNotificationPanel');
+    if (!panel) return;
+    if (!items || !items.length) {
+      panel.innerHTML = '<div class="asset-notification-empty">No unread asset notifications.</div>';
+      return;
+    }
+    panel.innerHTML = items.map((item) => `
+      <button type="button" class="asset-notification-item" data-notification-id="${item.notification_id}">
+        <strong>${assetEscapeHtml(item.title || 'Asset notification')}</strong>
+        <span>${assetEscapeHtml(item.message || '')}</span>
+        <span>${assetEscapeHtml(item.created_at_display || '')}</span>
+      </button>
+    `).join('');
+  }
+
+  function assetUpdateNotificationBadge(count){
+    const bell = document.getElementById('assetNotificationBell');
+    const headerBell = document.getElementById('assetNotificationHeaderBell');
+    const countEl = document.getElementById('assetNotificationCount');
+    const headerCountEl = document.getElementById('assetNotificationHeaderCount');
+    const unread = Number(count || 0);
+    const label = unread > 99 ? '99+' : String(unread);
+    if (countEl) countEl.textContent = label;
+    if (headerCountEl) headerCountEl.textContent = label;
+    if (bell) bell.classList.toggle('show', unread > 0);
+    if (headerBell) headerBell.classList.toggle('show', unread > 0);
+  }
+
+  function assetMakeNotificationToastClickable(toastId, items){
+    const toast = assetToastViewport()?.querySelector(`[data-toast-id="${toastId}"]`);
+    if (!toast) return;
+    toast.style.cursor = 'pointer';
+    toast.addEventListener('click', (event) => {
+      if (event.target.closest('.asset-toast__close')) return;
+      if (items && items.length === 1) {
+        window.location.href = assetNoticeLink(items[0]);
+        return;
+      }
+      document.getElementById('assetNotificationPanel')?.classList.add('open');
+    });
+  }
+
+  function assetEscapeHtml(value){
+    return String(value || '').replace(/[&<>"']/g, (char) => ({
+      '&': '&amp;',
+      '<': '&lt;',
+      '>': '&gt;',
+      '"': '&quot;',
+      "'": '&#39;'
+    }[char]));
+  }
+
+  async function assetLoadNotifications({showToast = false} = {}){
+    try {
+      const data = await assetFetchJson(`${assetNotificationUrls.list}?unread=1`);
+      const items = data.notifications || [];
+      const unread = Number(data.unread_count || items.length || 0);
+      assetNotificationState.activeItems = items;
+      assetRenderNotificationPanel(items);
+      assetUpdateNotificationBadge(unread);
+      if ((showToast || (!assetNotificationState.loadedOnce && unread > 0)) && unread > 0) {
+        const toastId = assetNotify(`You have ${unread} unread asset notification${unread === 1 ? '' : 's'}.`, 'warn', 'asset-notification');
+        assetMakeNotificationToastClickable(toastId, items);
+      } else if (assetNotificationState.loadedOnce && unread > assetNotificationState.unreadCount) {
+        const toastId = assetNotify(`New asset issue notification received. Unread: ${unread}.`, 'warn', 'asset-notification');
+        assetMakeNotificationToastClickable(toastId, items);
+      }
+      assetNotificationState.unreadCount = unread;
+      assetNotificationState.loadedOnce = true;
+    } catch (error) {
+      assetNotificationState.loadedOnce = true;
+    }
+  }
+
+  async function assetOpenIssueAcceptModal(notificationId){
+    if (!notificationId) return;
+    try {
+      const data = await assetFetchJson(assetNotificationUrl(assetNotificationUrls.detail, notificationId));
+      const item = data.notification || {};
+      assetNotificationState.activeNotification = item;
+      const meta = document.getElementById('assetIssueAcceptMeta');
+      const message = document.getElementById('assetIssueAcceptMessage');
+      if (meta) meta.textContent = `${item.asset_code || 'Asset'} | ${item.target_unit_code || 'Unit'}`;
+      if (message) message.textContent = item.message || 'Please review and accept this asset issue.';
+      assetOpenModal('assetIssueAcceptModal');
+    } catch (error) {
+      assetNotify(error.message || 'Unable to open asset notification.', 'error', 'asset-notification');
+    }
+  }
+
+  async function assetCompleteNotification(action){
+    const item = assetNotificationState.activeNotification;
+    if (!item?.notification_id) return;
+    const isAccept = action === 'accept';
+    const channel = isAccept ? 'asset-notification-accept' : 'asset-notification-read';
+    assetNotify(isAccept ? 'Accepting asset receipt...' : 'Marking notification read...', 'loading', channel);
+    try {
+      const result = await assetFetchJson(assetNotificationUrl(isAccept ? assetNotificationUrls.accept : assetNotificationUrls.read, item.notification_id), {
+        method: 'POST',
+        headers: {'Content-Type': 'application/json'},
+        body: JSON.stringify({})
+      });
+      assetClearLoading(channel);
+      assetNotify(result.message || (isAccept ? 'Asset receipt accepted.' : 'Notification marked read.'), 'success', channel);
+      assetCloseModal('assetIssueAcceptModal');
+      await assetLoadNotifications();
+    } catch (error) {
+      assetClearLoading(channel);
+      assetNotify(error.message || 'Unable to update notification.', 'error', channel);
+    }
+  }
+
+  function assetApplyCoverageRules(mode = 'edit'){
+    const typeEl = document.getElementById('assetFieldCoverageType');
+    const vendorEl = document.getElementById('assetFieldCoverageVendor');
+    const startEl = document.getElementById('assetFieldCoverageStart');
+    const expiryEl = document.getElementById('assetFieldCoverageExpiry');
+    const remarksEl = document.getElementById('assetFieldCoverageRemarks');
+    if (!typeEl || !vendorEl || !startEl || !expiryEl || !remarksEl) return;
+    const coverage = String(typeEl.value || '');
+    const isCreate = mode === 'create';
+    const notCovered = coverage === 'Not Covered';
+    typeEl.required = isCreate;
+    vendorEl.required = Boolean(coverage && !notCovered);
+    startEl.required = Boolean(coverage && !notCovered);
+    expiryEl.required = Boolean(coverage && !notCovered);
+    remarksEl.required = coverage === 'Not Covered';
+  }
+
+  document.addEventListener('change', (event) => {
+    if (event.target && event.target.id === 'assetFieldCoverageType') {
+      assetApplyCoverageRules(window.assetFormMode || 'edit');
+    }
+  });
+
+  async function assetQueueExport(format, payload = {}){
+    assetNotify('Queueing export...', 'loading', 'asset-export');
+    try {
+      const data = await assetFetchJson('{{ url_for("asset_management.api_export_job") }}', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ ...payload, format })
+      });
+      assetNotify('Export queued. Preparing download in background...', 'loading', 'asset-export');
+      const jobId = data.job_id;
+      let attempts = 0;
+      while (attempts < 120) {
+        await new Promise((resolve) => setTimeout(resolve, 2000));
+        const status = await assetFetchJson(`{{ url_for("asset_management.api_export_job_status") }}?job_id=${encodeURIComponent(jobId)}`);
+        if (status.state === 'queued' || status.state === 'running') {
+          assetNotify(status.state === 'queued' ? 'Export queued. Waiting for worker...' : 'Export running. Building report...', 'loading', 'asset-export');
+          attempts += 1;
+          continue;
+        }
+        if (status.state === 'done') {
+          assetClearLoading('asset-export');
+          assetNotify('Export ready. Starting download...', 'success', 'asset-export');
+          window.location.href = `{{ url_for("asset_management.api_export_job_result") }}?job_id=${encodeURIComponent(jobId)}`;
+          return;
+        }
+        throw new Error(status.error || 'Export failed.');
+      }
+      throw new Error('Export is taking longer than expected. Please try again in a moment.');
+    } catch (error) {
+      assetClearLoading('asset-export');
+      assetNotify(error.message || 'Export failed.', 'error', 'asset-export');
+    }
+  }
+
+  document.addEventListener('DOMContentLoaded', () => {
+    assetInitModalClose();
+    assetLoadNotifications({showToast: true});
+    setInterval(() => assetLoadNotifications(), 30000);
+
+    const toggleNotificationPanel = () => {
+      document.getElementById('assetNotificationPanel')?.classList.toggle('open');
+    };
+    document.getElementById('assetNotificationBell')?.addEventListener('click', toggleNotificationPanel);
+    document.getElementById('assetNotificationHeaderBell')?.addEventListener('click', toggleNotificationPanel);
+
+    document.getElementById('assetNotificationPanel')?.addEventListener('click', (event) => {
+      const itemBtn = event.target.closest('.asset-notification-item');
+      if (!itemBtn) return;
+      const noticeId = itemBtn.dataset.notificationId;
+      const item = (assetNotificationState.activeItems || []).find((row) => String(row.notification_id) === String(noticeId));
+      if (item) {
+        window.location.href = assetNoticeLink(item);
+      } else {
+        assetOpenIssueAcceptModal(noticeId);
+      }
+    });
+
+    document.getElementById('assetIssueAcceptBtn')?.addEventListener('click', () => assetCompleteNotification('accept'));
+    document.getElementById('assetIssueMarkReadBtn')?.addEventListener('click', () => assetCompleteNotification('read'));
+
+    const params = new URLSearchParams(window.location.search);
+    if (params.get('asset_notification')) {
+      assetOpenIssueAcceptModal(params.get('asset_notification'));
+    }
+  });
+</script>
+{% block asset_scripts %}{% endblock %}
+{% endblock %}

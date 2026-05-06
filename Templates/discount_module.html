@@ -616,12 +616,13 @@ thead th {
     <path d="M10 17l2-2 2 2"></path>
   </svg>
   <div>
-    <h2>Bills &amp; Discount Modification for Locked Bills</h2>
-    <p>Review locked bills from the last 7 days and surface discount-sensitive entries quickly.</p>
+    <h2>{% if can_discount_module %}Bills &amp; Discount Modification for Locked Bills{% else %}Canteen Cancellation Approvals{% endif %}</h2>
+    <p>{% if can_discount_module %}Review locked bills from the last 7 days and surface discount-sensitive entries quickly.{% else %}Process pending canteen bill and receipt cancellation requests from the accounts queue.{% endif %}</p>
   </div>
 </section>
 
 <section class="cards">
+  {% if can_discount_module %}
   <div class="card" id="billsCard">
     <div class="card-icon">
       <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -662,6 +663,30 @@ thead th {
       </div>
     </div>
   </div>
+  {% endif %}
+  {% if can_canteen_cancel %}
+  <div class="card" id="canteenCancelCard">
+    <div class="card-icon">
+      <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
+        <path d="M4 5h16v14H4z"></path>
+        <path d="M8 9h8M8 13h5"></path>
+        <path d="M16 15l2 2 3-4"></path>
+      </svg>
+    </div>
+    <div>
+      <div class="card-title">Canteen Modifications Request</div>
+      <p class="card-desc">Approve or reject pending canteen payment mode changes, wallet top-up corrections, and bill / receipt cancellations.</p>
+      <div class="meta">
+        <span class="pill">Accounts Approval</span>
+        <span>Units: {{ (allowed_units or [])|length or '0' }}</span>
+      </div>
+      <div style="margin-top:10px;">
+        <button class="btn" type="button" id="openCanteenCancel">View Requests</button>
+      </div>
+    </div>
+  </div>
+  {% endif %}
+  {% if can_discount_module %}
   <div class="card" id="visitsCard">
     <div class="card-icon">
       <svg viewBox="0 0 24 24" width="28" height="28" fill="none" stroke="currentColor" stroke-width="1.8" stroke-linecap="round" stroke-linejoin="round">
@@ -722,7 +747,79 @@ thead th {
       </div>
     </div>
   </div>
+  {% endif %}
 </section>
+
+{% if can_canteen_cancel %}
+<div class="modal-backdrop" id="canteenCancelModal">
+  <div class="modal" role="dialog" aria-modal="true" aria-labelledby="canteenCancelTitle">
+    <div class="modal-header">
+      <div>
+        <h3 id="canteenCancelTitle">Canteen Modifications Requests</h3>
+        <p>Accounts approval queue for canteen cancellations, wallet top-up corrections, and payment mode corrections.</p>
+      </div>
+      <button class="icon-btn" id="closeCanteenCancelModal" type="button">Close</button>
+    </div>
+
+    <div class="modal-toolbar">
+      <div class="toolbar-group">
+        <label>Unit</label>
+        <select id="canteenCancelUnitSelect">
+          <option value="">All Units</option>
+          {% if allowed_units and allowed_units|length %}
+            {% for u in allowed_units %}
+              <option value="{{ u }}">{{ u }}</option>
+            {% endfor %}
+          {% endif %}
+        </select>
+      </div>
+      <div class="toolbar-group">
+        <label>Status</label>
+        <select id="canteenCancelStatusSelect">
+          <option value="PENDING">Pending</option>
+          <option value="">All</option>
+          <option value="APPROVED">Approved</option>
+          <option value="REJECTED">Rejected</option>
+          <option value="RECALLED">Recalled</option>
+        </select>
+      </div>
+      <div class="toolbar-actions">
+        <button class="btn" id="refreshCanteenCancelBtn" type="button">Refresh</button>
+      </div>
+    </div>
+
+    <div class="status-line">
+      <span id="canteenCancelCount">0 requests</span>
+      <span id="canteenCancelStatus">Ready.</span>
+    </div>
+
+    <div class="table-wrap">
+      <table>
+        <thead>
+          <tr>
+            <th>Requested</th>
+            <th>Unit</th>
+            <th>Requested Action</th>
+            <th>Bill</th>
+            <th>Receipt</th>
+            <th>Customer</th>
+            <th>Type</th>
+            <th class="num">Amount</th>
+            <th>Requested Change</th>
+            <th>Requested By</th>
+            <th>Reason</th>
+            <th>Status</th>
+            <th>Decision</th>
+          </tr>
+        </thead>
+        <tbody id="canteenCancelRows">
+          <tr><td colspan="13" style="text-align:center; padding:14px; color:#94a3b8;">Open requests to load pending approvals.</td></tr>
+        </tbody>
+      </table>
+    </div>
+  </div>
+</div>
+{% endif %}
 
 <div class="modal-backdrop" id="billsModal">
   <div class="modal" role="dialog" aria-modal="true" aria-labelledby="billsModalTitle">
@@ -1680,6 +1777,7 @@ thead th {
 
 <script>
   const allowedUnits = JSON.parse('{{ (allowed_units or []) | tojson | safe }}');
+  const canCanteenCancel = JSON.parse('{{ (can_canteen_cancel or false) | tojson | safe }}');
   const userRole = JSON.parse('{{ (session.get("role") or "") | tojson | safe }}');
   const VV_CURRENT_USER = JSON.parse('{{ (session.get("username") or session.get("user") or "") | tojson | safe }}');
   const userRoleBase = String(userRole || '').split(':')[0].trim().toUpperCase();
@@ -1708,6 +1806,16 @@ thead th {
   const receiptModalStatus = document.getElementById('receiptModalStatus');
   const loadMoreReceiptsBtn = document.getElementById('loadMoreReceiptsBtn');
   const receiptRenderInfo = document.getElementById('receiptRenderInfo');
+  const canteenCancelModal = document.getElementById('canteenCancelModal');
+  const canteenCancelCard = document.getElementById('canteenCancelCard');
+  const openCanteenCancelBtn = document.getElementById('openCanteenCancel');
+  const closeCanteenCancelBtn = document.getElementById('closeCanteenCancelModal');
+  const canteenCancelUnitSelect = document.getElementById('canteenCancelUnitSelect');
+  const canteenCancelStatusSelect = document.getElementById('canteenCancelStatusSelect');
+  const refreshCanteenCancelBtn = document.getElementById('refreshCanteenCancelBtn');
+  const canteenCancelRows = document.getElementById('canteenCancelRows');
+  const canteenCancelCount = document.getElementById('canteenCancelCount');
+  const canteenCancelStatus = document.getElementById('canteenCancelStatus');
   const receiptMeta = document.getElementById('receiptMeta');
   const receiptNo = document.getElementById('receiptNo');
   const receiptDate = document.getElementById('receiptDate');
@@ -2214,6 +2322,120 @@ thead th {
   function fmtMoney(value) {
     const num = parseNumber(value);
     return num.toLocaleString('en-IN', { minimumFractionDigits: 2, maximumFractionDigits: 2 });
+  }
+
+  const canteenCancelState = {
+    rows: [],
+  };
+
+  function setCanteenCancelStatus(text) {
+    if (canteenCancelStatus) canteenCancelStatus.textContent = text || 'Ready.';
+  }
+
+  function formatCanteenReceiptNos(value) {
+    const raw = String(value || '').trim();
+    if (!raw) return '-';
+    try {
+      const parsed = JSON.parse(raw);
+      if (Array.isArray(parsed)) {
+        return parsed.filter(Boolean).join(', ') || '-';
+      }
+    } catch (err) {
+      // Fall through to plain-text cleanup.
+    }
+    return raw.replace(/[\[\]"]/g, '').replace(/,/g, ', ') || '-';
+  }
+
+  function renderCanteenCancelRows() {
+    if (!canteenCancelRows) return;
+    const rows = canteenCancelState.rows || [];
+    if (canteenCancelCount) canteenCancelCount.textContent = `${rows.length} request${rows.length === 1 ? '' : 's'}`;
+    if (!rows.length) {
+      canteenCancelRows.innerHTML = '<tr><td colspan="13" style="text-align:center; padding:14px; color:#94a3b8;">No canteen modification requests matched this filter.</td></tr>';
+      return;
+    }
+    canteenCancelRows.innerHTML = rows.map((row) => {
+      const pending = String(row.status || '').toUpperCase() === 'PENDING';
+      const requestType = String(row.request_type || '').toUpperCase();
+      const isPaymentMode = requestType === 'PAYMENT_MODE_CHANGE';
+      const isWalletPaymentMode = requestType === 'WALLET_TOPUP_PAYMENT_MODE_CHANGE';
+      const isReceiptCancellation = requestType === 'RECEIPT_CANCELLATION';
+      const isWalletCancellation = requestType === 'WALLET_TOPUP_CANCELLATION';
+      const actionLabel = isPaymentMode
+        ? 'Payment Mode Change'
+        : (isWalletPaymentMode
+          ? 'Wallet Top-up Payment Mode Change'
+          : (isReceiptCancellation ? 'Receipt Cancellation' : (isWalletCancellation ? 'Wallet Top-up Cancellation' : 'Bill Cancellation')));
+      const receiptText = (isPaymentMode || isWalletPaymentMode || isReceiptCancellation || isWalletCancellation)
+        ? (String(row.receipt_no || '').trim() || '-')
+        : formatCanteenReceiptNos(row.receipt_nos);
+      const amountValue = (isPaymentMode || isWalletPaymentMode || isReceiptCancellation || isWalletCancellation)
+        ? parseNumber(row.receipt_amount || row.received_amount)
+        : parseNumber(row.received_amount);
+      const paymentModeText = (isPaymentMode || isWalletPaymentMode)
+        ? [String(row.current_payment_mode || '').trim(), String(row.requested_payment_mode || '').trim()].filter(Boolean).join(' -> ') || '-'
+        : '-';
+      return `
+        <tr>
+          <td>${escapeHtml(row.requested_on || '-')}</td>
+          <td>${escapeHtml(row.unit || '-')}</td>
+          <td>${escapeHtml(actionLabel)}</td>
+          <td><strong>${escapeHtml(row.bill_no || '-')}</strong><div class="meta">${escapeHtml(row.bill_date || '')}</div></td>
+          <td>${escapeHtml(receiptText)}</td>
+          <td>${escapeHtml(row.customer_label || '-')}</td>
+          <td>${escapeHtml(row.type_name || '-')}</td>
+          <td class="num">${fmtMoney(amountValue)}</td>
+          <td>${escapeHtml(paymentModeText)}</td>
+          <td>${escapeHtml(row.requested_by || '-')}</td>
+          <td>${escapeHtml(row.reason || '-')}</td>
+          <td><span class="pill">${escapeHtml(row.status || '-')}</span></td>
+          <td>
+            ${pending ? `
+              <div class="action-row">
+                <button class="btn" type="button" data-canteen-cancel-approve="${row.request_id}">Approve</button>
+                <button class="btn btn-danger" type="button" data-canteen-cancel-reject="${row.request_id}">Reject</button>
+              </div>
+            ` : `<span class="action-note">${escapeHtml(row.decision_note || row.processed_by || row.recalled_by || '-')}</span>`}
+          </td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  async function loadCanteenCancellationRequests() {
+    if (!canCanteenCancel || !canteenCancelRows) return;
+    const params = new URLSearchParams({
+      unit: canteenCancelUnitSelect?.value || '',
+      status: canteenCancelStatusSelect?.value || 'PENDING',
+      limit: '500',
+    });
+    setCanteenCancelStatus('Loading requests...');
+    const res = await fetch(`/api/canteen-modifications/requests?${params.toString()}`, { credentials: 'same-origin' });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.status === 'error') {
+      throw new Error(data.message || 'Failed to load canteen modification requests.');
+    }
+    canteenCancelState.rows = data.items || [];
+    renderCanteenCancelRows();
+    setCanteenCancelStatus(`Loaded ${canteenCancelState.rows.length} request(s).`);
+  }
+
+  async function decideCanteenCancellation(requestId, action) {
+    const note = window.prompt(action === 'approve' ? 'Approval note (optional)' : 'Rejection reason', '');
+    if (note === null) return;
+    setCanteenCancelStatus(action === 'approve' ? 'Applying request...' : 'Rejecting request...');
+    const res = await fetch(`/api/canteen-modifications/requests/${encodeURIComponent(requestId)}/decision`, {
+      method: 'POST',
+      credentials: 'same-origin',
+      headers: { 'Content-Type': 'application/json', 'Accept': 'application/json' },
+      body: JSON.stringify({ action, note: String(note || '').trim() }),
+    });
+    const data = await res.json().catch(() => ({}));
+    if (!res.ok || data.status === 'error') {
+      throw new Error(data.message || 'Failed to process canteen modification request.');
+    }
+    setCanteenCancelStatus(data.message || 'Request processed.');
+    await loadCanteenCancellationRequests();
   }
 
   function getVirtualVisitEligibleDueCount(row) {
@@ -6668,6 +6890,54 @@ thead th {
   receiptsModal?.addEventListener('click', (e) => {
     if (e.target === receiptsModal) {
       if (confirmCloseModal()) closeReceiptsModal();
+    }
+  });
+
+  function openCanteenCancelModal() {
+    if (!canteenCancelModal) return;
+    canteenCancelModal.style.display = 'flex';
+    loadCanteenCancellationRequests().catch((err) => setCanteenCancelStatus(err.message || 'Failed to load requests.'));
+  }
+
+  function closeCanteenCancelModal() {
+    if (canteenCancelModal) canteenCancelModal.style.display = 'none';
+  }
+
+  openCanteenCancelBtn?.addEventListener('click', (e) => {
+    e.preventDefault();
+    openCanteenCancelModal();
+  });
+  canteenCancelCard?.addEventListener('click', (e) => {
+    if (e.target && e.target.closest('button')) return;
+    openCanteenCancelModal();
+  });
+  closeCanteenCancelBtn?.addEventListener('click', (e) => {
+    e.preventDefault();
+    closeCanteenCancelModal();
+  });
+  refreshCanteenCancelBtn?.addEventListener('click', (e) => {
+    e.preventDefault();
+    loadCanteenCancellationRequests().catch((err) => setCanteenCancelStatus(err.message || 'Failed to load requests.'));
+  });
+  canteenCancelUnitSelect?.addEventListener('change', () => {
+    loadCanteenCancellationRequests().catch((err) => setCanteenCancelStatus(err.message || 'Failed to load requests.'));
+  });
+  canteenCancelStatusSelect?.addEventListener('change', () => {
+    loadCanteenCancellationRequests().catch((err) => setCanteenCancelStatus(err.message || 'Failed to load requests.'));
+  });
+  canteenCancelRows?.addEventListener('click', (e) => {
+    const approveBtn = e.target.closest('[data-canteen-cancel-approve]');
+    const rejectBtn = e.target.closest('[data-canteen-cancel-reject]');
+    if (!approveBtn && !rejectBtn) return;
+    const requestId = approveBtn
+      ? Number(approveBtn.dataset.canteenCancelApprove || 0)
+      : Number(rejectBtn.dataset.canteenCancelReject || 0);
+    const action = approveBtn ? 'approve' : 'reject';
+    decideCanteenCancellation(requestId, action).catch((err) => setCanteenCancelStatus(err.message || 'Failed to process request.'));
+  });
+  canteenCancelModal?.addEventListener('click', (e) => {
+    if (e.target === canteenCancelModal) {
+      closeCanteenCancelModal();
     }
   });
 

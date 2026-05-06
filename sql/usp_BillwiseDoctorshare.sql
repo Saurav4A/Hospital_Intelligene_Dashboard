@@ -38,6 +38,7 @@ BEGIN
                 , v.VisitDate
                 , v.DischargeDate
                 , subdocid = v.subdocid
+                , DocInChargeId = v.DocInCharge
                 , docid = CASE ISNULL(od.DocID, 0) WHEN 0 THEN om.OrdByDocID ELSE od.DocID END
             FROM dbo.Billing_Mst bm
             INNER JOIN dbo.Visit v ON v.Visit_ID = bm.Visit_ID
@@ -66,6 +67,7 @@ BEGIN
             , Service_Name
             , Amount
             , dbo.fn_DoctorFirstName(docid) AS Doctorname
+            , dbo.fn_DoctorFirstName(DocInChargeId) AS DoctorInCharge
             , dbo.fn_PatientFullName(PatientID) AS Patientname
             , vtype
             , Patienttype
@@ -99,6 +101,7 @@ BEGIN
                 , v.VisitDate
                 , v.DischargeDate
                 , subdocid = v.subdocid
+                , DocInChargeId = v.DocInCharge
                 , docid = CASE ISNULL(od.DocID, 0) WHEN 0 THEN v.DocInCharge ELSE od.DocID END
             FROM dbo.Billing_Mst bm
             INNER JOIN dbo.Visit v ON v.Visit_ID = bm.Visit_ID
@@ -126,6 +129,7 @@ BEGIN
             , Service_Name
             , Amount
             , dbo.fn_DoctorFirstName(docid) AS Doctorname
+            , dbo.fn_DoctorFirstName(DocInChargeId) AS DoctorInCharge
             , dbo.fn_PatientFullName(PatientID) AS Patientname
             , vtype
             , Patienttype
@@ -159,6 +163,7 @@ BEGIN
                 , v.VisitDate
                 , v.DischargeDate
                 , subdocid = v.subdocid
+                , DocInChargeId = v.DocInCharge
                 , docid = CASE ISNULL(od.DocID, 0) WHEN 0 THEN v.DocInCharge ELSE od.DocID END
             FROM dbo.Billing_Mst bm
             INNER JOIN dbo.Visit v ON v.Visit_ID = bm.Visit_ID
@@ -186,6 +191,7 @@ BEGIN
             , Service_Name
             , Amount
             , dbo.fn_DoctorFirstName(docid) AS Doctorname
+            , dbo.fn_DoctorFirstName(DocInChargeId) AS DoctorInCharge
             , dbo.fn_PatientFullName(PatientID) AS Patientname
             , vtype
             , Patienttype
@@ -217,6 +223,7 @@ BEGIN
             , v.VisitDate
             , v.DischargeDate
             , subdocid = v.subdocid
+            , DocInChargeId = v.DocInCharge
             , docid = CASE ISNULL(od.DocID, 0) WHEN 0 THEN om.OrdByDocID ELSE od.DocID END
         FROM dbo.Billing_Mst bm
         INNER JOIN dbo.Visit v ON v.Visit_ID = bm.Visit_ID
@@ -254,6 +261,7 @@ BEGIN
             , v.VisitDate
             , v.DischargeDate
             , subdocid = v.subdocid
+            , DocInChargeId = v.DocInCharge
             , docid = CASE ISNULL(od.DocID, 0) WHEN 0 THEN v.DocInCharge ELSE od.DocID END
         FROM dbo.Billing_Mst bm
         INNER JOIN dbo.Visit v ON v.Visit_ID = bm.Visit_ID
@@ -290,6 +298,7 @@ BEGIN
             , v.VisitDate
             , v.DischargeDate
             , subdocid = v.subdocid
+            , DocInChargeId = v.DocInCharge
             , docid = CASE ISNULL(od.DocID, 0) WHEN 0 THEN v.DocInCharge ELSE od.DocID END
         FROM dbo.Billing_Mst bm
         INNER JOIN dbo.Visit v ON v.Visit_ID = bm.Visit_ID
@@ -317,6 +326,7 @@ BEGIN
         , Service_Name
         , Amount
         , dbo.fn_DoctorFirstName(docid) AS Doctorname
+        , dbo.fn_DoctorFirstName(DocInChargeId) AS DoctorInCharge
         , dbo.fn_PatientFullName(PatientID) AS Patientname
         , vtype
         , Patienttype

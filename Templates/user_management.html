@@ -482,6 +482,10 @@
 
         <label>Unit Scope</label>
         <div class="um-chips-grid" id="unitScopeGrid">
+          <label class="um-chip um-chip--all">
+            <input type="checkbox" name="unit_option" value="*">
+            <span>All Units</span>
+          </label>
           {% if scope_units %}
             {% for u in scope_units %}
               <label class="um-chip">
@@ -494,7 +498,7 @@
           {% endif %}
         </div>
         <input type="hidden" name="unit_scope" id="unitScopeInput" value="{{ unit_scope }}">
-        <p style="font-size:11px; color:#64748b; margin-top:6px; font-style:italic;">Select one or more units.</p>
+        <p style="font-size:11px; color:#64748b; margin-top:6px; font-style:italic;">Select one, many, or all units. Asset Management will follow this same location scope.</p>
 
         <label>Purchase Unit Scope (optional)</label>
         <div class="um-chips-grid" id="purchaseUnitScopeGrid">
@@ -577,6 +581,14 @@
                     {% set label = 'User Management (Admin)' %}
                   {% elif sec == 'fund_position' %}
                     {% set label = 'Fund Position Tracker' %}
+                  {% elif sec == 'govt_scheme_tracker' %}
+                    {% set label = 'Govt. Scheme Tracker' %}
+                  {% elif sec == 'investor_revenue_report' %}
+                    {% set label = 'Investor Revenue Report' %}  
+                  {% elif sec == 'pharmacy_sales' %}
+                    {% set label = 'Pharmacy Sales (Sharpsight)' %}
+                  {% elif sec == 'pharmacy_sales_mrp_edit' %}
+                    {% set label = 'Pharmacy Sales - MRP Edit' %}
                   {% elif sec == 'fund_position_admin' %}
                     {% set label = 'Fund Position Admin' %}
                   {% elif sec == 'service_addition' %}
@@ -591,10 +603,16 @@
                     {% set label = 'Service Addition - IP Package' %}
                   {% elif sec == 'corporate_writeoff' %}
                     {% set label = 'Corporate - Write-off Permission' %}
+                  {% elif sec == 'corporate_receipt_cancel' %}
+                    {% set label = 'Corporate - Receipt Cancel Permission' %}
                   {% elif sec == 'corporate_receipt_date_edit' %}
                     {% set label = 'Corporate - Receipt Date Change Permission' %}
                   {% elif sec == 'corporate_bill_unsubmit' %}
                     {% set label = 'Corporate - Bill Unsubmit Permission' %}
+                  {% elif sec == 'canteen_menu_master' %}
+                    {% set label = 'Canteen - Menu Master Permission' %}
+                  {% elif sec == 'canteen_bill_receipt_cancel' %}
+                    {% set label = 'Canteen - Bill / Receipt Cancellation Approval' %}
                   {% endif %}
                   <label class="um-chip">
                     <input type="checkbox" name="section_option" value="{{ sec }}" {% if sec in _pre or '*' in _pre %}checked{% endif %}>
@@ -871,6 +889,10 @@
                 </div>
                 <div class="um-units-scroll">
                   <div class="um-chips-grid" id="unitScopeGridEdit">
+                    <label class="um-chip um-chip--all">
+                      <input type="checkbox" name="unit_option_edit" value="*">
+                      <span>All Units</span>
+                    </label>
                     {% if scope_units %}
                       {% for u in scope_units %}
                         <label class="um-chip">
@@ -884,7 +906,7 @@
                   </div>
                 </div>
                 <input type="hidden" name="unit_scope" id="unitScopeInputEdit">
-                <div class="um-edit-help">Select one or more units.</div>
+                <div class="um-edit-help">Select one, many, or all units. Asset Management access will inherit this location scope.</div>
               </div>
               <div class="um-units-panel">
                 <div class="um-units-header">
@@ -987,6 +1009,14 @@
                     {% set label = 'User Management (Admin)' %}
                   {% elif sec == 'fund_position' %}
                     {% set label = 'Fund Position Tracker' %}
+                  {% elif sec == 'govt_scheme_tracker' %}
+                    {% set label = 'Govt. Scheme Tracker' %}
+                  {% elif sec == 'investor_revenue_report' %}
+                    {% set label = 'Investor Revenue Report' %} 
+                  {% elif sec == 'pharmacy_sales' %}
+                    {% set label = 'Pharmacy Sales (Sharpsight)' %}
+                  {% elif sec == 'pharmacy_sales_mrp_edit' %}
+                    {% set label = 'Pharmacy Sales - MRP Edit' %}
                   {% elif sec == 'fund_position_admin' %}
                     {% set label = 'Fund Position Admin' %}
                   {% elif sec == 'service_addition' %}
@@ -1001,10 +1031,16 @@
                     {% set label = 'Service Addition - IP Package' %}
                   {% elif sec == 'corporate_writeoff' %}
                     {% set label = 'Corporate - Write-off Permission' %}
+                  {% elif sec == 'corporate_receipt_cancel' %}
+                    {% set label = 'Corporate - Receipt Cancel Permission' %}
                   {% elif sec == 'corporate_receipt_date_edit' %}
                     {% set label = 'Corporate - Receipt Date Change Permission' %}
                   {% elif sec == 'corporate_bill_unsubmit' %}
                     {% set label = 'Corporate - Bill Unsubmit Permission' %}
+                  {% elif sec == 'canteen_menu_master' %}
+                    {% set label = 'Canteen - Menu Master Permission' %}
+                  {% elif sec == 'canteen_bill_receipt_cancel' %}
+                    {% set label = 'Canteen - Bill / Receipt Cancellation Approval' %}
                   {% endif %}
                       <label class="um-chip">
                         <input type="checkbox" name="section_option_edit" value="{{ sec }}">
@@ -1104,7 +1140,7 @@
                   </tr>
                 {% endfor %}
               {% endif %}
-              <tr id="itUserEmptyRow" style="{% if it_direct_users %}display:none;{% endif %}">
+              <tr id="itUserEmptyRow" {% if it_direct_users %}style="display:none;"{% endif %}>
                 <td colspan="7" style="text-align:center; padding:16px; color:#94a3b8;">
                   {% if it_direct_users %}No matching users.{% else %}No users found in HID_User_Mst.{% endif %}
                 </td>
@@ -1256,6 +1292,14 @@
                                   {% set label = 'User Management (Admin)' %}
                                 {% elif sec == 'fund_position' %}
                                   {% set label = 'Fund Position Tracker' %}
+                                {% elif sec == 'govt_scheme_tracker' %}
+                                  {% set label = 'Govt. Scheme Tracker' %}
+                                {% elif sec == 'investor_revenue_report' %}
+                                  {% set label = 'Investor Revenue Report' %} 
+                                {% elif sec == 'pharmacy_sales' %}
+                                  {% set label = 'Pharmacy Sales (Sharpsight)' %}
+                                {% elif sec == 'pharmacy_sales_mrp_edit' %}
+                                  {% set label = 'Pharmacy Sales - MRP Edit' %}
                                 {% elif sec == 'fund_position_admin' %}
                                   {% set label = 'Fund Position Admin' %}
                                 {% elif sec == 'service_addition' %}
@@ -1270,10 +1314,16 @@
                                   {% set label = 'Service Addition - IP Package' %}
                                 {% elif sec == 'corporate_writeoff' %}
                                   {% set label = 'Corporate - Write-off Permission' %}
+                                {% elif sec == 'corporate_receipt_cancel' %}
+                                  {% set label = 'Corporate - Receipt Cancel Permission' %}
                                 {% elif sec == 'corporate_receipt_date_edit' %}
                                   {% set label = 'Corporate - Receipt Date Change Permission' %}
                                 {% elif sec == 'corporate_bill_unsubmit' %}
                                   {% set label = 'Corporate - Bill Unsubmit Permission' %}
+                                {% elif sec == 'canteen_menu_master' %}
+                                  {% set label = 'Canteen - Menu Master Permission' %}
+                                {% elif sec == 'canteen_bill_receipt_cancel' %}
+                                  {% set label = 'Canteen - Bill / Receipt Cancellation Approval' %}
                                 {% endif %}
                                 <label class="um-chip">
                                   <input type="checkbox" value="{{ sec }}">
@@ -1580,6 +1630,167 @@
               {% else %}
                 <tr>
                   <td colspan="6" style="text-align:center; padding:16px; color:#94a3b8;">No approval recipients configured.</td>
+                </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if role == "IT" %}
+      <div class="um-card">
+        <div class="um-section-head">
+          <h2 class="um-title">Canteen Bulk Notification Recipients</h2>
+        </div>
+        <p class="um-subtitle">Bulk / institutional canteen order emails are routed by unit and role. Configure <b>Accounts (CC)</b> for each unit to keep accounts copied on every notification.</p>
+
+        <form method="post" action="{{ url_for('user_management_canteen_notification_recipient_add') }}" class="um-form">
+          <label>Name</label>
+          <input type="text" name="canteen_recipient_name" placeholder="Full name" required>
+
+          <label>Email</label>
+          <input type="text" name="canteen_recipient_email" placeholder="name@example.com" required>
+
+          <label>Unit</label>
+          <select name="canteen_recipient_unit">
+            <option value="">All Units</option>
+            {% for u in canteen_notification_units or [] %}
+              <option value="{{ u }}">{{ u }}</option>
+            {% endfor %}
+          </select>
+
+          <label>Role</label>
+          <select name="canteen_recipient_role" required>
+            {% for r in canteen_notification_roles or [] %}
+              <option value="{{ r.key }}">{{ r.label }}</option>
+            {% endfor %}
+          </select>
+
+          <button type="submit" class="um-btn-primary" style="margin-top:14px;">Add Recipient</button>
+        </form>
+
+        <div class="um-table-wrapper" style="margin-top:16px;">
+          <table class="um-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Unit</th>
+                <th>Role</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if canteen_notification_recipients %}
+                {% for r in canteen_notification_recipients %}
+                  <tr>
+                    <td>{{ r.Name }}</td>
+                    <td>{{ r.Email }}</td>
+                    <td>{{ r.Unit or 'All' }}</td>
+                    <td>{{ r.RoleName }}</td>
+                    <td>
+                      {% if r.IsActive %}
+                        <span class="um-pill pill-approved">Active</span>
+                      {% else %}
+                        <span class="um-pill pill-hold">Inactive</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <form method="post" action="{{ url_for('user_management_canteen_notification_recipient_toggle') }}">
+                        <input type="hidden" name="canteen_recipient_id" value="{{ r.Id }}">
+                        <input type="hidden" name="is_active" value="{{ 0 if r.IsActive else 1 }}">
+                        <button type="submit" style="border:none; background:none; cursor:pointer; color:#2563eb; font-weight:700;">
+                          {% if r.IsActive %}Deactivate{% else %}Activate{% endif %}
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="6" style="text-align:center; padding:16px; color:#94a3b8;">No canteen notification recipients configured.</td>
+                </tr>
+              {% endif %}
+            </tbody>
+          </table>
+        </div>
+      </div>
+      {% endif %}
+
+      {% if role == "IT" %}
+      <div class="um-card">
+        <div class="um-section-head">
+          <h2 class="um-title">Asset Lifecycle Email Recipients</h2>
+        </div>
+        <p class="um-subtitle">AMC / CMC / Warranty alerts, breakdown tickets, OTP approvals, and final asset action updates use these unit-wise stakeholders.</p>
+
+        <form method="post" action="{{ url_for('user_management_asset_coverage_recipient_add') }}" class="um-form">
+          <label>Name</label>
+          <input type="text" name="asset_coverage_recipient_name" placeholder="Full name" required>
+
+          <label>Email</label>
+          <input type="text" name="asset_coverage_recipient_email" placeholder="name@example.com" required>
+
+          <label>Unit</label>
+          <select name="asset_coverage_recipient_unit" required>
+            {% for u in asset_coverage_units or [] %}
+              <option value="{{ u }}">{{ u }}</option>
+            {% endfor %}
+          </select>
+
+          <label>Stakeholder</label>
+          <select name="asset_coverage_recipient_role" required>
+            {% for r in asset_coverage_roles or [] %}
+              <option value="{{ r.key }}">{{ r.label }}</option>
+            {% endfor %}
+          </select>
+
+          <button type="submit" class="um-btn-primary" style="margin-top:14px;">Add Recipient</button>
+        </form>
+
+        <div class="um-table-wrapper" style="margin-top:16px;">
+          <table class="um-table">
+            <thead>
+              <tr>
+                <th>Name</th>
+                <th>Email</th>
+                <th>Unit</th>
+                <th>Stakeholder</th>
+                <th>Status</th>
+                <th>Action</th>
+              </tr>
+            </thead>
+            <tbody>
+              {% if asset_coverage_recipients %}
+                {% for r in asset_coverage_recipients %}
+                  <tr>
+                    <td>{{ r.name }}</td>
+                    <td>{{ r.email }}</td>
+                    <td>{{ r.unit_code }}</td>
+                    <td>{{ r.role_name }}</td>
+                    <td>
+                      {% if r.is_active %}
+                        <span class="um-pill pill-approved">Active</span>
+                      {% else %}
+                        <span class="um-pill pill-hold">Inactive</span>
+                      {% endif %}
+                    </td>
+                    <td>
+                      <form method="post" action="{{ url_for('user_management_asset_coverage_recipient_toggle') }}">
+                        <input type="hidden" name="asset_coverage_recipient_id" value="{{ r.recipient_id }}">
+                        <input type="hidden" name="is_active" value="{{ 0 if r.is_active else 1 }}">
+                        <button type="submit" style="border:none; background:none; cursor:pointer; color:#2563eb; font-weight:700;">
+                          {% if r.is_active %}Deactivate{% else %}Activate{% endif %}
+                        </button>
+                      </form>
+                    </td>
+                  </tr>
+                {% endfor %}
+              {% else %}
+                <tr>
+                  <td colspan="6" style="text-align:center; padding:16px; color:#94a3b8;">No asset coverage reminder recipients configured.</td>
                 </tr>
               {% endif %}
             </tbody>

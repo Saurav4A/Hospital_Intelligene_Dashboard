@@ -27,6 +27,11 @@ def register_purchase_pm_indent_routes(
     _row_value = row_value
     _audit_log_event = audit_log_event
     LOCAL_TZ = local_tz
+    CONTRACTED_RATE_UNITS = {"AHL", "ACI", "BALLIA"}
+
+    def _supports_contracted_rate(unit: str) -> bool:
+        return str(unit or "").strip().upper() in CONTRACTED_RATE_UNITS
+
     def _first_numeric_value(row, cols):
         for col in cols:
             if not col:
@@ -51,6 +56,7 @@ def register_purchase_pm_indent_routes(
         rate_col = cols.get("standardrate") or cols.get("standard_rate") or cols.get("rate")
         mrp_col = cols.get("salesprice") or cols.get("sales_price") or cols.get("mrp")
         tax_col = cols.get("salestax") or cols.get("sales_tax") or cols.get("tax") or cols.get("vat")
+        contracted_rate_col = cols.get("contractedrate") or cols.get("contracted_rate")
         if not id_col:
             return {}
         out = {}
@@ -63,7 +69,15 @@ def register_purchase_pm_indent_routes(
             rate_val = _safe_float(row.get(rate_col), None) if rate_col else None
             mrp_val = _safe_float(row.get(mrp_col), None) if mrp_col else None
             tax_val = _safe_float(row.get(tax_col), None) if tax_col else None
-            out[item_id] = {"rate": rate_val, "mrp": mrp_val, "tax": tax_val}
+            contracted_rate_val = _safe_float(row.get(contracted_rate_col), None) if contracted_rate_col else None
+            if contracted_rate_val is not None and contracted_rate_val <= 0:
+                contracted_rate_val = None
+            out[item_id] = {
+                "rate": rate_val,
+                "mrp": mrp_val,
+                "tax": tax_val,
+                "contracted_rate": contracted_rate_val,
+            }
         return out
 
     @app.route('/api/purchase/pm_indent/init')
@@ -1139,6 +1153,11 @@ def register_purchase_pm_indent_routes(
         unit, error = _get_purchase_unit()
         if error:
             return error
+        if _supports_contracted_rate(unit):
+            try:
+                data_fetch.ensure_iv_item_contracted_rate_column(unit)
+            except Exception:
+                pass
         df = data_fetch.fetch_items_last_po_rate(unit)
         if df is None:
             return jsonify({"status": "error", "message": "Failed to fetch items"}), 500
@@ -1191,8 +1210,6 @@ def register_purchase_pm_indent_routes(
                     item_ids.append(int(val))
                 except Exception:
                     continue
-            latest_po_rate_map = data_fetch.fetch_latest_po_rate_map(unit, item_ids)
-            item_master_map = _get_item_master_rate_mrp_map(unit, item_ids)
             rate_cols = [
                 cols.get("lastporate"),
                 cols.get("last_po_rate"),
@@ -1211,9 +1228,29 @@ def register_purchase_pm_indent_routes(
                 cols.get("sales_tax"),
                 cols.get("tax"),
             ]
+            fallback_item_ids = []
+            for _, row in df.iterrows():
+                try:
+                    item_id = int(row.get(id_col))
+                except Exception:
+                    continue
+                base_rate = _first_numeric_value(row, rate_cols)
+                base_mrp = _first_numeric_value(row, mrp_cols)
+                base_tax = _first_numeric_value(row, tax_cols)
+                if (
+                    base_rate is None or base_rate <= 0
+                    or base_mrp is None or base_mrp <= 0
+                    or base_tax is None or base_tax <= 0
+                ):
+                    fallback_item_ids.append(item_id)
+
+            latest_po_rate_map = data_fetch.fetch_latest_po_rate_map(unit, fallback_item_ids) if fallback_item_ids else {}
+            item_master_map = _get_item_master_rate_mrp_map(unit, fallback_item_ids)
+            contracted_rate_map = data_fetch.fetch_item_contracted_rate_map(unit) if _supports_contracted_rate(unit) else {}
             rates = []
             mrps = []
             taxes = []
+            contracted_rates = []
             for _, row in df.iterrows():
                 try:
                     item_id = int(row.get(id_col))
@@ -1237,16 +1274,25 @@ def register_purchase_pm_indent_routes(
                     tax_val = fallback.get("tax")
                 if tax_val is None:
                     tax_val = 0.0
+                contracted_rate_val = contracted_rate_map.get(item_id or -1)
+                if contracted_rate_val is not None and contracted_rate_val <= 0:
+                    contracted_rate_val = None
                 rates.append(rate_val)
                 mrps.append(mrp_val)
                 taxes.append(tax_val)
+                contracted_rates.append(contracted_rate_val)
 
             df["LastPoRate"] = rates
             df["ItemRate"] = rates
+            df["LastActualRate"] = rates
+            df["ActualRate"] = rates
             df["MRP"] = mrps
             df["Mrp"] = mrps
             df["VAT"] = taxes
             df["Tax"] = taxes
+            if _supports_contracted_rate(unit):
+                df["ContractedRate"] = contracted_rates
+                df["contracted_rate"] = contracted_rates
 
             def _map_stock_value(val):
                 try:

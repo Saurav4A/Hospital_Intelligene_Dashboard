@@ -72,6 +72,9 @@
   .po-wrapper.is-executive #addSupplierBtn,
   .po-wrapper.is-executive #openManufacturerMasterBtn,
   .po-wrapper.is-executive #openItemMasterBtn,
+  .po-wrapper.is-executive #openItemTypeMasterBtn,
+  .po-wrapper.is-executive #openItemGroupMasterBtn,
+  .po-wrapper.is-executive #openItemSubGroupMasterBtn,
   .po-wrapper.is-executive #openPurchasingDeptMasterBtn,
   .po-wrapper.is-executive #openUnitMasterBtn,
   .po-wrapper.is-executive #openSupplierMasterIndentBtn,
@@ -80,6 +83,9 @@
   .po-wrapper.is-executive #supplierModal,
   .po-wrapper.is-executive #manufacturerModal,
   .po-wrapper.is-executive #itemMasterModal,
+  .po-wrapper.is-executive #itemTypeMasterModal,
+  .po-wrapper.is-executive #itemGroupMasterModal,
+  .po-wrapper.is-executive #itemSubGroupMasterModal,
   .po-wrapper.is-executive #purchasingDeptMasterModal,
   .po-wrapper.is-executive #unitMasterModal {
     display: none !important;
@@ -1942,6 +1948,8 @@
   .po-items-table td:nth-child(20),
   .po-items-table th:nth-child(21),
   .po-items-table td:nth-child(21) { min-width: 110px; }
+  .po-items-table th:nth-child(11),
+  .po-items-table td:nth-child(11) { min-width: 152px; }
   .indent-table th:nth-child(1),
   .indent-table td:nth-child(1) { min-width: 24px; }
   .indent-table th:nth-child(2),
@@ -1964,6 +1972,106 @@
     border-color: var(--brand-2);
     background: #fff;
     box-shadow: 0 0 0 2px rgba(59,130,246,0.12);
+  }
+  .cell-rate-stack {
+    display: grid;
+    gap: 5px;
+    min-width: 132px;
+  }
+  .cell-rate-source-wrap[hidden] {
+    display: none !important;
+  }
+  .cell-rate-source-wrap {
+    display: flex;
+    align-items: center;
+    min-height: 26px;
+  }
+  .cell-rate-source-meta {
+    display: none;
+  }
+  .cell-rate-source-toggle {
+    display: inline-flex;
+    align-items: center;
+    width: 100%;
+    gap: 2px;
+    padding: 2px;
+    border: 1px solid #d9e2ec;
+    border-radius: 999px;
+    background: linear-gradient(180deg, #fbfdff 0%, #f3f6fb 100%);
+    box-shadow: inset 0 1px 0 rgba(255,255,255,0.9);
+  }
+  .cell-rate-source-btn {
+    flex: 1 1 0;
+    min-height: 24px;
+    padding: 0 10px;
+    border: 0;
+    border-radius: 999px;
+    background: transparent;
+    color: #64748b;
+    font-size: 11px;
+    font-weight: 700;
+    letter-spacing: 0;
+    cursor: pointer;
+    transition: background 0.18s ease, color 0.18s ease, box-shadow 0.18s ease;
+  }
+  .cell-rate-source-btn:hover {
+    background: rgba(255,255,255,0.94);
+    color: #334155;
+  }
+  .cell-rate-source-btn.is-active {
+    background: #ffffff;
+    color: #0f172a;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, 0.08), inset 0 0 0 1px #cbd5e1;
+  }
+  .cell-rate-source-btn[data-source="contracted"].is-active {
+    color: #1d4ed8;
+  }
+  .cell-rate-source-btn:disabled {
+    cursor: default;
+    color: #94a3b8;
+    background: transparent;
+    box-shadow: none;
+  }
+  .cell-rate-source-btn:focus-visible {
+    outline: none;
+    box-shadow: 0 0 0 2px rgba(59,130,246,0.14);
+  }
+  .cell-rate-source-btn-label {
+    display: block;
+    line-height: 1;
+  }
+  .cell-rate-source-btn[aria-pressed="true"] {
+    font-weight: 800;
+  }
+  .cell-rate-source-btn[aria-pressed="false"] {
+    font-weight: 700;
+  }
+  .cell-rate-source-btn[hidden] {
+    display: none !important;
+  }
+  .cell-rate-source-btn.is-active:focus-visible {
+    box-shadow:
+      0 0 0 2px rgba(59,130,246,0.14),
+      0 1px 2px rgba(15, 23, 42, 0.08),
+      inset 0 0 0 1px #93c5fd;
+  }
+  .cell-rate-source-btn:disabled:hover {
+    color: #94a3b8;
+    background: transparent;
+  }
+  .cell-rate-source-btn:disabled .cell-rate-source-btn-label {
+    opacity: 0.72;
+  }
+  .po-table tbody tr[data-rate-source="contracted"] .cell-rate {
+    border-color: #bfdbfe;
+    background: #f8fbff;
+  }
+  .po-table tbody tr[data-rate-source="manual"] .cell-rate {
+    border-color: #fcd34d;
+    background: #fff9e8;
+  }
+  .po-table tbody tr[data-rate-source="manual"] .cell-rate:focus {
+    box-shadow: 0 0 0 2px rgba(245, 158, 11, 0.14);
   }
   .cell-index {
     font-weight: 700;
@@ -2381,6 +2489,263 @@
   #unitMasterModal .modal-card {
     width: min(1040px, 96%);
   }
+  .catalog-master-dialog {
+    position: relative;
+    width: min(1160px, 96%);
+    padding: 0 0 22px;
+    border-radius: 26px;
+    border: 1px solid rgba(191, 219, 254, 0.92);
+    background:
+      radial-gradient(1200px 300px at 0% 0%, rgba(59, 130, 246, 0.12), transparent 42%),
+      radial-gradient(900px 260px at 100% 0%, rgba(14, 165, 233, 0.08), transparent 38%),
+      linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    box-shadow:
+      0 30px 60px rgba(15, 23, 42, 0.24),
+      0 8px 22px rgba(30, 58, 138, 0.08);
+    scrollbar-gutter: stable;
+  }
+  .catalog-master-dialog::before {
+    content: "";
+    position: absolute;
+    inset: 0 0 auto;
+    height: 5px;
+    background: linear-gradient(90deg, #1d4ed8 0%, #38bdf8 50%, #0f766e 100%);
+    border-radius: 26px 26px 0 0;
+    z-index: 2;
+    pointer-events: none;
+  }
+  .catalog-master-dialog .modal-head {
+    position: sticky;
+    top: 0;
+    z-index: 3;
+    margin-bottom: 0;
+    padding: 26px 28px 18px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.96) 0%, rgba(248, 251, 255, 0.9) 100%);
+    border-bottom: 1px solid rgba(219, 234, 254, 0.9);
+    backdrop-filter: blur(16px);
+  }
+  .catalog-master-dialog .modal-head h4 {
+    font-size: 18px;
+    font-weight: 800;
+    letter-spacing: 0.01em;
+    color: #1e3a8a;
+  }
+  .catalog-master-dialog .pill.light {
+    background: linear-gradient(180deg, rgba(219, 234, 254, 0.92) 0%, rgba(239, 246, 255, 0.98) 100%);
+    color: #334155;
+    border: 1px solid rgba(191, 219, 254, 0.92);
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+    font-weight: 800;
+    letter-spacing: 0.04em;
+    text-transform: uppercase;
+  }
+  .catalog-master-dialog .modal-close {
+    background: linear-gradient(180deg, #ffffff 0%, #eef4fd 100%);
+    border: 1px solid #d6e2f2;
+    color: #0f172a;
+    font-weight: 700;
+    padding: 10px 16px;
+    border-radius: 14px;
+    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.06);
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  }
+  .catalog-master-dialog .modal-close:hover,
+  .catalog-master-dialog .modal-close:focus {
+    transform: translateY(-1px);
+    border-color: #93c5fd;
+    box-shadow: 0 14px 24px rgba(30, 58, 138, 0.12);
+    outline: none;
+  }
+  .catalog-master-dialog .po-alert {
+    width: auto;
+    margin: 16px 28px 0;
+  }
+  .catalog-master-dialog .item-master-note {
+    margin: 14px 28px 0;
+    padding: 14px 16px;
+    border: 1px solid #dbeafe;
+    border-radius: 16px;
+    background: linear-gradient(135deg, rgba(239, 246, 255, 0.96) 0%, rgba(248, 251, 255, 0.96) 100%);
+    color: #5d7193;
+    font-size: 13px;
+    line-height: 1.6;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.9);
+  }
+  .catalog-master-dialog .item-master-note code {
+    background: rgba(255, 255, 255, 0.8);
+    border: 1px solid rgba(191, 219, 254, 0.9);
+    border-radius: 8px;
+    padding: 2px 6px;
+    color: #1e3a8a;
+  }
+  .catalog-master-dialog .form-grid {
+    margin: 18px 28px 0;
+    padding: 20px;
+    border: 1px solid #e1ebf8;
+    border-radius: 20px;
+    background: linear-gradient(180deg, rgba(255, 255, 255, 0.98) 0%, rgba(248, 251, 255, 0.98) 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.95),
+      0 14px 30px rgba(15, 23, 42, 0.04);
+  }
+  .catalog-master-dialog .field label {
+    margin-bottom: 8px;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    color: #38527d;
+  }
+  .catalog-master-dialog .field input,
+  .catalog-master-dialog .field select,
+  .catalog-master-dialog .field textarea {
+    min-height: 54px;
+    border-radius: 15px;
+    border: 1px solid #d5e3f7;
+    background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+    box-shadow:
+      inset 0 1px 0 rgba(255, 255, 255, 0.98),
+      0 8px 20px rgba(15, 23, 42, 0.03);
+    font-size: 15px;
+    color: #0f172a;
+  }
+  .catalog-master-dialog .field input::placeholder,
+  .catalog-master-dialog .field textarea::placeholder {
+    color: #8b9ab1;
+  }
+  .catalog-master-dialog .field input:focus,
+  .catalog-master-dialog .field select:focus,
+  .catalog-master-dialog .field textarea:focus {
+    border-color: #60a5fa;
+    box-shadow:
+      0 0 0 4px rgba(37, 99, 235, 0.12),
+      0 14px 28px rgba(37, 99, 235, 0.08);
+  }
+  .catalog-master-dialog .master-list-head {
+    margin: 18px 28px 12px;
+    padding: 0 2px;
+  }
+  .catalog-master-dialog .master-list-head h5 {
+    font-size: 15px;
+    font-weight: 800;
+    color: #1e3a8a;
+  }
+  .catalog-master-dialog .master-list-meta {
+    display: inline-flex;
+    align-items: center;
+    min-height: 36px;
+    padding: 0 14px;
+    border-radius: 999px;
+    border: 1px solid #dbe5f4;
+    background: linear-gradient(180deg, #ffffff 0%, #f8fbff 100%);
+    color: #5d7193;
+    font-weight: 700;
+    box-shadow: inset 0 1px 0 rgba(255, 255, 255, 0.92);
+  }
+  .catalog-master-dialog .master-list-wrap {
+    margin: 0 28px;
+    max-height: 380px;
+    border-radius: 20px;
+    border: 1px solid #d7e4f6;
+    background: linear-gradient(180deg, #ffffff 0%, #fbfdff 100%);
+    box-shadow: 0 18px 38px rgba(15, 23, 42, 0.07);
+  }
+  .catalog-master-dialog .master-list-table {
+    min-width: 940px;
+  }
+  .catalog-master-dialog .master-list-table th,
+  .catalog-master-dialog .master-list-table td {
+    padding: 14px 14px;
+    font-size: 13px;
+  }
+  .catalog-master-dialog .master-list-table th {
+    background: linear-gradient(180deg, #fafdff 0%, #eff6ff 100%);
+    color: #38527d;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.08em;
+    text-transform: uppercase;
+    border-bottom: 1px solid #dbe5f4;
+  }
+  .catalog-master-dialog .master-list-table td {
+    color: #23324b;
+    background: rgba(255, 255, 255, 0.96);
+  }
+  .catalog-master-dialog .master-list-table tbody tr:nth-child(even) td {
+    background: rgba(248, 251, 255, 0.85);
+  }
+  .catalog-master-dialog .master-list-table tbody tr:hover td {
+    background: #f2f8ff;
+  }
+  .catalog-master-dialog .master-list-table td.id {
+    font-weight: 700;
+    color: #52637d;
+  }
+  .catalog-master-dialog .master-list-table td.actions {
+    min-width: 220px;
+  }
+  .catalog-master-dialog .master-action-row {
+    gap: 10px;
+  }
+  .catalog-master-dialog .master-action-row .btn.small {
+    min-width: 92px;
+    justify-content: center;
+    padding: 9px 12px;
+    border-radius: 12px;
+    font-size: 13px;
+    font-weight: 700;
+    background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+    border: 1px solid #d7e4f6;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, 0.05);
+    transition: transform 0.18s ease, box-shadow 0.18s ease, border-color 0.18s ease;
+  }
+  .catalog-master-dialog .master-action-row .btn.small:hover,
+  .catalog-master-dialog .master-action-row .btn.small:focus {
+    transform: translateY(-1px);
+    border-color: #93c5fd;
+    box-shadow: 0 12px 22px rgba(30, 58, 138, 0.1);
+    outline: none;
+  }
+  .catalog-master-dialog .modal-actions {
+    position: sticky;
+    bottom: 0;
+    z-index: 2;
+    margin: 18px 28px 0;
+    padding: 18px 0 0;
+    border-top: 1px solid #e1ebf8;
+    background: linear-gradient(180deg, rgba(248, 251, 255, 0) 0%, rgba(248, 251, 255, 0.96) 38%);
+  }
+  .catalog-master-dialog .modal-actions .btn {
+    min-width: 150px;
+    justify-content: center;
+    padding: 11px 18px;
+    border-radius: 14px;
+    font-weight: 700;
+  }
+  .catalog-master-dialog .modal-actions .btn.primary {
+    background: linear-gradient(135deg, #1e3a8a 0%, #2563eb 100%);
+    color: #ffffff;
+    border-color: #1d4ed8;
+    box-shadow: 0 16px 30px rgba(29, 78, 216, 0.22);
+  }
+  .catalog-master-dialog .modal-actions .btn.primary:hover,
+  .catalog-master-dialog .modal-actions .btn.primary:focus {
+    filter: brightness(1.03);
+    transform: translateY(-1px);
+    outline: none;
+  }
+  .catalog-master-dialog .modal-actions .btn.ghost {
+    background: linear-gradient(180deg, #ffffff 0%, #f7fbff 100%);
+    color: #1e3a8a;
+    border-color: #d7e4f6;
+    box-shadow: 0 10px 20px rgba(15, 23, 42, 0.05);
+  }
+  .catalog-master-dialog .modal-actions .btn.ghost:hover,
+  .catalog-master-dialog .modal-actions .btn.ghost:focus {
+    border-color: #93c5fd;
+    transform: translateY(-1px);
+    outline: none;
+  }
   .field.required label::after {
     content: " *";
     color: #dc2626;
@@ -2443,6 +2808,14 @@
   .item-manufacturer-row .field-inline {
     flex: 1;
     min-width: 220px;
+  }
+  .item-manufacturer-hint {
+    font-size: 11px;
+    color: #0f766e;
+    background: rgba(20, 184, 166, 0.08);
+    border: 1px solid rgba(13, 148, 136, 0.16);
+    border-radius: 10px;
+    padding: 8px 10px;
   }
   .item-manufacturer-links {
     display: flex;
@@ -2546,6 +2919,52 @@
       left: 12px;
       right: 12px;
       width: auto;
+    }
+    .catalog-master-dialog {
+      width: min(100%, 98vw);
+      padding-bottom: 18px;
+      border-radius: 22px;
+    }
+    .catalog-master-dialog::before {
+      border-radius: 22px 22px 0 0;
+    }
+    .catalog-master-dialog .modal-head,
+    .catalog-master-dialog .po-alert,
+    .catalog-master-dialog .item-master-note,
+    .catalog-master-dialog .form-grid,
+    .catalog-master-dialog .master-list-head,
+    .catalog-master-dialog .master-list-wrap,
+    .catalog-master-dialog .modal-actions {
+      margin-left: 18px;
+      margin-right: 18px;
+    }
+    .catalog-master-dialog .modal-head {
+      padding: 22px 18px 16px;
+      gap: 12px;
+      align-items: flex-start;
+      flex-wrap: wrap;
+    }
+    .catalog-master-dialog .modal-head h4 {
+      font-size: 17px;
+    }
+    .catalog-master-dialog .form-grid {
+      padding: 16px;
+      border-radius: 18px;
+    }
+    .catalog-master-dialog .master-list-wrap {
+      max-height: 320px;
+      border-radius: 18px;
+    }
+    .catalog-master-dialog .master-list-table {
+      min-width: 840px;
+    }
+    .catalog-master-dialog .modal-actions {
+      padding-top: 14px;
+      justify-content: stretch;
+      flex-wrap: wrap;
+    }
+    .catalog-master-dialog .modal-actions .btn {
+      flex: 1 1 180px;
     }
   }
 </style>
@@ -2933,7 +3352,25 @@
                 <td><input class="cell-input cell-last30" type="number" min="0" step="0.01" placeholder="0.00" readonly></td>
                 <td><input class="cell-input cell-qty" type="number" min="0" step="1" placeholder="0"></td>
                 <td><input class="cell-input cell-free" type="number" min="0" step="1" placeholder="0"></td>
-                <td><input class="cell-input cell-rate" type="number" min="0" step="0.01" placeholder="0.00"></td>
+                <td>
+                  <div class="cell-rate-stack">
+                    <input class="cell-input cell-rate" type="number" min="0" step="0.01" placeholder="0.00">
+                    <div class="cell-rate-source-wrap" hidden>
+                      <div class="cell-rate-source-meta">
+                        <span class="cell-rate-source-label">Rate Source</span>
+                        <span class="cell-rate-source-state" data-state="actual">Last</span>
+                      </div>
+                      <div class="cell-rate-source-toggle" role="group" aria-label="Rate source">
+                        <button class="cell-rate-source-btn" type="button" data-source="actual" tabindex="-1" aria-pressed="false" title="Use last GRN/PO rate">
+                          <span class="cell-rate-source-btn-label">Last</span>
+                        </button>
+                        <button class="cell-rate-source-btn" type="button" data-source="contracted" tabindex="-1" aria-pressed="false" title="Use contracted rate">
+                          <span class="cell-rate-source-btn-label">Contract</span>
+                        </button>
+                      </div>
+                    </div>
+                  </div>
+                </td>
                 <td><input class="cell-input cell-mrp-display" type="number" min="0" step="0.01" placeholder="0.00"></td>
                 <td><input class="cell-input cell-discount" type="number" min="0" step="0.01" placeholder="0"></td>
                 <td><input class="cell-input cell-taxable" type="number" min="0" step="0.01" placeholder="0.00" readonly></td>
@@ -3784,10 +4221,13 @@
       <section class="po-hero">
         <div>
           <h2>Masters</h2>
-          <p>Manage supplier, manufacturer, item, unit and purchasing department masters.</p>
+          <p>Manage supplier, manufacturer, item, type, group, subgroup, unit and purchasing department masters.</p>
           <div class="hero-meta">
             <span class="hero-chip">Purchasing Dept</span>
             <span class="hero-chip">Unit</span>
+            <span class="hero-chip">Item Type</span>
+            <span class="hero-chip">Item Group</span>
+            <span class="hero-chip">Item Sub Group</span>
             <span class="hero-chip">Supplier</span>
             <span class="hero-chip">Manufacturer</span>
             <span class="hero-chip">Item</span>
@@ -3805,6 +4245,9 @@
         <div class="master-actions">
           <button class="btn ghost" type="button" id="openPurchasingDeptMasterBtn">Purchasing Dept Master</button>
           <button class="btn ghost" type="button" id="openUnitMasterBtn">Unit Master</button>
+          <button class="btn ghost" type="button" id="openItemTypeMasterBtn">Item Type Master</button>
+          <button class="btn ghost" type="button" id="openItemGroupMasterBtn">Item Group Master</button>
+          <button class="btn ghost" type="button" id="openItemSubGroupMasterBtn">Item Sub Group Master</button>
           <button class="btn ghost" type="button" id="addSupplierBtn">Supplier Master</button>
           <button class="btn ghost" type="button" id="openManufacturerMasterBtn">Manufacturer Master</button>
           <button class="btn ghost" type="button" id="openItemMasterBtn">Item Master</button>
@@ -3912,6 +4355,186 @@
     <div class="modal-actions">
       <button class="btn ghost" type="button" id="unitMasterReset">Reset</button>
       <button class="btn primary" type="button" id="unitMasterSave">Save Unit</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="itemTypeMasterModal">
+  <div class="modal-card catalog-master-dialog">
+    <div class="modal-head">
+      <h4>Item Type Master</h4>
+      <span class="pill light" id="itemTypeMasterModeChip">Mode: Add</span>
+      <button class="modal-close" type="button" id="itemTypeMasterClose">Close</button>
+    </div>
+    <div class="po-alert" id="itemTypeMasterAlert"></div>
+    <div class="item-master-note">
+      Maintain item types from <code>dbo.IVItemType</code>. Active item types are used in Item Master and drive Item Group filtering.
+    </div>
+    <div class="form-grid">
+      <div class="field span-12">
+        <label>Search Item Type</label>
+        <input type="text" id="itemTypeMasterSearch" placeholder="Search by item type name or code" list="itemTypeMasterList">
+        <input type="hidden" id="itemTypeMasterId">
+      </div>
+      <div class="field span-4">
+        <label>Item Type Code</label>
+        <input type="text" id="itemTypeMasterCode" maxlength="50" placeholder="e.g. MEDICINE">
+      </div>
+      <div class="field span-8 required">
+        <label>Item Type Name</label>
+        <input type="text" id="itemTypeMasterName" maxlength="150" placeholder="e.g. Medicine">
+      </div>
+    </div>
+    <div class="master-list-head">
+      <h5>Available Item Types</h5>
+      <span class="master-list-meta" id="itemTypeMasterCount">0 records</span>
+    </div>
+    <div class="master-list-wrap">
+      <table class="master-list-table">
+        <thead>
+          <tr>
+            <th style="width:80px;">ID</th>
+            <th style="width:140px;">Code</th>
+            <th>Item Type Name</th>
+            <th style="width:120px;">Status</th>
+            <th style="width:240px; text-align:right;">Action</th>
+          </tr>
+        </thead>
+        <tbody id="itemTypeMasterTableBody">
+          <tr><td colspan="5" class="master-empty">No item types loaded.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" type="button" id="itemTypeMasterReset">Reset</button>
+      <button class="btn primary" type="button" id="itemTypeMasterSave">Save Item Type</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="itemGroupMasterModal">
+  <div class="modal-card catalog-master-dialog">
+    <div class="modal-head">
+      <h4>Item Group Master</h4>
+      <span class="pill light" id="itemGroupMasterModeChip">Mode: Add</span>
+      <button class="modal-close" type="button" id="itemGroupMasterClose">Close</button>
+    </div>
+    <div class="po-alert" id="itemGroupMasterAlert"></div>
+    <div class="item-master-note">
+      Maintain item groups from <code>dbo.IvGroup</code>. Each item group must be linked to an item type.
+    </div>
+    <div class="form-grid">
+      <div class="field span-12">
+        <label>Search Item Group</label>
+        <input type="text" id="itemGroupMasterSearch" placeholder="Search by group name or code" list="itemGroupMasterList">
+        <input type="hidden" id="itemGroupMasterId">
+      </div>
+      <div class="field span-4 required">
+        <label>Item Type</label>
+        <select id="itemGroupMasterType">
+          <option value="">Select</option>
+        </select>
+      </div>
+      <div class="field span-4">
+        <label>Item Group Code</label>
+        <input type="text" id="itemGroupMasterCode" maxlength="30" placeholder="e.g. ANALGESIC">
+      </div>
+      <div class="field span-4 required">
+        <label>Item Group Name</label>
+        <input type="text" id="itemGroupMasterName" maxlength="150" placeholder="e.g. Analgesic">
+      </div>
+    </div>
+    <div class="master-list-head">
+      <h5>Available Item Groups</h5>
+      <span class="master-list-meta" id="itemGroupMasterCount">0 records</span>
+    </div>
+    <div class="master-list-wrap">
+      <table class="master-list-table">
+        <thead>
+          <tr>
+            <th style="width:80px;">ID</th>
+            <th style="width:120px;">Code</th>
+            <th>Item Group Name</th>
+            <th style="width:180px;">Item Type</th>
+            <th style="width:120px;">Status</th>
+            <th style="width:240px; text-align:right;">Action</th>
+          </tr>
+        </thead>
+        <tbody id="itemGroupMasterTableBody">
+          <tr><td colspan="6" class="master-empty">No item groups loaded.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" type="button" id="itemGroupMasterReset">Reset</button>
+      <button class="btn primary" type="button" id="itemGroupMasterSave">Save Item Group</button>
+    </div>
+  </div>
+</div>
+
+<div class="modal-backdrop" id="itemSubGroupMasterModal">
+  <div class="modal-card catalog-master-dialog">
+    <div class="modal-head">
+      <h4>Item Sub Group Master</h4>
+      <span class="pill light" id="itemSubGroupMasterModeChip">Mode: Add</span>
+      <button class="modal-close" type="button" id="itemSubGroupMasterClose">Close</button>
+    </div>
+    <div class="po-alert" id="itemSubGroupMasterAlert"></div>
+    <div class="item-master-note">
+      Maintain item sub groups from <code>dbo.IVSubGroup</code>. Select item type first, then choose an item group from that filtered hierarchy.
+    </div>
+    <div class="form-grid">
+      <div class="field span-12">
+        <label>Search Item Sub Group</label>
+        <input type="text" id="itemSubGroupMasterSearch" placeholder="Search by sub group name or code" list="itemSubGroupMasterList">
+        <input type="hidden" id="itemSubGroupMasterId">
+      </div>
+      <div class="field span-4 required">
+        <label>Item Type</label>
+        <select id="itemSubGroupMasterType">
+          <option value="">Select</option>
+        </select>
+      </div>
+      <div class="field span-4 required">
+        <label>Item Group</label>
+        <select id="itemSubGroupMasterGroup">
+          <option value="">Select</option>
+        </select>
+      </div>
+      <div class="field span-4">
+        <label>Item Sub Group Code</label>
+        <input type="text" id="itemSubGroupMasterCode" maxlength="30" placeholder="e.g. OPIOID">
+      </div>
+      <div class="field span-12 required">
+        <label>Item Sub Group Name</label>
+        <input type="text" id="itemSubGroupMasterName" maxlength="150" placeholder="e.g. Opioid">
+      </div>
+    </div>
+    <div class="master-list-head">
+      <h5>Available Item Sub Groups</h5>
+      <span class="master-list-meta" id="itemSubGroupMasterCount">0 records</span>
+    </div>
+    <div class="master-list-wrap">
+      <table class="master-list-table">
+        <thead>
+          <tr>
+            <th style="width:80px;">ID</th>
+            <th style="width:120px;">Code</th>
+            <th>Item Sub Group Name</th>
+            <th style="width:180px;">Item Type</th>
+            <th style="width:180px;">Item Group</th>
+            <th style="width:120px;">Status</th>
+            <th style="width:240px; text-align:right;">Action</th>
+          </tr>
+        </thead>
+        <tbody id="itemSubGroupMasterTableBody">
+          <tr><td colspan="7" class="master-empty">No item sub groups loaded.</td></tr>
+        </tbody>
+      </table>
+    </div>
+    <div class="modal-actions">
+      <button class="btn ghost" type="button" id="itemSubGroupMasterReset">Reset</button>
+      <button class="btn primary" type="button" id="itemSubGroupMasterSave">Save Item Sub Group</button>
     </div>
   </div>
 </div>
@@ -4285,6 +4908,10 @@
         <label>Purchase Rate</label>
         <input type="number" id="itemMasterRate" min="0" step="0.01" placeholder="0.00">
       </div>
+      <div class="field span-3" id="itemMasterContractedRateField">
+        <label>Contracted Rate</label>
+        <input type="number" id="itemMasterContractedRate" min="0" step="0.01" placeholder="0.00">
+      </div>
       <div class="field span-3 required">
         <label>MRP</label>
         <input type="number" id="itemMasterMrp" min="0" step="0.01" placeholder="0.00">
@@ -4298,13 +4925,13 @@
         <div class="item-manufacturer-block">
           <div class="item-manufacturer-row">
             <div class="field-inline">
-              <input type="text" id="itemMasterManufacturerSearch" placeholder="Search or type manufacturer" list="itemManufacturerList">
+              <input type="text" id="itemMasterManufacturerSearch" placeholder="Search manufacturer or type a new name" list="itemManufacturerList">
               <input type="hidden" id="itemMasterManufacturerId">
             </div>
-            <button class="btn ghost small" type="button" id="itemMasterLinkManufacturer">Link Manufacturer</button>
             <button class="btn ghost small" type="button" id="itemMasterAddManufacturer">Add New Manufacturer</button>
           </div>
-          <div class="item-manufacturer-status" id="itemManufacturerStatus">Linked manufacturers will appear here.</div>
+          <div class="item-manufacturer-hint">Save Item will create or update the item and link the selected manufacturer in the same flow.</div>
+          <div class="item-manufacturer-status" id="itemManufacturerStatus">Select an existing manufacturer or add a new one here. Save Item will link it automatically.</div>
           <div class="item-manufacturer-links" id="itemManufacturerLinks"></div>
         </div>
       </div>
@@ -4477,6 +5104,9 @@
 <datalist id="itemManufacturerList"></datalist>
 <datalist id="purchasingDeptMasterList"></datalist>
 <datalist id="unitMasterList"></datalist>
+<datalist id="itemTypeMasterList"></datalist>
+<datalist id="itemGroupMasterList"></datalist>
+<datalist id="itemSubGroupMasterList"></datalist>
 <datalist id="poList"></datalist>
 <datalist id="workOrderList"></datalist>
 <datalist id="itemList"></datalist>
@@ -4502,7 +5132,25 @@
     <td><input class="cell-input cell-last30" type="number" min="0" step="0.01" placeholder="0.00" readonly></td>
     <td><input class="cell-input cell-qty" type="number" min="0" step="1" placeholder="0"></td>
     <td><input class="cell-input cell-free" type="number" min="0" step="1" placeholder="0"></td>
-    <td><input class="cell-input cell-rate" type="number" min="0" step="0.01" placeholder="0.00"></td>
+    <td>
+      <div class="cell-rate-stack">
+        <input class="cell-input cell-rate" type="number" min="0" step="0.01" placeholder="0.00">
+        <div class="cell-rate-source-wrap" hidden>
+          <div class="cell-rate-source-meta">
+            <span class="cell-rate-source-label">Rate Source</span>
+            <span class="cell-rate-source-state" data-state="actual">Last</span>
+          </div>
+          <div class="cell-rate-source-toggle" role="group" aria-label="Rate source">
+            <button class="cell-rate-source-btn" type="button" data-source="actual" tabindex="-1" aria-pressed="false" title="Use last GRN/PO rate">
+              <span class="cell-rate-source-btn-label">Last</span>
+            </button>
+            <button class="cell-rate-source-btn" type="button" data-source="contracted" tabindex="-1" aria-pressed="false" title="Use contracted rate">
+              <span class="cell-rate-source-btn-label">Contract</span>
+            </button>
+          </div>
+        </div>
+      </div>
+    </td>
     <td><input class="cell-input cell-mrp-display" type="number" min="0" step="0.01" placeholder="0.00"></td>
     <td><input class="cell-input cell-discount" type="number" min="0" step="0.01" placeholder="0"></td>
     <td><input class="cell-input cell-taxable" type="number" min="0" step="0.01" placeholder="0.00" readonly></td>
@@ -4670,6 +5318,9 @@
   const addSupplierBtn = document.getElementById('addSupplierBtn');
   const openPurchasingDeptMasterBtn = document.getElementById('openPurchasingDeptMasterBtn');
   const openUnitMasterBtn = document.getElementById('openUnitMasterBtn');
+  const openItemTypeMasterBtn = document.getElementById('openItemTypeMasterBtn');
+  const openItemGroupMasterBtn = document.getElementById('openItemGroupMasterBtn');
+  const openItemSubGroupMasterBtn = document.getElementById('openItemSubGroupMasterBtn');
   const openManufacturerMasterBtn = document.getElementById('openManufacturerMasterBtn');
   const refreshSuppliersBtn = document.getElementById('refreshSuppliersBtn');
   const printPoListBtn = document.getElementById('printPoListBtn');
@@ -4786,6 +5437,9 @@
   const workOrderList = document.getElementById('workOrderList');
   const itemList = document.getElementById('itemList');
   const poUnitList = document.getElementById('poUnitList');
+  const itemTypeMasterList = document.getElementById('itemTypeMasterList');
+  const itemGroupMasterList = document.getElementById('itemGroupMasterList');
+  const itemSubGroupMasterList = document.getElementById('itemSubGroupMasterList');
 
   const quickAddModal = document.getElementById('quickAddModal');
   const quickAddClose = document.getElementById('quickAddClose');
@@ -4827,6 +5481,8 @@
   const itemMasterLocation = document.getElementById('itemMasterLocation');
   const itemMasterPackSize = document.getElementById('itemMasterPackSize');
   const itemMasterRate = document.getElementById('itemMasterRate');
+  const itemMasterContractedRateField = document.getElementById('itemMasterContractedRateField');
+  const itemMasterContractedRate = document.getElementById('itemMasterContractedRate');
   const itemMasterMrp = document.getElementById('itemMasterMrp');
   const itemMasterGst = document.getElementById('itemMasterGst');
   const itemMasterExpiry = document.getElementById('itemMasterExpiry');
@@ -4941,6 +5597,45 @@
   const unitMasterList = document.getElementById('unitMasterList');
   const unitMasterTableBody = document.getElementById('unitMasterTableBody');
   const unitMasterCount = document.getElementById('unitMasterCount');
+  const itemTypeMasterModal = document.getElementById('itemTypeMasterModal');
+  const itemTypeMasterClose = document.getElementById('itemTypeMasterClose');
+  const itemTypeMasterReset = document.getElementById('itemTypeMasterReset');
+  const itemTypeMasterSave = document.getElementById('itemTypeMasterSave');
+  const itemTypeMasterAlert = document.getElementById('itemTypeMasterAlert');
+  const itemTypeMasterModeChip = document.getElementById('itemTypeMasterModeChip');
+  const itemTypeMasterSearch = document.getElementById('itemTypeMasterSearch');
+  const itemTypeMasterId = document.getElementById('itemTypeMasterId');
+  const itemTypeMasterCode = document.getElementById('itemTypeMasterCode');
+  const itemTypeMasterName = document.getElementById('itemTypeMasterName');
+  const itemTypeMasterTableBody = document.getElementById('itemTypeMasterTableBody');
+  const itemTypeMasterCount = document.getElementById('itemTypeMasterCount');
+  const itemGroupMasterModal = document.getElementById('itemGroupMasterModal');
+  const itemGroupMasterClose = document.getElementById('itemGroupMasterClose');
+  const itemGroupMasterReset = document.getElementById('itemGroupMasterReset');
+  const itemGroupMasterSave = document.getElementById('itemGroupMasterSave');
+  const itemGroupMasterAlert = document.getElementById('itemGroupMasterAlert');
+  const itemGroupMasterModeChip = document.getElementById('itemGroupMasterModeChip');
+  const itemGroupMasterSearch = document.getElementById('itemGroupMasterSearch');
+  const itemGroupMasterId = document.getElementById('itemGroupMasterId');
+  const itemGroupMasterType = document.getElementById('itemGroupMasterType');
+  const itemGroupMasterCode = document.getElementById('itemGroupMasterCode');
+  const itemGroupMasterName = document.getElementById('itemGroupMasterName');
+  const itemGroupMasterTableBody = document.getElementById('itemGroupMasterTableBody');
+  const itemGroupMasterCount = document.getElementById('itemGroupMasterCount');
+  const itemSubGroupMasterModal = document.getElementById('itemSubGroupMasterModal');
+  const itemSubGroupMasterClose = document.getElementById('itemSubGroupMasterClose');
+  const itemSubGroupMasterReset = document.getElementById('itemSubGroupMasterReset');
+  const itemSubGroupMasterSave = document.getElementById('itemSubGroupMasterSave');
+  const itemSubGroupMasterAlert = document.getElementById('itemSubGroupMasterAlert');
+  const itemSubGroupMasterModeChip = document.getElementById('itemSubGroupMasterModeChip');
+  const itemSubGroupMasterSearch = document.getElementById('itemSubGroupMasterSearch');
+  const itemSubGroupMasterId = document.getElementById('itemSubGroupMasterId');
+  const itemSubGroupMasterType = document.getElementById('itemSubGroupMasterType');
+  const itemSubGroupMasterGroup = document.getElementById('itemSubGroupMasterGroup');
+  const itemSubGroupMasterCode = document.getElementById('itemSubGroupMasterCode');
+  const itemSubGroupMasterName = document.getElementById('itemSubGroupMasterName');
+  const itemSubGroupMasterTableBody = document.getElementById('itemSubGroupMasterTableBody');
+  const itemSubGroupMasterCount = document.getElementById('itemSubGroupMasterCount');
 
   const supplierClose = document.getElementById('supplierClose');
   const supplierSave = document.getElementById('supplierSave');
@@ -5014,6 +5709,8 @@
     supplierById: new Map(),
     supplierByName: new Map(),
     supplierByCode: new Map(),
+    itemById: new Map(),
+    itemCandidatesByName: new Map(),
     itemByName: new Map(),
     itemByCode: new Map(),
     poListLoaded: false,
@@ -5066,6 +5763,7 @@
     itemByName: new Map(),
     unit: '',
     loaded: false,
+    saving: false,
   };
   const itemManufacturerState = {
     links: [],
@@ -5074,6 +5772,7 @@
     loadedForItemId: null,
     canDelink: true,
     busy: false,
+    lastCreated: null,
   };
   const supplierMasterState = {
     suppliers: [],
@@ -5086,6 +5785,7 @@
     unit: '',
     loaded: false,
     current: null,
+    saving: false,
   };
   const manufacturerMasterState = {
     manufacturers: [],
@@ -5121,6 +5821,45 @@
     },
     loaded: false,
   };
+  const itemTypeMasterState = {
+    itemTypes: [],
+    activeItemTypes: [],
+    itemTypeByDisplay: new Map(),
+    itemTypeByName: new Map(),
+    itemTypeByCode: new Map(),
+    itemTypeById: new Map(),
+    permissions: {
+      canDeactivate: false,
+    },
+    loaded: false,
+  };
+  const itemGroupMasterState = {
+    itemGroups: [],
+    activeItemGroups: [],
+    itemTypes: [],
+    itemGroupByDisplay: new Map(),
+    itemGroupByName: new Map(),
+    itemGroupByCode: new Map(),
+    itemGroupById: new Map(),
+    permissions: {
+      canDeactivate: false,
+    },
+    loaded: false,
+  };
+  const itemSubGroupMasterState = {
+    itemSubGroups: [],
+    activeItemSubGroups: [],
+    itemTypes: [],
+    itemGroups: [],
+    itemSubGroupByDisplay: new Map(),
+    itemSubGroupByName: new Map(),
+    itemSubGroupByCode: new Map(),
+    itemSubGroupById: new Map(),
+    permissions: {
+      canDeactivate: false,
+    },
+    loaded: false,
+  };
   let itemMasterManufacturerPending = null;
   let lastInitUnit = '';
   let lastWorkOrderInitUnit = '';
@@ -5150,6 +5889,12 @@
   const parseNumber = (val) => {
     const num = parseFloat(String(val || '').replace(/,/g, ''));
     return Number.isFinite(num) ? num : 0;
+  };
+  const parseNullableNumber = (val) => {
+    const raw = String(val ?? '').trim();
+    if (!raw) return null;
+    const num = parseFloat(raw.replace(/,/g, ''));
+    return Number.isFinite(num) ? num : null;
   };
   const parseFlag = (val, fallback = false) => {
     if (val === undefined || val === null || val === '') return !!fallback;
@@ -6592,6 +7337,17 @@
     target.classList.toggle('show', !!show);
   };
 
+  const buildApiErrorMessage = (payload, fallback = 'Request failed') => {
+    const base = String(payload?.message || fallback || 'Request failed').trim() || 'Request failed';
+    const errors = Array.isArray(payload?.errors)
+      ? payload.errors.map((entry) => String(entry || '').trim()).filter(Boolean)
+      : [];
+    if (!errors.length) return base;
+    const preview = errors.slice(0, 2).join(' ');
+    const more = errors.length > 2 ? ` (+${errors.length - 2} more)` : '';
+    return `${base}: ${preview}${more}`;
+  };
+
   const apiJson = async (url, options) => {
     const res = await fetch(url, options);
     const contentType = res.headers.get('content-type') || '';
@@ -6603,7 +7359,7 @@
       payload = { status: 'error', message: text };
     }
     if (!res.ok) {
-      throw new Error(payload.message || 'Request failed');
+      throw new Error(buildApiErrorMessage(payload));
     }
     return payload;
   };
@@ -6636,9 +7392,11 @@
     return '';
   };
   const NON_MEDICAL_UNITS = new Set(['AHLSTORE', 'CANCERUNITSTORE', 'BALLIASTORE']);
+  const CONTRACTED_RATE_UNITS = new Set(['AHL', 'ACI', 'BALLIA']);
   const ADHOC_DEFAULT_STORE_NAME = 'Main Store';
   const isSharpsightUnit = (unit) => String(unit || '').trim().toUpperCase() === 'SHARPSIGHT';
   const isNonMedicalUnit = (unit) => NON_MEDICAL_UNITS.has(String(unit || '').trim().toUpperCase());
+  const supportsContractedRateUnit = (unit) => CONTRACTED_RATE_UNITS.has(String(unit || '').trim().toUpperCase());
   const updateGrnEntryVisibility = (unitOverride = '') => {
     const allowed = isSharpsightUnit(unitOverride || getUnit());
     if (purchaseGrnCard) {
@@ -6666,15 +7424,24 @@
     });
   };
 
-  const syncAgainst = () => {
-    if (!againstSelect) return;
+  const getAgainstModeKey = () => {
+    if (!againstSelect) return '';
     const modeText = againstSelect.options[againstSelect.selectedIndex]?.text || againstSelect.value;
-    const modeKey = String(modeText || '').toLowerCase();
+    return String(modeText || '').toLowerCase();
+  };
+
+  const isEmergencyAgainstSelected = () => getAgainstModeKey().includes('emergency');
+
+  const syncAgainst = () => {
+    const modeKey = getAgainstModeKey();
     const isIndent = modeKey.includes('indent');
-    const isEmergency = modeKey.includes('emergency');
+    const isEmergency = isEmergencyAgainstSelected();
     if (indentGroup) indentGroup.style.display = isIndent ? 'block' : 'none';
     if (emergencyHint) emergencyHint.style.display = isEmergency ? 'flex' : 'none';
     if (quickAddBtn) quickAddBtn.style.display = isEmergency ? 'inline-flex' : 'none';
+    if (isEmergency) {
+      applyAdhocStoreDefaultsToGrid();
+    }
   };
 
 
@@ -7555,6 +8322,268 @@
     if (gstField) gstField.value = formatMoney(pct);
   };
 
+  const updateItemMasterContractedRateField = (unitOverride = '') => {
+    const enabled = supportsContractedRateUnit(unitOverride || getUnit());
+    if (itemMasterContractedRateField) {
+      itemMasterContractedRateField.style.display = enabled ? '' : 'none';
+    }
+    if (itemMasterContractedRate) {
+      itemMasterContractedRate.disabled = !enabled;
+      if (!enabled) {
+        itemMasterContractedRate.value = '';
+        itemMasterContractedRate.classList.remove('field-error');
+      }
+    }
+  };
+
+  const getCatalogItemActualRate = (item) => {
+    const actualRate = parseNullableNumber(
+      item?.ActualRate ??
+      item?.LastActualRate ??
+      item?.LastPoRate ??
+      item?.ItemRate
+    );
+    return actualRate ?? 0;
+  };
+
+  const getCatalogItemContractedRate = (item) => {
+    const contractedRate = parseNullableNumber(item?.ContractedRate ?? item?.contracted_rate);
+    return contractedRate !== null && contractedRate > 0 ? contractedRate : null;
+  };
+
+  const getCatalogItemStoreValue = (item) => String(
+    item?.Code ??
+    item?.StoreName ??
+    item?.Location ??
+    item?.ItemCode ??
+    item?.itemcode ??
+    ''
+  ).trim();
+
+  const getCatalogItemUnitValue = (item) => String(
+    item?.UnitName ??
+    item?.Unit ??
+    item?.unit ??
+    ''
+  ).trim();
+
+  const getCatalogItemPackSizeValue = (item) => String(
+    item?.packsizeid ??
+    item?.PackSizeId ??
+    item?.packsize_id ??
+    item?.PackSizeID ??
+    item?.pack_size_id ??
+    ''
+  ).trim();
+
+  const chooseCatalogItemCandidate = (candidates, context = {}) => {
+    const options = Array.isArray(candidates) ? candidates.filter(Boolean) : [];
+    if (!options.length) return null;
+    if (options.length === 1) return options[0];
+
+    const storeKey = normalizeCatalogCode(context.storeValue || '');
+    const unitKey = normalize(context.unitValue || '');
+    const packKey = String(context.packSizeValue || '').trim();
+    const activeUnit = String(context.unitCode || getUnit() || '').trim().toUpperCase();
+
+    let bestItem = options[0];
+    let bestScore = -Infinity;
+    options.forEach((item, index) => {
+      const itemStoreKey = normalizeCatalogCode(getCatalogItemStoreValue(item));
+      const itemUnitKey = normalize(getCatalogItemUnitValue(item));
+      const itemPackKey = getCatalogItemPackSizeValue(item);
+      const contractedRate = getCatalogItemContractedRate(item);
+      const actualRate = getCatalogItemActualRate(item);
+      const mrp = parseNumber(item?.MRP ?? item?.Mrp ?? item?.mrp);
+      const tax = parseNumber(item?.VAT ?? item?.Tax ?? item?.tax);
+      const stock = parseNumber(item?.CurrentStock ?? item?.Stock ?? item?.current_stock);
+      const last30 = parseNumber(item?.Last30Days ?? item?.LastMonthIssue ?? item?.LastMonth ?? item?.last_30_days);
+
+      let score = 0;
+      if (storeKey) score += itemStoreKey === storeKey ? 160 : -60;
+      if (unitKey) score += itemUnitKey === unitKey ? 50 : -15;
+      if (packKey) score += itemPackKey === packKey ? 45 : -10;
+      if (supportsContractedRateUnit(activeUnit) && contractedRate !== null) score += storeKey ? 80 : 100;
+      if (actualRate > 0) score += 20;
+      if (mrp > 0) score += 8;
+      if (tax > 0) score += 6;
+      if (last30 > 0) score += 4;
+      if (stock > 0) score += 2;
+      score -= index * 0.001;
+
+      if (score > bestScore) {
+        bestScore = score;
+        bestItem = item;
+      }
+    });
+    return bestItem;
+  };
+
+  const resolveCatalogItemByName = (nameValue, context = {}) => {
+    const nameKey = normalize(nameValue);
+    if (!nameKey) return null;
+    const candidates = state.itemCandidatesByName.get(nameKey) || [];
+    return chooseCatalogItemCandidate(candidates, context);
+  };
+
+  const ratesMatch = (left, right) => Math.abs(parseNumber(left) - parseNumber(right)) < 0.005;
+
+  const getRowRateSourceButton = (row, source) => row?.querySelector(`.cell-rate-source-btn[data-source="${source}"]`);
+
+  const updateRowRateSourceState = (row, source) => {
+    const wrap = row?.querySelector('.cell-rate-source-wrap');
+    const stateChip = row?.querySelector('.cell-rate-source-state');
+    const actualRate = parseNullableNumber(row.dataset.actualRate) ?? 0;
+    const contractedRate = parseNullableNumber(row.dataset.contractedRate);
+    const currentRate = parseNumber(row.querySelector('.cell-rate')?.value);
+    let stateKey = 'actual';
+    let label = 'Last';
+    let amount = actualRate;
+    let title = actualRate > 0 ? `Last GRN/PO Rate (${formatMoney(actualRate)})` : 'Last GRN/PO Rate';
+
+    if (source === 'contracted' && contractedRate !== null) {
+      stateKey = 'contracted';
+      label = 'Contract';
+      amount = contractedRate;
+      title = `Contracted Rate (${formatMoney(contractedRate)})`;
+    } else if (source === 'manual') {
+      stateKey = 'manual';
+      label = 'Manual';
+      amount = currentRate;
+      title = `Manual Rate (${formatMoney(currentRate)})`;
+    }
+
+    if (wrap) {
+      wrap.dataset.state = stateKey;
+      wrap.title = title;
+    }
+    if (!stateChip) return;
+    stateChip.dataset.state = stateKey;
+    stateChip.textContent = `${label} | ${formatMoney(amount)}`;
+    stateChip.title = title;
+  };
+
+  const syncRowRateSourceButtons = (row) => {
+    const actualButton = getRowRateSourceButton(row, 'actual');
+    const contractedButton = getRowRateSourceButton(row, 'contracted');
+    if (!actualButton || !contractedButton) return;
+    const actualRate = parseNullableNumber(row.dataset.actualRate) ?? 0;
+    const contractedRate = parseNullableNumber(row.dataset.contractedRate);
+    actualButton.title = actualRate > 0 ? `Last GRN/PO Rate (${formatMoney(actualRate)})` : 'Use last GRN/PO rate';
+    contractedButton.title = contractedRate !== null ? `Contracted Rate (${formatMoney(contractedRate)})` : 'Use contracted rate';
+  };
+
+  const setRowRateSourceSelection = (row, source) => {
+    const actualButton = getRowRateSourceButton(row, 'actual');
+    const contractedButton = getRowRateSourceButton(row, 'contracted');
+    if (!actualButton || !contractedButton) return;
+    const normalizedSource = source === 'contracted' ? 'contracted' : source === 'manual' ? 'manual' : 'actual';
+    [actualButton, contractedButton].forEach((button) => {
+      const isActive = normalizedSource !== 'manual' && button.dataset.source === normalizedSource;
+      button.classList.toggle('is-active', isActive);
+      button.setAttribute('aria-pressed', isActive ? 'true' : 'false');
+    });
+    row.dataset.rateSource = normalizedSource;
+    updateRowRateSourceState(row, normalizedSource);
+  };
+
+  const resolveRowRateSourceByValue = (row, currentRateOverride = null) => {
+    if (!row) return 'actual';
+    const currentRate = currentRateOverride === null ? parseNumber(row.querySelector('.cell-rate')?.value) : parseNumber(currentRateOverride);
+    const actualRate = parseNullableNumber(row.dataset.actualRate);
+    const contractedRate = parseNullableNumber(row.dataset.contractedRate);
+    if (actualRate !== null && ratesMatch(currentRate, actualRate)) {
+      return 'actual';
+    }
+    if (contractedRate !== null && ratesMatch(currentRate, contractedRate)) {
+      return 'contracted';
+    }
+    return 'manual';
+  };
+
+  const applyRowRateSource = (row, source) => {
+    if (!row) return;
+    const rateField = row.querySelector('.cell-rate');
+    if (!rateField) return;
+    if (source === 'manual') {
+      setRowRateSourceSelection(row, 'manual');
+      return;
+    }
+    const actualRate = parseNullableNumber(row.dataset.actualRate) ?? 0;
+    const contractedRate = parseNullableNumber(row.dataset.contractedRate);
+    const useContracted = source === 'contracted' && contractedRate !== null;
+    rateField.value = formatMoney(useContracted ? contractedRate : actualRate);
+    setRowRateSourceSelection(row, useContracted ? 'contracted' : 'actual');
+  };
+
+  const configureRowRateSource = (row, item, options = {}) => {
+    if (!row) return;
+    const wrap = row.querySelector('.cell-rate-source-wrap');
+    const rateField = row.querySelector('.cell-rate');
+    const actualButton = getRowRateSourceButton(row, 'actual');
+    const contractedButton = getRowRateSourceButton(row, 'contracted');
+    if (!wrap || !rateField || !actualButton || !contractedButton) return;
+
+    const actualRate = item ? getCatalogItemActualRate(item) : (parseNullableNumber(row.dataset.actualRate) ?? 0);
+    const contractedRate = item ? getCatalogItemContractedRate(item) : parseNullableNumber(row.dataset.contractedRate);
+    row.dataset.actualRate = formatMoney(actualRate);
+    row.dataset.contractedRate = contractedRate === null ? '' : formatMoney(contractedRate);
+    syncRowRateSourceButtons(row);
+
+    const showSelector = supportsContractedRateUnit(getUnit()) && contractedRate !== null;
+    wrap.hidden = !showSelector;
+    actualButton.disabled = !showSelector;
+    contractedButton.disabled = !showSelector;
+    if (!showSelector) {
+      if (!options.preserveCurrentRate) {
+        rateField.value = formatMoney(actualRate);
+      }
+      row.dataset.rateSource = '';
+      [actualButton, contractedButton].forEach((button) => {
+        button.classList.remove('is-active');
+        button.setAttribute('aria-pressed', 'false');
+      });
+      updateRowRateSourceState(row, 'actual');
+      return;
+    }
+
+    if (options.preserveCurrentRate) {
+      setRowRateSourceSelection(row, resolveRowRateSourceByValue(row, rateField.value));
+      return;
+    }
+
+    const preferredSource = options.preferredSource === 'contracted' ? 'contracted' : 'actual';
+    applyRowRateSource(row, preferredSource);
+  };
+
+  const getCatalogItemForRow = (row) => {
+    if (!row) return null;
+    const itemId = parseNumber(row.querySelector('.cell-item-id')?.value);
+    if (itemId && state.itemById.has(itemId)) {
+      return state.itemById.get(itemId);
+    }
+    return resolveCatalogItemByName(row.querySelector('.cell-item-name')?.value, {
+      storeValue: row.querySelector('.cell-item-code')?.value,
+      unitValue: row.querySelector('.cell-unit')?.value,
+      packSizeValue: row.querySelector('.cell-packsize')?.value,
+      unitCode: getUnit(),
+    });
+  };
+
+  const refreshGridRateSourceChoices = (options = {}) => {
+    if (!tableBody) return;
+    tableBody.querySelectorAll('tr').forEach((row) => {
+      configureRowRateSource(row, getCatalogItemForRow(row), options);
+    });
+  };
+
+  const syncRowRateSourceFromValue = (row) => {
+    if (!row) return;
+    const wrap = row.querySelector('.cell-rate-source-wrap');
+    if (!wrap || wrap.hidden) return;
+    setRowRateSourceSelection(row, resolveRowRateSourceByValue(row));
+  };
+
   const calculateRow = (row) => {
     if (!row) return;
     const rowBase = buildRowCommercials(row);
@@ -7569,6 +8598,13 @@
       if (input.offsetParent === null) return false;
       return true;
     });
+  };
+
+  const preventFocusedQtyWheelChange = (e, selector) => {
+    const input = e.target.closest(selector);
+    if (!input) return;
+    if (document.activeElement !== input) return;
+    e.preventDefault();
   };
 
   const focusNextRow = (row) => {
@@ -7721,15 +8757,26 @@
   };
 
   const populateItems = () => {
+    state.itemById.clear();
+    state.itemCandidatesByName.clear();
     state.itemByName.clear();
     state.itemByCode.clear();
     if (itemList) itemList.innerHTML = '';
+    const renderedNames = new Set();
     state.items.forEach((item) => {
+      const itemId = parseNumber(item.ID || item.Id || item.ItemId || item.item_id);
       const name = String(item.ItemName || item.Name || item.itemname || '').trim();
       const itemCode = String(item.ItemCode || item.itemcode || '').trim();
+      if (itemId) {
+        state.itemById.set(itemId, item);
+      }
       if (name) {
-        state.itemByName.set(normalize(name), item);
-        if (itemList) {
+        const nameKey = normalize(name);
+        const candidates = state.itemCandidatesByName.get(nameKey) || [];
+        candidates.push(item);
+        state.itemCandidatesByName.set(nameKey, candidates);
+        if (itemList && !renderedNames.has(nameKey)) {
+          renderedNames.add(nameKey);
           const opt = document.createElement('option');
           opt.value = name;
           itemList.appendChild(opt);
@@ -7739,9 +8786,16 @@
         state.itemByCode.set(normalize(itemCode), item);
       }
     });
+    state.itemCandidatesByName.forEach((candidates, nameKey) => {
+      const resolved = chooseCatalogItemCandidate(candidates, { unitCode: getUnit() });
+      if (resolved) {
+        state.itemByName.set(nameKey, resolved);
+      }
+    });
   };
 
   const normalizeUnitCode = (value) => String(value || '').trim().toUpperCase().replace(/\s+/g, '');
+  const normalizeCatalogCode = (value) => String(value || '').trim().toUpperCase().replace(/\s+/g, ' ');
   const getUnitRowName = (unitRow) => String(
     unitRow?.name ??
     unitRow?.Name ??
@@ -7835,6 +8889,18 @@
     if (current) select.value = current;
   };
 
+  const ensureSelectHasOption = (select, value, label = '') => {
+    const optionValue = String(value || '').trim();
+    if (!select || !optionValue) return;
+    const exists = Array.from(select.options || []).some((option) => String(option.value || '').trim() === optionValue);
+    if (exists) return;
+    const option = document.createElement('option');
+    option.value = optionValue;
+    option.textContent = String(label || optionValue).trim() || optionValue;
+    option.dataset.legacyOption = 'true';
+    select.appendChild(option);
+  };
+
   const setItemMasterMode = (modeLabel) => {
     if (itemMasterModeChip) itemMasterModeChip.textContent = `Mode: ${modeLabel}`;
   };
@@ -7870,6 +8936,86 @@
     itemManufacturerStatus.textContent = message || '';
   };
 
+  const getPendingItemManufacturerSelection = () => {
+    const raw = String(itemMasterManufacturerSearch?.value || '').trim();
+    const hiddenId = parseNumber(itemMasterManufacturerId?.value);
+    const match = raw ? resolveItemManufacturerMatch(raw) : null;
+    if (match && parseNumber(match.id)) {
+      if (itemMasterManufacturerId) itemMasterManufacturerId.value = match.id || '';
+      return { raw, manufacturer: match, invalid: false };
+    }
+    if (hiddenId) {
+      const lookup = manufacturerMasterState.manufacturers.find(
+        (manufacturer) => parseNumber(manufacturer.id) === hiddenId
+      ) || itemManufacturerState.links.find(
+        (link) => parseNumber(link.manufacturer_id || link.id) === hiddenId
+      );
+      if (lookup) {
+        return {
+          raw: raw || formatManufacturerDisplay(lookup),
+          manufacturer: {
+            id: lookup.id || lookup.manufacturer_id || hiddenId,
+            name: lookup.name || '',
+            code: lookup.code || '',
+          },
+          invalid: false,
+        };
+      }
+    }
+    if (raw) return { raw, manufacturer: null, invalid: true };
+    return { raw: '', manufacturer: null, invalid: false };
+  };
+
+  const syncItemManufacturerStatus = () => {
+    const itemId = parseNumber(itemMasterId?.value);
+    const selection = getPendingItemManufacturerSelection();
+    if (selection.manufacturer && parseNumber(selection.manufacturer.id)) {
+      const selectedId = parseNumber(selection.manufacturer.id);
+      const alreadyLinked = itemManufacturerState.links.some(
+        (link) => parseNumber(link.manufacturer_id || link.id) === selectedId
+      );
+      if (alreadyLinked) {
+        setItemManufacturerStatus('Manufacturer already linked. Save Item if you want to keep this selection while updating the item.');
+        return;
+      }
+      setItemManufacturerStatus(
+        itemId
+          ? 'Manufacturer selected. Save Item to link it now from this same modal.'
+          : 'Manufacturer selected. Save Item will create the item and link it in one flow.'
+      );
+      return;
+    }
+    if (selection.invalid) {
+      setItemManufacturerStatus('Manufacturer not found. Click Add New Manufacturer to create it without losing this item form.');
+      return;
+    }
+    if (itemId) {
+      setItemManufacturerStatus(
+        itemManufacturerState.links.length
+          ? `Linked manufacturers: ${itemManufacturerState.links.length}. Select another manufacturer and Save Item to add it.`
+          : 'Select a manufacturer and Save Item to link it.'
+      );
+      return;
+    }
+    setItemManufacturerStatus('Select an existing manufacturer or add a new one here. Save Item will link it automatically.');
+  };
+
+  const buildItemSaveFailureMessage = (message, selection) => {
+    const baseMessage = String(message || 'Failed to save item.').trim();
+    const createdManufacturerId = parseNumber(itemManufacturerState.lastCreated?.id);
+    const selectedManufacturerId = parseNumber(selection?.manufacturer?.id);
+    if (!createdManufacturerId || !selectedManufacturerId || createdManufacturerId !== selectedManufacturerId) {
+      return baseMessage;
+    }
+    if (/created earlier and remains selected/i.test(baseMessage)) {
+      return baseMessage;
+    }
+    const manufacturerLabel = formatManufacturerDisplay(itemManufacturerState.lastCreated)
+      || itemManufacturerState.lastCreated?.name
+      || 'The new manufacturer';
+    return `${baseMessage} ${manufacturerLabel} was created earlier and remains selected. Fix the item details and save again to complete linking.`;
+  };
+
   const populateItemManufacturerList = (manufacturers) => {
     if (!itemManufacturerList) return;
     itemManufacturerList.innerHTML = '';
@@ -7896,7 +9042,7 @@
     if (!itemId) {
       const msg = document.createElement('div');
       msg.className = 'item-manufacturer-empty';
-      msg.textContent = 'Save the item to manage manufacturer links.';
+      msg.textContent = 'The manufacturer you select here will be linked when you save the item.';
       itemManufacturerLinks.appendChild(msg);
       return;
     }
@@ -7949,6 +9095,7 @@
       itemManufacturerState.loadedForItemId = null;
       itemManufacturerState.busy = false;
       renderItemManufacturerLinks();
+      syncItemManufacturerStatus();
       return false;
     }
     try {
@@ -7962,8 +9109,7 @@
       itemManufacturerState.loadedForItemId = idVal;
       itemManufacturerState.canDelink = data.can_delink !== false;
       renderItemManufacturerLinks();
-      const linkedCount = itemManufacturerState.links.length;
-      setItemManufacturerStatus(linkedCount ? `Linked manufacturers: ${linkedCount}` : 'No manufacturers linked yet.');
+      syncItemManufacturerStatus();
       return true;
     } catch (err) {
       setItemManufacturerStatus('Failed to load linked manufacturers.');
@@ -8069,11 +9215,13 @@
   const resetItemManufacturerForm = () => {
     if (itemMasterManufacturerSearch) itemMasterManufacturerSearch.value = '';
     if (itemMasterManufacturerId) itemMasterManufacturerId.value = '';
+    itemMasterManufacturerSearch?.classList.remove('field-error');
     itemManufacturerState.links = [];
     itemManufacturerState.loadedForItemId = null;
     itemManufacturerState.busy = false;
+    itemManufacturerState.lastCreated = null;
     renderItemManufacturerLinks();
-    setItemManufacturerStatus('Linked manufacturers will appear here.');
+    syncItemManufacturerStatus();
   };
 
   const updateItemMasterTechnicalSpecsMeta = () => {
@@ -8098,20 +9246,25 @@
     }
   };
 
-  const loadItemMasterList = async () => {
+  const loadItemMasterList = async (options = {}) => {
+    const quiet = !!options?.quiet;
     const unit = getUnit();
     if (!unit) return false;
     try {
       const data = await apiJson(`/api/purchase/item_master/list?unit=${encodeURIComponent(unit)}`);
       if (data.status !== 'success') {
-        setItemMasterAlert(data.message || 'Failed to load item list.', 'error');
+        if (!quiet) {
+          setItemMasterAlert(data.message || 'Failed to load item list.', 'error');
+        }
         return false;
       }
       itemMasterState.items = data.items || [];
       populateItemMasterList(itemMasterState.items);
       return true;
     } catch (err) {
-      setItemMasterAlert(err.message || 'Failed to load item list.', 'error');
+      if (!quiet) {
+        setItemMasterAlert(err.message || 'Failed to load item list.', 'error');
+      }
       return false;
     }
   };
@@ -8120,6 +9273,10 @@
     if (!itemId) return false;
     try {
       showItemMasterLoading('Loading item details... Please wait.');
+      itemManufacturerState.lastCreated = null;
+      if (itemMasterManufacturerSearch) itemMasterManufacturerSearch.value = '';
+      if (itemMasterManufacturerId) itemMasterManufacturerId.value = '';
+      itemMasterManufacturerSearch?.classList.remove('field-error');
       const data = await apiJson(`/api/purchase/item_master/details?unit=${encodeURIComponent(getUnit())}&item_id=${encodeURIComponent(itemId)}`);
       if (data.status !== 'success') {
         setItemMasterAlert(data.message || 'Failed to load item details.', 'error');
@@ -8134,12 +9291,20 @@
       if (itemMasterTechnicalSpecs) itemMasterTechnicalSpecs.value = item.technical_specs || '';
       updateItemMasterTechnicalSpecsMeta();
       if (itemMasterProductCode) itemMasterProductCode.value = item.product_code || '';
+      ensureSelectHasOption(itemMasterType, item.item_type_id, item.item_type_name || item.item_type_id);
       if (itemMasterType) itemMasterType.value = item.item_type_id || '';
-      await loadItemMasterGroups(item.item_type_id, item.item_group_id, item.sub_group_id);
+      await loadItemMasterGroups(
+        item.item_type_id,
+        item.item_group_id,
+        item.sub_group_id,
+        item.item_group_name,
+        item.sub_group_name,
+      );
       if (itemMasterUnit) itemMasterUnit.value = item.unit_id || '';
       if (itemMasterLocation) itemMasterLocation.value = item.location_id || '';
       if (itemMasterPackSize) itemMasterPackSize.value = item.pack_size_id || '';
       if (itemMasterRate) itemMasterRate.value = item.standard_rate ?? '';
+      if (itemMasterContractedRate) itemMasterContractedRate.value = item.contracted_rate ?? '';
       if (itemMasterMrp) itemMasterMrp.value = item.sales_price ?? '';
       if (itemMasterGst) itemMasterGst.value = item.sales_tax ?? '';
       if (itemMasterExpiry) itemMasterExpiry.checked = !!item.expiry_required;
@@ -8149,6 +9314,7 @@
       if (itemMasterActive) itemMasterActive.checked = item.active !== 0 && item.active !== '0';
       setItemMasterMode('Update');
       await loadItemManufacturerLinks(item.id || itemId);
+      syncItemManufacturerStatus();
       return true;
     } catch (err) {
       setItemMasterAlert(err.message || 'Failed to load item details.', 'error');
@@ -8158,7 +9324,13 @@
     }
   };
 
-  const loadItemMasterGroups = async (typeId, selectedGroupId = '', selectedSubgroupId = '') => {
+  const loadItemMasterGroups = async (
+    typeId,
+    selectedGroupId = '',
+    selectedSubgroupId = '',
+    selectedGroupName = '',
+    selectedSubgroupName = '',
+  ) => {
     const typeVal = parseNumber(typeId);
     if (!typeVal) {
       populateItemMasterSelect(itemMasterGroup, []);
@@ -8174,10 +9346,11 @@
       }
       itemMasterState.groups = data.groups || [];
       populateItemMasterSelect(itemMasterGroup, itemMasterState.groups);
+      ensureSelectHasOption(itemMasterGroup, selectedGroupId, selectedGroupName || selectedGroupId);
       if (selectedGroupId) {
         itemMasterGroup.value = selectedGroupId;
       }
-      await loadItemMasterSubgroups(itemMasterGroup?.value, selectedSubgroupId);
+      await loadItemMasterSubgroups(itemMasterGroup?.value, selectedSubgroupId, selectedSubgroupName);
       return true;
     } catch (err) {
       setItemMasterAlert(err.message || 'Failed to load groups.', 'error');
@@ -8187,7 +9360,7 @@
     }
   };
 
-  const loadItemMasterSubgroups = async (groupId, selectedSubgroupId = '') => {
+  const loadItemMasterSubgroups = async (groupId, selectedSubgroupId = '', selectedSubgroupName = '') => {
     const groupVal = parseNumber(groupId);
     if (!groupVal) {
       populateItemMasterSelect(itemMasterSubGroup, []);
@@ -8202,6 +9375,7 @@
       }
       itemMasterState.subgroups = data.subgroups || [];
       populateItemMasterSelect(itemMasterSubGroup, itemMasterState.subgroups);
+      ensureSelectHasOption(itemMasterSubGroup, selectedSubgroupId, selectedSubgroupName || selectedSubgroupId);
       if (selectedSubgroupId) {
         itemMasterSubGroup.value = selectedSubgroupId;
       }
@@ -8234,6 +9408,7 @@
     if (itemMasterId) itemMasterId.value = '';
     if (itemMasterCode) itemMasterCode.value = '';
     if (itemMasterRate) itemMasterRate.value = '';
+    if (itemMasterContractedRate) itemMasterContractedRate.value = '';
     if (itemMasterMrp) itemMasterMrp.value = '';
     if (itemMasterGst) itemMasterGst.value = '';
     if (itemMasterExpiry) itemMasterExpiry.checked = true;
@@ -8242,6 +9417,7 @@
     if (itemMasterLoose) itemMasterLoose.checked = false;
     if (itemMasterActive) itemMasterActive.checked = true;
     resetItemManufacturerForm();
+    updateItemMasterContractedRateField();
     if (applyDefaults) applyItemMasterDefaults();
     setItemMasterAlert('', '');
     setItemMasterMode('Add');
@@ -8300,12 +9476,53 @@
     }
   };
 
+  const invalidateItemMasterReferenceData = () => {
+    itemMasterState.loaded = false;
+    itemMasterState.unit = '';
+  };
+
+  const refreshItemMasterReferenceData = async () => {
+    invalidateItemMasterReferenceData();
+    if (!itemMasterModal?.classList.contains('open')) {
+      return true;
+    }
+    const current = {
+      typeId: itemMasterType?.value || '',
+      typeName: itemMasterType?.selectedOptions?.[0]?.textContent || '',
+      groupId: itemMasterGroup?.value || '',
+      groupName: itemMasterGroup?.selectedOptions?.[0]?.textContent || '',
+      subGroupId: itemMasterSubGroup?.value || '',
+      subGroupName: itemMasterSubGroup?.selectedOptions?.[0]?.textContent || '',
+      unitId: itemMasterUnit?.value || '',
+      locationId: itemMasterLocation?.value || '',
+      packSizeId: itemMasterPackSize?.value || '',
+    };
+    const ok = await loadItemMasterInit(true);
+    if (!ok) return false;
+    ensureSelectHasOption(itemMasterType, current.typeId, current.typeName);
+    if (current.typeId && itemMasterType) {
+      itemMasterType.value = current.typeId;
+      await loadItemMasterGroups(
+        current.typeId,
+        current.groupId,
+        current.subGroupId,
+        current.groupName,
+        current.subGroupName,
+      );
+    }
+    if (current.unitId && itemMasterUnit) itemMasterUnit.value = current.unitId;
+    if (current.locationId && itemMasterLocation) itemMasterLocation.value = current.locationId;
+    if (current.packSizeId && itemMasterPackSize) itemMasterPackSize.value = current.packSizeId;
+    return true;
+  };
+
   const openItemMasterModal = async () => {
     const unit = getUnit();
     if (!unit) {
       setAlert('Please select a unit before adding item masters.', 'warn');
       return;
     }
+    updateItemMasterContractedRateField(unit);
     if (itemMasterModal) itemMasterModal.classList.add('open');
     const ready = await loadItemMasterInit(false);
     if (!ready) return;
@@ -8332,6 +9549,9 @@
       setItemMasterAlert('Please select a unit before saving.', 'warn');
       return;
     }
+    if (itemMasterState.saving) {
+      return;
+    }
     const fields = [
       itemMasterName,
       itemMasterDesc,
@@ -8339,13 +9559,18 @@
       itemMasterLocation,
       itemMasterPackSize,
       itemMasterRate,
+      itemMasterContractedRate,
       itemMasterMrp,
       itemMasterGst,
     ];
     fields.forEach((field) => field?.classList.remove('field-error'));
+    itemMasterManufacturerSearch?.classList.remove('field-error');
     updateItemMasterDescMeta();
+    const manufacturerSelection = getPendingItemManufacturerSelection();
 
     const gstRaw = itemMasterGst?.value;
+    const contractedRateRaw = itemMasterContractedRate?.value;
+    const contractedRateVal = supportsContractedRateUnit(unit) ? parseNullableNumber(contractedRateRaw) : null;
     const descriptiveNameRaw = String(itemMasterDesc?.value || '');
     const payload = {
       item_id: parseNumber(itemMasterId?.value),
@@ -8361,6 +9586,7 @@
       location_id: parseNumber(itemMasterLocation?.value),
       pack_size_id: parseNumber(itemMasterPackSize?.value),
       rate: parseNumber(itemMasterRate?.value),
+      contracted_rate: contractedRateVal,
       mrp: parseNumber(itemMasterMrp?.value),
       gst_pct: parseNumber(gstRaw),
       expiry_required: !!itemMasterExpiry?.checked,
@@ -8370,6 +9596,13 @@
       active: !!itemMasterActive?.checked,
       vat_on: 'P',
     };
+
+    if (manufacturerSelection.invalid) {
+      itemMasterManufacturerSearch?.classList.add('field-error');
+      setItemMasterAlert('Manufacturer not found. Select an existing manufacturer or add a new one before saving.', 'warn');
+      syncItemManufacturerStatus();
+      return;
+    }
 
     if (descriptiveNameRaw.length > ITEM_MASTER_DESC_MAX_LEN) {
       itemMasterDesc?.classList.add('field-error');
@@ -8404,7 +9637,12 @@
       missing.push('mrp');
       itemMasterMrp?.classList.add('field-error');
     }
-    if (!String(gstRaw || '').trim() || payload.gst_pct < 0) {
+    if (supportsContractedRateUnit(unit) && contractedRateVal !== null && contractedRateVal < 0) {
+      itemMasterContractedRate?.classList.add('field-error');
+      setItemMasterAlert('Contracted Rate cannot be negative.', 'warn');
+      return;
+    }
+    if (!String(gstRaw ?? '').trim() || payload.gst_pct < 0) {
       missing.push('gst');
       itemMasterGst?.classList.add('field-error');
     }
@@ -8414,59 +9652,92 @@
     }
 
     try {
-      showItemMasterLoading('Saving item master... Please wait.');
-      if (itemMasterSave) itemMasterSave.disabled = true;
+      itemMasterState.saving = true;
       const isUpdate = !!payload.item_id;
+      showItemMasterLoading(`${isUpdate ? 'Updating' : 'Saving'} item master... Please wait.`);
+      if (itemMasterSave) itemMasterSave.disabled = true;
       const res = await apiJson('/api/purchase/item_master', {
         method: 'POST',
         headers: { 'Content-Type': 'application/json' },
-        body: JSON.stringify({ unit, item: payload }),
+        body: JSON.stringify({
+          unit,
+          item: payload,
+          manufacturer_id: parseNumber(manufacturerSelection.manufacturer?.id),
+        }),
       });
       if (res.status === 'success') {
-        await refreshItems();
-        await loadItemMasterList();
-        const alertType = res.mirror_status === 'partial' ? 'warn' : 'success';
+        const itemsRefreshed = await refreshItems({ quiet: true });
+        const listReloaded = await loadItemMasterList({ quiet: true });
+        const refreshFailed = !itemsRefreshed || !listReloaded;
+        const alertType = (res.mirror_status === 'partial' || refreshFailed) ? 'warn' : 'success';
         const defaultMessage = `${isUpdate ? 'Item updated' : 'Item saved'} (ID ${res.item_id}).`;
-        setItemMasterAlert(res.message || defaultMessage, alertType);
+        let alertMessage = res.message || defaultMessage;
+        if (refreshFailed) {
+          const refreshHint = !itemsRefreshed && !listReloaded
+            ? 'Item catalogs could not be refreshed automatically. Please use Refresh Items and reopen Item Master.'
+            : !itemsRefreshed
+              ? 'PO item catalog could not be refreshed automatically. Please use Refresh Items.'
+              : 'Item Master list could not be refreshed automatically. Please reopen Item Master.';
+          alertMessage = `${alertMessage} ${refreshHint}`;
+        }
+        itemManufacturerState.lastCreated = null;
         resetItemMasterForm(true);
         if (indentCategorySelect?.value) {
           indentState.itemsCatalogType = null;
           indentState.itemsCatalog = [];
           indentState.itemsCatalogIndex = [];
         }
+        setItemMasterAlert(alertMessage, alertType);
       } else {
-        setItemMasterAlert(res.message || 'Failed to save item.', 'error');
+        setItemMasterAlert(buildItemSaveFailureMessage(res.message || 'Failed to save item.', manufacturerSelection), 'error');
+        syncItemManufacturerStatus();
       }
     } catch (err) {
-      setItemMasterAlert(err.message || 'Failed to save item.', 'error');
+      setItemMasterAlert(buildItemSaveFailureMessage(err.message || 'Failed to save item.', manufacturerSelection), 'error');
+      syncItemManufacturerStatus();
     } finally {
+      itemMasterState.saving = false;
       if (itemMasterSave) itemMasterSave.disabled = false;
       clearItemMasterLoading();
     }
   };
 
-  const refreshItems = async () => {
+  const refreshItems = async (options = {}) => {
+    const quiet = !!options?.quiet;
     const unit = getUnit();
     if (!unit) {
-      setAlert('Please select a unit to refresh items.', 'warn');
+      if (!quiet) {
+        setAlert('Please select a unit to refresh items.', 'warn');
+      }
       return false;
     }
     try {
-      showLoading('Refreshing item list... Please wait.');
+      if (!quiet) {
+        showLoading('Refreshing item list... Please wait.');
+      }
       const data = await apiJson(`/api/purchase/items_last_rate?unit=${encodeURIComponent(unit)}`);
       if (data.status !== 'success') {
-        setAlert(data.message || 'Failed to refresh items.', 'error');
+        if (!quiet) {
+          setAlert(data.message || 'Failed to refresh items.', 'error');
+        }
         return false;
       }
       state.items = data.items || [];
       populateItems();
-      setAlert('Item list refreshed.', 'success');
+      refreshGridRateSourceChoices({ preserveCurrentRate: true });
+      if (!quiet) {
+        setAlert('Item list refreshed.', 'success');
+      }
       return true;
     } catch (err) {
-      setAlert(err.message || 'Failed to refresh items.', 'error');
+      if (!quiet) {
+        setAlert(err.message || 'Failed to refresh items.', 'error');
+      }
       return false;
     } finally {
-      clearLoading();
+      if (!quiet) {
+        clearLoading();
+      }
     }
   };
 
@@ -8480,6 +9751,7 @@
     if (unitSyncing) return;
     const unit = unitValue || getUnit();
     if (unit) syncUnitSelectors(unit);
+    updateItemMasterContractedRateField(unit);
     syncPoPrintFormatControls('standard', { unitValue: unit });
     poInitLoaded = false;
     workOrderInitLoaded = false;
@@ -8530,6 +9802,33 @@
     unitMasterState.unitByCode.clear();
     unitMasterState.unitById.clear();
     unitMasterState.permissions = { canDeactivate: false };
+    itemTypeMasterState.loaded = false;
+    itemTypeMasterState.itemTypes = [];
+    itemTypeMasterState.activeItemTypes = [];
+    itemTypeMasterState.itemTypeByDisplay.clear();
+    itemTypeMasterState.itemTypeByName.clear();
+    itemTypeMasterState.itemTypeByCode.clear();
+    itemTypeMasterState.itemTypeById.clear();
+    itemTypeMasterState.permissions = { canDeactivate: false };
+    itemGroupMasterState.loaded = false;
+    itemGroupMasterState.itemGroups = [];
+    itemGroupMasterState.activeItemGroups = [];
+    itemGroupMasterState.itemTypes = [];
+    itemGroupMasterState.itemGroupByDisplay.clear();
+    itemGroupMasterState.itemGroupByName.clear();
+    itemGroupMasterState.itemGroupByCode.clear();
+    itemGroupMasterState.itemGroupById.clear();
+    itemGroupMasterState.permissions = { canDeactivate: false };
+    itemSubGroupMasterState.loaded = false;
+    itemSubGroupMasterState.itemSubGroups = [];
+    itemSubGroupMasterState.activeItemSubGroups = [];
+    itemSubGroupMasterState.itemTypes = [];
+    itemSubGroupMasterState.itemGroups = [];
+    itemSubGroupMasterState.itemSubGroupByDisplay.clear();
+    itemSubGroupMasterState.itemSubGroupByName.clear();
+    itemSubGroupMasterState.itemSubGroupByCode.clear();
+    itemSubGroupMasterState.itemSubGroupById.clear();
+    itemSubGroupMasterState.permissions = { canDeactivate: false };
     state.unitMasters = [];
     state.unitMasterSourceUnit = '';
     populatePoUnitSuggestions();
@@ -10093,6 +11392,9 @@
       manufacturerMasterState.loaded = true;
       populateManufacturerMasterList(manufacturerMasterState.manufacturers);
       populateItemManufacturerList(manufacturerMasterState.manufacturers);
+      if (itemMasterModal?.classList.contains('open') || itemMasterModal?.dataset?.suspended === 'true') {
+        syncItemManufacturerStatus();
+      }
       setManufacturerMasterAlert('', '');
       return true;
     } catch (err) {
@@ -10262,6 +11564,9 @@
       setManufacturerMasterAlert('Please select a unit before saving a manufacturer.', 'warn');
       return;
     }
+    if (manufacturerMasterState.saving) {
+      return;
+    }
     const name = (manufacturerName?.value || '').trim();
     const code = (manufacturerCode?.value || '').trim();
     const cityId = parseNumber(manufacturerCityId?.value);
@@ -10305,6 +11610,7 @@
       active: !!manufacturerActive?.checked,
     };
     try {
+      manufacturerMasterState.saving = true;
       showManufacturerMasterLoading('Saving manufacturer... Please wait.');
       if (manufacturerSave) manufacturerSave.disabled = true;
       const res = await apiJson('/api/purchase/manufacturer_master', {
@@ -10324,15 +11630,20 @@
           const display = formatManufacturerDisplay(match);
           if (itemMasterManufacturerSearch) itemMasterManufacturerSearch.value = display;
           if (itemMasterManufacturerId) itemMasterManufacturerId.value = match.id || savedId || '';
-          if (itemMasterModal?.classList.contains('open')) {
-            const itemId = parseNumber(itemMasterId?.value);
-            if (itemId) {
-              await linkItemManufacturer(match);
-            } else {
-              setItemMasterAlert('Manufacturer saved. Save the item to link it.', 'warn');
-            }
-          }
+          itemManufacturerState.lastCreated = {
+            id: match.id || savedId || '',
+            name: match.name || pending.name || name,
+            code: match.code || code || '',
+          };
           closeManufacturerModal();
+          syncItemManufacturerStatus();
+          setItemMasterAlert(
+            parseNumber(itemMasterId?.value)
+              ? 'Manufacturer saved and selected. Save Item to link it now.'
+              : 'Manufacturer saved and selected. Save Item will create the item and link it in one flow.',
+            'success'
+          );
+          return;
         }
         if (res.mode === 'update') {
           setManufacturerMasterAlert(`Manufacturer updated (ID ${res.manufacturer_id}).`, 'success');
@@ -10347,6 +11658,7 @@
     } catch (err) {
       setManufacturerMasterAlert(err.message || 'Failed to save manufacturer.', 'error');
     } finally {
+      manufacturerMasterState.saving = false;
       if (manufacturerSave) manufacturerSave.disabled = false;
       clearManufacturerMasterLoading();
     }
@@ -11058,6 +12370,957 @@
     }
   };
 
+  const isCatalogMasterActive = (row) => parseFlag(row?.is_active, true);
+
+  const formatCatalogMasterDisplay = (row) => {
+    if (!row) return '';
+    const id = parseNumber(row.id);
+    const name = String(row.name || '').trim();
+    const code = normalizeCatalogCode(row.code || '');
+    if (!name && !code) return '';
+    const label = [name, code ? `[${code}]` : ''].filter(Boolean).join(' ').trim();
+    return id ? `${label} - ID ${id}` : label;
+  };
+
+  const setItemTypeMasterAlert = (message, type) => setChannelAlert(message, type, 'item-type-master');
+  const showItemTypeMasterLoading = (message) => setItemTypeMasterAlert(message, 'loading');
+  const clearItemTypeMasterLoading = () => clearChannelLoading('item-type-master');
+  const setItemTypeMasterMode = (modeLabel) => {
+    if (itemTypeMasterModeChip) itemTypeMasterModeChip.textContent = `Mode: ${modeLabel}`;
+  };
+  const setItemTypeMasterPermissions = (payload = {}) => {
+    itemTypeMasterState.permissions = {
+      canDeactivate: parseFlag(payload.can_deactivate, false),
+    };
+  };
+
+  const renderItemTypeMasterRows = (rows) => {
+    if (!itemTypeMasterTableBody) return;
+    itemTypeMasterTableBody.innerHTML = '';
+    const records = Array.isArray(rows) ? rows : [];
+    const canDeactivate = !!itemTypeMasterState.permissions?.canDeactivate;
+    if (!records.length) {
+      itemTypeMasterTableBody.innerHTML = '<tr><td colspan="5" class="master-empty">No item types found.</td></tr>';
+      if (itemTypeMasterCount) itemTypeMasterCount.textContent = '0 records';
+      return;
+    }
+    let activeCount = 0;
+    records.forEach((row) => {
+      const id = parseNumber(row.id);
+      const name = String(row.name || '').trim();
+      const code = normalizeCatalogCode(row.code || '');
+      const isActive = isCatalogMasterActive(row);
+      if (!id || !name) return;
+      if (isActive) activeCount += 1;
+      const statusPill = isActive
+        ? '<span class="pill" data-status="approved">Active</span>'
+        : '<span class="pill" data-status="draft">Inactive</span>';
+      const actionButtons = [
+        `<button class="btn ghost small" type="button" data-action="edit-item-type-master" data-id="${id}">Edit</button>`,
+      ];
+      if (canDeactivate) {
+        actionButtons.push(
+          `<button class="btn ghost small" type="button" data-action="${isActive ? 'deactivate-item-type-master' : 'activate-item-type-master'}" data-id="${id}" data-name="${name.replace(/"/g, '&quot;')}">${isActive ? 'Deactivate' : 'Activate'}</button>`
+        );
+      }
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="id">${id}</td>
+        <td class="code">${code || '-'}</td>
+        <td>${name}</td>
+        <td class="status">${statusPill}</td>
+        <td class="actions"><div class="master-action-row">${actionButtons.join('')}</div></td>
+      `;
+      itemTypeMasterTableBody.appendChild(tr);
+    });
+    if (!itemTypeMasterTableBody.children.length) {
+      itemTypeMasterTableBody.innerHTML = '<tr><td colspan="5" class="master-empty">No item types found.</td></tr>';
+    }
+    if (itemTypeMasterCount) {
+      const count = records.length;
+      const inactiveCount = Math.max(0, count - activeCount);
+      itemTypeMasterCount.textContent = `${count} record${count === 1 ? '' : 's'} (${activeCount} active, ${inactiveCount} inactive)`;
+    }
+  };
+
+  const populateItemTypeMasterList = (rows, activeRows = null) => {
+    itemTypeMasterState.itemTypes = Array.isArray(rows) ? rows : [];
+    itemTypeMasterState.activeItemTypes = Array.isArray(activeRows)
+      ? activeRows.filter((row) => isCatalogMasterActive(row))
+      : itemTypeMasterState.itemTypes.filter((row) => isCatalogMasterActive(row));
+    itemTypeMasterState.itemTypeByDisplay.clear();
+    itemTypeMasterState.itemTypeByName.clear();
+    itemTypeMasterState.itemTypeByCode.clear();
+    itemTypeMasterState.itemTypeById.clear();
+    if (itemTypeMasterList) itemTypeMasterList.innerHTML = '';
+    itemTypeMasterState.itemTypes.forEach((row) => {
+      const id = parseNumber(row.id);
+      const name = String(row.name || '').trim();
+      const code = normalizeCatalogCode(row.code || '');
+      const isActive = isCatalogMasterActive(row);
+      if (!id || !name) return;
+      const record = { id, name, code, is_active: isActive ? 1 : 0 };
+      itemTypeMasterState.itemTypeById.set(String(id), record);
+      itemTypeMasterState.itemTypeByName.set(normalize(name), record);
+      if (code) itemTypeMasterState.itemTypeByCode.set(normalize(code), record);
+      const display = formatCatalogMasterDisplay(record);
+      if (itemTypeMasterList && display) {
+        const opt = document.createElement('option');
+        opt.value = display;
+        itemTypeMasterList.appendChild(opt);
+        itemTypeMasterState.itemTypeByDisplay.set(normalize(display), record);
+      }
+    });
+    itemGroupMasterState.itemTypes = itemTypeMasterState.activeItemTypes.slice();
+    itemSubGroupMasterState.itemTypes = itemTypeMasterState.activeItemTypes.slice();
+    populateItemMasterSelect(itemGroupMasterType, itemGroupMasterState.itemTypes);
+    populateItemMasterSelect(itemSubGroupMasterType, itemSubGroupMasterState.itemTypes);
+    renderItemTypeMasterRows(itemTypeMasterState.itemTypes);
+  };
+
+  const resetItemTypeMasterForm = (keepAlert = false) => {
+    if (itemTypeMasterSearch) itemTypeMasterSearch.value = '';
+    if (itemTypeMasterId) itemTypeMasterId.value = '';
+    if (itemTypeMasterCode) itemTypeMasterCode.value = '';
+    if (itemTypeMasterName) itemTypeMasterName.value = '';
+    itemTypeMasterCode?.classList.remove('field-error');
+    itemTypeMasterName?.classList.remove('field-error');
+    if (!keepAlert) setItemTypeMasterAlert('', '');
+    setItemTypeMasterMode('Add');
+  };
+
+  const fillItemTypeMasterFromSelection = (row) => {
+    if (!row) return;
+    const id = parseNumber(row.id);
+    const name = String(row.name || '').trim();
+    const code = normalizeCatalogCode(row.code || '');
+    if (!id || !name) return;
+    if (itemTypeMasterId) itemTypeMasterId.value = id;
+    if (itemTypeMasterCode) itemTypeMasterCode.value = code;
+    if (itemTypeMasterName) itemTypeMasterName.value = name;
+    if (itemTypeMasterSearch) itemTypeMasterSearch.value = formatCatalogMasterDisplay({ id, name, code });
+    itemTypeMasterCode?.classList.remove('field-error');
+    itemTypeMasterName?.classList.remove('field-error');
+    setItemTypeMasterMode('Update');
+    setItemTypeMasterAlert('', '');
+  };
+
+  const loadItemTypeMasterList = async (force = false) => {
+    const unit = getUnit();
+    if (!unit) {
+      setItemTypeMasterAlert('Please select a unit before opening item type master.', 'warn');
+      return false;
+    }
+    if (!force && itemTypeMasterState.loaded) {
+      return true;
+    }
+    try {
+      showItemTypeMasterLoading('Loading item type master... Please wait.');
+      const data = await apiJson(`/api/purchase/item_type_master/list?unit=${encodeURIComponent(unit)}`);
+      if (data.status !== 'success') {
+        setItemTypeMasterAlert(data.message || 'Failed to load item type master.', 'error');
+        return false;
+      }
+      setItemTypeMasterPermissions(data.permissions || {});
+      populateItemTypeMasterList(data.item_types || [], data.active_item_types || []);
+      itemTypeMasterState.loaded = true;
+      setItemTypeMasterAlert('', '');
+      return true;
+    } catch (err) {
+      setItemTypeMasterAlert(err.message || 'Failed to load item type master.', 'error');
+      return false;
+    } finally {
+      clearItemTypeMasterLoading();
+    }
+  };
+
+  const openItemTypeMasterModal = async () => {
+    const unit = getUnit();
+    if (!unit) {
+      setAlert('Please select a unit before opening item type master.', 'warn');
+      return;
+    }
+    if (itemTypeMasterModal) itemTypeMasterModal.classList.add('open');
+    await loadItemTypeMasterList(false);
+    resetItemTypeMasterForm(true);
+    if (itemTypeMasterName) itemTypeMasterName.focus();
+  };
+
+  const closeItemTypeMasterModal = () => {
+    if (!itemTypeMasterModal) return;
+    itemTypeMasterModal.classList.remove('open');
+  };
+
+  const saveItemTypeMaster = async () => {
+    const unit = getUnit();
+    if (!unit) {
+      setItemTypeMasterAlert('Please select a unit before saving.', 'warn');
+      return;
+    }
+    const id = parseNumber(itemTypeMasterId?.value);
+    const name = String(itemTypeMasterName?.value || '').trim();
+    const code = normalizeCatalogCode(itemTypeMasterCode?.value || '');
+    itemTypeMasterCode?.classList.remove('field-error');
+    itemTypeMasterName?.classList.remove('field-error');
+    if (!name) {
+      itemTypeMasterName?.classList.add('field-error');
+      setItemTypeMasterAlert('Item type name is required.', 'warn');
+      return;
+    }
+    try {
+      showItemTypeMasterLoading('Saving item type... Please wait.');
+      if (itemTypeMasterSave) itemTypeMasterSave.disabled = true;
+      const res = await apiJson('/api/purchase/item_type_master', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unit,
+          item_type_master: {
+            id: id || 0,
+            code,
+            name,
+          },
+        }),
+      });
+      if (res.status !== 'success') {
+        setItemTypeMasterAlert(res.message || 'Failed to save item type.', 'error');
+        return;
+      }
+      setItemTypeMasterPermissions(res.permissions || itemTypeMasterState.permissions || {});
+      populateItemTypeMasterList(res.item_types || [], res.active_item_types || []);
+      itemTypeMasterState.loaded = true;
+      await refreshItemMasterReferenceData();
+      const savedId = parseNumber(res.item_type_id);
+      if (res.mode === 'update' && savedId) {
+        fillItemTypeMasterFromSelection({ id: savedId, name: res.item_type_name || name, code: res.item_type_code || code });
+        setItemTypeMasterAlert(`Item type updated (ID ${savedId}).`, 'success');
+      } else {
+        resetItemTypeMasterForm(true);
+        setItemTypeMasterAlert(`Item type saved (ID ${savedId || '-'}).`, 'success');
+      }
+    } catch (err) {
+      setItemTypeMasterAlert(err.message || 'Failed to save item type.', 'error');
+    } finally {
+      if (itemTypeMasterSave) itemTypeMasterSave.disabled = false;
+      clearItemTypeMasterLoading();
+    }
+  };
+
+  const runItemTypeMasterAction = async (action, recordId, recordName) => {
+    const unit = getUnit();
+    if (!unit) {
+      setItemTypeMasterAlert('Please select a unit before performing this action.', 'warn');
+      return;
+    }
+    const id = parseNumber(recordId);
+    if (!id) return;
+    const name = String(recordName || '').trim() || `ID ${id}`;
+    const actionKey = String(action || '').trim().toLowerCase();
+    if (!['activate', 'deactivate'].includes(actionKey)) return;
+    if (actionKey === 'deactivate') {
+      const ok = window.confirm(`Deactivate "${name}"? It will no longer appear in Item Master type dropdowns.`);
+      if (!ok) return;
+    }
+    try {
+      showItemTypeMasterLoading('Updating item type status... Please wait.');
+      const res = await apiJson('/api/purchase/item_type_master/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unit,
+          item_type_id: id,
+          action: actionKey,
+        }),
+      });
+      if (res.status !== 'success') {
+        setItemTypeMasterAlert(res.message || 'Action failed.', 'error');
+        return;
+      }
+      setItemTypeMasterPermissions(res.permissions || itemTypeMasterState.permissions || {});
+      populateItemTypeMasterList(res.item_types || [], res.active_item_types || []);
+      itemTypeMasterState.loaded = true;
+      await refreshItemMasterReferenceData();
+      const editingId = parseNumber(itemTypeMasterId?.value);
+      if (editingId === id) {
+        const latest = itemTypeMasterState.itemTypeById.get(String(id));
+        if (latest) fillItemTypeMasterFromSelection(latest);
+      }
+      setItemTypeMasterAlert(`Item type ${actionKey === 'deactivate' ? 'deactivated' : 'activated'} (${name}).`, 'success');
+    } catch (err) {
+      setItemTypeMasterAlert(err.message || 'Action failed.', 'error');
+    } finally {
+      clearItemTypeMasterLoading();
+    }
+  };
+
+  const setItemGroupMasterAlert = (message, type) => setChannelAlert(message, type, 'item-group-master');
+  const showItemGroupMasterLoading = (message) => setItemGroupMasterAlert(message, 'loading');
+  const clearItemGroupMasterLoading = () => clearChannelLoading('item-group-master');
+  const setItemGroupMasterMode = (modeLabel) => {
+    if (itemGroupMasterModeChip) itemGroupMasterModeChip.textContent = `Mode: ${modeLabel}`;
+  };
+  const setItemGroupMasterPermissions = (payload = {}) => {
+    itemGroupMasterState.permissions = {
+      canDeactivate: parseFlag(payload.can_deactivate, false),
+    };
+  };
+
+  const populateItemGroupTypeOptions = (selectedValue = '') => {
+    populateItemMasterSelect(itemGroupMasterType, itemGroupMasterState.itemTypes);
+    if (selectedValue && itemGroupMasterType) {
+      ensureSelectHasOption(itemGroupMasterType, selectedValue, selectedValue);
+      itemGroupMasterType.value = selectedValue;
+    }
+  };
+
+  const renderItemGroupMasterRows = (rows) => {
+    if (!itemGroupMasterTableBody) return;
+    itemGroupMasterTableBody.innerHTML = '';
+    const records = Array.isArray(rows) ? rows : [];
+    const canDeactivate = !!itemGroupMasterState.permissions?.canDeactivate;
+    if (!records.length) {
+      itemGroupMasterTableBody.innerHTML = '<tr><td colspan="6" class="master-empty">No item groups found.</td></tr>';
+      if (itemGroupMasterCount) itemGroupMasterCount.textContent = '0 records';
+      return;
+    }
+    let activeCount = 0;
+    records.forEach((row) => {
+      const id = parseNumber(row.id);
+      const name = String(row.name || '').trim();
+      const code = normalizeCatalogCode(row.code || '');
+      const typeName = String(row.type_name || '').trim();
+      const isActive = isCatalogMasterActive(row);
+      if (!id || !name) return;
+      if (isActive) activeCount += 1;
+      const statusPill = isActive
+        ? '<span class="pill" data-status="approved">Active</span>'
+        : '<span class="pill" data-status="draft">Inactive</span>';
+      const actionButtons = [
+        `<button class="btn ghost small" type="button" data-action="edit-item-group-master" data-id="${id}">Edit</button>`,
+      ];
+      if (canDeactivate) {
+        actionButtons.push(
+          `<button class="btn ghost small" type="button" data-action="${isActive ? 'deactivate-item-group-master' : 'activate-item-group-master'}" data-id="${id}" data-name="${name.replace(/"/g, '&quot;')}">${isActive ? 'Deactivate' : 'Activate'}</button>`
+        );
+      }
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="id">${id}</td>
+        <td class="code">${code || '-'}</td>
+        <td>${name}</td>
+        <td>${typeName || '-'}</td>
+        <td class="status">${statusPill}</td>
+        <td class="actions"><div class="master-action-row">${actionButtons.join('')}</div></td>
+      `;
+      itemGroupMasterTableBody.appendChild(tr);
+    });
+    if (!itemGroupMasterTableBody.children.length) {
+      itemGroupMasterTableBody.innerHTML = '<tr><td colspan="6" class="master-empty">No item groups found.</td></tr>';
+    }
+    if (itemGroupMasterCount) {
+      const count = records.length;
+      const inactiveCount = Math.max(0, count - activeCount);
+      itemGroupMasterCount.textContent = `${count} record${count === 1 ? '' : 's'} (${activeCount} active, ${inactiveCount} inactive)`;
+    }
+  };
+
+  const populateItemGroupMasterList = (rows, activeRows = null, itemTypes = null) => {
+    itemGroupMasterState.itemGroups = Array.isArray(rows) ? rows : [];
+    itemGroupMasterState.activeItemGroups = Array.isArray(activeRows)
+      ? activeRows.filter((row) => isCatalogMasterActive(row))
+      : itemGroupMasterState.itemGroups.filter((row) => isCatalogMasterActive(row));
+    if (Array.isArray(itemTypes)) {
+      itemGroupMasterState.itemTypes = itemTypes.filter((row) => isCatalogMasterActive(row));
+    }
+    itemGroupMasterState.itemGroupByDisplay.clear();
+    itemGroupMasterState.itemGroupByName.clear();
+    itemGroupMasterState.itemGroupByCode.clear();
+    itemGroupMasterState.itemGroupById.clear();
+    if (itemGroupMasterList) itemGroupMasterList.innerHTML = '';
+    itemGroupMasterState.itemGroups.forEach((row) => {
+      const id = parseNumber(row.id);
+      const name = String(row.name || '').trim();
+      const code = normalizeCatalogCode(row.code || '');
+      const typeId = parseNumber(row.type_id);
+      const typeName = String(row.type_name || '').trim();
+      const isActive = isCatalogMasterActive(row);
+      if (!id || !name) return;
+      const record = { id, name, code, type_id: typeId, type_name: typeName, is_active: isActive ? 1 : 0 };
+      itemGroupMasterState.itemGroupById.set(String(id), record);
+      itemGroupMasterState.itemGroupByName.set(normalize(name), record);
+      if (code) itemGroupMasterState.itemGroupByCode.set(normalize(code), record);
+      const display = formatCatalogMasterDisplay(record);
+      if (itemGroupMasterList && display) {
+        const opt = document.createElement('option');
+        opt.value = display;
+        itemGroupMasterList.appendChild(opt);
+        itemGroupMasterState.itemGroupByDisplay.set(normalize(display), record);
+      }
+    });
+    itemSubGroupMasterState.itemGroups = itemGroupMasterState.activeItemGroups.slice();
+    populateItemGroupTypeOptions(itemGroupMasterType?.value || '');
+    populateItemSubGroupGroupOptions(itemSubGroupMasterType?.value || '', itemSubGroupMasterGroup?.value || '');
+    renderItemGroupMasterRows(itemGroupMasterState.itemGroups);
+  };
+
+  const resetItemGroupMasterForm = (keepAlert = false) => {
+    if (itemGroupMasterSearch) itemGroupMasterSearch.value = '';
+    if (itemGroupMasterId) itemGroupMasterId.value = '';
+    if (itemGroupMasterType) itemGroupMasterType.value = '';
+    if (itemGroupMasterCode) itemGroupMasterCode.value = '';
+    if (itemGroupMasterName) itemGroupMasterName.value = '';
+    itemGroupMasterType?.classList.remove('field-error');
+    itemGroupMasterCode?.classList.remove('field-error');
+    itemGroupMasterName?.classList.remove('field-error');
+    if (!keepAlert) setItemGroupMasterAlert('', '');
+    setItemGroupMasterMode('Add');
+  };
+
+  const fillItemGroupMasterFromSelection = (row) => {
+    if (!row) return;
+    const id = parseNumber(row.id);
+    const name = String(row.name || '').trim();
+    const code = normalizeCatalogCode(row.code || '');
+    const typeId = parseNumber(row.type_id);
+    if (!id || !name) return;
+    if (itemGroupMasterId) itemGroupMasterId.value = id;
+    if (itemGroupMasterCode) itemGroupMasterCode.value = code;
+    if (itemGroupMasterName) itemGroupMasterName.value = name;
+    populateItemGroupTypeOptions(String(typeId || ''));
+    if (itemGroupMasterSearch) itemGroupMasterSearch.value = formatCatalogMasterDisplay({ id, name, code });
+    itemGroupMasterType?.classList.remove('field-error');
+    itemGroupMasterCode?.classList.remove('field-error');
+    itemGroupMasterName?.classList.remove('field-error');
+    setItemGroupMasterMode('Update');
+    setItemGroupMasterAlert('', '');
+  };
+
+  const loadItemGroupMasterList = async (force = false) => {
+    const unit = getUnit();
+    if (!unit) {
+      setItemGroupMasterAlert('Please select a unit before opening item group master.', 'warn');
+      return false;
+    }
+    if (!force && itemGroupMasterState.loaded) {
+      return true;
+    }
+    try {
+      showItemGroupMasterLoading('Loading item group master... Please wait.');
+      const data = await apiJson(`/api/purchase/item_group_master/list?unit=${encodeURIComponent(unit)}`);
+      if (data.status !== 'success') {
+        setItemGroupMasterAlert(data.message || 'Failed to load item group master.', 'error');
+        return false;
+      }
+      setItemGroupMasterPermissions(data.permissions || {});
+      populateItemGroupMasterList(data.item_groups || [], data.active_item_groups || [], data.item_types || []);
+      itemGroupMasterState.loaded = true;
+      setItemGroupMasterAlert('', '');
+      return true;
+    } catch (err) {
+      setItemGroupMasterAlert(err.message || 'Failed to load item group master.', 'error');
+      return false;
+    } finally {
+      clearItemGroupMasterLoading();
+    }
+  };
+
+  const openItemGroupMasterModal = async () => {
+    const unit = getUnit();
+    if (!unit) {
+      setAlert('Please select a unit before opening item group master.', 'warn');
+      return;
+    }
+    if (itemGroupMasterModal) itemGroupMasterModal.classList.add('open');
+    await loadItemGroupMasterList(false);
+    resetItemGroupMasterForm(true);
+    if (itemGroupMasterName) itemGroupMasterName.focus();
+  };
+
+  const closeItemGroupMasterModal = () => {
+    if (!itemGroupMasterModal) return;
+    itemGroupMasterModal.classList.remove('open');
+  };
+
+  const saveItemGroupMaster = async () => {
+    const unit = getUnit();
+    if (!unit) {
+      setItemGroupMasterAlert('Please select a unit before saving.', 'warn');
+      return;
+    }
+    const id = parseNumber(itemGroupMasterId?.value);
+    const typeId = parseNumber(itemGroupMasterType?.value);
+    const name = String(itemGroupMasterName?.value || '').trim();
+    const code = normalizeCatalogCode(itemGroupMasterCode?.value || '');
+    itemGroupMasterType?.classList.remove('field-error');
+    itemGroupMasterCode?.classList.remove('field-error');
+    itemGroupMasterName?.classList.remove('field-error');
+    if (!typeId) {
+      itemGroupMasterType?.classList.add('field-error');
+      setItemGroupMasterAlert('Item type selection is required.', 'warn');
+      return;
+    }
+    if (!name) {
+      itemGroupMasterName?.classList.add('field-error');
+      setItemGroupMasterAlert('Item group name is required.', 'warn');
+      return;
+    }
+    try {
+      showItemGroupMasterLoading('Saving item group... Please wait.');
+      if (itemGroupMasterSave) itemGroupMasterSave.disabled = true;
+      const res = await apiJson('/api/purchase/item_group_master', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unit,
+          item_group_master: {
+            id: id || 0,
+            type_id: typeId,
+            code,
+            name,
+          },
+        }),
+      });
+      if (res.status !== 'success') {
+        setItemGroupMasterAlert(res.message || 'Failed to save item group.', 'error');
+        return;
+      }
+      setItemGroupMasterPermissions(res.permissions || itemGroupMasterState.permissions || {});
+      populateItemGroupMasterList(res.item_groups || [], res.active_item_groups || [], res.item_types || []);
+      itemGroupMasterState.loaded = true;
+      await refreshItemMasterReferenceData();
+      const savedId = parseNumber(res.item_group_id);
+      if (res.mode === 'update' && savedId) {
+        fillItemGroupMasterFromSelection({
+          id: savedId,
+          name: res.item_group_name || name,
+          code: res.item_group_code || code,
+          type_id: typeId,
+        });
+        setItemGroupMasterAlert(`Item group updated (ID ${savedId}).`, 'success');
+      } else {
+        resetItemGroupMasterForm(true);
+        setItemGroupMasterAlert(`Item group saved (ID ${savedId || '-'}).`, 'success');
+      }
+    } catch (err) {
+      setItemGroupMasterAlert(err.message || 'Failed to save item group.', 'error');
+    } finally {
+      if (itemGroupMasterSave) itemGroupMasterSave.disabled = false;
+      clearItemGroupMasterLoading();
+    }
+  };
+
+  const runItemGroupMasterAction = async (action, recordId, recordName) => {
+    const unit = getUnit();
+    if (!unit) {
+      setItemGroupMasterAlert('Please select a unit before performing this action.', 'warn');
+      return;
+    }
+    const id = parseNumber(recordId);
+    if (!id) return;
+    const name = String(recordName || '').trim() || `ID ${id}`;
+    const actionKey = String(action || '').trim().toLowerCase();
+    if (!['activate', 'deactivate'].includes(actionKey)) return;
+    if (actionKey === 'deactivate') {
+      const ok = window.confirm(`Deactivate "${name}"? It will no longer appear in Item Master group dropdowns.`);
+      if (!ok) return;
+    }
+    try {
+      showItemGroupMasterLoading('Updating item group status... Please wait.');
+      const res = await apiJson('/api/purchase/item_group_master/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unit,
+          item_group_id: id,
+          action: actionKey,
+        }),
+      });
+      if (res.status !== 'success') {
+        setItemGroupMasterAlert(res.message || 'Action failed.', 'error');
+        return;
+      }
+      setItemGroupMasterPermissions(res.permissions || itemGroupMasterState.permissions || {});
+      populateItemGroupMasterList(res.item_groups || [], res.active_item_groups || [], res.item_types || []);
+      itemGroupMasterState.loaded = true;
+      itemSubGroupMasterState.itemGroups = itemGroupMasterState.activeItemGroups.slice();
+      await refreshItemMasterReferenceData();
+      const editingId = parseNumber(itemGroupMasterId?.value);
+      if (editingId === id) {
+        const latest = itemGroupMasterState.itemGroupById.get(String(id));
+        if (latest) fillItemGroupMasterFromSelection(latest);
+      }
+      setItemGroupMasterAlert(`Item group ${actionKey === 'deactivate' ? 'deactivated' : 'activated'} (${name}).`, 'success');
+    } catch (err) {
+      setItemGroupMasterAlert(err.message || 'Action failed.', 'error');
+    } finally {
+      clearItemGroupMasterLoading();
+    }
+  };
+
+  const setItemSubGroupMasterAlert = (message, type) => setChannelAlert(message, type, 'item-subgroup-master');
+  const showItemSubGroupMasterLoading = (message) => setItemSubGroupMasterAlert(message, 'loading');
+  const clearItemSubGroupMasterLoading = () => clearChannelLoading('item-subgroup-master');
+  const setItemSubGroupMasterMode = (modeLabel) => {
+    if (itemSubGroupMasterModeChip) itemSubGroupMasterModeChip.textContent = `Mode: ${modeLabel}`;
+  };
+  const setItemSubGroupMasterPermissions = (payload = {}) => {
+    itemSubGroupMasterState.permissions = {
+      canDeactivate: parseFlag(payload.can_deactivate, false),
+    };
+  };
+
+  const getItemSubGroupMasterGroupsForType = (typeId) => {
+    const targetTypeId = parseNumber(typeId);
+    if (!targetTypeId) return [];
+    return (itemSubGroupMasterState.itemGroups || []).filter((row) => parseNumber(row.type_id) === targetTypeId);
+  };
+
+  const populateItemSubGroupTypeOptions = (selectedValue = '') => {
+    populateItemMasterSelect(itemSubGroupMasterType, itemSubGroupMasterState.itemTypes);
+    if (selectedValue && itemSubGroupMasterType) {
+      ensureSelectHasOption(itemSubGroupMasterType, selectedValue, selectedValue);
+      itemSubGroupMasterType.value = selectedValue;
+    }
+  };
+
+  const populateItemSubGroupGroupOptions = (typeId = itemSubGroupMasterType?.value || '', selectedGroupId = '', selectedGroupName = '') => {
+    const filteredGroups = getItemSubGroupMasterGroupsForType(typeId);
+    populateItemMasterSelect(itemSubGroupMasterGroup, filteredGroups);
+    ensureSelectHasOption(itemSubGroupMasterGroup, selectedGroupId, selectedGroupName || selectedGroupId);
+    if (selectedGroupId && itemSubGroupMasterGroup) {
+      itemSubGroupMasterGroup.value = selectedGroupId;
+    }
+  };
+
+  const renderItemSubGroupMasterRows = (rows) => {
+    if (!itemSubGroupMasterTableBody) return;
+    itemSubGroupMasterTableBody.innerHTML = '';
+    const records = Array.isArray(rows) ? rows : [];
+    const canDeactivate = !!itemSubGroupMasterState.permissions?.canDeactivate;
+    if (!records.length) {
+      itemSubGroupMasterTableBody.innerHTML = '<tr><td colspan="7" class="master-empty">No item sub groups found.</td></tr>';
+      if (itemSubGroupMasterCount) itemSubGroupMasterCount.textContent = '0 records';
+      return;
+    }
+    let activeCount = 0;
+    records.forEach((row) => {
+      const id = parseNumber(row.id);
+      const name = String(row.name || '').trim();
+      const code = normalizeCatalogCode(row.code || '');
+      const typeName = String(row.type_name || '').trim();
+      const groupName = String(row.group_name || '').trim();
+      const isActive = isCatalogMasterActive(row);
+      if (!id || !name) return;
+      if (isActive) activeCount += 1;
+      const statusPill = isActive
+        ? '<span class="pill" data-status="approved">Active</span>'
+        : '<span class="pill" data-status="draft">Inactive</span>';
+      const actionButtons = [
+        `<button class="btn ghost small" type="button" data-action="edit-item-subgroup-master" data-id="${id}">Edit</button>`,
+      ];
+      if (canDeactivate) {
+        actionButtons.push(
+          `<button class="btn ghost small" type="button" data-action="${isActive ? 'deactivate-item-subgroup-master' : 'activate-item-subgroup-master'}" data-id="${id}" data-name="${name.replace(/"/g, '&quot;')}">${isActive ? 'Deactivate' : 'Activate'}</button>`
+        );
+      }
+      const tr = document.createElement('tr');
+      tr.innerHTML = `
+        <td class="id">${id}</td>
+        <td class="code">${code || '-'}</td>
+        <td>${name}</td>
+        <td>${typeName || '-'}</td>
+        <td>${groupName || '-'}</td>
+        <td class="status">${statusPill}</td>
+        <td class="actions"><div class="master-action-row">${actionButtons.join('')}</div></td>
+      `;
+      itemSubGroupMasterTableBody.appendChild(tr);
+    });
+    if (!itemSubGroupMasterTableBody.children.length) {
+      itemSubGroupMasterTableBody.innerHTML = '<tr><td colspan="7" class="master-empty">No item sub groups found.</td></tr>';
+    }
+    if (itemSubGroupMasterCount) {
+      const count = records.length;
+      const inactiveCount = Math.max(0, count - activeCount);
+      itemSubGroupMasterCount.textContent = `${count} record${count === 1 ? '' : 's'} (${activeCount} active, ${inactiveCount} inactive)`;
+    }
+  };
+
+  const populateItemSubGroupMasterList = (rows, activeRows = null, itemTypes = null, itemGroups = null) => {
+    itemSubGroupMasterState.itemSubGroups = Array.isArray(rows) ? rows : [];
+    itemSubGroupMasterState.activeItemSubGroups = Array.isArray(activeRows)
+      ? activeRows.filter((row) => isCatalogMasterActive(row))
+      : itemSubGroupMasterState.itemSubGroups.filter((row) => isCatalogMasterActive(row));
+    if (Array.isArray(itemTypes)) {
+      itemSubGroupMasterState.itemTypes = itemTypes.filter((row) => isCatalogMasterActive(row));
+    }
+    if (Array.isArray(itemGroups)) {
+      itemSubGroupMasterState.itemGroups = itemGroups.filter((row) => isCatalogMasterActive(row));
+    }
+    itemSubGroupMasterState.itemSubGroupByDisplay.clear();
+    itemSubGroupMasterState.itemSubGroupByName.clear();
+    itemSubGroupMasterState.itemSubGroupByCode.clear();
+    itemSubGroupMasterState.itemSubGroupById.clear();
+    if (itemSubGroupMasterList) itemSubGroupMasterList.innerHTML = '';
+    itemSubGroupMasterState.itemSubGroups.forEach((row) => {
+      const id = parseNumber(row.id);
+      const name = String(row.name || '').trim();
+      const code = normalizeCatalogCode(row.code || '');
+      const groupId = parseNumber(row.group_id);
+      const groupName = String(row.group_name || '').trim();
+      const typeId = parseNumber(row.type_id);
+      const typeName = String(row.type_name || '').trim();
+      const isActive = isCatalogMasterActive(row);
+      if (!id || !name) return;
+      const record = {
+        id,
+        name,
+        code,
+        group_id: groupId,
+        group_name: groupName,
+        type_id: typeId,
+        type_name: typeName,
+        is_active: isActive ? 1 : 0,
+      };
+      itemSubGroupMasterState.itemSubGroupById.set(String(id), record);
+      itemSubGroupMasterState.itemSubGroupByName.set(normalize(name), record);
+      if (code) itemSubGroupMasterState.itemSubGroupByCode.set(normalize(code), record);
+      const display = formatCatalogMasterDisplay(record);
+      if (itemSubGroupMasterList && display) {
+        const opt = document.createElement('option');
+        opt.value = display;
+        itemSubGroupMasterList.appendChild(opt);
+        itemSubGroupMasterState.itemSubGroupByDisplay.set(normalize(display), record);
+      }
+    });
+    populateItemSubGroupTypeOptions(itemSubGroupMasterType?.value || '');
+    populateItemSubGroupGroupOptions(itemSubGroupMasterType?.value || '', itemSubGroupMasterGroup?.value || '');
+    renderItemSubGroupMasterRows(itemSubGroupMasterState.itemSubGroups);
+  };
+
+  const resetItemSubGroupMasterForm = (keepAlert = false) => {
+    if (itemSubGroupMasterSearch) itemSubGroupMasterSearch.value = '';
+    if (itemSubGroupMasterId) itemSubGroupMasterId.value = '';
+    if (itemSubGroupMasterType) itemSubGroupMasterType.value = '';
+    if (itemSubGroupMasterGroup) itemSubGroupMasterGroup.value = '';
+    if (itemSubGroupMasterCode) itemSubGroupMasterCode.value = '';
+    if (itemSubGroupMasterName) itemSubGroupMasterName.value = '';
+    populateItemSubGroupGroupOptions('', '');
+    itemSubGroupMasterType?.classList.remove('field-error');
+    itemSubGroupMasterGroup?.classList.remove('field-error');
+    itemSubGroupMasterCode?.classList.remove('field-error');
+    itemSubGroupMasterName?.classList.remove('field-error');
+    if (!keepAlert) setItemSubGroupMasterAlert('', '');
+    setItemSubGroupMasterMode('Add');
+  };
+
+  const fillItemSubGroupMasterFromSelection = (row) => {
+    if (!row) return;
+    const id = parseNumber(row.id);
+    const name = String(row.name || '').trim();
+    const code = normalizeCatalogCode(row.code || '');
+    const typeId = parseNumber(row.type_id);
+    const groupId = parseNumber(row.group_id);
+    if (!id || !name) return;
+    if (itemSubGroupMasterId) itemSubGroupMasterId.value = id;
+    if (itemSubGroupMasterCode) itemSubGroupMasterCode.value = code;
+    if (itemSubGroupMasterName) itemSubGroupMasterName.value = name;
+    populateItemSubGroupTypeOptions(String(typeId || ''));
+    populateItemSubGroupGroupOptions(String(typeId || ''), String(groupId || ''), row.group_name || '');
+    if (itemSubGroupMasterSearch) itemSubGroupMasterSearch.value = formatCatalogMasterDisplay({ id, name, code });
+    itemSubGroupMasterType?.classList.remove('field-error');
+    itemSubGroupMasterGroup?.classList.remove('field-error');
+    itemSubGroupMasterCode?.classList.remove('field-error');
+    itemSubGroupMasterName?.classList.remove('field-error');
+    setItemSubGroupMasterMode('Update');
+    setItemSubGroupMasterAlert('', '');
+  };
+
+  const loadItemSubGroupMasterList = async (force = false) => {
+    const unit = getUnit();
+    if (!unit) {
+      setItemSubGroupMasterAlert('Please select a unit before opening item sub group master.', 'warn');
+      return false;
+    }
+    if (!force && itemSubGroupMasterState.loaded) {
+      return true;
+    }
+    try {
+      showItemSubGroupMasterLoading('Loading item sub group master... Please wait.');
+      const data = await apiJson(`/api/purchase/item_subgroup_master/list?unit=${encodeURIComponent(unit)}`);
+      if (data.status !== 'success') {
+        setItemSubGroupMasterAlert(data.message || 'Failed to load item sub group master.', 'error');
+        return false;
+      }
+      setItemSubGroupMasterPermissions(data.permissions || {});
+      populateItemSubGroupMasterList(
+        data.item_subgroups || [],
+        data.active_item_subgroups || [],
+        data.item_types || [],
+        data.item_groups || [],
+      );
+      itemSubGroupMasterState.loaded = true;
+      setItemSubGroupMasterAlert('', '');
+      return true;
+    } catch (err) {
+      setItemSubGroupMasterAlert(err.message || 'Failed to load item sub group master.', 'error');
+      return false;
+    } finally {
+      clearItemSubGroupMasterLoading();
+    }
+  };
+
+  const openItemSubGroupMasterModal = async () => {
+    const unit = getUnit();
+    if (!unit) {
+      setAlert('Please select a unit before opening item sub group master.', 'warn');
+      return;
+    }
+    if (itemSubGroupMasterModal) itemSubGroupMasterModal.classList.add('open');
+    await loadItemSubGroupMasterList(false);
+    resetItemSubGroupMasterForm(true);
+    if (itemSubGroupMasterName) itemSubGroupMasterName.focus();
+  };
+
+  const closeItemSubGroupMasterModal = () => {
+    if (!itemSubGroupMasterModal) return;
+    itemSubGroupMasterModal.classList.remove('open');
+  };
+
+  const saveItemSubGroupMaster = async () => {
+    const unit = getUnit();
+    if (!unit) {
+      setItemSubGroupMasterAlert('Please select a unit before saving.', 'warn');
+      return;
+    }
+    const id = parseNumber(itemSubGroupMasterId?.value);
+    const typeId = parseNumber(itemSubGroupMasterType?.value);
+    const groupId = parseNumber(itemSubGroupMasterGroup?.value);
+    const name = String(itemSubGroupMasterName?.value || '').trim();
+    const code = normalizeCatalogCode(itemSubGroupMasterCode?.value || '');
+    itemSubGroupMasterType?.classList.remove('field-error');
+    itemSubGroupMasterGroup?.classList.remove('field-error');
+    itemSubGroupMasterCode?.classList.remove('field-error');
+    itemSubGroupMasterName?.classList.remove('field-error');
+    if (!typeId) {
+      itemSubGroupMasterType?.classList.add('field-error');
+      setItemSubGroupMasterAlert('Item type selection is required.', 'warn');
+      return;
+    }
+    if (!groupId) {
+      itemSubGroupMasterGroup?.classList.add('field-error');
+      setItemSubGroupMasterAlert('Item group selection is required.', 'warn');
+      return;
+    }
+    if (!name) {
+      itemSubGroupMasterName?.classList.add('field-error');
+      setItemSubGroupMasterAlert('Item sub group name is required.', 'warn');
+      return;
+    }
+    try {
+      showItemSubGroupMasterLoading('Saving item sub group... Please wait.');
+      if (itemSubGroupMasterSave) itemSubGroupMasterSave.disabled = true;
+      const res = await apiJson('/api/purchase/item_subgroup_master', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unit,
+          item_subgroup_master: {
+            id: id || 0,
+            type_id: typeId,
+            group_id: groupId,
+            code,
+            name,
+          },
+        }),
+      });
+      if (res.status !== 'success') {
+        setItemSubGroupMasterAlert(res.message || 'Failed to save item sub group.', 'error');
+        return;
+      }
+      setItemSubGroupMasterPermissions(res.permissions || itemSubGroupMasterState.permissions || {});
+      populateItemSubGroupMasterList(
+        res.item_subgroups || [],
+        res.active_item_subgroups || [],
+        res.item_types || [],
+        res.item_groups || [],
+      );
+      itemSubGroupMasterState.loaded = true;
+      await refreshItemMasterReferenceData();
+      const savedId = parseNumber(res.item_subgroup_id);
+      if (res.mode === 'update' && savedId) {
+        fillItemSubGroupMasterFromSelection({
+          id: savedId,
+          name: res.item_subgroup_name || name,
+          code: res.item_subgroup_code || code,
+          type_id: typeId,
+          group_id: groupId,
+          group_name: itemSubGroupMasterGroup?.selectedOptions?.[0]?.textContent || '',
+        });
+        setItemSubGroupMasterAlert(`Item sub group updated (ID ${savedId}).`, 'success');
+      } else {
+        resetItemSubGroupMasterForm(true);
+        setItemSubGroupMasterAlert(`Item sub group saved (ID ${savedId || '-'}).`, 'success');
+      }
+    } catch (err) {
+      setItemSubGroupMasterAlert(err.message || 'Failed to save item sub group.', 'error');
+    } finally {
+      if (itemSubGroupMasterSave) itemSubGroupMasterSave.disabled = false;
+      clearItemSubGroupMasterLoading();
+    }
+  };
+
+  const runItemSubGroupMasterAction = async (action, recordId, recordName) => {
+    const unit = getUnit();
+    if (!unit) {
+      setItemSubGroupMasterAlert('Please select a unit before performing this action.', 'warn');
+      return;
+    }
+    const id = parseNumber(recordId);
+    if (!id) return;
+    const name = String(recordName || '').trim() || `ID ${id}`;
+    const actionKey = String(action || '').trim().toLowerCase();
+    if (!['activate', 'deactivate'].includes(actionKey)) return;
+    if (actionKey === 'deactivate') {
+      const ok = window.confirm(`Deactivate "${name}"? It will no longer appear in Item Master sub group dropdowns.`);
+      if (!ok) return;
+    }
+    try {
+      showItemSubGroupMasterLoading('Updating item sub group status... Please wait.');
+      const res = await apiJson('/api/purchase/item_subgroup_master/action', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          unit,
+          item_subgroup_id: id,
+          action: actionKey,
+        }),
+      });
+      if (res.status !== 'success') {
+        setItemSubGroupMasterAlert(res.message || 'Action failed.', 'error');
+        return;
+      }
+      setItemSubGroupMasterPermissions(res.permissions || itemSubGroupMasterState.permissions || {});
+      populateItemSubGroupMasterList(
+        res.item_subgroups || [],
+        res.active_item_subgroups || [],
+        res.item_types || [],
+        res.item_groups || [],
+      );
+      itemSubGroupMasterState.loaded = true;
+      await refreshItemMasterReferenceData();
+      const editingId = parseNumber(itemSubGroupMasterId?.value);
+      if (editingId === id) {
+        const latest = itemSubGroupMasterState.itemSubGroupById.get(String(id));
+        if (latest) fillItemSubGroupMasterFromSelection(latest);
+      }
+      setItemSubGroupMasterAlert(`Item sub group ${actionKey === 'deactivate' ? 'deactivated' : 'activated'} (${name}).`, 'success');
+    } catch (err) {
+      setItemSubGroupMasterAlert(err.message || 'Action failed.', 'error');
+    } finally {
+      clearItemSubGroupMasterLoading();
+    }
+  };
+
   const populateIndentOptions = (indents) => {
     if (!indentSelect) return;
     indentSelect.innerHTML = '<option value="">Select indent</option>';
@@ -11123,10 +13386,13 @@
         packField.value = String(packId);
       }
     }
-    if (rateField) rateField.value = formatMoney(parseNumber(item.LastPoRate || item.ItemRate || 0));
+    if (rateField) {
+      configureRowRateSource(row, item, { preferredSource: 'actual' });
+    }
 
     const gstPct = parseNumber(item.VAT || item.Tax || 0);
     applyTaxPercent(row, gstPct);
+    applyAdhocStoreDefault(row);
   };
 
   const fillRowFromPoDetail = (row, item) => {
@@ -11161,15 +13427,115 @@
     const gstAmtField = row.querySelector('.cell-gst-amt');
     if (gstPctField) gstPctField.value = formatMoney(gstPct);
     if (gstAmtField) gstAmtField.value = formatMoney(gstAmt);
+    configureRowRateSource(row, getCatalogItemForRow(row), { preserveCurrentRate: true });
+  };
+
+  const rowHasPoEntry = (row) => {
+    if (!row) return false;
+    const name = (row.querySelector('.cell-item-name')?.value || '').trim();
+    const itemId = parseNumber(row.querySelector('.cell-item-id')?.value);
+    const qty = parseNumber(row.querySelector('.cell-qty')?.value);
+    const freeQty = parseNumber(row.querySelector('.cell-free')?.value);
+    const rate = parseNumber(row.querySelector('.cell-rate')?.value);
+    const discount = parseNumber(row.querySelector('.cell-discount')?.value);
+    const mrp = parseNumber(row.querySelector('.cell-mrp-display')?.value);
+    const gst = parseNumber(row.querySelector('.cell-gst-rate')?.value);
+    const forAmt = parseNumber(row.querySelector('.cell-for')?.value);
+    const netAmt = parseNumber(row.querySelector('.cell-net')?.value);
+    return Boolean(
+      name
+      || itemId
+      || qty
+      || freeQty
+      || rate
+      || discount
+      || mrp
+      || gst
+      || forAmt
+      || netAmt
+    );
+  };
+
+  const clearRowCatalogSelection = (row) => {
+    if (!row) return;
+    const itemIdField = row.querySelector('.cell-item-id');
+    const stockField = row.querySelector('.cell-stock');
+    const last30Field = row.querySelector('.cell-last30');
+    if (itemIdField) itemIdField.value = '';
+    if (stockField) stockField.value = formatMoney(0);
+    if (last30Field) last30Field.value = formatMoney(0);
+    row.dataset.actualRate = '';
+    row.dataset.contractedRate = '';
+    configureRowRateSource(row, null, { preserveCurrentRate: true });
   };
 
   const lookupItemForRow = (row) => {
     if (!row) return;
-    const nameVal = normalize(row.querySelector('.cell-item-name')?.value);
-    const match = nameVal ? state.itemByName.get(nameVal) : null;
+    const name = (row.querySelector('.cell-item-name')?.value || '').trim();
+    const match = resolveCatalogItemByName(row.querySelector('.cell-item-name')?.value, {
+      storeValue: row.querySelector('.cell-item-code')?.value,
+      unitValue: row.querySelector('.cell-unit')?.value,
+      packSizeValue: row.querySelector('.cell-packsize')?.value,
+      unitCode: getUnit(),
+    });
     if (match) {
       fillRowFromItem(row, match);
+      return;
     }
+    clearRowCatalogSelection(row);
+    if (name) {
+      applyAdhocStoreDefault(row);
+    }
+  };
+
+  const syncRowItemTypingState = (row) => {
+    if (!row) return;
+    const nameField = row.querySelector('.cell-item-name');
+    const itemIdField = row.querySelector('.cell-item-id');
+    const hiddenItemId = parseNumber(itemIdField?.value);
+    if (!nameField || !hiddenItemId || !state.itemById.has(hiddenItemId)) return;
+    const selectedItem = state.itemById.get(hiddenItemId);
+    const selectedName = String(selectedItem?.ItemName || selectedItem?.Name || '').trim();
+    const typedValue = String(nameField.value || '');
+    const typedTrimmed = typedValue.trim();
+    const isContinuingName = typedValue !== typedTrimmed;
+    if (!typedTrimmed || isContinuingName || normalize(typedTrimmed) !== normalize(selectedName)) {
+      clearRowCatalogSelection(row);
+      if (typedTrimmed) applyAdhocStoreDefault(row);
+    }
+  };
+
+  const shouldLookupItemOnInput = (event) => {
+    const inputType = String(event?.inputType || '');
+    if (!inputType) return false;
+    return inputType === 'insertReplacementText';
+  };
+
+  const resolveRowItemState = (row, options = {}) => {
+    if (!row) return { itemId: 0, match: null };
+    const name = (row.querySelector('.cell-item-name')?.value || '').trim();
+    const hiddenItemId = parseNumber(row.querySelector('.cell-item-id')?.value);
+    const match = name ? resolveCatalogItemByName(name, {
+      storeValue: row.querySelector('.cell-item-code')?.value,
+      unitValue: row.querySelector('.cell-unit')?.value,
+      packSizeValue: row.querySelector('.cell-packsize')?.value,
+      unitCode: getUnit(),
+    }) : null;
+    const matchItemId = parseNumber(match?.ID || match?.Id || match?.ItemId || match?.item_id);
+    if (matchItemId > 0) {
+      if (options.syncMatch) {
+        const itemIdField = row.querySelector('.cell-item-id');
+        if (itemIdField) itemIdField.value = matchItemId;
+      }
+      return { itemId: matchItemId, match };
+    }
+    if (hiddenItemId > 0 && state.itemById.has(hiddenItemId)) {
+      return { itemId: hiddenItemId, match: state.itemById.get(hiddenItemId) };
+    }
+    if (hiddenItemId > 0 && options.clearInvalid) {
+      clearRowCatalogSelection(row);
+    }
+    return { itemId: 0, match: null };
   };
 
   const fillQuickFromItem = (item) => {
@@ -11197,8 +13563,7 @@
 
   const lookupQuickItem = () => {
     if (!quickItemName) return;
-    const key = normalize(quickItemName.value);
-    const match = key ? state.itemByName.get(key) : null;
+    const match = resolveCatalogItemByName(quickItemName.value, { unitCode: getUnit() });
     if (match) fillQuickFromItem(match);
   };
 
@@ -11249,7 +13614,13 @@
     applyTaxPercent(row, gstPct);
 
     const itemName = row.querySelector('.cell-item-name').value;
-    const match = itemName ? state.itemByName.get(normalize(itemName)) : null;
+    const itemId = parseNumber(row.querySelector('.cell-item-id')?.value);
+    const match = (itemId && state.itemById.get(itemId)) || resolveCatalogItemByName(itemName, {
+      storeValue: row.querySelector('.cell-item-code')?.value,
+      unitValue: row.querySelector('.cell-unit')?.value,
+      packSizeValue: row.querySelector('.cell-packsize')?.value,
+      unitCode: getUnit(),
+    });
     if (match) {
       const storeValue = match.Code || match.StoreName || match.Location || '';
       if (storeValue) row.querySelector('.cell-item-code').value = storeValue;
@@ -11269,6 +13640,7 @@
         }
       }
     }
+    configureRowRateSource(row, match || null, { preserveCurrentRate: true });
   };
 
   const loadInit = async () => {
@@ -11318,6 +13690,7 @@
       const items = await apiJson(`/api/purchase/items_last_rate?unit=${encodeURIComponent(unit)}`);
       state.items = items.items || [];
       populateItems();
+      refreshGridRateSourceChoices({ preserveCurrentRate: true });
 
       recalcAllRows();
       applyPoItemSearch(poItemSearch?.value || '');
@@ -12350,6 +14723,17 @@
       setAlert('Please select an indent before loading.', 'warn');
       return;
     }
+    const statusCode = String(currentPoStatusCode || '').trim().toUpperCase();
+    if (currentPoId && statusCode === 'D') {
+      const poLabel = String(poNoInput?.value || currentPoId || '').trim();
+      const confirmed = window.confirm(
+        `Load the selected indent into draft PO ${poLabel || currentPoId}? This will replace the current item rows and supplier details on this draft.`
+      );
+      if (!confirmed) {
+        setAlert('Indent load cancelled. The draft PO was left unchanged.', 'warn');
+        return;
+      }
+    }
     try {
       setTableLoading(poItemsLoading, true, 'Loading indent items...');
       const [details, suppliers] = await Promise.all([
@@ -12385,7 +14769,8 @@
         const email = match ? match.email : '';
         setSupplierFromMatch({ id, name, code, email });
       }
-      setAlert('Indent details loaded.', 'success');
+      const targetPoLabel = currentPoId ? String(poNoInput?.value || currentPoId || '').trim() : '';
+      setAlert(targetPoLabel ? `Indent details loaded into draft PO ${targetPoLabel}. Review and save the draft to keep these changes.` : 'Indent details loaded.', 'success');
     } catch (err) {
       setAlert(err.message || 'Failed to load indent data.', 'error');
     } finally {
@@ -12398,10 +14783,10 @@
     const unit = getUnit();
     const items = [];
     tableBody.querySelectorAll('tr').forEach((row) => {
+      if (!rowHasPoEntry(row)) return;
       const name = (row.querySelector('.cell-item-name')?.value || '').trim();
       const qty = parseNumber(row.querySelector('.cell-qty')?.value);
-      const itemId = parseNumber(row.querySelector('.cell-item-id')?.value);
-      if (!name && !itemId && qty === 0) return;
+      const itemId = resolveRowItemState(row, { clearInvalid: true }).itemId;
       const storeValueRaw = (row.querySelector('.cell-item-code')?.value || '').trim();
       const storeValue = storeValueRaw || (!itemId && name ? applyAdhocStoreDefault(row, unit) : '');
 
@@ -12449,10 +14834,17 @@
     const unit = getUnit();
     const issues = [];
     tableBody.querySelectorAll('tr').forEach((row, index) => {
-      const itemId = parseNumber(row.querySelector('.cell-item-id')?.value);
+      if (!rowHasPoEntry(row)) return;
+      const nameField = row.querySelector('.cell-item-name');
       const name = (row.querySelector('.cell-item-name')?.value || '').trim();
       row.querySelectorAll('.cell-input').forEach((field) => field.classList.remove('field-error'));
-      if (itemId || !name) return;
+      const itemId = resolveRowItemState(row, { clearInvalid: true }).itemId;
+      if (!name && !itemId) {
+        issues.push(`Row ${index + 1}: item name`);
+        nameField?.classList.add('field-error');
+        return;
+      }
+      if (itemId) return;
       const storeRaw = (row.querySelector('.cell-item-code')?.value || '').trim();
       const store = storeRaw || applyAdhocStoreDefault(row, unit);
       const unitVal = (row.querySelector('.cell-unit')?.value || '').trim();
@@ -12506,16 +14898,9 @@
       const nameField = row.querySelector('.cell-item-name');
       const name = (nameField?.value || '').trim();
       const qty = parseNumber(row.querySelector('.cell-qty')?.value);
-      let itemId = parseNumber(row.querySelector('.cell-item-id')?.value);
+      let itemId = resolveRowItemState(row, { syncMatch: true, clearInvalid: true }).itemId;
       if (nameField) nameField.classList.remove('field-error');
       if (!name && !itemId && qty === 0) return;
-      if (!itemId && name) {
-        const match = state.itemByName.get(normalize(name));
-        if (match) {
-          fillRowFromItem(row, match);
-          itemId = parseNumber(row.querySelector('.cell-item-id')?.value);
-        }
-      }
       if (!itemId) {
         issues.push(index + 1);
         nameField?.classList.add('field-error');
@@ -12536,7 +14921,7 @@
       const nameField = row.querySelector('.cell-item-name');
       if (nameField) nameField.classList.remove('field-error');
 
-      const itemId = parseNumber(row.querySelector('.cell-item-id')?.value);
+      const itemId = resolveRowItemState(row, { syncMatch: true, clearInvalid: true }).itemId;
       if (!itemId) return;
 
       if (seen.has(itemId)) {
@@ -12717,8 +15102,13 @@
           ? ' PO remains pending approval.'
           : '';
         if (created.length) {
-          await refreshItems();
-          setAlert(`PO saved (ID ${res.po_id}). ${created.length} item(s) added to Item Master.${overwriteHint}`, 'success');
+          const itemsRefreshed = await refreshItems({ quiet: true });
+          const baseMessage = `PO saved (ID ${res.po_id}). ${created.length} item(s) added to Item Master.${overwriteHint}`;
+          if (itemsRefreshed) {
+            setAlert(baseMessage, 'success');
+          } else {
+            setAlert(`${baseMessage} Item catalog refresh failed, so use Refresh Items before searching the new items.`, 'warn');
+          }
         } else {
           setAlert(`PO saved successfully (ID ${res.po_id}).${overwriteHint}`, 'success');
         }
@@ -13070,6 +15460,9 @@
     });
   }
   if (indentItemsBody) {
+    indentItemsBody.addEventListener('wheel', (e) => {
+      preventFocusedQtyWheelChange(e, '.indent-qty');
+    }, { passive: false });
     indentItemsBody.addEventListener('click', (e) => {
       const target = e.target.closest('[data-action="remove-indent-row"]');
       if (!target) return;
@@ -13195,6 +15588,15 @@
   if (openUnitMasterBtn) {
     openUnitMasterBtn.addEventListener('click', openUnitMasterModal);
   }
+  if (openItemTypeMasterBtn) {
+    openItemTypeMasterBtn.addEventListener('click', openItemTypeMasterModal);
+  }
+  if (openItemGroupMasterBtn) {
+    openItemGroupMasterBtn.addEventListener('click', openItemGroupMasterModal);
+  }
+  if (openItemSubGroupMasterBtn) {
+    openItemSubGroupMasterBtn.addEventListener('click', openItemSubGroupMasterModal);
+  }
   if (addSupplierBtn) {
     addSupplierBtn.addEventListener('click', openSupplierModal);
   }
@@ -13243,7 +15645,25 @@
   }
 
   if (tableBody) {
+    tableBody.addEventListener('wheel', (e) => {
+      preventFocusedQtyWheelChange(e, '.cell-qty');
+    }, { passive: false });
+    tableBody.addEventListener('mousedown', (e) => {
+      if (e.target.closest('.cell-rate-source-btn')) {
+        e.preventDefault();
+      }
+    });
     tableBody.addEventListener('click', (e) => {
+      const sourceButton = e.target.closest('.cell-rate-source-btn');
+      if (sourceButton) {
+        const row = sourceButton.closest('tr');
+        if (!row || sourceButton.disabled) return;
+        applyRowRateSource(row, sourceButton.dataset.source || 'actual');
+        calculateRow(row);
+        calculateSummary();
+        row.querySelector('.cell-rate')?.focus({ preventScroll: true });
+        return;
+      }
       const target = e.target.closest('[data-action="remove-row"]');
       if (!target) return;
       const row = target.closest('tr');
@@ -13258,20 +15678,30 @@
     });
 
     tableBody.addEventListener('change', (e) => {
+      const row = e.target.closest('tr');
       if (e.target.matches('.po-row-select')) {
         updatePoSelectAll();
+        return;
       }
+      if (!row) return;
     });
 
     tableBody.addEventListener('input', (e) => {
       const row = e.target.closest('tr');
       if (!row) return;
       if (e.target.matches('.cell-item-name')) {
-        lookupItemForRow(row);
+        if (shouldLookupItemOnInput(e)) {
+          lookupItemForRow(row);
+        } else {
+          syncRowItemTypingState(row);
+        }
         calculateRow(row);
         calculateSummary();
         applyPoItemSearch(poItemSearch?.value || '');
         return;
+      }
+      if (e.target.matches('.cell-rate')) {
+        syncRowRateSourceFromValue(row);
       }
       if (e.target.matches('.cell-qty, .cell-rate, .cell-discount, .cell-gst-rate, .cell-for')) {
         calculateRow(row);
@@ -13426,6 +15856,9 @@
     closeQuickAdd();
     closePurchasingDeptMasterModal();
     closeUnitMasterModal();
+    closeItemTypeMasterModal();
+    closeItemGroupMasterModal();
+    closeItemSubGroupMasterModal();
     closeSupplierModal();
     closeManufacturerModal();
     closeIndentItemModal();
@@ -13593,37 +16026,36 @@
     });
   }
   if (itemMasterManufacturerSearch) {
+    itemMasterManufacturerSearch.addEventListener('input', (e) => {
+      const raw = (e.target.value || '').trim();
+      itemMasterManufacturerSearch?.classList.remove('field-error');
+      const match = raw ? resolveItemManufacturerMatch(raw) : null;
+      if (itemMasterManufacturerId) {
+        itemMasterManufacturerId.value = match && parseNumber(match.id) ? (match.id || '') : '';
+      }
+      syncItemManufacturerStatus();
+    });
     itemMasterManufacturerSearch.addEventListener('change', (e) => {
       const raw = (e.target.value || '').trim();
+      itemMasterManufacturerSearch?.classList.remove('field-error');
       if (!raw) {
         if (itemMasterManufacturerId) itemMasterManufacturerId.value = '';
-        setItemManufacturerStatus('Linked manufacturers will appear here.');
+        syncItemManufacturerStatus();
         return;
       }
       const match = resolveItemManufacturerMatch(raw);
       if (match) {
         if (itemMasterManufacturerId) itemMasterManufacturerId.value = match.id || '';
-        setItemManufacturerStatus('Manufacturer selected. Click Link to save.');
+        syncItemManufacturerStatus();
       } else {
         if (itemMasterManufacturerId) itemMasterManufacturerId.value = '';
-        setItemManufacturerStatus('Manufacturer not found. Click Add New Manufacturer.');
+        syncItemManufacturerStatus();
       }
     });
     itemMasterManufacturerSearch.addEventListener('focus', () => {
       if (!manufacturerMasterState.loaded || manufacturerMasterState.unit !== getUnit()) {
         loadManufacturerMasterList(true);
       }
-    });
-    itemMasterManufacturerSearch.addEventListener('keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        linkItemManufacturer();
-      }
-    });
-  }
-  if (itemMasterLinkManufacturer) {
-    itemMasterLinkManufacturer.addEventListener('click', () => {
-      linkItemManufacturer();
     });
   }
   if (itemMasterAddManufacturer) {
@@ -13636,8 +16068,8 @@
       }
       if (manufacturerName) manufacturerName.focus();
       const hint = raw
-        ? 'Complete the details and save to link with the item.'
-        : 'Enter the manufacturer name, fill details, and save to link with the item.';
+        ? 'Complete the details and save to auto-select this manufacturer back in Item Master.'
+        : 'Enter the manufacturer name, fill details, and save to auto-select it back in Item Master.';
       setManufacturerMasterAlert(hint, 'warn');
     });
   }
@@ -13792,12 +16224,230 @@
     });
   }
 
+  if (itemTypeMasterClose) {
+    itemTypeMasterClose.addEventListener('click', closeItemTypeMasterModal);
+  }
+  if (itemTypeMasterModal) {
+    itemTypeMasterModal.addEventListener('click', (e) => {
+      if (e.target === itemTypeMasterModal) {
+        closeItemTypeMasterModal();
+      }
+    });
+  }
+  if (itemTypeMasterReset) {
+    itemTypeMasterReset.addEventListener('click', () => resetItemTypeMasterForm());
+  }
+  if (itemTypeMasterSave) {
+    itemTypeMasterSave.addEventListener('click', saveItemTypeMaster);
+  }
+  if (itemTypeMasterSearch) {
+    itemTypeMasterSearch.addEventListener('change', async (e) => {
+      const raw = String(e.target.value || '').trim();
+      if (!raw) {
+        resetItemTypeMasterForm(true);
+        return;
+      }
+      if (!itemTypeMasterState.loaded) {
+        const ok = await loadItemTypeMasterList(true);
+        if (!ok) return;
+      }
+      const key = normalize(raw);
+      const match =
+        itemTypeMasterState.itemTypeByDisplay.get(key)
+        || itemTypeMasterState.itemTypeByName.get(key)
+        || itemTypeMasterState.itemTypeByCode.get(key);
+      if (!match) {
+        if (itemTypeMasterId) itemTypeMasterId.value = '';
+        if (itemTypeMasterName) itemTypeMasterName.value = raw;
+        if (itemTypeMasterCode) itemTypeMasterCode.value = normalizeCatalogCode(raw);
+        itemTypeMasterCode?.classList.remove('field-error');
+        itemTypeMasterName?.classList.remove('field-error');
+        setItemTypeMasterMode('Add');
+        setItemTypeMasterAlert('Item type not found in list. You can add it as new.', 'warn');
+        return;
+      }
+      fillItemTypeMasterFromSelection(match);
+    });
+  }
+  if (itemTypeMasterTableBody) {
+    itemTypeMasterTableBody.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const action = String(btn.dataset.action || '').trim();
+      const id = String(btn.dataset.id || '').trim();
+      if (!id) return;
+      const match = itemTypeMasterState.itemTypeById.get(id);
+      const name = String(btn.dataset.name || match?.name || '').trim();
+      if (action === 'edit-item-type-master') {
+        if (!match) return;
+        fillItemTypeMasterFromSelection(match);
+        itemTypeMasterName?.focus();
+        return;
+      }
+      if (action === 'deactivate-item-type-master') {
+        await runItemTypeMasterAction('deactivate', id, name);
+        return;
+      }
+      if (action === 'activate-item-type-master') {
+        await runItemTypeMasterAction('activate', id, name);
+      }
+    });
+  }
+
+  if (itemGroupMasterClose) {
+    itemGroupMasterClose.addEventListener('click', closeItemGroupMasterModal);
+  }
+  if (itemGroupMasterModal) {
+    itemGroupMasterModal.addEventListener('click', (e) => {
+      if (e.target === itemGroupMasterModal) {
+        closeItemGroupMasterModal();
+      }
+    });
+  }
+  if (itemGroupMasterReset) {
+    itemGroupMasterReset.addEventListener('click', () => resetItemGroupMasterForm());
+  }
+  if (itemGroupMasterSave) {
+    itemGroupMasterSave.addEventListener('click', saveItemGroupMaster);
+  }
+  if (itemGroupMasterSearch) {
+    itemGroupMasterSearch.addEventListener('change', async (e) => {
+      const raw = String(e.target.value || '').trim();
+      if (!raw) {
+        resetItemGroupMasterForm(true);
+        return;
+      }
+      if (!itemGroupMasterState.loaded) {
+        const ok = await loadItemGroupMasterList(true);
+        if (!ok) return;
+      }
+      const key = normalize(raw);
+      const match =
+        itemGroupMasterState.itemGroupByDisplay.get(key)
+        || itemGroupMasterState.itemGroupByName.get(key)
+        || itemGroupMasterState.itemGroupByCode.get(key);
+      if (!match) {
+        if (itemGroupMasterId) itemGroupMasterId.value = '';
+        if (itemGroupMasterName) itemGroupMasterName.value = raw;
+        if (itemGroupMasterCode) itemGroupMasterCode.value = normalizeCatalogCode(raw);
+        itemGroupMasterType?.classList.remove('field-error');
+        itemGroupMasterCode?.classList.remove('field-error');
+        itemGroupMasterName?.classList.remove('field-error');
+        setItemGroupMasterMode('Add');
+        setItemGroupMasterAlert('Item group not found in list. You can add it as new.', 'warn');
+        return;
+      }
+      fillItemGroupMasterFromSelection(match);
+    });
+  }
+  if (itemGroupMasterTableBody) {
+    itemGroupMasterTableBody.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const action = String(btn.dataset.action || '').trim();
+      const id = String(btn.dataset.id || '').trim();
+      if (!id) return;
+      const match = itemGroupMasterState.itemGroupById.get(id);
+      const name = String(btn.dataset.name || match?.name || '').trim();
+      if (action === 'edit-item-group-master') {
+        if (!match) return;
+        fillItemGroupMasterFromSelection(match);
+        itemGroupMasterName?.focus();
+        return;
+      }
+      if (action === 'deactivate-item-group-master') {
+        await runItemGroupMasterAction('deactivate', id, name);
+        return;
+      }
+      if (action === 'activate-item-group-master') {
+        await runItemGroupMasterAction('activate', id, name);
+      }
+    });
+  }
+
+  if (itemSubGroupMasterClose) {
+    itemSubGroupMasterClose.addEventListener('click', closeItemSubGroupMasterModal);
+  }
+  if (itemSubGroupMasterModal) {
+    itemSubGroupMasterModal.addEventListener('click', (e) => {
+      if (e.target === itemSubGroupMasterModal) {
+        closeItemSubGroupMasterModal();
+      }
+    });
+  }
+  if (itemSubGroupMasterReset) {
+    itemSubGroupMasterReset.addEventListener('click', () => resetItemSubGroupMasterForm());
+  }
+  if (itemSubGroupMasterSave) {
+    itemSubGroupMasterSave.addEventListener('click', saveItemSubGroupMaster);
+  }
+  if (itemSubGroupMasterType) {
+    itemSubGroupMasterType.addEventListener('change', () => {
+      populateItemSubGroupGroupOptions(itemSubGroupMasterType.value, '');
+      if (itemSubGroupMasterGroup) itemSubGroupMasterGroup.value = '';
+    });
+  }
+  if (itemSubGroupMasterSearch) {
+    itemSubGroupMasterSearch.addEventListener('change', async (e) => {
+      const raw = String(e.target.value || '').trim();
+      if (!raw) {
+        resetItemSubGroupMasterForm(true);
+        return;
+      }
+      if (!itemSubGroupMasterState.loaded) {
+        const ok = await loadItemSubGroupMasterList(true);
+        if (!ok) return;
+      }
+      const key = normalize(raw);
+      const match =
+        itemSubGroupMasterState.itemSubGroupByDisplay.get(key)
+        || itemSubGroupMasterState.itemSubGroupByName.get(key)
+        || itemSubGroupMasterState.itemSubGroupByCode.get(key);
+      if (!match) {
+        if (itemSubGroupMasterId) itemSubGroupMasterId.value = '';
+        if (itemSubGroupMasterName) itemSubGroupMasterName.value = raw;
+        if (itemSubGroupMasterCode) itemSubGroupMasterCode.value = normalizeCatalogCode(raw);
+        itemSubGroupMasterType?.classList.remove('field-error');
+        itemSubGroupMasterGroup?.classList.remove('field-error');
+        itemSubGroupMasterCode?.classList.remove('field-error');
+        itemSubGroupMasterName?.classList.remove('field-error');
+        setItemSubGroupMasterMode('Add');
+        setItemSubGroupMasterAlert('Item sub group not found in list. You can add it as new.', 'warn');
+        return;
+      }
+      fillItemSubGroupMasterFromSelection(match);
+    });
+  }
+  if (itemSubGroupMasterTableBody) {
+    itemSubGroupMasterTableBody.addEventListener('click', async (e) => {
+      const btn = e.target.closest('[data-action]');
+      if (!btn) return;
+      const action = String(btn.dataset.action || '').trim();
+      const id = String(btn.dataset.id || '').trim();
+      if (!id) return;
+      const match = itemSubGroupMasterState.itemSubGroupById.get(id);
+      const name = String(btn.dataset.name || match?.name || '').trim();
+      if (action === 'edit-item-subgroup-master') {
+        if (!match) return;
+        fillItemSubGroupMasterFromSelection(match);
+        itemSubGroupMasterName?.focus();
+        return;
+      }
+      if (action === 'deactivate-item-subgroup-master') {
+        await runItemSubGroupMasterAction('deactivate', id, name);
+        return;
+      }
+      if (action === 'activate-item-subgroup-master') {
+        await runItemSubGroupMasterAction('activate', id, name);
+      }
+    });
+  }
+
   if (quickAddSubmit) {
     const addQuickItem = () => {
       if (!tableBody) return;
       const quickName = (quickItemName?.value || '').trim();
-      const quickKey = normalize(quickName);
-      const quickMatch = quickKey ? state.itemByName.get(quickKey) : null;
+      const quickMatch = resolveCatalogItemByName(quickName, { unitCode: getUnit() });
       const quickItemId = parseNumber(quickMatch?.ID || quickMatch?.Id || quickMatch?.ItemId);
       if (quickItemId) {
         const duplicateExists = Array.from(tableBody.querySelectorAll('tr')).some((existingRow) => {

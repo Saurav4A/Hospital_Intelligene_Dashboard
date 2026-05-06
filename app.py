@@ -1,5 +1,6 @@
-﻿from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, session
+from flask import Flask, render_template, request, jsonify, send_file, redirect, url_for, session
 from modules import data_fetch, analytics, ip_advance_provision
+from flask import has_request_context
 import config
 import pandas as pd
 from datetime import datetime, timedelta, date
@@ -23,7 +24,7 @@ import importlib
 from decimal import Decimal, ROUND_HALF_UP
 import re
 import copy
-from html import unescape
+from html import unescape, escape
 # --- ADD for Volume Tracker (safe import-only)
 import io
 from openpyxl import Workbook, load_workbook
@@ -39,6 +40,8 @@ from modules.purchase_grn_routes import register_purchase_grn_routes
 from modules.purchase_pm_indent_routes import register_purchase_pm_indent_routes
 from modules.purchase_po_routes import register_purchase_po_routes
 from modules.purchase_work_order_routes import register_purchase_work_order_routes
+from modules.pharmacy_sales_routes import register_pharmacy_sales_routes
+from modules.canteen_routes import register_canteen_routes
 from modules.mis_laboratory_summary_routes import register_mis_laboratory_summary_routes
 from modules.mis_radiology_summary_routes import register_mis_radiology_summary_routes
 from modules.mis_pharmacy_stock_ledger_routes import register_mis_pharmacy_stock_ledger_routes
@@ -46,6 +49,9 @@ from modules.mis_pharmacy_department_issue_routes import register_mis_pharmacy_d
 from modules.mod_reports_dashboard_routes import register_mod_reports_dashboard_routes
 from modules.mod_reports_morning_routes import register_mod_reports_morning_routes
 from modules.mod_reports_night_routes import register_mod_reports_night_routes
+from modules.asset_management import create_asset_management_blueprint, run_asset_breakdown_reminder_job, run_asset_coverage_reminder_job
+from modules.feedback_complaint import create_feedback_complaint_blueprint, run_feedback_escalation_job
+from modules.govt_scheme_tracker import create_govt_scheme_tracker_blueprint
 try:
     from modules.notification_routes import NOTIFICATIONS_FILE, USER_NOTIFICATIONS_FILE
 except Exception:
@@ -127,6 +133,121 @@ def _start_otp_worker_if_enabled():
         except Exception as e:
             OTP_WORKER_DISABLED_REASON = str(e)
             print(f"OTP mail worker disabled: {OTP_WORKER_DISABLED_REASON}")
+
+# Booking payment receipt worker for dbo.BookingPayment
+BOOKING_PAYMENT_WORKER_THREAD = None
+BOOKING_PAYMENT_WORKER_ENABLED = bool(getattr(config, "ENABLE_BOOKING_PAYMENT_MAIL_WORKER", False))
+BOOKING_PAYMENT_WORKER_INIT_LOCK = Lock()
+BOOKING_PAYMENT_WORKER_INIT_ATTEMPTED = False
+BOOKING_PAYMENT_WORKER_DISABLED_REASON = ""
+
+
+def _start_booking_payment_worker_if_enabled():
+    """
+    Start the BookingPayment receipt mail worker loop in a background thread (once per process).
+    Uses config.BOOKING_PAYMENT_MAIL_POLL_SECONDS for polling frequency if provided.
+    """
+    global BOOKING_PAYMENT_WORKER_THREAD, BOOKING_PAYMENT_WORKER_INIT_ATTEMPTED, BOOKING_PAYMENT_WORKER_DISABLED_REASON
+    if not BOOKING_PAYMENT_WORKER_ENABLED:
+        return
+    if BOOKING_PAYMENT_WORKER_DISABLED_REASON:
+        return
+    if app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+        return
+    if BOOKING_PAYMENT_WORKER_THREAD and BOOKING_PAYMENT_WORKER_THREAD.is_alive():
+        return
+    with BOOKING_PAYMENT_WORKER_INIT_LOCK:
+        if BOOKING_PAYMENT_WORKER_THREAD and BOOKING_PAYMENT_WORKER_THREAD.is_alive():
+            return
+        if BOOKING_PAYMENT_WORKER_INIT_ATTEMPTED:
+            return
+        BOOKING_PAYMENT_WORKER_INIT_ATTEMPTED = True
+        try:
+            booking_payment_mail_worker = importlib.import_module("modules.booking_payment_mail_worker")
+            interval = int(getattr(config, "BOOKING_PAYMENT_MAIL_POLL_SECONDS", 5))
+            t = Thread(
+                target=booking_payment_mail_worker.main_loop,
+                kwargs={"poll_interval_seconds": interval},
+                daemon=True,
+            )
+            t.start()
+            BOOKING_PAYMENT_WORKER_THREAD = t
+            print(f"BookingPayment mail worker started (poll every {interval}s)")
+        except ModuleNotFoundError as e:
+            BOOKING_PAYMENT_WORKER_DISABLED_REASON = f"Missing dependency: {getattr(e, 'name', str(e))}"
+            print(f"BookingPayment mail worker disabled: {BOOKING_PAYMENT_WORKER_DISABLED_REASON}")
+        except Exception as e:
+            BOOKING_PAYMENT_WORKER_DISABLED_REASON = str(e)
+            print(f"BookingPayment mail worker disabled: {BOOKING_PAYMENT_WORKER_DISABLED_REASON}")
+
+
+ASSET_COVERAGE_WORKER_THREAD = None
+ASSET_COVERAGE_WORKER_ENABLED = bool(getattr(config, "ENABLE_ASSET_COVERAGE_REMINDER_WORKER", True))
+ASSET_COVERAGE_WORKER_INIT_LOCK = Lock()
+ASSET_COVERAGE_WORKER_INIT_ATTEMPTED = False
+ASSET_COVERAGE_WORKER_DISABLED_REASON = ""
+
+
+def _asset_coverage_seconds_until_next_10am():
+    now = datetime.now(tz=LOCAL_TZ)
+    target = now.replace(hour=10, minute=0, second=0, microsecond=0)
+    if now >= target:
+        target = target + timedelta(days=1)
+    return max(60, int((target - now).total_seconds()))
+
+
+def _asset_coverage_reminder_loop():
+    poll_seconds = int(getattr(config, "ASSET_COVERAGE_REMINDER_POLL_SECONDS", 300) or 300)
+    while True:
+        try:
+            now = datetime.now(tz=LOCAL_TZ)
+            if now.hour == 10 and now.minute < max(1, math.ceil(poll_seconds / 60)):
+                run_asset_coverage_reminder_job(
+                    send_graph_mail_with_attachment=_send_graph_mail_with_attachment,
+                    units=["AHL", "ACI"],
+                    force=False,
+                    actor="scheduler",
+                )
+                time.sleep(max(poll_seconds, 60))
+            elif now.hour == 10 and 15 <= now.minute < 15 + max(1, math.ceil(poll_seconds / 60)):
+                run_asset_breakdown_reminder_job(
+                    send_graph_mail_with_attachment=_send_graph_mail_with_attachment,
+                    units=["AHL", "ACI"],
+                    force=False,
+                    actor="scheduler",
+                )
+                time.sleep(max(poll_seconds, 60))
+            else:
+                time.sleep(min(poll_seconds, _asset_coverage_seconds_until_next_10am()))
+        except Exception as exc:
+            print(f"Asset reminder worker error: {exc}")
+            time.sleep(max(poll_seconds, 300))
+
+
+def _start_asset_coverage_worker_if_enabled():
+    global ASSET_COVERAGE_WORKER_THREAD, ASSET_COVERAGE_WORKER_INIT_ATTEMPTED, ASSET_COVERAGE_WORKER_DISABLED_REASON
+    if not ASSET_COVERAGE_WORKER_ENABLED:
+        return
+    if ASSET_COVERAGE_WORKER_DISABLED_REASON:
+        return
+    if app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+        return
+    if ASSET_COVERAGE_WORKER_THREAD and ASSET_COVERAGE_WORKER_THREAD.is_alive():
+        return
+    with ASSET_COVERAGE_WORKER_INIT_LOCK:
+        if ASSET_COVERAGE_WORKER_THREAD and ASSET_COVERAGE_WORKER_THREAD.is_alive():
+            return
+        if ASSET_COVERAGE_WORKER_INIT_ATTEMPTED:
+            return
+        ASSET_COVERAGE_WORKER_INIT_ATTEMPTED = True
+        try:
+            t = Thread(target=_asset_coverage_reminder_loop, daemon=True)
+            t.start()
+            ASSET_COVERAGE_WORKER_THREAD = t
+            print("Asset reminder worker started (coverage daily 10:00 AM, breakdown daily 10:15 AM).")
+        except Exception as e:
+            ASSET_COVERAGE_WORKER_DISABLED_REASON = str(e)
+            print(f"Asset reminder worker disabled: {ASSET_COVERAGE_WORKER_DISABLED_REASON}")
 
 # ===================== Session policies ======================
 IDLE_TIMEOUT_SECONDS = 30 * 60  # 30 minutes
@@ -605,8 +726,29 @@ UNIT_DISPLAY_NAMES = {
 }
 CORP_RECON_RECEIPT_SECTION = "corporate_receipt"
 CORP_RECON_WRITEOFF_SECTION = "corporate_writeoff"
+CORP_RECON_RECEIPT_CANCEL_SECTION = "corporate_receipt_cancel"
 CORP_RECON_RECEIPT_DATE_EDIT_SECTION = "corporate_receipt_date_edit"
 CORP_RECON_BILL_UNSUBMIT_SECTION = "corporate_bill_unsubmit"
+CANTEEN_MENU_MASTER_SECTION = "canteen_menu_master"
+CANTEEN_BILL_RECEIPT_CANCEL_SECTION = "canteen_bill_receipt_cancel"
+CANTEEN_BULK_NOTIFICATION_ROLE_CHOICES = [
+    {"key": "HR", "label": "HR"},
+    {"key": "CENTER_HEAD", "label": "Center Head"},
+    {"key": "NURSING_SUPERINTENDENT", "label": "Nursing Superintendent"},
+    {"key": "WARDEN", "label": "Warden"},
+    {"key": "PRINCIPAL", "label": "Principal"},
+    {"key": "REGISTRAR", "label": "Registrar"},
+    {"key": "ACCOUNTS_CC", "label": "Accounts (CC)"},
+]
+ASSET_COVERAGE_RECIPIENT_ROLE_CHOICES = [
+    {"key": "CENTER_HEAD", "label": "Center Head"},
+    {"key": "BIOMEDICAL", "label": "Biomedical"},
+    {"key": "IT", "label": "IT"},
+    {"key": "VP_OPERATIONS", "label": "VP Operations"},
+    {"key": "PURCHASE", "label": "Asset-Purchase"},
+    {"key": "ACCOUNTS", "label": "Accounts"},
+]
+ASSET_COVERAGE_RECIPIENT_UNITS = ["AHL", "ACI"]
 CORP_RECON_CACHE_TTL = 60 * 60
 CORP_RECON_CACHE_MAX = 24
 CORP_RECON_CACHE = {}
@@ -659,6 +801,15 @@ MANUFACTURER_NAME_CACHE_LOCK = Lock()
 PH_STMT_CACHE = {}
 PH_STMT_CACHE_TTL = 5 * 60
 PH_STMT_CACHE_LOCK = Lock()
+
+
+def _invalidate_item_name_cache(unit: str | None = None):
+    unit_key = str(unit or "").strip().upper()
+    with ITEM_NAME_CACHE_LOCK:
+        if unit_key:
+            ITEM_NAME_CACHE.pop(unit_key, None)
+        else:
+            ITEM_NAME_CACHE.clear()
 
 
 def _generic_cache_get(prefix: str, key, ttl_seconds: int, fallback_store: dict, lock=None):
@@ -1125,6 +1276,7 @@ ROUTE_SECTION_MAP = {
     "/revenue": "revenue",
     "/fetch": "revenue",
     "/export_revenue_excel": "revenue",
+    "/export_investor_revenue_excel": "investor_revenue_report",
     "/export_department_excel": "revenue",
     "/export_corptype_excel": "revenue",
     "/api/revenue_patient_source": "revenue",
@@ -1137,6 +1289,8 @@ ROUTE_SECTION_MAP = {
     "/api/volume_tracker": "volume",
     "/api/volume_export": "volume",
     "/api/volume_hcv_doctor_export": "volume",
+    "/api/volume_ipd_census_export": "volume",
+    "/api/volume_ipd_census_export_pdf": "volume",
     "/api/volume_store_charts": "volume",
     "/api/volume_export_pdf": "volume",
 
@@ -1336,6 +1490,10 @@ ROUTE_SECTION_MAP = {
     "/user_management/it_user/update": "user_management",
     "/user_management/fund_position_recipient/add": "user_management",
     "/user_management/fund_position_recipient/toggle": "user_management",
+    "/user_management/canteen_notification_recipient/add": "user_management",
+    "/user_management/canteen_notification_recipient/toggle": "user_management",
+    "/user_management/asset_coverage_recipient/add": "user_management",
+    "/user_management/asset_coverage_recipient/toggle": "user_management",
     "/api/historical_access/status": "user_management",
     "/api/historical_access/request": "user_management",
     "/corporate": "corporate_management",
@@ -1434,27 +1592,56 @@ ROUTE_SECTION_MAP = {
     "/api/purchase/po_email_pdf": "purchase",
     "/api/purchase/po": "purchase",
     "/api/purchase/logs": "purchase",
+    "/pharmacy/sales": "pharmacy_sales",
+    "/api/pharmacy/sales": "pharmacy_sales",
+    "/canteen": "canteen",
+    "/api/canteen": "canteen",
+    "/api/canteen-cancellations": CANTEEN_BILL_RECEIPT_CANCEL_SECTION,
+    "/api/canteen-modifications": CANTEEN_BILL_RECEIPT_CANCEL_SECTION,
     "/patient-care-journey": "patient_care_journey",
     "/api/patient-care-journey": "patient_care_journey",
+    "/asset-management": "asset_management",
+    "/api/asset-management": "asset_management",
+    "/asset/breakdown/public": None,
+    "/feedback/asset-breakdown": None,
+    "/api/asset-breakdown/public": None,
+    "/feedback/patient": None,
+    "/api/feedback/departments": None,
+    "/api/feedback/search_patient": None,
+    "/api/feedback/patient_visits": None,
+    "/api/feedback/submit": None,
+    "/feedback-complaint": "feedback_complaint",
+    "/api/feedback/dashboard": "feedback_complaint",
+    "/api/feedback/complaints": "feedback_complaint",
+    "/api/feedback/assignments": "feedback_complaint",
+    "/api/feedback/run_escalation": "feedback_complaint",
     "/discount-module": "discount_module",
     "/api/discount/bills": "discount_module",
     "/api/discount/receipts": "discount_module",
     "/api/modifications": "discount_module",
     "/api/modifications/revenue_component_rebalance": "discount_module",
+    "/api/modifications/logs": "discount_module",
 }
 
 def _all_section_keys():
-    keys = set(ROUTE_SECTION_MAP.values())
+    keys = {key for key in ROUTE_SECTION_MAP.values() if key}
     # Always include user_management for admin workflows
     keys.add("user_management")
+    # Fine-grained pharmacy sales action: allow editable billing MRP on the desk.
+    keys.add("pharmacy_sales_mrp_edit")
     # Fine-grained corporate reconciliation actions.
     keys.add(CORP_RECON_RECEIPT_SECTION)
     # Additional fine-grained right for corporate reconciliation write-off action.
     keys.add(CORP_RECON_WRITEOFF_SECTION)
+    # Additional fine-grained right for corporate receipt cancellation action.
+    keys.add(CORP_RECON_RECEIPT_CANCEL_SECTION)
     # Additional fine-grained right for corporate receipt-date correction action.
     keys.add(CORP_RECON_RECEIPT_DATE_EDIT_SECTION)
     # Additional fine-grained right for corporate bill unsubmit action.
     keys.add(CORP_RECON_BILL_UNSUBMIT_SECTION)
+    # Fine-grained canteen rights.
+    keys.add(CANTEEN_MENU_MASTER_SECTION)
+    keys.add(CANTEEN_BILL_RECEIPT_CANCEL_SECTION)
     return sorted(keys)
 
 def _resolve_section_for_request(path: str) -> str | None:
@@ -1488,7 +1675,7 @@ def login_required(allowed_roles=None, required_section: str | None = None):
             username = session.get("username")
             role = session.get("role")
             if not username or not role:
-                return redirect(url_for("login"))
+                return _unauthorized_session_response("Please sign in again.")
 
             if allowed_roles is not None:
                 role_base = _role_base(role)
@@ -1506,6 +1693,25 @@ def login_required(allowed_roles=None, required_section: str | None = None):
             return view_func(*args, **kwargs)
         return wrapped
     return decorator
+
+
+def _request_prefers_json_response() -> bool:
+    path = (request.path or "").strip().lower()
+    if path.startswith("/api/") or path.startswith("/_"):
+        return True
+    if request.is_json:
+        return True
+    requested_with = (request.headers.get("X-Requested-With") or "").strip().lower()
+    if requested_with == "xmlhttprequest":
+        return True
+    accept = (request.headers.get("Accept") or "").lower()
+    return "application/json" in accept and "text/html" not in accept
+
+
+def _unauthorized_session_response(message: str = "Session expired. Please sign in again.", status_code: int = 401):
+    if _request_prefers_json_response():
+        return jsonify({"status": "error", "message": message, "session_expired": True}), int(status_code)
+    return redirect(url_for("login"))
 
 # ---------- NEW: Unit-scope helper (rights) ----------
 def _normalize_unit_scope(raw_units):
@@ -1735,6 +1941,49 @@ def _allowed_units_for_session(include_corporate_only: bool = False):
         return [u for u in units if u in allowed_set]
 
     return []
+
+
+def _session_can_land_in_canteen() -> bool:
+    role_base = _role_base((session.get("role") or "").strip())
+    if role_base in {"IT", "Management"}:
+        return False
+    if not has_section_access("canteen"):
+        return False
+    allowed_units = {str(unit or "").strip().upper() for unit in (_allowed_units_for_session() or []) if str(unit or "").strip()}
+    if not bool(allowed_units & set(data_fetch.CANTEEN_ALLOWED_UNITS)):
+        return False
+    rights = {
+        str(item or "").strip().lower()
+        for item in (session.get("section_rights") or [])
+        if str(item or "").strip()
+    }
+    if not rights or "*" in rights:
+        return False
+    return all(item == "canteen" or item.startswith("canteen_") for item in rights)
+
+
+def _session_can_land_in_asset_management() -> bool:
+    role_base = _role_base((session.get("role") or "").strip())
+    if role_base == "IT":
+        return False
+    if not has_section_access("asset_management"):
+        return False
+    rights = {
+        str(item or "").strip().lower()
+        for item in (session.get("section_rights") or [])
+        if str(item or "").strip()
+    }
+    if not rights or "*" in rights:
+        return False
+    return all(item == "asset_management" or item.startswith("asset_management_") for item in rights)
+
+
+def _post_login_redirect_response():
+    if _session_can_land_in_canteen():
+        return redirect(url_for("canteen_dashboard"))
+    if _session_can_land_in_asset_management():
+        return redirect(url_for("asset_management.home"))
+    return redirect(url_for("dashboard"))
 
 
 def _user_management_scope_units_for_session():
@@ -2092,14 +2341,22 @@ def _audit_log_event(
     account_id: int | None = None,
 ):
     try:
-        if username is None:
-            username = session.get("username") or session.get("user") or ""
-        if role is None:
-            role = session.get("role") or ""
-        if account_id is None:
-            account_id = session.get("accountid") or session.get("account_id") or None
-        ip_addr = request.remote_addr if request else None
-        user_agent = request.headers.get("User-Agent") if request else None
+        if has_request_context():
+            if username is None:
+                username = session.get("username") or session.get("user") or ""
+            if role is None:
+                role = session.get("role") or ""
+            if account_id is None:
+                account_id = session.get("accountid") or session.get("account_id") or None
+            ip_addr = request.remote_addr
+            user_agent = request.headers.get("User-Agent")
+        else:
+            if username is None:
+                username = ""
+            if role is None:
+                role = ""
+            ip_addr = None
+            user_agent = None
 
         with _get_login_db_connection() as conn:
             _ensure_audit_log_table(conn)
@@ -2131,6 +2388,45 @@ def _audit_log_event(
             conn.commit()
     except Exception as e:
         print(f"Audit log failed: {e}")
+
+
+MODIFICATIONS_AUDIT_MODULE = "modifications"
+
+
+def _modification_audit_entity_id(*candidates):
+    for cand in candidates:
+        if cand is None:
+            continue
+        text = str(cand).strip()
+        if text:
+            return text
+    return None
+
+
+def _modification_audit_log(
+    action: str,
+    *,
+    status: str = "success",
+    entity_type: str | None = None,
+    entity_id: str | None = None,
+    unit: str | None = None,
+    summary: str | None = None,
+    details: dict | list | str | None = None,
+    request_id: str | None = None,
+    username: str | None = None,
+):
+    _audit_log_event(
+        MODIFICATIONS_AUDIT_MODULE,
+        action,
+        status=status,
+        entity_type=entity_type,
+        entity_id=entity_id,
+        unit=(str(unit or "").strip().upper() or None),
+        summary=summary,
+        details=details,
+        request_id=(str(request_id).strip() if request_id not in (None, "", " ") else None),
+        username=username,
+    )
 
 
 def _normalize_po_header_for_audit(header: dict, totals: dict | None = None, status_code: str | None = None) -> dict:
@@ -2396,7 +2692,11 @@ def _build_morning_report_diff(old_payload: dict | None, new_payload: dict) -> d
         ),
         "referral_rows": _diff_rows_indexed(
             old_payload.get("referral_rows"), new_payload.get("referral_rows"),
-            ["patient_name", "visit_time", "consultant", "reason"], "patient_name"
+            ["patient_name", "visit_time", "discharge_time", "consultant", "reason_type", "reason"], "patient_name"
+        ),
+        "non_cured_discharge_rows": _diff_rows_indexed(
+            old_payload.get("non_cured_discharge_rows"), new_payload.get("non_cured_discharge_rows"),
+            ["patient_name", "admission_time", "discharge_time", "doctor_name", "reason", "remarks"], "patient_name"
         ),
     }
     return {"status": "updated", "changes": changes}
@@ -3824,6 +4124,7 @@ DEFAULT_PURCHASING_DEPARTMENTS = [
 UNIT_DEFAULT_PURCHASING_DEPT = {
     "AHL": "Pharmacy and Drugs",
     "ACI": "Pharmacy and Drugs",
+    "BALLIA": "Pharmacy and Drugs",
     "SHARPSIGHT": "Pharmacy and Drugs",
 }
 
@@ -5130,6 +5431,252 @@ def _set_fund_position_recipient_active(recipient_id: int, is_active: bool):
             WHERE Id = ?
         """, (1 if is_active else 0, int(recipient_id)))
         conn.commit()
+
+
+def _canteen_notification_role_key(value: str | None) -> str:
+    text = str(value or "").strip().upper()
+    text = re.sub(r"[^A-Z0-9]+", "_", text).strip("_")
+    alias_map = {
+        "HR": "HR",
+        "H_R": "HR",
+        "CENTER_HEAD": "CENTER_HEAD",
+        "CENTRE_HEAD": "CENTER_HEAD",
+        "NURSING_SUPERINTENDENT": "NURSING_SUPERINTENDENT",
+        "NURSING_SUPT": "NURSING_SUPERINTENDENT",
+        "NS": "NURSING_SUPERINTENDENT",
+        "WARDEN": "WARDEN",
+        "PRINCIPAL": "PRINCIPAL",
+        "REGISTRAR": "REGISTRAR",
+        "ACCOUNTS": "ACCOUNTS_CC",
+        "ACCOUNT": "ACCOUNTS_CC",
+        "ACCOUNTS_CC": "ACCOUNTS_CC",
+        "ACCOUNT_CC": "ACCOUNTS_CC",
+    }
+    return alias_map.get(text, text)
+
+
+def _canteen_notification_role_label(role_key: str | None) -> str:
+    key = _canteen_notification_role_key(role_key)
+    for row in CANTEEN_BULK_NOTIFICATION_ROLE_CHOICES:
+        if row["key"] == key:
+            return row["label"]
+    return str(role_key or "").strip() or key
+
+
+def _asset_coverage_recipient_role_key(value: str | None) -> str:
+    text = str(value or "").strip().upper()
+    text = re.sub(r"[^A-Z0-9]+", "_", text).strip("_")
+    alias_map = {
+        "CENTER_HEAD": "CENTER_HEAD",
+        "CENTRE_HEAD": "CENTER_HEAD",
+        "BIOMEDICAL": "BIOMEDICAL",
+        "BIO_MEDICAL": "BIOMEDICAL",
+        "IT": "IT",
+        "INFORMATION_TECHNOLOGY": "IT",
+        "INFORMATION_TECHNOLOGY_IT": "IT",
+        "VP_OPERATIONS": "VP_OPERATIONS",
+        "VP_OPERATION": "VP_OPERATIONS",
+        "VP": "VP_OPERATIONS",
+        "PURCHASE": "PURCHASE",
+        "ASSET_PURCHASE": "PURCHASE",
+        "ASSET_PURCHASE_TEAM": "PURCHASE",
+        "ACCOUNTS": "ACCOUNTS",
+        "ACCOUNT": "ACCOUNTS",
+    }
+    return alias_map.get(text, text)
+
+
+def _asset_coverage_recipient_role_label(role_key: str | None, unit: str | None = None) -> str:
+    key = _asset_coverage_recipient_role_key(role_key)
+    label = next((row["label"] for row in ASSET_COVERAGE_RECIPIENT_ROLE_CHOICES if row["key"] == key), key)
+    unit_key = str(unit or "").strip().upper()
+    if key in {"CENTER_HEAD", "BIOMEDICAL"} and unit_key:
+        return f"{label} {unit_key}"
+    return label
+
+
+def _ensure_canteen_notification_recipient_table(conn):
+    cursor = conn.cursor()
+    try:
+        cursor.execute("""
+        IF OBJECT_ID('dbo.HID_Canteen_Notification_Recipients', 'U') IS NULL
+        BEGIN
+            CREATE TABLE dbo.HID_Canteen_Notification_Recipients (
+                Id INT IDENTITY(1,1) PRIMARY KEY,
+                Name NVARCHAR(120) NOT NULL,
+                Email NVARCHAR(200) NOT NULL,
+                Unit NVARCHAR(20) NULL,
+                RoleKey NVARCHAR(80) NOT NULL,
+                RoleName NVARCHAR(140) NOT NULL,
+                IsActive BIT NOT NULL DEFAULT(1),
+                CreatedAt DATETIME2 NOT NULL DEFAULT(SYSDATETIME()),
+                CreatedBy NVARCHAR(100) NULL,
+                UpdatedAt DATETIME2 NULL,
+                UpdatedBy NVARCHAR(100) NULL
+            );
+        END
+
+        IF COL_LENGTH('dbo.HID_Canteen_Notification_Recipients', 'Unit') IS NULL
+            ALTER TABLE dbo.HID_Canteen_Notification_Recipients ADD Unit NVARCHAR(20) NULL;
+        IF COL_LENGTH('dbo.HID_Canteen_Notification_Recipients', 'RoleKey') IS NULL
+            ALTER TABLE dbo.HID_Canteen_Notification_Recipients ADD RoleKey NVARCHAR(80) NOT NULL DEFAULT('HR');
+        IF COL_LENGTH('dbo.HID_Canteen_Notification_Recipients', 'RoleName') IS NULL
+            ALTER TABLE dbo.HID_Canteen_Notification_Recipients ADD RoleName NVARCHAR(140) NOT NULL DEFAULT('HR');
+        IF COL_LENGTH('dbo.HID_Canteen_Notification_Recipients', 'UpdatedAt') IS NULL
+            ALTER TABLE dbo.HID_Canteen_Notification_Recipients ADD UpdatedAt DATETIME2 NULL;
+        IF COL_LENGTH('dbo.HID_Canteen_Notification_Recipients', 'UpdatedBy') IS NULL
+            ALTER TABLE dbo.HID_Canteen_Notification_Recipients ADD UpdatedBy NVARCHAR(100) NULL;
+
+        IF NOT EXISTS (
+            SELECT 1 FROM sys.indexes
+            WHERE name = 'IX_HID_Canteen_Notification_Recipients_Active'
+              AND object_id = OBJECT_ID('dbo.HID_Canteen_Notification_Recipients')
+        )
+            CREATE INDEX IX_HID_Canteen_Notification_Recipients_Active
+            ON dbo.HID_Canteen_Notification_Recipients(IsActive);
+
+        IF NOT EXISTS (
+            SELECT 1 FROM sys.indexes
+            WHERE name = 'IX_HID_Canteen_Notification_Recipients_UnitRole'
+              AND object_id = OBJECT_ID('dbo.HID_Canteen_Notification_Recipients')
+        )
+            CREATE INDEX IX_HID_Canteen_Notification_Recipients_UnitRole
+            ON dbo.HID_Canteen_Notification_Recipients(Unit, RoleKey);
+        """)
+        conn.commit()
+    except Exception as e:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        print(f"Canteen notification recipient table create failed: {e}")
+
+
+def _fetch_canteen_notification_recipients(
+    unit: str | None = None,
+    role_keys: list[str] | None = None,
+    only_active: bool = False,
+):
+    unit_key = str(unit or "").strip().upper()
+    normalized_roles = sorted({
+        _canteen_notification_role_key(role)
+        for role in (role_keys or [])
+        if _canteen_notification_role_key(role)
+    })
+    try:
+        with _get_login_db_connection() as conn:
+            _ensure_canteen_notification_recipient_table(conn)
+            cursor = conn.cursor()
+            cursor.execute("SELECT OBJECT_ID('dbo.HID_Canteen_Notification_Recipients', 'U')")
+            exists_row = cursor.fetchone()
+            if not exists_row or not exists_row[0]:
+                return []
+
+            params = []
+            sql = """
+                SELECT
+                    Id, Name, Email, Unit, RoleKey, RoleName, IsActive, CreatedAt
+                FROM dbo.HID_Canteen_Notification_Recipients
+                WHERE 1 = 1
+            """
+            if only_active:
+                sql += " AND ISNULL(IsActive, 1) = 1"
+            if unit_key:
+                sql += """
+                    AND (
+                        Unit IS NULL
+                        OR LTRIM(RTRIM(Unit)) = ''
+                        OR UPPER(LTRIM(RTRIM(Unit))) = 'ALL'
+                        OR UPPER(LTRIM(RTRIM(Unit))) = ?
+                    )
+                """
+                params.append(unit_key)
+            if normalized_roles:
+                placeholders = ",".join("?" * len(normalized_roles))
+                sql += f" AND UPPER(LTRIM(RTRIM(RoleKey))) IN ({placeholders})"
+                params.extend(normalized_roles)
+            sql += """
+                ORDER BY
+                    CASE
+                        WHEN ? <> '' AND UPPER(LTRIM(RTRIM(ISNULL(Unit, '')))) = ? THEN 0
+                        WHEN Unit IS NULL OR LTRIM(RTRIM(Unit)) = '' OR UPPER(LTRIM(RTRIM(Unit))) = 'ALL' THEN 1
+                        ELSE 2
+                    END,
+                    RoleName,
+                    Name
+            """
+            params.extend([unit_key, unit_key])
+            cursor.execute(sql, params)
+            rows = cursor.fetchall()
+            cols = [c[0] for c in cursor.description]
+            return [{cols[i]: row[i] for i in range(len(cols))} for row in rows]
+    except Exception as e:
+        print(f"Canteen notification recipient fetch failed: {e}")
+        return []
+
+
+def _add_canteen_notification_recipient(
+    name: str,
+    email: str,
+    unit: str | None,
+    role_key: str,
+    created_by: str | None = None,
+):
+    name_val = str(name or "").strip()
+    email_val = str(email or "").strip().lower()
+    unit_val = str(unit or "").strip().upper() or None
+    role_key_val = _canteen_notification_role_key(role_key)
+    role_name_val = _canteen_notification_role_label(role_key_val)
+    if not name_val or not email_val:
+        return {"error": "Missing name or email."}
+    if not _purchase_is_valid_email(email_val):
+        return {"error": "Invalid email address."}
+    if role_key_val not in {row["key"] for row in CANTEEN_BULK_NOTIFICATION_ROLE_CHOICES}:
+        return {"error": "Invalid canteen notification role."}
+
+    with _get_login_db_connection() as conn:
+        _ensure_canteen_notification_recipient_table(conn)
+        cursor = conn.cursor()
+        cursor.execute("SELECT OBJECT_ID('dbo.HID_Canteen_Notification_Recipients', 'U')")
+        exists_row = cursor.fetchone()
+        if not exists_row or not exists_row[0]:
+            return {"error": "Canteen notification recipient table not created (permission issue)."}
+        cursor.execute("""
+            SELECT TOP 1 Id
+            FROM dbo.HID_Canteen_Notification_Recipients
+            WHERE UPPER(LTRIM(RTRIM(Email))) = UPPER(LTRIM(RTRIM(?)))
+              AND UPPER(LTRIM(RTRIM(RoleKey))) = ?
+              AND ((Unit IS NULL AND ? IS NULL) OR UPPER(LTRIM(RTRIM(Unit))) = UPPER(LTRIM(RTRIM(?))))
+        """, (email_val, role_key_val, unit_val, unit_val))
+        row = cursor.fetchone()
+        if row:
+            cursor.execute("""
+                UPDATE dbo.HID_Canteen_Notification_Recipients
+                SET Name = ?, Email = ?, Unit = ?, RoleKey = ?, RoleName = ?,
+                    IsActive = 1, UpdatedAt = SYSDATETIME(), UpdatedBy = ?
+                WHERE Id = ?
+            """, (name_val, email_val, unit_val, role_key_val, role_name_val, created_by, row.Id))
+        else:
+            cursor.execute("""
+                INSERT INTO dbo.HID_Canteen_Notification_Recipients
+                    (Name, Email, Unit, RoleKey, RoleName, IsActive, CreatedBy)
+                VALUES (?, ?, ?, ?, ?, 1, ?)
+            """, (name_val, email_val, unit_val, role_key_val, role_name_val, created_by))
+        conn.commit()
+    return {"status": "success"}
+
+
+def _set_canteen_notification_recipient_active(recipient_id: int, is_active: bool, updated_by: str | None = None):
+    with _get_login_db_connection() as conn:
+        _ensure_canteen_notification_recipient_table(conn)
+        cursor = conn.cursor()
+        cursor.execute("""
+            UPDATE dbo.HID_Canteen_Notification_Recipients
+            SET IsActive = ?, UpdatedAt = SYSDATETIME(), UpdatedBy = ?
+            WHERE Id = ?
+        """, (1 if is_active else 0, updated_by, int(recipient_id)))
+        conn.commit()
+
 
 def _ensure_purchase_otp_table(conn):
     cursor = conn.cursor()
@@ -6867,8 +7414,9 @@ def _ensure_snapshot_doctor_table():
 NIGHT_REPORT_EQUIPMENT_ROWS = ["Ventilator", "BIPAP", "NIV", "C-PAP", "Others", "Total"]
 NIGHT_REPORT_EQUIPMENT_COLS = ["Neuro ICU", "NICU", "PICU", "MICU", "CCU"]
 NIGHT_REPORT_DOCTOR_ENTRY_ROWS = 6
+MOD_REPORT_CARDIAC_DEPARTMENT_ID = 14
 NIGHT_REPORT_CARDIAC_DOC_IDS = list(
-    dict.fromkeys([*(getattr(config, "NIGHT_REPORT_CARDIAC_DOC_IDS", [4, 1118]) or []), 5])
+    dict.fromkeys([*(getattr(config, "NIGHT_REPORT_CARDIAC_DOC_IDS", [4, 1118, 1374]) or []), 5])
 )
 
 def _resolve_column(col_map: dict[str, str], candidates: list[str]):
@@ -6901,6 +7449,52 @@ def _get_table_columns_map(conn, table_name: str) -> dict[str, str]:
         except Exception:
             return {}
     return cols
+
+def _coerce_doc_id_list(values) -> list[int]:
+    out = []
+    for raw in values or []:
+        try:
+            doc_id = int(raw)
+        except Exception:
+            continue
+        if doc_id > 0 and doc_id not in out:
+            out.append(doc_id)
+    return out
+
+def _fetch_mod_cardiac_department_doc_ids(unit: str | None) -> list[int]:
+    unit_norm = (unit or "").strip().upper()
+    if unit_norm != "AHL":
+        return []
+    from modules.db_connection import get_sql_connection
+    conn = get_sql_connection(unit_norm)
+    if not conn:
+        return []
+    try:
+        col_map = _get_table_columns_map(conn, "employee_mst")
+        if not col_map:
+            col_map = _get_table_columns_map(conn, "Employee_Mst")
+        emp_col = _resolve_column(col_map, ["EmpID", "EmpId", "empid", "EmployeeID", "EmployeeId", "ID", "Id"])
+        dept_col = _resolve_column(col_map, ["Department_ID", "DepartmentId", "department_id", "departmentid"])
+        if not emp_col or not dept_col:
+            return []
+        cur = conn.cursor()
+        cur.execute(
+            f"SELECT {emp_col} FROM employee_mst WITH (NOLOCK) WHERE {dept_col} = ? ORDER BY {emp_col}",
+            (MOD_REPORT_CARDIAC_DEPARTMENT_ID,),
+        )
+        return _coerce_doc_id_list([row[0] for row in cur.fetchall()])
+    except Exception:
+        return []
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+def _resolve_mod_cardiac_doc_ids(unit: str | None, base_ids: list[int] | None = None) -> list[int]:
+    ids = _coerce_doc_id_list(base_ids or NIGHT_REPORT_CARDIAC_DOC_IDS)
+    ids.extend(_fetch_mod_cardiac_department_doc_ids(unit))
+    return _coerce_doc_id_list(ids)
 
 def _count_visits_for_date(conn, date_col: str | None, date_str: str, extra_where: str = "", extra_params: list | None = None) -> int:
     if not date_col:
@@ -6951,7 +7545,7 @@ def _fetch_night_report_adm_disc(unit: str, date_str: str, cardiac_doc_ids: list
         total_adm = _count_visits_for_date(conn, visit_date_col, date_str, f"{visit_type_col} = ?", [1])
         total_dis = _count_visits_for_date(conn, discharge_date_col, date_str, f"{visit_type_col} = ?", [1])
 
-        cardiac_ids = NIGHT_REPORT_CARDIAC_DOC_IDS if cardiac_doc_ids is None else cardiac_doc_ids
+        cardiac_ids = _resolve_mod_cardiac_doc_ids(unit, cardiac_doc_ids)
         cardiac_adm = 0
         cardiac_dis = 0
         if doc_col and cardiac_ids:
@@ -7639,6 +8233,7 @@ def _build_night_report_excel(payload: dict, exported_by: str | None = None) -> 
 def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> bytes:
     if not payload:
         return b""
+    payload = _attach_morning_auto_sections(payload) or {}
     from reportlab.lib.pagesizes import A4, landscape
     from reportlab.lib import colors
     from reportlab.lib.units import mm
@@ -7670,6 +8265,8 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
     staff_rows = _filter_staff_rows(payload.get("staff_rows") or [])
     non_medical_rows = payload.get("non_medical_rows") or []
     referral_rows = payload.get("referral_rows") or []
+    daycare_rows = payload.get("daycare_rows") or []
+    non_cured_discharge_rows = payload.get("non_cured_discharge_rows") or []
     def _fmt(val):
         if val is None:
             return ""
@@ -8054,6 +8651,50 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
         leading=page2_data_font_size + 1,
         alignment=TA_CENTER,
     )
+    page3_data_font_size = 10.25
+    page3_header_font_size = 7.1
+    page3_section_title_size = 10.9
+    page3_referral_data_font_size = 9.45
+    page3_referral_header_font_size = 6.55
+    page3_referral_section_title_size = 10.25
+    page3_detail_data_font_size = 9.4
+    page3_detail_header_font_size = 6.7
+    page3_detail_section_title_size = 10.3
+    page3_left = ParagraphStyle(
+        "page3_left",
+        fontName=font_regular_name,
+        fontSize=page3_data_font_size,
+        leading=page3_data_font_size + 0.8,
+        alignment=TA_LEFT,
+    )
+    page3_referral_left = ParagraphStyle(
+        "page3_referral_left",
+        fontName=font_regular_name,
+        fontSize=page3_referral_data_font_size,
+        leading=page3_referral_data_font_size + 0.8,
+        alignment=TA_LEFT,
+    )
+    page3_referral_center = ParagraphStyle(
+        "page3_referral_center",
+        fontName=font_regular_name,
+        fontSize=page3_referral_data_font_size,
+        leading=page3_referral_data_font_size + 0.8,
+        alignment=TA_CENTER,
+    )
+    page3_detail_left = ParagraphStyle(
+        "page3_detail_left",
+        fontName=font_regular_name,
+        fontSize=page3_detail_data_font_size,
+        leading=page3_detail_data_font_size + 0.8,
+        alignment=TA_LEFT,
+    )
+    page3_detail_center = ParagraphStyle(
+        "page3_detail_center",
+        fontName=font_regular_name,
+        fontSize=page3_detail_data_font_size,
+        leading=page3_detail_data_font_size + 0.8,
+        alignment=TA_CENTER,
+    )
 
     def _scaled_widths_mm(widths_mm, target_width):
         widths = [w * mm for w in widths_mm]
@@ -8239,7 +8880,7 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
     for row in staff_rows:
         staff_body.append([
             str(row.get("sl") or ""),
-            Paragraph(str(row.get("department") or ""), alt_left),
+            Paragraph(str(row.get("department") or ""), page3_left),
             str(row.get("doctor") or ""),
             str(row.get("nursing") or ""),
             str(row.get("aaya") or ""),
@@ -8247,11 +8888,11 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
             str(row.get("housekeeping") or ""),
         ])
     if not staff_body:
-        staff_body = [["", Paragraph("No data", alt_left), "", "", "", "", ""]]
+        staff_body = [["", Paragraph("No data", page3_left), "", "", "", "", ""]]
     else:
         staff_body.append([
             "",
-            Paragraph("Total", alt_left),
+            Paragraph("Total", page3_left),
             _fmt(_staff_count_total(staff_rows, "doctor")),
             _fmt(_staff_count_total(staff_rows, "nursing")),
             _fmt(_staff_count_total(staff_rows, "aaya")),
@@ -8267,10 +8908,20 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
         ("BACKGROUND", (0, 1), (-1, 1), alt_head_bg),
         ("BACKGROUND", (0, 2), (-1, -1), colors.white),
         ("FONTNAME", (0, 0), (-1, 1), font_bold_name),
-        ("FONTSIZE", (0, 0), (-1, -1), 11),
+        ("FONTSIZE", (0, 0), (-1, -1), page3_data_font_size),
+        ("FONTSIZE", (0, 0), (-1, 0), page3_section_title_size),
+        ("FONTSIZE", (0, 1), (-1, 1), page3_header_font_size),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("ALIGN", (1, 2), (1, -1), "LEFT"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), pad_x),
+        ("RIGHTPADDING", (0, 0), (-1, -1), pad_x),
+        ("TOPPADDING", (0, 0), (-1, 0), pad_title_y),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), pad_title_y),
+        ("TOPPADDING", (0, 1), (-1, 1), pad_header_y),
+        ("BOTTOMPADDING", (0, 1), (-1, 1), pad_header_y),
+        ("TOPPADDING", (0, 2), (-1, -1), pad_body_y),
+        ("BOTTOMPADDING", (0, 2), (-1, -1), pad_body_y),
         ("GRID", (0, 0), (-1, -1), 0.4, alt_border),
     ])
     if staff_rows:
@@ -8286,18 +8937,18 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
     for row in non_medical_rows:
         non_med_body.append([
             str(row.get("sl") or ""),
-            Paragraph(str(row.get("left_label") or ""), alt_left),
+            Paragraph(str(row.get("left_label") or ""), page3_left),
             _fmt(row.get("left_count")),
-            Paragraph(str(row.get("right_label") or ""), alt_left),
+            Paragraph(str(row.get("right_label") or ""), page3_left),
             _fmt(row.get("right_count")),
         ])
     if not non_med_body:
-        non_med_body = [["", Paragraph("No data", alt_left), "", "", ""]]
+        non_med_body = [["", Paragraph("No data", page3_left), "", "", ""]]
     non_med_body.append([
         "",
-        Paragraph("Total", alt_left),
+        Paragraph("Total", page3_left),
         _fmt(non_med_left_total) if non_med_left_total else "",
-        Paragraph("Total", alt_left),
+        Paragraph("Total", page3_left),
         _fmt(non_med_right_total) if non_med_right_total else "",
     ])
     non_med_data = [["Non Medical Staff"] + [""] * (len(non_med_headers) - 1), non_med_headers]
@@ -8309,11 +8960,21 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
         ("BACKGROUND", (0, 1), (-1, 1), alt_head_bg),
         ("BACKGROUND", (0, 2), (-1, -1), colors.white),
         ("FONTNAME", (0, 0), (-1, 1), font_bold_name),
-        ("FONTSIZE", (0, 0), (-1, -1), 11),
+        ("FONTSIZE", (0, 0), (-1, -1), page3_data_font_size),
+        ("FONTSIZE", (0, 0), (-1, 0), page3_section_title_size),
+        ("FONTSIZE", (0, 1), (-1, 1), page3_header_font_size),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("ALIGN", (1, 2), (1, -1), "LEFT"),
         ("ALIGN", (3, 2), (3, -1), "LEFT"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), pad_x),
+        ("RIGHTPADDING", (0, 0), (-1, -1), pad_x),
+        ("TOPPADDING", (0, 0), (-1, 0), pad_title_y),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), pad_title_y),
+        ("TOPPADDING", (0, 1), (-1, 1), pad_header_y),
+        ("BOTTOMPADDING", (0, 1), (-1, 1), pad_header_y),
+        ("TOPPADDING", (0, 2), (-1, -1), pad_body_y),
+        ("BOTTOMPADDING", (0, 2), (-1, -1), pad_body_y),
         ("GRID", (0, 0), (-1, -1), 0.4, alt_border),
     ])
     non_med_style.add("BACKGROUND", (0, len(non_med_data) - 1), (-1, len(non_med_data) - 1), colors.HexColor("#d9d9d9"))
@@ -8321,36 +8982,96 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
     non_med_tbl.setStyle(non_med_style)
     non_med_tbl.hAlign = "CENTER"
 
-    ref_headers = ["Sl", "Patient Name", "Visit Time", "Consultant Name", "Reason for Refering"]
+    ref_headers = ["Sl", "Patient Name", "Visit Time", "Discharge Time", "Consultant Name", "Reason", "Remarks"]
     ref_body = []
     for row in referral_rows:
         ref_body.append([
             str(row.get("sl") or ""),
-            Paragraph(str(row.get("patient_name") or ""), alt_left),
-            str(row.get("visit_time") or ""),
-            Paragraph(str(row.get("consultant") or ""), alt_left),
-            Paragraph(str(row.get("reason") or ""), alt_left),
+            Paragraph(str(row.get("patient_name") or ""), page3_referral_left),
+            Paragraph(str(row.get("visit_time") or ""), page3_referral_center),
+            Paragraph(str(row.get("discharge_time") or ""), page3_referral_center),
+            Paragraph(str(row.get("consultant") or ""), page3_referral_left),
+            Paragraph(str(row.get("reason_type") or ""), page3_referral_left),
+            Paragraph(str(row.get("reason") or ""), page3_referral_left),
         ])
     if not ref_body:
-        ref_body = [["", Paragraph("No data", alt_left), "", "", ""]]
-    ref_data = [["Referral/Refusal/Brought Death Information (12:00 PM to 11:59 PM)"] + [""] * (len(ref_headers) - 1), ref_headers]
+        ref_body = [["", Paragraph("No data", page3_referral_left), "", "", "", "", ""]]
+    ref_data = [[MORNING_REPORT_REFERRAL_SECTION_TITLE] + [""] * (len(ref_headers) - 1), ref_headers]
     ref_data.extend(ref_body)
-    ref_tbl = Table(ref_data, colWidths=_scaled_widths_mm([10, 34, 18, 28, 46], content_width))
+    ref_tbl = Table(ref_data, colWidths=_scaled_widths_mm([8, 26, 18, 18, 23, 17, 26], content_width), repeatRows=2)
     ref_tbl.setStyle(TableStyle([
         ("SPAN", (0, 0), (-1, 0)),
         ("BACKGROUND", (0, 0), (-1, 0), alt_section_bg),
         ("BACKGROUND", (0, 1), (-1, 1), alt_head_bg),
         ("BACKGROUND", (0, 2), (-1, -1), colors.white),
         ("FONTNAME", (0, 0), (-1, 1), "Helvetica-Bold"),
-        ("FONTSIZE", (0, 0), (-1, -1), 11),
+        ("FONTSIZE", (0, 0), (-1, -1), page3_referral_data_font_size),
+        ("FONTSIZE", (0, 0), (-1, 0), page3_referral_section_title_size),
+        ("FONTSIZE", (0, 1), (-1, 1), page3_referral_header_font_size),
         ("ALIGN", (0, 0), (-1, -1), "CENTER"),
         ("ALIGN", (1, 2), (1, -1), "LEFT"),
-        ("ALIGN", (3, 2), (3, -1), "LEFT"),
         ("ALIGN", (4, 2), (4, -1), "LEFT"),
+        ("ALIGN", (5, 2), (6, -1), "LEFT"),
         ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+        ("LEFTPADDING", (0, 0), (-1, -1), pad_x),
+        ("RIGHTPADDING", (0, 0), (-1, -1), pad_x),
+        ("TOPPADDING", (0, 0), (-1, 0), pad_title_y),
+        ("BOTTOMPADDING", (0, 0), (-1, 0), pad_title_y),
+        ("TOPPADDING", (0, 1), (-1, 1), pad_header_y),
+        ("BOTTOMPADDING", (0, 1), (-1, 1), pad_header_y),
+        ("TOPPADDING", (0, 2), (-1, -1), pad_body_y),
+        ("BOTTOMPADDING", (0, 2), (-1, -1), pad_body_y),
         ("GRID", (0, 0), (-1, -1), 0.4, alt_border),
     ]))
     ref_tbl.hAlign = "CENTER"
+
+    def _build_discharge_detail_table(section_title: str, rows: list[dict]):
+        detail_headers = MORNING_REPORT_DISCHARGE_DETAIL_HEADERS
+        detail_body = []
+        for item in rows or []:
+            detail_body.append([
+                str(item.get("sl") or ""),
+                Paragraph(str(item.get("patient_name") or ""), page3_detail_left),
+                Paragraph(str(item.get("admission_time") or ""), page3_detail_center),
+                Paragraph(str(item.get("discharge_time") or ""), page3_detail_center),
+                Paragraph(str(item.get("doctor_name") or ""), page3_detail_left),
+                Paragraph(str(item.get("reason") or ""), page3_detail_left),
+                Paragraph(str(item.get("remarks") or ""), page3_detail_left),
+            ])
+        if not detail_body:
+            detail_body = [["", Paragraph("No data", page3_detail_left), "", "", "", "", ""]]
+        detail_data = [[section_title] + [""] * (len(detail_headers) - 1), detail_headers]
+        detail_data.extend(detail_body)
+        detail_tbl = Table(
+            detail_data,
+            colWidths=_scaled_widths_mm([9, 30, 22, 22, 24, 29, 40], content_width),
+            repeatRows=2,
+        )
+        detail_tbl.setStyle(TableStyle([
+            ("SPAN", (0, 0), (-1, 0)),
+            ("BACKGROUND", (0, 0), (-1, 0), alt_section_bg),
+            ("BACKGROUND", (0, 1), (-1, 1), alt_head_bg),
+            ("BACKGROUND", (0, 2), (-1, -1), colors.white),
+            ("FONTNAME", (0, 0), (-1, 1), font_bold_name),
+            ("FONTSIZE", (0, 0), (-1, -1), page3_detail_data_font_size),
+            ("FONTSIZE", (0, 0), (-1, 0), page3_detail_section_title_size),
+            ("FONTSIZE", (0, 1), (-1, 1), page3_detail_header_font_size),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("ALIGN", (1, 2), (1, -1), "LEFT"),
+            ("ALIGN", (4, 2), (6, -1), "LEFT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), pad_x),
+            ("RIGHTPADDING", (0, 0), (-1, -1), pad_x),
+            ("TOPPADDING", (0, 0), (-1, 0), pad_title_y),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), pad_title_y),
+            ("TOPPADDING", (0, 1), (-1, 1), pad_header_y),
+            ("BOTTOMPADDING", (0, 1), (-1, 1), pad_header_y),
+            ("TOPPADDING", (0, 2), (-1, -1), pad_body_y),
+            ("BOTTOMPADDING", (0, 2), (-1, -1), pad_body_y),
+            ("GRID", (0, 0), (-1, -1), 0.4, alt_border),
+        ]))
+        detail_tbl.hAlign = "CENTER"
+        return detail_tbl
 
     night_visit_page_limit = 25
     night_visit_count = len(doctor_night_visits or [])
@@ -8364,7 +9085,18 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
     else:
         story.extend([Spacer(0, pad_body_y), title_tbl, Spacer(0, pad_body_y), _ScaledStack([top_grid, night_tbl], vgap=3)])
     story.append(PageBreak())
-    story.extend([_ScaledStack([staff_tbl, non_med_tbl, ref_tbl], vgap=3)])
+    story.extend([
+        staff_tbl,
+        Spacer(0, pad_body_y),
+        non_med_tbl,
+        Spacer(0, pad_body_y),
+        ref_tbl,
+        Spacer(0, pad_body_y),
+        _build_discharge_detail_table(
+            MORNING_REPORT_NON_CURED_DISCHARGE_SECTION_TITLE,
+            non_cured_discharge_rows,
+        ),
+    ])
     doc.build(story, onFirstPage=_draw_footer, onLaterPages=_draw_footer)
     buffer.seek(0)
     return buffer.getvalue()
@@ -8373,6 +9105,7 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
 def _build_morning_report_jpg(payload: dict, exported_by: str | None = None, font_scale: float = 1.6, section: int | None = None) -> bytes:
     if not payload:
         return b""
+    payload = _attach_morning_auto_sections(payload) or {}
     try:
         from PIL import Image, ImageDraw, ImageFont
     except Exception as exc:
@@ -8405,6 +9138,8 @@ def _build_morning_report_jpg(payload: dict, exported_by: str | None = None, fon
     staff_rows = _filter_staff_rows(payload.get("staff_rows") or [])
     non_medical_rows = payload.get("non_medical_rows") or []
     referral_rows = payload.get("referral_rows") or []
+    daycare_rows = payload.get("daycare_rows") or []
+    non_cured_discharge_rows = payload.get("non_cured_discharge_rows") or []
 
     def _fmt(val):
         if val is None:
@@ -8444,6 +9179,15 @@ def _build_morning_report_jpg(payload: dict, exported_by: str | None = None, fon
     title_pt = 12.5
     meta_pt = 9.5
     section_title_pt = 11.5
+    page3_data_pt = 10.75
+    page3_header_pt = 7.0
+    page3_section_title_pt = 11.0
+    page3_referral_data_pt = 9.7
+    page3_referral_header_pt = 6.45
+    page3_referral_section_title_pt = 10.45
+    page3_detail_data_pt = 9.8
+    page3_detail_header_pt = 6.4
+    page3_detail_section_title_pt = 10.4
 
     font_regular = _load_font(_pt_to_px(data_pt), bold=False)
     font_bold = _load_font(_pt_to_px(data_pt), bold=True)
@@ -8451,6 +9195,18 @@ def _build_morning_report_jpg(payload: dict, exported_by: str | None = None, fon
     font_section_title = _load_font(_pt_to_px(section_title_pt), bold=True)
     font_title = _load_font(_pt_to_px(title_pt), bold=True)
     font_meta = _load_font(_pt_to_px(meta_pt), bold=True)
+    font_regular_compact = _load_font(_pt_to_px(page3_data_pt), bold=False)
+    font_bold_compact = _load_font(_pt_to_px(page3_data_pt), bold=True)
+    font_header_compact = _load_font(_pt_to_px(page3_header_pt), bold=True)
+    font_section_title_compact = _load_font(_pt_to_px(page3_section_title_pt), bold=True)
+    font_regular_referral = _load_font(_pt_to_px(page3_referral_data_pt), bold=False)
+    font_bold_referral = _load_font(_pt_to_px(page3_referral_data_pt), bold=True)
+    font_header_referral = _load_font(_pt_to_px(page3_referral_header_pt), bold=True)
+    font_section_title_referral = _load_font(_pt_to_px(page3_referral_section_title_pt), bold=True)
+    font_regular_detail = _load_font(_pt_to_px(page3_detail_data_pt), bold=False)
+    font_bold_detail = _load_font(_pt_to_px(page3_detail_data_pt), bold=True)
+    font_header_detail = _load_font(_pt_to_px(page3_detail_header_pt), bold=True)
+    font_section_title_detail = _load_font(_pt_to_px(page3_detail_section_title_pt), bold=True)
 
     page_width_mm = 210
     page_height_mm = 297
@@ -8655,21 +9411,27 @@ def _build_morning_report_jpg(payload: dict, exported_by: str | None = None, fon
     adm_col_widths = _scale_cols([10, 30, 26, 20, 22], right_width_px)
 
     def _draw_table(x, y, col_widths, section_title, rows, left_align_cols,
-                    section_bg=None, header_bg=None, body_bg=None):
+                    section_bg=None, header_bg=None, body_bg=None,
+                    section_title_font=None, header_font_override=None,
+                    body_font=None, body_bold_font=None):
         row_ptr = y
         table_width = sum(col_widths)
         section_bg = section_bg or bg_section
         header_bg = header_bg or bg_header
         body_bg = body_bg or bg_body
+        section_title_font = section_title_font or font_section_title
+        header_font_use = header_font_override or font_header
+        body_font = body_font or font_regular
+        body_bold_font = body_bold_font or font_bold
 
         # Section title row
         if section_title:
-            h = _text_height(font_section_title) + (pad_title_y * 2)
+            h = _text_height(section_title_font) + (pad_title_y * 2)
             draw.rectangle([x, row_ptr, x + table_width, row_ptr + h], fill=section_bg, outline=grid_color, width=1)
-            text_w = _text_width(section_title, font_section_title)
+            text_w = _text_width(section_title, section_title_font)
             tx = x + (table_width - text_w) / 2
-            ty = row_ptr + (h - _text_height(font_section_title)) / 2
-            draw.text((tx, ty), section_title, font=font_section_title, fill="black")
+            ty = row_ptr + (h - _text_height(section_title_font)) / 2
+            draw.text((tx, ty), section_title, font=section_title_font, fill="black")
             row_ptr += h
 
         # Header row
@@ -8678,21 +9440,21 @@ def _build_morning_report_jpg(payload: dict, exported_by: str | None = None, fon
         header_lines = []
         for idx, text in enumerate(header):
             max_w = max(10, col_widths[idx] - (pad_x * 2))
-            lines = _wrap_text(text, font_header, max_w)
+            lines = _wrap_text(text, header_font_use, max_w)
             header_lines.append(lines)
-            header_heights.append((len(lines) * _text_height(font_header)) + (pad_header_y * 2))
-        header_h = max(header_heights) if header_heights else (_text_height(font_header) + (pad_header_y * 2))
+            header_heights.append((len(lines) * _text_height(header_font_use)) + (pad_header_y * 2))
+        header_h = max(header_heights) if header_heights else (_text_height(header_font_use) + (pad_header_y * 2))
         x_ptr = x
         for idx, lines in enumerate(header_lines):
             cell_w = col_widths[idx]
             draw.rectangle([x_ptr, row_ptr, x_ptr + cell_w, row_ptr + header_h], fill=header_bg, outline=grid_color, width=1)
-            line_h = _text_height(font_header)
+            line_h = _text_height(header_font_use)
             text_h = line_h * len(lines)
             ty = row_ptr + (header_h - text_h) / 2
             for line in lines:
-                line_w = _text_width(line, font_header)
+                line_w = _text_width(line, header_font_use)
                 tx = x_ptr + (cell_w - line_w) / 2
-                draw.text((tx, ty), line, font=font_header, fill="black")
+                draw.text((tx, ty), line, font=header_font_use, fill="black")
                 ty += line_h
             x_ptr += cell_w
         row_ptr += header_h
@@ -8703,12 +9465,12 @@ def _build_morning_report_jpg(payload: dict, exported_by: str | None = None, fon
             row_heights = []
             row_lines = []
             for idx, val in enumerate(row):
-                font = font_bold if is_total else font_regular
+                font = body_bold_font if is_total else body_font
                 max_w = max(10, col_widths[idx] - (pad_x * 2))
                 lines = _wrap_text(val, font, max_w)
                 row_lines.append((lines, font))
                 row_heights.append((len(lines) * _text_height(font)) + (pad_body_y * 2))
-            base_body_h = _text_height(font_regular) + (pad_body_y * 2)
+            base_body_h = _text_height(body_font) + (pad_body_y * 2)
             row_h = max(row_heights + [base_body_h]) if row_heights else base_body_h
             x_ptr = x
             for idx, (lines, font) in enumerate(row_lines):
@@ -8884,7 +9646,11 @@ def _build_morning_report_jpg(payload: dict, exported_by: str | None = None, fon
         staff_height = _draw_table(
             margin_left_px, section_y, staff_col_widths,
             "Department wise Count of Staff at Night Shift", staff_cols,
-            left_align_cols={1}, section_bg=alt_title, header_bg=alt_head
+            left_align_cols={1}, section_bg=alt_title, header_bg=alt_head,
+            section_title_font=font_section_title_compact,
+            header_font_override=font_header_compact,
+            body_font=font_regular_compact,
+            body_bold_font=font_bold_compact,
         )
         section_y += staff_height + gap_v_px
 
@@ -8910,28 +9676,67 @@ def _build_morning_report_jpg(payload: dict, exported_by: str | None = None, fon
         non_height = _draw_table(
             margin_left_px, section_y, non_med_col_widths,
             "Non Medical Staff", non_med_cols,
-            left_align_cols={1, 3}, section_bg=alt_section, header_bg=alt_head
+            left_align_cols={1, 3}, section_bg=alt_section, header_bg=alt_head,
+            section_title_font=font_section_title_compact,
+            header_font_override=font_header_compact,
+            body_font=font_regular_compact,
+            body_bold_font=font_bold_compact,
         )
         section_y += non_height + gap_v_px
 
-        ref_cols = [["Sl", "Patient Name", "Visit Time", "Consultant Name", "Reason for Refering"]]
+        ref_cols = [["Sl", "Patient Name", "Visit Time", "Discharge Time", "Consultant Name", "Reason", "Remarks"]]
         for row in (referral_rows_payload or []):
             ref_cols.append([
                 str(row.get("sl") or ""),
                 str(row.get("patient_name") or ""),
                 str(row.get("visit_time") or ""),
+                str(row.get("discharge_time") or ""),
                 str(row.get("consultant") or ""),
+                str(row.get("reason_type") or ""),
                 str(row.get("reason") or ""),
             ])
         if len(ref_cols) == 1:
-            ref_cols.append(["", "No data", "", "", ""])
-        ref_col_widths = _scale_cols([10, 34, 18, 28, 46], usable_width_px)
+            ref_cols.append(["", "No data", "", "", "", "", ""])
+        ref_col_widths = _scale_cols([8, 26, 18, 18, 23, 17, 26], usable_width_px)
         ref_height = _draw_table(
             margin_left_px, section_y, ref_col_widths,
-            "Referral/Refusal/Brought Death Information (12:00 PM to 11:59 PM)", ref_cols,
-            left_align_cols={1, 3, 4}, section_bg=alt_section, header_bg=alt_head
+            MORNING_REPORT_REFERRAL_SECTION_TITLE, ref_cols,
+            left_align_cols={1, 4, 5, 6}, section_bg=alt_section, header_bg=alt_head,
+            section_title_font=font_section_title_referral,
+            header_font_override=font_header_referral,
+            body_font=font_regular_referral,
+            body_bold_font=font_bold_referral,
         )
-        section_y += ref_height
+        section_y += ref_height + gap_v_px
+
+        detail_col_widths = _scale_cols([9, 30, 22, 22, 24, 29, 40], usable_width_px)
+
+        def _build_detail_rows(rows):
+            detail_rows = [list(MORNING_REPORT_DISCHARGE_DETAIL_HEADERS)]
+            for item in rows or []:
+                detail_rows.append([
+                    str(item.get("sl") or ""),
+                    str(item.get("patient_name") or ""),
+                    str(item.get("admission_time") or ""),
+                    str(item.get("discharge_time") or ""),
+                    str(item.get("doctor_name") or ""),
+                    str(item.get("reason") or ""),
+                    str(item.get("remarks") or ""),
+                ])
+            if len(detail_rows) == 1:
+                detail_rows.append(["", "No data", "", "", "", "", ""])
+            return detail_rows
+
+        non_cured_height = _draw_table(
+            margin_left_px, section_y, detail_col_widths,
+            MORNING_REPORT_NON_CURED_DISCHARGE_SECTION_TITLE, _build_detail_rows(non_cured_discharge_rows),
+            left_align_cols={1, 4, 5, 6}, section_bg=alt_section, header_bg=alt_head,
+            section_title_font=font_section_title_detail,
+            header_font_override=font_header_detail,
+            body_font=font_regular_detail,
+            body_bold_font=font_bold_detail,
+        )
+        section_y += non_cured_height
         return section_y
 
     def _render_page(which: int | None) -> int:
@@ -9223,6 +10028,11 @@ def _build_night_report_pdf(payload: dict, exported_by: str | None = None) -> by
         data[row_idx] = new_row
 
     page_size = A4
+    footer_font_size = 9
+    footer_line_gap = 2
+    footer_bottom_pad = 2 * mm
+    # Reserve a dedicated footer band so the last table row never collides with the footer text.
+    footer_reserved_height = (footer_font_size * 2) + footer_line_gap + (4 * mm)
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(
         buffer,
@@ -9230,7 +10040,7 @@ def _build_night_report_pdf(payload: dict, exported_by: str | None = None) -> by
         leftMargin=1.5 * mm,
         rightMargin=1.5 * mm,
         topMargin=1.5 * mm,
-        bottomMargin=1.5 * mm,
+        bottomMargin=footer_reserved_height,
         compress=1,
     )
 
@@ -9385,13 +10195,14 @@ def _build_night_report_pdf(payload: dict, exported_by: str | None = None) -> by
 
     def _draw_footer(canvas, doc_obj):
         canvas.saveState()
-        canvas.setFont(font_regular_name, 9)
-        footer_y = 1.5 * mm
+        canvas.setFont(font_regular_name, footer_font_size)
+        footer_y = footer_bottom_pad
+        footer_line_step = footer_font_size + footer_line_gap
         line1 = f"Exported By: {exported_by} | Exported At: {exported_at} | Unit: {unit}"
         line2 = f"Report Date: {date_str} | Source: {source_label}"
         if snapshot_time:
             line2 += f" | Snapshot: {snapshot_time}"
-        canvas.drawString(doc_obj.leftMargin, footer_y + 8, line1)
+        canvas.drawString(doc_obj.leftMargin, footer_y + footer_line_step, line1)
         canvas.drawString(doc_obj.leftMargin, footer_y, line2)
         canvas.drawRightString(doc_obj.pagesize[0] - doc_obj.rightMargin, footer_y, f"Page {doc_obj.page}")
         canvas.restoreState()
@@ -10108,7 +10919,7 @@ MORNING_REPORT_KEY_PROCEDURES = [
     "OTHER",
 ]
 MORNING_REPORT_CARDIAC_DOC_IDS = list(
-    dict.fromkeys([*(getattr(config, "MORNING_REPORT_CARDIAC_DOC_IDS", NIGHT_REPORT_CARDIAC_DOC_IDS) or []), 5])
+    dict.fromkeys([*(getattr(config, "MORNING_REPORT_CARDIAC_DOC_IDS", NIGHT_REPORT_CARDIAC_DOC_IDS) or []), 5, 1374])
 )
 MORNING_REPORT_CARDIAC_SUBDEPT_KEYWORDS = [
     str(x).upper()
@@ -10121,6 +10932,18 @@ MORNING_REPORT_DEATH_WARD_KEYWORDS = ["CARDIAC", "CARDIO", "CCU", "CICU"]
 MORNING_REPORT_STAFF_DEFAULT_ROWS = 22
 MORNING_REPORT_NON_MEDICAL_DEFAULT_ROWS = 3
 MORNING_REPORT_REFERRAL_DEFAULT_ROWS = 3
+MORNING_REPORT_REFERRAL_SECTION_TITLE = "Referral/Refusal/Brought Death/Daycare Information (12:00 AM to 11:59 PM)"
+MORNING_REPORT_DAYCARE_SECTION_TITLE = "Daycare Information (12:00 AM to 11:59 PM)"
+MORNING_REPORT_NON_CURED_DISCHARGE_SECTION_TITLE = "Lama/Dama/Refer (12:00 AM to 11:59 PM)"
+MORNING_REPORT_DISCHARGE_DETAIL_HEADERS = [
+    "Sl.",
+    "Patient Name",
+    "Admission Time",
+    "Discharge Time",
+    "Doctor",
+    "Reason",
+    "Remarks",
+]
 
 def _pick_df_column(df: pd.DataFrame, candidates: list[str]) -> str | None:
     if df is None or df.empty:
@@ -10178,11 +11001,456 @@ def _default_referral_rows(count: int = MORNING_REPORT_REFERRAL_DEFAULT_ROWS) ->
             "sl": idx + 1,
             "patient_name": "",
             "visit_time": "",
+            "discharge_time": "",
             "consultant": "",
+            "reason_type": "",
             "reason": "",
         }
         for idx in range(count)
     ]
+
+
+def _morning_report_full_day_window(report_date: date | str | None) -> tuple[date | None, datetime | None, datetime | None]:
+    if isinstance(report_date, date):
+        report_date_val = report_date
+    elif report_date:
+        try:
+            report_date_val = datetime.strptime(str(report_date), "%Y-%m-%d").date()
+        except Exception:
+            report_date_val = None
+    else:
+        report_date_val = None
+    if report_date_val is None:
+        return None, None, None
+    window_date = report_date_val - timedelta(days=1)
+    window_start = datetime.combine(window_date, datetime.min.time())
+    window_end = datetime.combine(report_date_val, datetime.min.time())
+    return window_date, window_start, window_end
+
+
+def _safe_datetime_sql_expr(alias: str, column_name: str | None) -> str:
+    if not alias or not column_name:
+        return "NULL"
+    return (
+        f"(CASE WHEN {alias}.[{column_name}] IS NULL THEN NULL "
+        f"WHEN ISDATE({alias}.[{column_name}]) = 1 THEN CAST({alias}.[{column_name}] AS DATETIME) "
+        f"ELSE NULL END)"
+    )
+
+
+def _fetch_morning_ipd_discharge_detail_rows(unit: str, report_date: date | str | None) -> pd.DataFrame:
+    unit_norm = (unit or "").strip().upper()
+    window_date, _, _ = _morning_report_full_day_window(report_date)
+    if not unit_norm or window_date is None:
+        return pd.DataFrame()
+
+    from modules.db_connection import get_sql_connection
+
+    conn = get_sql_connection(unit_norm)
+    if not conn:
+        return pd.DataFrame()
+    try:
+        visit_ref = _resolve_table_ref_ci(conn, ["Visit"])
+        discharge_ref = _resolve_table_ref_ci(conn, ["Discharge"])
+        discharge_type_ref = _resolve_table_ref_ci(conn, ["DischargeType_Mst", "dischargetype_mst"])
+        if not visit_ref or not discharge_ref:
+            return pd.DataFrame()
+
+        visit_map = _get_columns_map_by_table_ref(conn, visit_ref)
+        discharge_map = _get_columns_map_by_table_ref(conn, discharge_ref)
+        discharge_type_map = _get_columns_map_by_table_ref(conn, discharge_type_ref) if discharge_type_ref else {}
+
+        visit_id_col = _resolve_column(visit_map, ["Visit_ID", "VisitId", "VisitID"])
+        visit_type_col = _resolve_column(visit_map, ["VisitTypeID", "VisitTypeId", "VisitType_ID", "Visit_Type_ID"])
+        visit_date_col = _resolve_column(visit_map, ["VisitDate", "Visit_Date", "AdmissionDate", "Admission_Date", "AdmitDate", "Admit_Date"])
+        patient_id_col = _resolve_column(visit_map, ["PatientID", "PatientId", "Patient_ID"])
+        doctor_col = _resolve_column(visit_map, ["DocInCharge", "DoctorInCharge", "Doc_In_Charge", "DoctorIncharge"])
+
+        dis_visit_id_col = _resolve_column(discharge_map, ["Visit_ID", "VisitId", "VisitID"])
+        dis_id_col = _resolve_column(discharge_map, ["Discharge_ID", "DischargeId", "DischargeID"])
+        dis_type_id_col = _resolve_column(discharge_map, ["DischargeType_ID", "DischargeTypeId", "DischargeTypeID"])
+        dis_type_text_col = _resolve_column(discharge_map, ["DischargeType"])
+        dis_cancel_col = _resolve_column(discharge_map, ["CancelStatus", "Cancelled", "Canceled"])
+        dis_date_col = _resolve_column(discharge_map, ["Discharge_Date", "DischargeDate"])
+        dis_admin_date_col = _resolve_column(discharge_map, ["adminDischargeDate", "AdminDischargeDate"])
+        dis_cd_date_col = _resolve_column(discharge_map, ["CDdate", "CDDate"])
+        dis_updated_col = _resolve_column(discharge_map, ["UpdatedOn", "Updated_ON"])
+        dis_inserted_col = _resolve_column(discharge_map, ["InsertedON", "InsertedOn", "Inserted_ON"])
+
+        dt_id_col = _resolve_column(discharge_type_map, ["DischargeType_ID", "DischargeTypeId", "DischargeTypeID"])
+        dt_name_col = _resolve_column(discharge_type_map, ["DischargeType"])
+
+        if not visit_id_col or not visit_type_col or not visit_date_col or not dis_visit_id_col or not dis_id_col:
+            return pd.DataFrame()
+
+        discharge_date_cols = [
+            col_name
+            for col_name in [dis_admin_date_col, dis_date_col, dis_cd_date_col, dis_updated_col, dis_inserted_col]
+            if col_name
+        ]
+        if not discharge_date_cols:
+            return pd.DataFrame()
+
+        safe_date_parts = [_safe_datetime_sql_expr("d", col_name) for col_name in discharge_date_cols]
+        discharge_date_expr = f"COALESCE({', '.join(safe_date_parts)})"
+        admission_date_expr = _safe_datetime_sql_expr("v", visit_date_col)
+        cancel_expr = (
+            f"(CASE WHEN ISNUMERIC(CAST(d.[{dis_cancel_col}] AS NVARCHAR(30))) = 1 "
+            f"THEN CAST(d.[{dis_cancel_col}] AS INT) ELSE 0 END)"
+            if dis_cancel_col
+            else "0"
+        )
+        dis_type_id_select = f"CAST(d.[{dis_type_id_col}] AS NVARCHAR(100))" if dis_type_id_col else "NULL"
+        dis_type_id_key_expr = f"LTRIM(RTRIM(CAST({dis_type_id_select} AS NVARCHAR(100))))"
+        dis_type_text_expr = f"CAST(d.[{dis_type_text_col}] AS NVARCHAR(200))" if dis_type_text_col else "NULL"
+        dt_name_expr = f"CAST(dt.[{dt_name_col}] AS NVARCHAR(200))" if dt_name_col else "NULL"
+        visit_type_num_expr = (
+            f"(CASE WHEN ISNUMERIC(CAST(v.[{visit_type_col}] AS NVARCHAR(30))) = 1 "
+            f"THEN CAST(v.[{visit_type_col}] AS INT) ELSE NULL END)"
+        )
+        patient_expr = (
+            f"CASE WHEN v.[{patient_id_col}] IS NULL THEN N'' ELSE dbo.fn_patientfullname(v.[{patient_id_col}]) END"
+            if patient_id_col
+            else "N''"
+        )
+        doctor_expr = (
+            f"CASE WHEN v.[{doctor_col}] IS NULL THEN N'' ELSE dbo.fn_doctorfirstname(v.[{doctor_col}]) END"
+            if doctor_col
+            else "N''"
+        )
+        join_discharge_type = ""
+        if discharge_type_ref and dt_id_col and dis_type_id_col:
+            join_discharge_type = (
+                f"LEFT JOIN {discharge_type_ref} dt WITH (NOLOCK) "
+                f"ON LTRIM(RTRIM(CAST(dt.[{dt_id_col}] AS NVARCHAR(100)))) = ld.DischargeType_ID_Key"
+            )
+
+        target_date_str = window_date.strftime("%Y-%m-%d")
+        order_col = dis_id_col or dis_visit_id_col
+        sql = f"""
+            ;WITH latest_discharge AS (
+                SELECT
+                    d.[{dis_visit_id_col}] AS Visit_ID,
+                    {dis_type_id_select} AS DischargeType_ID,
+                    {dis_type_id_key_expr} AS DischargeType_ID_Key,
+                    {dis_type_text_expr} AS DischargeTypeRaw,
+                    {discharge_date_expr} AS DischargeDate,
+                    {cancel_expr} AS CancelStatus,
+                    ROW_NUMBER() OVER (
+                        PARTITION BY d.[{dis_visit_id_col}]
+                        ORDER BY {discharge_date_expr} DESC, d.[{order_col}] DESC
+                    ) AS rn
+                FROM {discharge_ref} d WITH (NOLOCK)
+                WHERE d.[{dis_visit_id_col}] IS NOT NULL
+            )
+            SELECT
+                ? AS Unit,
+                v.[{visit_id_col}] AS Visit_ID,
+                {admission_date_expr} AS AdmissionDate,
+                ld.DischargeDate,
+                ld.DischargeType_ID AS DischargeType_ID,
+                COALESCE(NULLIF({dt_name_expr}, N''), NULLIF(ld.DischargeTypeRaw, N''), N'Unknown') AS DischargeType,
+                {patient_expr} AS PatientName,
+                {doctor_expr} AS DoctorName
+            FROM {visit_ref} v WITH (NOLOCK)
+            INNER JOIN latest_discharge ld
+                ON v.[{visit_id_col}] = ld.Visit_ID
+            {join_discharge_type}
+            WHERE
+                ld.rn = 1
+                AND ISNULL(ld.CancelStatus, 0) = 0
+                AND {visit_type_num_expr} = 1
+                AND ld.DischargeDate >= ?
+                AND ld.DischargeDate < DATEADD(DAY, 1, CAST(? AS DATETIME))
+            ORDER BY ld.DischargeDate ASC, {admission_date_expr} ASC, v.[{visit_id_col}]
+        """
+        df = pd.read_sql(sql, conn, params=[unit_norm, target_date_str, target_date_str])
+        if df is None or df.empty:
+            return pd.DataFrame()
+        df.columns = [str(col).strip() for col in df.columns]
+        return df
+    except Exception:
+        return pd.DataFrame()
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def _is_morning_cured_discharge_type(type_id, type_name: str) -> bool:
+    cured_ids = set()
+    for raw in (getattr(config, "VOLUME_DISCHARGE_CURED_TYPE_IDS", [1, 2]) or [1, 2]):
+        try:
+            cured_ids.add(int(raw))
+        except Exception:
+            continue
+    try:
+        if type_id is not None and not pd.isna(type_id) and int(type_id) in cured_ids:
+            return True
+    except Exception:
+        pass
+    return bool(re.search(r"(?:\bCURED\b|\bRELIEV(?:ED|E)?\b)", str(type_name or "").upper()))
+
+
+def _is_morning_death_discharge_type(type_id, type_name: str) -> bool:
+    death_ids = set()
+    for raw in (getattr(config, "VOLUME_DISCHARGE_DEATH_TYPE_IDS", [6]) or [6]):
+        try:
+            death_ids.add(int(raw))
+        except Exception:
+            continue
+    if not death_ids:
+        death_ids = {6}
+    try:
+        if type_id is not None and not pd.isna(type_id) and int(type_id) in death_ids:
+            return True
+    except Exception:
+        pass
+    return "DEATH" in str(type_name or "").upper()
+
+
+def _format_morning_detail_time(value) -> str:
+    try:
+        if value is None or pd.isna(value):
+            return ""
+        ts = pd.Timestamp(value)
+        if ts.tzinfo is not None:
+            ts = ts.tz_convert(LOCAL_TZ)
+        time_text = ts.strftime("%I:%M %p").lstrip("0") or ts.strftime("%I:%M %p")
+        return f"{ts.strftime('%d-%b')} {time_text}"
+    except Exception:
+        return ""
+
+
+def _normalize_morning_referral_row(row: dict | None) -> dict:
+    row = row or {}
+    return {
+        "sl": row.get("sl") or "",
+        "patient_name": str(row.get("patient_name") or "").strip(),
+        "visit_time": str(row.get("visit_time") or row.get("admission_time") or "").strip(),
+        "discharge_time": str(row.get("discharge_time") or "").strip(),
+        "consultant": str(row.get("consultant") or row.get("consultant_name") or row.get("doctor_name") or "").strip(),
+        "reason_type": str(row.get("reason_type") or "").strip(),
+        "reason": str(row.get("reason") or row.get("remarks") or row.get("remark") or "").strip(),
+    }
+
+
+def _normalize_morning_non_cured_row(row: dict | None) -> dict:
+    row = row or {}
+    return {
+        "sl": row.get("sl") or "",
+        "patient_name": str(row.get("patient_name") or "").strip(),
+        "admission_time": str(row.get("admission_time") or row.get("visit_time") or "").strip(),
+        "discharge_time": str(row.get("discharge_time") or "").strip(),
+        "doctor_name": str(row.get("doctor_name") or row.get("doctor") or row.get("consultant") or "").strip(),
+        "reason": str(row.get("reason") or "").strip(),
+        "remarks": str(row.get("remarks") or row.get("remark") or "").strip(),
+    }
+
+
+def _morning_referral_signature(row: dict, *, include_discharge: bool = True) -> tuple[str, ...]:
+    keys = ["patient_name", "visit_time", "consultant"]
+    if include_discharge:
+        keys.insert(2, "discharge_time")
+    return tuple(re.sub(r"\s+", " ", str(row.get(key) or "").strip()).upper() for key in keys)
+
+
+def _row_has_any_morning_referral_value(row: dict | None) -> bool:
+    if not row:
+        return False
+    keys = ("patient_name", "visit_time", "discharge_time", "consultant", "reason_type", "reason")
+    return any(str(row.get(key) or "").strip() for key in keys)
+
+
+def _row_has_any_morning_non_cured_value(row: dict | None) -> bool:
+    if not row:
+        return False
+    keys = ("patient_name", "admission_time", "discharge_time", "doctor_name", "reason", "remarks")
+    return any(str(row.get(key) or "").strip() for key in keys)
+
+
+def _morning_non_cured_signature(row: dict) -> tuple[str, ...]:
+    keys = ("patient_name", "admission_time", "discharge_time", "doctor_name", "reason")
+    return tuple(re.sub(r"\s+", " ", str(row.get(key) or "").strip()).upper() for key in keys)
+
+
+def _merge_morning_non_cured_rows(
+    non_cured_rows: list[dict] | None,
+    stored_rows: list[dict] | None,
+) -> list[dict]:
+    stored_map: dict[tuple[str, ...], dict] = {}
+    for raw_row in stored_rows or []:
+        row = _normalize_morning_non_cured_row(raw_row)
+        if not _row_has_any_morning_non_cured_value(row):
+            continue
+        sig = _morning_non_cured_signature(row)
+        if any(sig):
+            stored_map[sig] = row
+
+    merged: list[dict] = []
+    for raw_row in non_cured_rows or []:
+        row = _normalize_morning_non_cured_row(raw_row)
+        if not _row_has_any_morning_non_cured_value(row):
+            continue
+        sig = _morning_non_cured_signature(row)
+        stored = stored_map.get(sig) if any(sig) else None
+        if stored and not str(row.get("remarks") or "").strip():
+            row["remarks"] = str(stored.get("remarks") or "").strip()
+        merged.append(row)
+
+    for idx, row in enumerate(merged, start=1):
+        row["sl"] = idx
+    return merged
+
+
+def _merge_morning_referral_rows(referral_rows: list[dict] | None, daycare_rows: list[dict] | None) -> list[dict]:
+    combined: list[dict] = []
+    full_sig_map: dict[tuple[str, ...], int] = {}
+    base_sig_map: dict[tuple[str, ...], int] = {}
+
+    def _register(row: dict, idx: int) -> None:
+        full_sig = _morning_referral_signature(row, include_discharge=True)
+        if any(full_sig):
+            full_sig_map[full_sig] = idx
+        if not str(row.get("discharge_time") or "").strip():
+            base_sig = _morning_referral_signature(row, include_discharge=False)
+            if any(base_sig):
+                base_sig_map[base_sig] = idx
+
+    for raw_row in referral_rows or []:
+        row = _normalize_morning_referral_row(raw_row)
+        if not _row_has_any_morning_referral_value(row):
+            continue
+        combined.append(row)
+        _register(row, len(combined) - 1)
+
+    for raw_row in daycare_rows or []:
+        auto_row = _normalize_morning_referral_row({
+            "patient_name": raw_row.get("patient_name"),
+            "visit_time": raw_row.get("admission_time"),
+            "discharge_time": raw_row.get("discharge_time"),
+            "consultant": raw_row.get("doctor_name"),
+        })
+        if not _row_has_any_morning_referral_value(auto_row):
+            continue
+        full_sig = _morning_referral_signature(auto_row, include_discharge=True)
+        base_sig = _morning_referral_signature(auto_row, include_discharge=False)
+        match_idx = full_sig_map.get(full_sig) if any(full_sig) else None
+        if match_idx is None and any(base_sig):
+            match_idx = base_sig_map.get(base_sig)
+        if match_idx is not None:
+            existing = combined[match_idx]
+            if not existing.get("patient_name"):
+                existing["patient_name"] = auto_row["patient_name"]
+            if not existing.get("visit_time"):
+                existing["visit_time"] = auto_row["visit_time"]
+            if not existing.get("discharge_time"):
+                existing["discharge_time"] = auto_row["discharge_time"]
+            if not existing.get("consultant"):
+                existing["consultant"] = auto_row["consultant"]
+            combined[match_idx] = existing
+            _register(existing, match_idx)
+            continue
+        combined.append(auto_row)
+        _register(auto_row, len(combined) - 1)
+
+    for idx, row in enumerate(combined, start=1):
+        row["sl"] = idx
+    return combined
+
+
+def _build_morning_auto_discharge_sections(unit: str, report_date: date | str | None) -> dict:
+    _, window_start, window_end = _morning_report_full_day_window(report_date)
+    empty = {
+        "daycare_rows": [],
+        "non_cured_discharge_rows": [],
+    }
+    if window_start is None or window_end is None:
+        return empty
+
+    df = _fetch_morning_ipd_discharge_detail_rows(unit, report_date)
+    if df is None or df.empty:
+        return empty
+
+    df = _clean_df_columns(df).copy()
+    for col_name in ["PatientName", "DoctorName", "DischargeType"]:
+        if col_name not in df.columns:
+            df[col_name] = ""
+        df[col_name] = df[col_name].fillna("").astype(str).str.strip()
+
+    if "DischargeType_ID" not in df.columns:
+        df["DischargeType_ID"] = pd.Series([None] * len(df))
+    df["DischargeType_ID"] = pd.to_numeric(df["DischargeType_ID"], errors="coerce")
+    df["_AdmissionDt"] = pd.to_datetime(df.get("AdmissionDate"), errors="coerce")
+    df["_DischargeDt"] = pd.to_datetime(df.get("DischargeDate"), errors="coerce")
+    df = df[df["_DischargeDt"].notna()].copy()
+    if df.empty:
+        return empty
+
+    df["_StayHours"] = (df["_DischargeDt"] - df["_AdmissionDt"]).dt.total_seconds() / 3600.0
+    df["_IsCured"] = df.apply(
+        lambda row: _is_morning_cured_discharge_type(row.get("DischargeType_ID"), row.get("DischargeType")),
+        axis=1,
+    )
+    df["_IsDeath"] = df.apply(
+        lambda row: _is_morning_death_discharge_type(row.get("DischargeType_ID"), row.get("DischargeType")),
+        axis=1,
+    )
+
+    def _rows_from_frame(frame: pd.DataFrame, reason_type_label: str) -> list[dict]:
+        rows = []
+        for idx, (_, item) in enumerate(frame.iterrows(), start=1):
+            rows.append({
+                "sl": idx,
+                "patient_name": str(item.get("PatientName") or "").strip(),
+                "reason_type": reason_type_label,
+                "admission_time": _format_morning_detail_time(item.get("_AdmissionDt")),
+                "discharge_time": _format_morning_detail_time(item.get("_DischargeDt")),
+                "doctor_name": str(item.get("DoctorName") or "").strip(),
+                "reason": str(item.get("DischargeType") or "Unknown").strip() or "Unknown",
+                "remarks": "",
+            })
+        return rows
+
+    daycare_df = df[
+        df["_AdmissionDt"].notna()
+        & (df["_AdmissionDt"] >= window_start)
+        & (df["_AdmissionDt"] < window_end)
+        & (df["_StayHours"] >= 0)
+        & (df["_StayHours"] <= 8)
+        & (~df["_IsDeath"])
+    ].copy()
+    if not daycare_df.empty:
+        daycare_df = daycare_df.sort_values(["_AdmissionDt", "_DischargeDt", "PatientName"], ascending=[True, True, True])
+
+    non_cured_df = df[(~df["_IsCured"]) & (~df["_IsDeath"])].copy()
+    if not non_cured_df.empty:
+        non_cured_df = non_cured_df.sort_values(["_DischargeDt", "_AdmissionDt", "PatientName"], ascending=[True, True, True])
+
+    return {
+        "daycare_rows": _rows_from_frame(daycare_df, "Daycare"),
+        "non_cured_discharge_rows": _rows_from_frame(non_cured_df, "Non-Cured"),
+    }
+
+
+def _attach_morning_auto_sections(payload: dict | None) -> dict | None:
+    if not payload or not isinstance(payload, dict):
+        return payload
+    out = dict(payload)
+    needs_daycare = "daycare_rows" not in out or out.get("daycare_rows") is None
+    needs_non_cured = "non_cured_discharge_rows" not in out or out.get("non_cured_discharge_rows") is None
+    if needs_daycare or needs_non_cured:
+        auto_sections = _build_morning_auto_discharge_sections(out.get("unit"), out.get("report_date"))
+        if needs_daycare:
+            out["daycare_rows"] = auto_sections.get("daycare_rows") or []
+        if needs_non_cured:
+            out["non_cured_discharge_rows"] = auto_sections.get("non_cured_discharge_rows") or []
+    out["referral_rows"] = _merge_morning_referral_rows(
+        out.get("referral_rows") or [],
+        out.get("daycare_rows") or [],
+    )
+    return out
 
 def _rows_have_any_value(rows: list[dict] | None, keys: tuple[str, ...]) -> bool:
     if not rows:
@@ -10617,9 +11885,17 @@ def _normalize_doctor_name(value: str | None) -> str:
 def _fetch_cardiac_doctor_names(unit: str | None, doc_ids: list[int] | None) -> set[str]:
     if not unit or not doc_ids:
         return set()
-    df = data_fetch.fetch_doctors(unit)
-    if df is None or df.empty:
-        df = data_fetch.fetch_doctor_directory(unit)
+    frames = []
+    for fetcher in (data_fetch.fetch_doctor_directory, data_fetch.fetch_doctors):
+        try:
+            fetched = fetcher(unit)
+        except Exception:
+            fetched = None
+        if fetched is not None and not fetched.empty:
+            frames.append(fetched)
+    if not frames:
+        return set()
+    df = pd.concat(frames, ignore_index=True, sort=False)
     if df is None or df.empty:
         return set()
     id_col = _pick_df_column(df, ["DoctorId", "DoctorID", "EmpId", "EmpID", "Emp_Id", "EmpCode"])
@@ -10739,7 +12015,7 @@ def _ensure_morning_death_summary_row(unit: str | None, report_date: date | str 
             death_counts = _fetch_morning_death_counts_from_discharge(
                 unit,
                 prev_date_str,
-                MORNING_REPORT_CARDIAC_DOC_IDS,
+                _resolve_mod_cardiac_doc_ids(unit, MORNING_REPORT_CARDIAC_DOC_IDS),
                 MORNING_REPORT_CARDIAC_SUBDEPT_KEYWORDS,
             )
         death_counts = death_counts or {}
@@ -10934,6 +12210,164 @@ def _fetch_opd_counts_from_volume(units: list[str], from_date: str, to_date: str
             cardiac_counts = filt.groupby(unit_col).size().to_dict()
             cardiac_counts = {str(k).strip().upper(): int(v) for k, v in cardiac_counts.items()}
     return total_counts, cardiac_counts
+
+def _fetch_admission_type_counts_from_visit(
+    unit: str,
+    start_dt: datetime,
+    end_dt: datetime,
+    cardiac_doc_ids: list[int] | None = None,
+) -> dict:
+    """
+    Counts Routine and Emergency IPD admissions directly from Visit table.
+
+    Window can be previous day 00:00 to report day 08:00,
+    so total can remain Previous Day Admission + Night Admission.
+
+    Split:
+      - Total = all IPD admissions in range
+      - Cardiac = IPD admissions in range where DocInCharge is in cardiac doctor list
+      - Asarfi = Total - Cardiac
+
+    Admission type:
+      - 1 = Routine
+      - 2 = Emergency
+    """
+    empty = {
+        "routine": {"asarfi": 0, "cardiac": 0, "total": 0},
+        "emergency": {"asarfi": 0, "cardiac": 0, "total": 0},
+    }
+
+    from modules.db_connection import get_sql_connection
+
+    conn = None
+
+    def _q(col_name: str) -> str:
+        return f"[{str(col_name).replace(']', ']]')}]"
+
+    try:
+        conn = get_sql_connection(unit)
+        if not conn:
+            return empty
+
+        col_map = _get_table_columns_map(conn, "Visit")
+
+        visit_date_col = _resolve_column(
+            col_map,
+            ["VisitDate", "Visit_Date", "AdmissionDate", "Admission_Date", "AdmitDate", "Admit_Date"],
+        )
+        visit_type_col = _resolve_column(
+            col_map,
+            ["VisitTypeID", "VisitTypeId", "VisitType_ID", "Visit_Type_ID"],
+        )
+        admission_type_col = _resolve_column(
+            col_map,
+            [
+                "PType_Chng", "PTypeChng", "PTypeChange", "PType_Change",
+                "AdmissionType", "Admission_Type", "AdmissionTypeID", "Admission_Type_ID",
+            ],
+        )
+        doc_col = _resolve_column(
+            col_map,
+            [
+                "DoctorIncharge", "DoctorInCharge", "DoctorInchargeID", "DoctorInChargeID",
+                "DocIncharge", "DocInCharge", "DocInchargeID", "DocInChargeID",
+            ],
+        )
+
+        if not visit_date_col or not visit_type_col or not admission_type_col:
+            print(
+                "[WARN] MOD admission type split skipped: "
+                f"visit_date_col={visit_date_col}, "
+                f"visit_type_col={visit_type_col}, "
+                f"admission_type_col={admission_type_col}, "
+                f"doc_col={doc_col}"
+            )
+            return empty
+
+        try:
+            cardiac_ids = _resolve_mod_cardiac_doc_ids(unit, cardiac_doc_ids)
+        except Exception:
+            cardiac_ids = cardiac_doc_ids or []
+
+        cardiac_ids = [
+            int(x)
+            for x in (cardiac_ids or [])
+            if str(x).strip().isdigit()
+        ]
+
+        admission_type_sql = _q(admission_type_col)
+
+        kind_expr = f"""
+            CASE
+                WHEN LTRIM(RTRIM(CONVERT(NVARCHAR(100), {admission_type_sql}))) = '2' THEN 'emergency'
+                WHEN LTRIM(RTRIM(CONVERT(NVARCHAR(100), {admission_type_sql}))) = '1' THEN 'routine'
+                WHEN UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), {admission_type_sql})))) LIKE '%EMER%' THEN 'emergency'
+                WHEN UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), {admission_type_sql})))) LIKE '%ROUTINE%' THEN 'routine'
+                WHEN UPPER(LTRIM(RTRIM(CONVERT(NVARCHAR(100), {admission_type_sql})))) LIKE '%PLANNED%' THEN 'routine'
+                ELSE ''
+            END
+        """
+
+        def _run_count(doc_ids: list[int] | None = None) -> dict:
+            params = [start_dt, end_dt]
+            doc_filter = ""
+
+            if doc_ids and doc_col:
+                placeholders = ",".join(["?"] * len(doc_ids))
+                doc_filter = f" AND {_q(doc_col)} IN ({placeholders})"
+                params.extend(doc_ids)
+
+            sql = f"""
+                SELECT
+                    AdmissionKind,
+                    COUNT(1) AS Cnt
+                FROM (
+                    SELECT
+                        {kind_expr} AS AdmissionKind
+                    FROM Visit WITH (NOLOCK)
+                    WHERE {_q(visit_type_col)} = 1
+                      AND {_q(visit_date_col)} >= ?
+                      AND {_q(visit_date_col)} < ?
+                      {doc_filter}
+                ) x
+                WHERE AdmissionKind IN ('routine', 'emergency')
+                GROUP BY AdmissionKind
+            """
+
+            cur = conn.cursor()
+            cur.execute(sql, params)
+
+            out = {"routine": 0, "emergency": 0}
+            for row in cur.fetchall():
+                key = str(row[0] or "").strip().lower()
+                if key in out:
+                    out[key] = int(row[1] or 0)
+            return out
+
+        total_counts = _run_count()
+        cardiac_counts = _run_count(cardiac_ids) if cardiac_ids and doc_col else {"routine": 0, "emergency": 0}
+
+        for key in ("routine", "emergency"):
+            total = int(total_counts.get(key) or 0)
+            cardiac = int(cardiac_counts.get(key) or 0)
+
+            empty[key] = {
+                "asarfi": max(0, total - cardiac),
+                "cardiac": cardiac,
+                "total": total,
+            }
+
+        return empty
+
+    except Exception as exc:
+        print(f"[WARN] MOD admission type split failed for {unit}: {exc}")
+        return empty
+    finally:
+        try:
+            if conn:
+                conn.close()
+        except Exception:
+            pass
 
 def _fetch_unit_opd_by_doc(unit: str, date_str: str, doc_ids: list[int] | None = None) -> dict:
     from modules.db_connection import get_sql_connection
@@ -11356,12 +12790,38 @@ def _ensure_morning_report_tables(conn):
             RowOrder INT NOT NULL,
             PatientName NVARCHAR(200) NULL,
             VisitTime NVARCHAR(50) NULL,
+            DischargeTime NVARCHAR(50) NULL,
             ConsultantName NVARCHAR(200) NULL,
+            ReasonType NVARCHAR(100) NULL,
             Reason NVARCHAR(200) NULL,
             UpdatedAt DATETIME2 NOT NULL DEFAULT(SYSDATETIME())
         );
         CREATE UNIQUE INDEX UX_HID_Morning_Report_Referral_DateUnitRow
             ON dbo.HID_Morning_Report_Referral(SnapshotDate, Unit, RowOrder);
+    END
+    """)
+    cursor.execute("""
+    IF NOT EXISTS (
+        SELECT 1 FROM INFORMATION_SCHEMA.TABLES
+        WHERE TABLE_SCHEMA='dbo' AND TABLE_NAME='HID_Morning_Report_NonCuredDischarge'
+    )
+    BEGIN
+        CREATE TABLE dbo.HID_Morning_Report_NonCuredDischarge (
+            Id INT IDENTITY(1,1) PRIMARY KEY,
+            SnapshotDate DATE NOT NULL,
+            SnapshotTime DATETIME2 NULL,
+            Unit NVARCHAR(20) NOT NULL,
+            RowOrder INT NOT NULL,
+            PatientName NVARCHAR(200) NULL,
+            AdmissionTime NVARCHAR(50) NULL,
+            DischargeTime NVARCHAR(50) NULL,
+            DoctorName NVARCHAR(200) NULL,
+            Reason NVARCHAR(200) NULL,
+            Remarks NVARCHAR(500) NULL,
+            UpdatedAt DATETIME2 NOT NULL DEFAULT(SYSDATETIME())
+        );
+        CREATE UNIQUE INDEX UX_HID_Morning_Report_NonCuredDischarge_DateUnitRow
+            ON dbo.HID_Morning_Report_NonCuredDischarge(SnapshotDate, Unit, RowOrder);
     END
     """)
     conn.commit()
@@ -11430,9 +12890,19 @@ def _ensure_morning_report_tables(conn):
         "ALTER TABLE dbo.HID_Morning_Report_Referral ADD SnapshotTime DATETIME2 NULL",
         "ALTER TABLE dbo.HID_Morning_Report_Referral ADD PatientName NVARCHAR(200) NULL",
         "ALTER TABLE dbo.HID_Morning_Report_Referral ADD VisitTime NVARCHAR(50) NULL",
+        "ALTER TABLE dbo.HID_Morning_Report_Referral ADD DischargeTime NVARCHAR(50) NULL",
         "ALTER TABLE dbo.HID_Morning_Report_Referral ADD ConsultantName NVARCHAR(200) NULL",
+        "ALTER TABLE dbo.HID_Morning_Report_Referral ADD ReasonType NVARCHAR(100) NULL",
         "ALTER TABLE dbo.HID_Morning_Report_Referral ADD Reason NVARCHAR(200) NULL",
         "ALTER TABLE dbo.HID_Morning_Report_Referral ADD UpdatedAt DATETIME2 NOT NULL DEFAULT(SYSDATETIME())",
+        "ALTER TABLE dbo.HID_Morning_Report_NonCuredDischarge ADD SnapshotTime DATETIME2 NULL",
+        "ALTER TABLE dbo.HID_Morning_Report_NonCuredDischarge ADD PatientName NVARCHAR(200) NULL",
+        "ALTER TABLE dbo.HID_Morning_Report_NonCuredDischarge ADD AdmissionTime NVARCHAR(50) NULL",
+        "ALTER TABLE dbo.HID_Morning_Report_NonCuredDischarge ADD DischargeTime NVARCHAR(50) NULL",
+        "ALTER TABLE dbo.HID_Morning_Report_NonCuredDischarge ADD DoctorName NVARCHAR(200) NULL",
+        "ALTER TABLE dbo.HID_Morning_Report_NonCuredDischarge ADD Reason NVARCHAR(200) NULL",
+        "ALTER TABLE dbo.HID_Morning_Report_NonCuredDischarge ADD Remarks NVARCHAR(500) NULL",
+        "ALTER TABLE dbo.HID_Morning_Report_NonCuredDischarge ADD UpdatedAt DATETIME2 NOT NULL DEFAULT(SYSDATETIME())",
     ]:
         try:
             cursor.execute(stmt)
@@ -11452,6 +12922,7 @@ def _ensure_morning_report_tables(conn):
         "CREATE UNIQUE INDEX UX_HID_Morning_Report_Staff_DateUnitRow ON dbo.HID_Morning_Report_Staff(SnapshotDate, Unit, RowOrder)",
         "CREATE UNIQUE INDEX UX_HID_Morning_Report_NonMedical_DateUnitRow ON dbo.HID_Morning_Report_NonMedical(SnapshotDate, Unit, RowOrder)",
         "CREATE UNIQUE INDEX UX_HID_Morning_Report_Referral_DateUnitRow ON dbo.HID_Morning_Report_Referral(SnapshotDate, Unit, RowOrder)",
+        "CREATE UNIQUE INDEX UX_HID_Morning_Report_NonCuredDischarge_DateUnitRow ON dbo.HID_Morning_Report_NonCuredDischarge(SnapshotDate, Unit, RowOrder)",
     ]:
         try:
             cursor.execute(stmt)
@@ -11666,6 +13137,12 @@ def _save_morning_report_snapshot_to_aci(payload: dict):
     snapshot_time = payload.get("snapshot_time") or datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
     report_time = payload.get("report_time") or ""
     mod_name = payload.get("mod_name") or ""
+    referral_payload_rows = _merge_morning_referral_rows(
+        payload.get("referral_rows") or [],
+        payload.get("daycare_rows") or [],
+    )
+    non_cured_rows_supplied = bool(payload.get("_non_cured_rows_supplied"))
+    preserve_existing_non_cured_remarks = bool(payload.get("_non_cured_preserve_existing_remarks"))
 
     def _safe_int_or_none(val):
         if val is None:
@@ -11687,6 +13164,26 @@ def _save_morning_report_snapshot_to_aci(payload: dict):
     with _get_login_db_connection() as conn:
         _ensure_morning_report_tables(conn)
         cursor = conn.cursor()
+        existing_non_cured_rows = []
+        if preserve_existing_non_cured_remarks:
+            cursor.execute(
+                """
+                SELECT RowOrder, PatientName, AdmissionTime, DischargeTime, DoctorName, Reason, Remarks
+                FROM dbo.HID_Morning_Report_NonCuredDischarge WITH (NOLOCK)
+                WHERE SnapshotDate = ? AND Unit = ?
+                ORDER BY RowOrder
+                """,
+                (date_str, unit),
+            )
+            existing_non_cured_rows = [{
+                "sl": row_order + 1 if row_order is not None else "",
+                "patient_name": patient,
+                "admission_time": admission_time,
+                "discharge_time": discharge_time,
+                "doctor_name": doctor_name,
+                "reason": reason,
+                "remarks": remarks,
+            } for row_order, patient, admission_time, discharge_time, doctor_name, reason, remarks in cursor.fetchall()]
 
         # Header
         merge_header = """
@@ -12108,14 +13605,24 @@ def _save_morning_report_snapshot_to_aci(payload: dict):
 
         # Referral / Refusal / Brought Death
         referral_rows = []
-        for idx, row in enumerate(payload.get("referral_rows") or []):
+        for idx, row in enumerate(referral_payload_rows):
+            row = _normalize_morning_referral_row(row)
             referral_rows.append((
                 date_str, snapshot_time, unit, idx,
                 _safe_text_or_none(row.get("patient_name")),
                 _safe_text_or_none(row.get("visit_time")),
+                _safe_text_or_none(row.get("discharge_time")),
                 _safe_text_or_none(row.get("consultant")),
+                _safe_text_or_none(row.get("reason_type")),
                 _safe_text_or_none(row.get("reason")),
             ))
+        cursor.execute(
+            """
+            DELETE FROM dbo.HID_Morning_Report_Referral
+            WHERE SnapshotDate = ? AND Unit = ?
+            """,
+            (date_str, unit),
+        )
         if referral_rows:
             merge_ref = """
                 MERGE dbo.HID_Morning_Report_Referral AS tgt
@@ -12127,7 +13634,9 @@ def _save_morning_report_snapshot_to_aci(payload: dict):
                         ? AS RowOrder,
                         ? AS PatientName,
                         ? AS VisitTime,
+                        ? AS DischargeTime,
                         ? AS ConsultantName,
+                        ? AS ReasonType,
                         ? AS Reason
                 ) AS src
                 ON tgt.SnapshotDate = src.SnapshotDate
@@ -12137,18 +13646,85 @@ def _save_morning_report_snapshot_to_aci(payload: dict):
                     SnapshotTime = src.SnapshotTime,
                     PatientName = src.PatientName,
                     VisitTime = src.VisitTime,
+                    DischargeTime = src.DischargeTime,
                     ConsultantName = src.ConsultantName,
+                    ReasonType = src.ReasonType,
                     Reason = src.Reason,
                     UpdatedAt = SYSDATETIME()
                 WHEN NOT MATCHED THEN INSERT (
                     SnapshotDate, SnapshotTime, Unit, RowOrder,
-                    PatientName, VisitTime, ConsultantName, Reason
+                    PatientName, VisitTime, DischargeTime, ConsultantName, ReasonType, Reason
                 ) VALUES (
                     src.SnapshotDate, src.SnapshotTime, src.Unit, src.RowOrder,
-                    src.PatientName, src.VisitTime, src.ConsultantName, src.Reason
+                    src.PatientName, src.VisitTime, src.DischargeTime, src.ConsultantName, src.ReasonType, src.Reason
                 );
             """
             cursor.executemany(merge_ref, referral_rows)
+
+        # Lama / Dama / Refer
+        if non_cured_rows_supplied:
+            non_cured_rows = []
+            non_cured_payload_rows = payload.get("non_cured_discharge_rows") or []
+            if preserve_existing_non_cured_remarks and existing_non_cured_rows:
+                non_cured_payload_rows = _merge_morning_non_cured_rows(
+                    non_cured_payload_rows,
+                    existing_non_cured_rows,
+                )
+            for row in non_cured_payload_rows:
+                row = _normalize_morning_non_cured_row(row)
+                non_cured_rows.append((
+                    date_str, snapshot_time, unit, len(non_cured_rows),
+                    _safe_text_or_none(row.get("patient_name")),
+                    _safe_text_or_none(row.get("admission_time")),
+                    _safe_text_or_none(row.get("discharge_time")),
+                    _safe_text_or_none(row.get("doctor_name")),
+                    _safe_text_or_none(row.get("reason")),
+                    _safe_text_or_none(row.get("remarks")),
+                ))
+            cursor.execute(
+                """
+                DELETE FROM dbo.HID_Morning_Report_NonCuredDischarge
+                WHERE SnapshotDate = ? AND Unit = ?
+                """,
+                (date_str, unit),
+            )
+            if non_cured_rows:
+                merge_non_cured = """
+                    MERGE dbo.HID_Morning_Report_NonCuredDischarge AS tgt
+                    USING (
+                        SELECT
+                            ? AS SnapshotDate,
+                            ? AS SnapshotTime,
+                            ? AS Unit,
+                            ? AS RowOrder,
+                            ? AS PatientName,
+                            ? AS AdmissionTime,
+                            ? AS DischargeTime,
+                            ? AS DoctorName,
+                            ? AS Reason,
+                            ? AS Remarks
+                    ) AS src
+                    ON tgt.SnapshotDate = src.SnapshotDate
+                       AND tgt.Unit = src.Unit
+                       AND tgt.RowOrder = src.RowOrder
+                    WHEN MATCHED THEN UPDATE SET
+                        SnapshotTime = src.SnapshotTime,
+                        PatientName = src.PatientName,
+                        AdmissionTime = src.AdmissionTime,
+                        DischargeTime = src.DischargeTime,
+                        DoctorName = src.DoctorName,
+                        Reason = src.Reason,
+                        Remarks = src.Remarks,
+                        UpdatedAt = SYSDATETIME()
+                    WHEN NOT MATCHED THEN INSERT (
+                        SnapshotDate, SnapshotTime, Unit, RowOrder,
+                        PatientName, AdmissionTime, DischargeTime, DoctorName, Reason, Remarks
+                    ) VALUES (
+                        src.SnapshotDate, src.SnapshotTime, src.Unit, src.RowOrder,
+                        src.PatientName, src.AdmissionTime, src.DischargeTime, src.DoctorName, src.Reason, src.Remarks
+                    );
+                """
+                cursor.executemany(merge_non_cured, non_cured_rows)
 
         conn.commit()
 
@@ -12345,7 +13921,7 @@ def _fetch_morning_report_snapshot(date_str: str, unit: str):
 
             cur.execute(
                 """
-                SELECT RowOrder, PatientName, VisitTime, ConsultantName, Reason
+                SELECT RowOrder, PatientName, VisitTime, DischargeTime, ConsultantName, ReasonType, Reason
                 FROM dbo.HID_Morning_Report_Referral WITH (NOLOCK)
                 WHERE SnapshotDate = ? AND Unit = ?
                 ORDER BY RowOrder
@@ -12356,10 +13932,32 @@ def _fetch_morning_report_snapshot(date_str: str, unit: str):
                 "sl": row_order + 1 if row_order is not None else "",
                 "patient_name": patient,
                 "visit_time": visit_time,
+                "discharge_time": discharge_time,
                 "consultant": consultant,
+                "reason_type": reason_type,
                 "reason": reason
-            } for row_order, patient, visit_time, consultant, reason in cur.fetchall()]
+            } for row_order, patient, visit_time, discharge_time, consultant, reason_type, reason in cur.fetchall()]
             _log("referral")
+
+            cur.execute(
+                """
+                SELECT RowOrder, PatientName, AdmissionTime, DischargeTime, DoctorName, Reason, Remarks
+                FROM dbo.HID_Morning_Report_NonCuredDischarge WITH (NOLOCK)
+                WHERE SnapshotDate = ? AND Unit = ?
+                ORDER BY RowOrder
+                """,
+                (date_str, unit_norm),
+            )
+            non_cured_discharge_rows = [{
+                "sl": row_order + 1 if row_order is not None else "",
+                "patient_name": patient,
+                "admission_time": admission_time,
+                "discharge_time": discharge_time,
+                "doctor_name": doctor_name,
+                "reason": reason,
+                "remarks": remarks,
+            } for row_order, patient, admission_time, discharge_time, doctor_name, reason, remarks in cur.fetchall()]
+            _log("non_cured_discharge")
 
     except Exception:
         return None
@@ -12382,7 +13980,7 @@ def _fetch_morning_report_snapshot(date_str: str, unit: str):
     if not referral_rows:
         referral_rows = _default_referral_rows()
 
-    return {
+    payload = {
         "unit": unit_norm,
         "report_date": date_str,
         "report_time": report_time or "",
@@ -12400,6 +13998,12 @@ def _fetch_morning_report_snapshot(date_str: str, unit: str):
         "source": "snapshot",
         "snapshot_time": snap_time_str,
     }
+    if non_cured_discharge_rows:
+        payload["non_cured_discharge_rows"] = [
+            _normalize_morning_non_cured_row(row)
+            for row in non_cured_discharge_rows
+        ]
+    return _attach_morning_auto_sections(payload)
 
 
 def _normalize_snapshot_date(value) -> str | None:
@@ -12687,8 +14291,9 @@ def _build_morning_report_payload(unit: str, report_date: date | str, source: st
     start_prev = datetime.combine(prev_date, datetime.min.time())
     start_today = datetime.combine(report_date_val, datetime.min.time())
     end_night = start_today + timedelta(hours=8)
+    cardiac_doc_ids = _resolve_mod_cardiac_doc_ids(unit_norm, MORNING_REPORT_CARDIAC_DOC_IDS)
 
-    adm_disc = _fetch_night_report_adm_disc(unit_norm, prev_date_str, MORNING_REPORT_CARDIAC_DOC_IDS)
+    adm_disc = _fetch_night_report_adm_disc(unit_norm, prev_date_str, cardiac_doc_ids)
     total_adm = int(adm_disc.get("total", {}).get("admission", 0))
     total_dis = int(adm_disc.get("total", {}).get("discharge", 0))
     cardiac_adm = int(adm_disc.get("cardiac", {}).get("admission", 0))
@@ -12697,29 +14302,43 @@ def _build_morning_report_payload(unit: str, report_date: date | str, source: st
     asarfi_dis = max(0, total_dis - cardiac_dis)
 
     total_night_adm = _fetch_unit_ipd_admissions_range(unit_norm, start_today, end_night)
-    cardiac_night_adm = _fetch_unit_ipd_admissions_range(unit_norm, start_today, end_night, MORNING_REPORT_CARDIAC_DOC_IDS)
+    cardiac_night_adm = _fetch_unit_ipd_admissions_range(unit_norm, start_today, end_night, cardiac_doc_ids)
     asarfi_night_adm = max(0, int(total_night_adm) - int(cardiac_night_adm))
 
     total_occ = _fetch_unit_ipd_active(unit_norm)
-    cardiac_occ = _fetch_unit_ipd_active(unit_norm, MORNING_REPORT_CARDIAC_DOC_IDS)
+    cardiac_occ = _fetch_unit_ipd_active(unit_norm, cardiac_doc_ids)
     asarfi_occ = max(0, int(total_occ) - int(cardiac_occ))
 
-    fallback_opd = _fetch_unit_opd_by_doc(unit_norm, prev_date_str, MORNING_REPORT_CARDIAC_DOC_IDS)
+    fallback_opd = _fetch_unit_opd_by_doc(unit_norm, prev_date_str, cardiac_doc_ids)
     total_opd = int(fallback_opd.get("total", 0))
     cardiac_opd = int(fallback_opd.get("cardiac", 0))
-    total_counts, cardiac_counts = _fetch_opd_counts_from_volume([unit_norm], prev_date_str, prev_date_str, MORNING_REPORT_CARDIAC_DOC_IDS)
+    total_counts, cardiac_counts = _fetch_opd_counts_from_volume([unit_norm], prev_date_str, prev_date_str, cardiac_doc_ids)
     if total_counts:
         total_opd = int(total_counts.get(unit_norm, total_opd))
     if cardiac_counts and unit_norm in cardiac_counts:
         cardiac_opd = int(cardiac_counts.get(unit_norm, cardiac_opd))
     asarfi_opd = max(0, total_opd - cardiac_opd)
 
+    df_volume_range = _get_or_fetch_volume_details([unit_norm], prev_date_str, report_date_str)
+    if df_volume_range is None or df_volume_range.empty:
+        df_volume_range = data_fetch.fetch_volume_raw([unit_norm], prev_date_str, report_date_str)
+
+    admission_type_counts = _fetch_admission_type_counts_from_visit(
+    unit_norm,
+    start_prev,
+    end_night,
+    cardiac_doc_ids,
+    )
+
+    emergency_adm = admission_type_counts.get("emergency") or {}
+    routine_adm = admission_type_counts.get("routine") or {}
+
     death_counts = None
     if unit_norm == "AHL":
         death_counts = _fetch_morning_death_counts_from_discharge(
             unit_norm,
             prev_date_str,
-            MORNING_REPORT_CARDIAC_DOC_IDS,
+            cardiac_doc_ids,
             MORNING_REPORT_CARDIAC_SUBDEPT_KEYWORDS,
         )
 
@@ -12774,10 +14393,28 @@ def _build_morning_report_payload(unit: str, report_date: date | str, source: st
         unit_norm,
         prev_date_str,
         MORNING_REPORT_CARDIAC_SUBDEPT_KEYWORDS,
-        MORNING_REPORT_CARDIAC_DOC_IDS
+        cardiac_doc_ids
     )
 
     summary_rows = _ensure_morning_death_summary_row(unit_norm, report_date_val, summary_rows, death_counts=death_counts)
+
+    summary_rows.extend([
+        {
+            "sl": 8,
+            "label": "Emergency Admissions No.",
+            "asarfi": int(emergency_adm.get("asarfi") or 0),
+            "cardiac": int(emergency_adm.get("cardiac") or 0),
+            "total": int(emergency_adm.get("total") or 0),
+        },
+        {
+            "sl": 9,
+            "label": "Routine Admissions No.",
+            "asarfi": int(routine_adm.get("asarfi") or 0),
+            "cardiac": int(routine_adm.get("cardiac") or 0),
+            "total": int(routine_adm.get("total") or 0),
+        },
+    ])
+
     summary_rows = _collapse_morning_counts(unit_norm, summary_rows)
     investigations = _collapse_morning_counts(unit_norm, investigations)
 
@@ -12786,9 +14423,6 @@ def _build_morning_report_payload(unit: str, report_date: date | str, source: st
         for idx, label in enumerate(MORNING_REPORT_KEY_PROCEDURES)
     ]
 
-    df_volume_range = _get_or_fetch_volume_details([unit_norm], prev_date_str, report_date_str)
-    if df_volume_range is None or df_volume_range.empty:
-        df_volume_range = data_fetch.fetch_volume_raw([unit_norm], prev_date_str, report_date_str)
     admissions = _build_morning_admissions_table(df_volume_range, [unit_norm], start_prev, start_today, start_today, end_night)
     admissions_rows = [
         {"sl": idx + 1, **row}
@@ -12802,7 +14436,7 @@ def _build_morning_report_payload(unit: str, report_date: date | str, source: st
     non_medical_rows = _default_non_medical_rows()
     referral_rows = _default_referral_rows()
 
-    return {
+    payload = _attach_morning_auto_sections({
         "unit": unit_norm,
         "report_date": report_date_str,
         "report_time": report_time,
@@ -12817,13 +14451,26 @@ def _build_morning_report_payload(unit: str, report_date: date | str, source: st
         "staff_rows": staff_rows,
         "non_medical_rows": non_medical_rows,
         "referral_rows": referral_rows,
+        "_non_cured_rows_supplied": True,
+        "_non_cured_preserve_existing_remarks": True,
         "source": source,
         "snapshot_time": snapshot_time,
-    }
+    })
+    try:
+        existing_snapshot = _fetch_morning_report_snapshot(report_date_str, unit_norm)
+    except Exception:
+        existing_snapshot = None
+    if payload and existing_snapshot:
+        payload["non_cured_discharge_rows"] = _merge_morning_non_cured_rows(
+            payload.get("non_cured_discharge_rows") or [],
+            existing_snapshot.get("non_cured_discharge_rows") or [],
+        )
+    return payload
 
 def _build_morning_report_excel(payload: dict, exported_by: str | None = None) -> bytes:
     if not payload:
         return b""
+    payload = _attach_morning_auto_sections(payload) or {}
     exported_by = exported_by or "System"
     exported_at = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
     report_date = payload.get("report_date") or "-"
@@ -12843,6 +14490,8 @@ def _build_morning_report_excel(payload: dict, exported_by: str | None = None) -
     staff_rows = _filter_staff_rows(payload.get("staff_rows") or [])
     non_medical_rows = payload.get("non_medical_rows") or []
     referral_rows = payload.get("referral_rows") or []
+    daycare_rows = payload.get("daycare_rows") or []
+    non_cured_discharge_rows = payload.get("non_cured_discharge_rows") or []
     summary_rows = _collapse_morning_counts(unit_norm, summary_rows)
     investigations = _collapse_morning_counts(unit_norm, investigations)
 
@@ -12903,6 +14552,22 @@ def _build_morning_report_excel(payload: dict, exported_by: str | None = None) -
         alt_header_fmt = wb.add_format({
             "bold": True, "align": "center", "valign": "vcenter",
             "bg_color": "#ead1ec", "border": 1
+        })
+        referral_center_wrap_fmt = wb.add_format({
+            "font_size": 10, "align": "center", "valign": "vcenter",
+            "bg_color": "#ffffff", "border": 1, "text_wrap": True
+        })
+        referral_left_wrap_fmt = wb.add_format({
+            "font_size": 10, "align": "left", "valign": "vcenter",
+            "bg_color": "#ffffff", "border": 1, "text_wrap": True
+        })
+        detail_center_wrap_fmt = wb.add_format({
+            "align": "center", "valign": "vcenter",
+            "bg_color": "#ffffff", "border": 1, "text_wrap": True
+        })
+        detail_left_wrap_fmt = wb.add_format({
+            "align": "left", "valign": "vcenter",
+            "bg_color": "#ffffff", "border": 1, "text_wrap": True
         })
 
         left_start_col = 0
@@ -13201,29 +14866,70 @@ def _build_morning_report_excel(payload: dict, exported_by: str | None = None) -
         ws_extra2.write(staff_row, 1, "Total", total_left_fmt)
         ws_extra2.write(staff_row, 3, "Total", total_left_fmt)
 
+        def _write_discharge_detail_section(sheet, start_row: int, title: str, rows: list[dict]) -> int:
+            sheet.merge_range(start_row, 0, start_row, 6, title, alt_section_fmt)
+            start_row += 1
+            for col_idx, header in enumerate(MORNING_REPORT_DISCHARGE_DETAIL_HEADERS):
+                sheet.write(start_row, col_idx, header, alt_header_fmt)
+            sheet.set_row(start_row, 24)
+            start_row += 1
+            if rows:
+                for item in rows:
+                    sheet.write(start_row, 0, item.get("sl") or "", detail_center_wrap_fmt)
+                    sheet.write(start_row, 1, item.get("patient_name") or "", detail_left_wrap_fmt)
+                    sheet.write(start_row, 2, item.get("admission_time") or "", detail_center_wrap_fmt)
+                    sheet.write(start_row, 3, item.get("discharge_time") or "", detail_center_wrap_fmt)
+                    sheet.write(start_row, 4, item.get("doctor_name") or "", detail_left_wrap_fmt)
+                    sheet.write(start_row, 5, item.get("reason") or "", detail_left_wrap_fmt)
+                    sheet.write(start_row, 6, item.get("remarks") or "", detail_left_wrap_fmt)
+                    sheet.set_row(start_row, 34)
+                    start_row += 1
+            else:
+                sheet.merge_range(start_row, 0, start_row, 6, "No data", detail_left_wrap_fmt)
+                start_row += 1
+            return start_row
+
         staff_row += 2
-        ws_extra2.merge_range(staff_row, 0, staff_row, 4, "Referral/Refusal/Brought Death Information (12:00 PM to 11:59 PM)", alt_section_fmt)
+        ws_extra2.merge_range(staff_row, 0, staff_row, 6, MORNING_REPORT_REFERRAL_SECTION_TITLE, alt_section_fmt)
         staff_row += 1
         ws_extra2.write(staff_row, 0, "Sl", alt_header_fmt)
         ws_extra2.write(staff_row, 1, "Patient Name", alt_header_fmt)
         ws_extra2.write(staff_row, 2, "Visit Time", alt_header_fmt)
-        ws_extra2.write(staff_row, 3, "Consultant Name", alt_header_fmt)
-        ws_extra2.write(staff_row, 4, "Reason for Refering", alt_header_fmt)
+        ws_extra2.write(staff_row, 3, "Discharge Time", alt_header_fmt)
+        ws_extra2.write(staff_row, 4, "Consultant Name", alt_header_fmt)
+        ws_extra2.write(staff_row, 5, "Reason", alt_header_fmt)
+        ws_extra2.write(staff_row, 6, "Remarks", alt_header_fmt)
+        ws_extra2.set_row(staff_row, 24)
         staff_row += 1
-        for item in referral_rows:
-            ws_extra2.write(staff_row, 0, item.get("sl") or "", data_fmt)
-            ws_extra2.write(staff_row, 1, item.get("patient_name") or "", left_fmt)
-            ws_extra2.write(staff_row, 2, item.get("visit_time") or "", data_fmt)
-            ws_extra2.write(staff_row, 3, item.get("consultant") or "", left_fmt)
-            ws_extra2.write(staff_row, 4, item.get("reason") or "", left_fmt)
+        if referral_rows:
+            for item in referral_rows:
+                ws_extra2.write(staff_row, 0, item.get("sl") or "", referral_center_wrap_fmt)
+                ws_extra2.write(staff_row, 1, item.get("patient_name") or "", referral_left_wrap_fmt)
+                ws_extra2.write(staff_row, 2, item.get("visit_time") or "", referral_center_wrap_fmt)
+                ws_extra2.write(staff_row, 3, item.get("discharge_time") or "", referral_center_wrap_fmt)
+                ws_extra2.write(staff_row, 4, item.get("consultant") or "", referral_left_wrap_fmt)
+                ws_extra2.write(staff_row, 5, item.get("reason_type") or "", referral_left_wrap_fmt)
+                ws_extra2.write(staff_row, 6, item.get("reason") or "", referral_left_wrap_fmt)
+                ws_extra2.set_row(staff_row, 34)
+                staff_row += 1
+        else:
+            ws_extra2.merge_range(staff_row, 0, staff_row, 6, "No data", referral_left_wrap_fmt)
             staff_row += 1
 
+        staff_row += 1
+        staff_row = _write_discharge_detail_section(
+            ws_extra2,
+            staff_row,
+            MORNING_REPORT_NON_CURED_DISCHARGE_SECTION_TITLE,
+            non_cured_discharge_rows,
+        )
+
         ws_extra2.set_column(0, 0, 6)
-        ws_extra2.set_column(1, 1, 30)
-        ws_extra2.set_column(2, 2, 14)
-        ws_extra2.set_column(3, 3, 26)
-        ws_extra2.set_column(4, 4, 32)
-        ws_extra2.set_column(5, 6, 16)
+        ws_extra2.set_column(1, 1, 26)
+        ws_extra2.set_column(2, 3, 19)
+        ws_extra2.set_column(4, 4, 24)
+        ws_extra2.set_column(5, 5, 18)
+        ws_extra2.set_column(6, 6, 26)
 
     buffer.seek(0)
     return buffer.getvalue()
@@ -13602,9 +15308,17 @@ def _volume_cache_get(unit, from_date, to_date):
             if now - entry["ts"] <= VOLUME_CACHE_TTL_SECS:
                 df_mem = entry["df"]
                 if df_mem is not None and not df_mem.empty:
-                    required_cols = {"Gender", "VisitTypeID", "Age"}
+                    required_cols = {"Gender", "VisitTypeID", "Age", "AdmissionType"}
                     if required_cols.issubset(set(df_mem.columns)):
-                        return df_mem.copy(deep=True)
+                        filtered_mem = data_fetch._filter_volume_details_by_visit_date(
+                            df_mem,
+                            from_date,
+                            to_date,
+                            visit_date_col="VisitDate",
+                        )
+                        filtered_mem = data_fetch.apply_volume_ipd_daycare_segmentation(filtered_mem)
+                        VOLUME_MEM_CACHE[key] = {"ts": entry["ts"], "df": filtered_mem.copy(deep=True)}
+                        return filtered_mem.copy(deep=True)
             VOLUME_MEM_CACHE.pop(key, None)
     try:
         with sqlite3.connect(_abs_local_db_path()) as c:
@@ -13629,10 +15343,17 @@ def _volume_cache_get(unit, from_date, to_date):
             df["Unit"] = unit
         else:
             df["Unit"] = df["Unit"].astype(str).str.strip().str.upper().replace("", unit)
-        required_cols = {"Gender", "VisitTypeID", "Age"}
+        required_cols = {"Gender", "VisitTypeID", "Age", "AdmissionType"}
         if not required_cols.issubset(set(df.columns)):
             _volume_cache_evict(unit, from_date, to_date)
             return None
+        df = data_fetch._filter_volume_details_by_visit_date(
+            df,
+            from_date,
+            to_date,
+            visit_date_col="VisitDate",
+        )
+        df = data_fetch.apply_volume_ipd_daycare_segmentation(df)
         with VOLUME_MEM_LOCK:
             VOLUME_MEM_CACHE[key] = {"ts": ts_val, "df": df.copy(deep=True)}
         return df
@@ -14213,6 +15934,32 @@ def _jsonify_cached_payload(payload, *, cache_name: str | None = None, cache_par
     if cache_name:
         _live_response_cache_put(cache_name, safe_payload, *cache_parts)
     return jsonify(safe_payload)
+
+
+def _invalidate_live_response_cache(name: str, *parts):
+    key = _live_response_cache_key(name, *parts)
+    _redis_delete(f"live_response:{key}")
+    with LIVE_RESPONSE_CACHE_LOCK:
+        LIVE_RESPONSE_CACHE.pop(key, None)
+
+
+def _invalidate_item_master_meta_cache(unit: str | None = None):
+    unit_key = _normalize_purchase_unit_text(unit) if unit else ""
+    key_prefix = "item_master_lists::"
+    keys_to_drop = []
+
+    with LIVE_RESPONSE_CACHE_LOCK:
+        for cache_key in list(LIVE_RESPONSE_CACHE.keys()):
+            cache_key_str = str(cache_key or "")
+            if not cache_key_str.startswith(key_prefix):
+                continue
+            if unit_key and not cache_key_str.startswith(f"{key_prefix}{unit_key}::"):
+                continue
+            keys_to_drop.append(cache_key_str)
+            LIVE_RESPONSE_CACHE.pop(cache_key, None)
+
+    for cache_key in keys_to_drop:
+        _redis_delete(f"live_response:{cache_key}")
 
 # ============================================================
 # Midnight snapshotter: capture at 00:00 local time daily
@@ -14885,6 +16632,8 @@ def _request_counts_as_session_activity() -> bool:
 def enforce_session_policies():
     # Lazy-start OTP worker on first incoming request (Flask 3 removed before_first_request)
     _start_otp_worker_if_enabled()
+    _start_booking_payment_worker_if_enabled()
+    _start_asset_coverage_worker_if_enabled()
 
     if request.endpoint in ('login', 'logout', 'static'):
         return
@@ -14902,12 +16651,12 @@ def enforce_session_policies():
         if sid:
             _session_store_clear(username, sid)
         session.clear()
-        return redirect(url_for('login'))
+        return _unauthorized_session_response("Session expired. Please sign in again.")
 
     sid = session.get('sid')
     if not sid or _session_store_get(username) != sid:
         session.clear()
-        return redirect(url_for('login'))
+        return _unauthorized_session_response("Please sign in again.")
 
     if _request_counts_as_session_activity():
         session['last_activity'] = now
@@ -14926,6 +16675,11 @@ def enforce_section_rights():
 
     section = _resolve_section_for_request(request.path)
     if not section:
+        return
+    clean_path = "/" + (request.path or "").split("?", 1)[0].strip().strip("/").lower()
+    if clean_path == "/revenue" and has_section_access("investor_revenue_report"):
+        return
+    if clean_path == "/discount-module" and has_section_access(CANTEEN_BILL_RECEIPT_CANCEL_SECTION):
         return
     if not has_section_access(section):
         return _forbidden_response("Access denied for this section.", 403)
@@ -15029,7 +16783,7 @@ def enforce_historical_lock():
 @app.route('/')
 def index():
     if session.get('username') and session.get('role'):
-        return redirect(url_for('dashboard'))
+        return _post_login_redirect_response()
     return redirect(url_for('login'))
 
 @app.route('/login', methods=['GET', 'POST'])
@@ -15092,7 +16846,7 @@ def login():
             if pending_ttl:
                 grant_historical(username, sid, pending_ttl)
 
-            return redirect(url_for('dashboard'))
+            return _post_login_redirect_response()
 
         # ---- Local fallback login
         local = USER_CREDENTIALS.get(username)
@@ -15139,7 +16893,7 @@ def login():
             if pending_ttl:
                 grant_historical(username, sid, pending_ttl)
 
-            return redirect(url_for('dashboard'))
+            return _post_login_redirect_response()
 
         # ---- invalid credentials
         return render_template('login.html', error="Invalid credentials")
@@ -15169,27 +16923,34 @@ def settings():
     return render_template('settings.html', msg=msg, err=err, is_it=is_it)
 
 @app.route('/settings/change_password', methods=['POST'])
-@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
+@login_required()
 def settings_change_password():
+    from urllib.parse import urlencode
+
     current = request.form.get("current_password") or ""
     newpwd = request.form.get("new_password") or ""
     username = (session.get("username") or "").strip()
+    next_url = (request.form.get("next") or "").strip()
+
+    def _password_redirect(message: str, *, error: bool = False):
+        target = next_url if next_url.startswith("/") and not next_url.startswith("//") else url_for("settings")
+        return redirect(f"{target}{'&' if '?' in target else '?'}{urlencode({'err' if error else 'msg': message})}")
 
     rec = fetch_user_from_db(username)
     if not rec:
-        return redirect(url_for('settings', err="User not found"))
+        return _password_redirect("User not found", error=True)
 
     if rec.get("passwordw") != current:
-        return redirect(url_for('settings', err="Current password is incorrect"))
+        return _password_redirect("Current password is incorrect", error=True)
 
     if not newpwd:
-        return redirect(url_for('settings', err="New password cannot be empty"))
+        return _password_redirect("New password cannot be empty", error=True)
 
     try:
         _update_user_password(username, newpwd)
-        return redirect(url_for('settings', msg="Password updated successfully"))
+        return _password_redirect("Password updated successfully")
     except Exception as e:
-        return redirect(url_for('settings', err=f"Update failed: {e}"))
+        return _password_redirect(f"Update failed: {e}", error=True)
 
 # ============================================================
 # Dashboard (actual page)
@@ -16797,6 +18558,971 @@ def export_revenue_excel():
         import traceback
         traceback.print_exc()
         return jsonify({"status": "error", "message": "Export failed"}), 500
+
+def _fetch_arpob_occupancy_from_snapshots(from_date: str, to_date: str, units: list[str]) -> dict:
+    """
+    Fetch ARPOB occupancy inputs from local SQLite occupancy_snapshot table.
+
+    active_beds = occupied + clinically_discharged
+    """
+    out = {}
+
+    try:
+        start_dt = datetime.strptime(from_date, "%Y-%m-%d").date()
+        end_dt = datetime.strptime(to_date, "%Y-%m-%d").date()
+        days = max(1, (end_dt - start_dt).days + 1)
+    except Exception:
+        days = 1
+
+    units_clean = [
+        str(u or "").strip().upper()
+        for u in (units or [])
+        if str(u or "").strip()
+    ]
+
+    if not units_clean:
+        return out
+
+    try:
+        _ensure_local_store()
+
+        with sqlite3.connect(_abs_local_db_path()) as conn:
+            placeholders = ",".join("?" for _ in units_clean)
+
+            rows = conn.execute(
+                f"""
+                SELECT
+                    unit,
+                    COUNT(DISTINCT snapshot_date) AS snapshot_days,
+                    AVG(CAST(COALESCE(occupied, 0) + COALESCE(clinically_discharged, 0) AS REAL)) AS avg_occupied_beds,
+                    AVG(CAST(COALESCE(total_beds, 0) AS REAL)) AS avg_total_beds
+                FROM occupancy_snapshot
+                WHERE snapshot_date BETWEEN ? AND ?
+                  AND unit IN ({placeholders})
+                GROUP BY unit
+                """,
+                [from_date, to_date] + units_clean,
+            ).fetchall()
+
+        for unit, snapshot_days, avg_occ, avg_total in rows:
+            unit_key = str(unit or "").strip().upper()
+            avg_occupied = float(avg_occ or 0)
+            avg_beds = float(avg_total or 0)
+
+            out[unit_key] = {
+                "days": days,
+                "snapshot_days": int(snapshot_days or 0),
+                "avg_occupied_beds": avg_occupied,
+                "avg_total_beds": avg_beds,
+                "total_bed_days": avg_beds * days,
+                "effective_bed_days_occupied": avg_occupied * days,
+            }
+
+    except Exception as e:
+        print(f"[WARN] ARPOB occupancy snapshot fetch failed: {e}")
+
+    return out
+
+
+# ============================================================
+# Investor Revenue Excel Export
+# Investor-style workbook: Department wise + Category wise + Visit wise + ARPOB
+# Surgery sheet intentionally excluded because surgery data is manual
+# ============================================================
+@app.route("/export_investor_revenue_excel")
+@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
+def export_investor_revenue_excel():
+    import re
+    from xlsxwriter.utility import xl_col_to_name
+
+    report_section = "investor_revenue_report"
+    role = (session.get("role") or "").strip()
+
+    if role != "IT" and not has_section_access(report_section):
+        return _forbidden_response("Access denied for Investor Revenue Report.", 403)
+
+    from_date = (request.args.get("from_date") or "").strip()
+    to_date = (request.args.get("to_date") or "").strip()
+    refresh_flag = _is_truthy(
+        request.args.get("refresh")
+        or request.args.get("force")
+        or request.args.get("refresh_today")
+    )
+
+    if not from_date or not to_date:
+        return jsonify({"status": "error", "message": "Missing date range"}), 400
+
+    date_re = re.compile(r"^\d{4}-\d{2}-\d{2}$")
+    if not date_re.match(from_date) or not date_re.match(to_date):
+        return jsonify({"status": "error", "message": "Invalid date format. Use YYYY-MM-DD."}), 400
+
+    try:
+        from_dt = datetime.strptime(from_date, "%Y-%m-%d").date()
+        to_dt = datetime.strptime(to_date, "%Y-%m-%d").date()
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid date value."}), 400
+
+    if from_dt > to_dt:
+        return jsonify({"status": "error", "message": "from_date cannot be after to_date"}), 400
+
+    allowed_units = _analytics_allowed_units_for_session()
+    allowed_units = [u for u in allowed_units if str(u).upper() in {"AHL", "ACI", "BALLIA"}]
+
+    if not allowed_units:
+        return jsonify({"status": "error", "message": "No unit access assigned"}), 403
+
+    def _safe_sheet_name(value):
+        text = re.sub(r"[\[\]:*?/\\]", "_", str(value or "").strip())
+        return text[:31] or "Sheet"
+
+    def _clean_text(value):
+        if value is None:
+            return ""
+        try:
+            if pd.isna(value):
+                return ""
+        except Exception:
+            pass
+        return str(value).replace("\xa0", " ").strip()
+
+    def _pick_col(df, candidates):
+        col_map = {str(c).strip().lower(): c for c in df.columns}
+        for candidate in candidates:
+            found = col_map.get(str(candidate).strip().lower())
+            if found:
+                return found
+        return None
+
+    def _numeric_series(df, candidates):
+        col = _pick_col(df, candidates)
+        if not col:
+            return pd.Series([0.0] * len(df), index=df.index)
+        return pd.to_numeric(df[col], errors="coerce").fillna(0.0)
+
+    def _text_series(df, candidates, default=""):
+        col = _pick_col(df, candidates)
+        if not col:
+            return pd.Series([default] * len(df), index=df.index)
+        return df[col].apply(_clean_text)
+
+    def _normalize_visit(value):
+        text = str(value or "").strip().upper()
+        if "IPD" in text:
+            return "IPD"
+        if "DPV" in text:
+            return "DPV"
+        if "HCV" in text:
+            return "HCV"
+        if "OPD" in text or "WALK" in text:
+            return "OPD"
+        return "OPD"
+
+    def _normalize_category(value):
+        text = str(value or "").strip()
+        low = text.lower()
+
+        if not text:
+            return "Cash-Category"
+        if "tpa" in low:
+            return "TPA Cashless Category"
+        if "cashless" in low:
+            return "Cashless-Category"
+        if "cash" in low:
+            return "Cash-Category"
+
+        return text
+
+    def _category_from_fields(category_value, patient_type_value):
+        patient_type_text = str(patient_type_value or "").strip()
+        if "tpa" in patient_type_text.lower():
+            return "TPA Cashless Category"
+        return _normalize_category(category_value)
+
+    def _prepare_revenue_df(raw_df, unit):
+        df = _clean_df_columns(raw_df.copy())
+
+        out = pd.DataFrame()
+        out["Unit"] = str(unit or "").strip().upper()
+
+        out["Department"] = _text_series(
+            df,
+            [
+                "Department",
+                "DeptName",
+                "DepartmentName",
+                "Dept",
+                "Dept_Name",
+                "Department_Name",
+                "Dept Name",
+            ],
+            "Unknown",
+        ).replace("", "Unknown")
+
+        category_series = _text_series(
+            df,
+            [
+                "PatientCategory",
+                "Category",
+                "PatCategory",
+                "PayCategory",
+                "BillCategory",
+                "Bill Category",
+            ],
+            "Cash-Category",
+        )
+
+        patient_type_series = _text_series(
+            df,
+            [
+                "PatientType",
+                "Patient Type",
+                "Patient_Type",
+                "PatType",
+                "PatientSubType",
+                "Patient SubType",
+            ],
+        )
+
+        out["Category"] = [
+            _category_from_fields(category_value, patient_type_value)
+            for category_value, patient_type_value in zip(category_series, patient_type_series)
+        ]
+
+        out["TypeOfVisit"] = _text_series(
+            df,
+            [
+                "TypeOfVisit",
+                "VisitType",
+                "Visit Type",
+                "Type Of Visit",
+                "Type_Of_Visit",
+            ],
+            "OPD",
+        ).apply(_normalize_visit)
+
+        out["BillNo"] = _text_series(
+            df,
+            [
+                "BillNo",
+                "Bill_No",
+                "BillNumber",
+                "Bill Number",
+                "InvoiceNo",
+                "Invoice No",
+            ],
+        )
+
+        out["BillTypeDescription"] = _text_series(
+            df,
+            [
+                "BillTypeDescription",
+                "BillTypeDesc",
+                "Bill Type Description",
+                "BillType",
+                "Bill Type",
+            ],
+        )
+
+        out["Hosp Amount"] = _numeric_series(
+            df,
+            [
+                "HospAmount",
+                "Hosp_Amount",
+                "HospitalAmount",
+                "Hospital_Amount",
+                "HospAmt",
+                "Hosp Amt",
+            ],
+        )
+
+        out["Hospital Consumables"] = _numeric_series(
+            df,
+            [
+                "HospitalConsumables",
+                "Hospital_Consumables",
+                "HospConsumables",
+                "Hosp Consumables",
+                "Hospital Consumables",
+            ],
+        )
+
+        out["Lab Amount"] = _numeric_series(
+            df,
+            [
+                "LabAmount",
+                "Lab_Amount",
+                "LabAmt",
+                "Lab Amount",
+                "Lab",
+            ],
+        )
+
+        out["Radio Amount"] = _numeric_series(
+            df,
+            [
+                "RadioAmount",
+                "Radio_Amount",
+                "RadioAmt",
+                "Radio Amount",
+                "RadiologyAmount",
+                "Radiology Amount",
+            ],
+        )
+
+        out["PH Amount"] = _numeric_series(
+            df,
+            [
+                "PHAmount",
+                "PH_Amount",
+                "PharmacyAmount",
+                "Pharmacy Amount",
+                "PharmAmt",
+            ],
+        )
+
+        out["PHRet Amount"] = _numeric_series(
+            df,
+            [
+                "PHRetAmount",
+                "PH_Ret_Amount",
+                "PH Return Amount",
+                "PharmacyReturnAmount",
+                "Pharmacy Return Amount",
+                "PHReturn",
+            ],
+        )
+
+        out["Discount Amount"] = _numeric_series(
+            df,
+            [
+                "DiscountAmount",
+                "Discount_Amount",
+                "Discount Amount",
+                "DiscAmt",
+                "Discount",
+            ],
+        )
+
+        out["Gross Billing"] = (
+            out["Hosp Amount"]
+            + out["Hospital Consumables"]
+            + out["Lab Amount"]
+            + out["Radio Amount"]
+            + out["PH Amount"]
+            + out["PHRet Amount"]
+        )
+
+        out["Net Billing"] = out["Gross Billing"] + out["Discount Amount"]
+
+        return out
+
+    def _volume_count(df):
+        if df is None or df.empty:
+            return 0
+        if "BillNo" in df.columns and df["BillNo"].astype(str).str.strip().ne("").any():
+            return int(df["BillNo"].astype(str).str.strip().nunique())
+        return int(len(df))
+
+    def _summary_by_group(df, group_col, ordered_names=None):
+        columns = [
+            "Name",
+            "OPD VOLUME",
+            "DPV VOLUME",
+            "IPD VOLUME",
+            "HCV VOLUME",
+            "Sum of Hosp Amount",
+            "Sum of Hospital Consumables",
+            "Sum of Lab Amount",
+            "Sum of Radio Amount",
+            "Sum of PH Amount",
+            "Sum of PHRet Amount",
+            "Gross Billing",
+            "Sum of Discount Amount",
+            "Net Billing",
+        ]
+
+        if df is None or df.empty or group_col not in df.columns:
+            return pd.DataFrame(columns=columns)
+
+        work = df.copy()
+
+        desc = work["BillTypeDescription"].astype(str).str.upper()
+        hospital_bill_mask = desc.str.contains("HOSPITAL BILL", na=False)
+
+        if hospital_bill_mask.any():
+            count_source = work[hospital_bill_mask].copy()
+        else:
+            count_source = work.copy()
+
+        if ordered_names:
+            group_names = ordered_names
+        else:
+            group_names = sorted(
+                [
+                    str(x).strip()
+                    for x in work[group_col].dropna().unique().tolist()
+                    if str(x).strip()
+                ]
+            )
+
+        rows = []
+
+        for name in group_names:
+            group_work = work[work[group_col].astype(str).str.strip() == str(name).strip()]
+            group_count_work = count_source[count_source[group_col].astype(str).str.strip() == str(name).strip()]
+
+            if group_work.empty and group_count_work.empty:
+                continue
+
+            row = {
+                "Name": name,
+                "OPD VOLUME": _volume_count(group_count_work[group_count_work["TypeOfVisit"] == "OPD"]),
+                "DPV VOLUME": _volume_count(group_count_work[group_count_work["TypeOfVisit"] == "DPV"]),
+                "IPD VOLUME": _volume_count(group_count_work[group_count_work["TypeOfVisit"] == "IPD"]),
+                "HCV VOLUME": _volume_count(group_count_work[group_count_work["TypeOfVisit"] == "HCV"]),
+                "Sum of Hosp Amount": float(group_work["Hosp Amount"].sum()),
+                "Sum of Hospital Consumables": float(group_work["Hospital Consumables"].sum()),
+                "Sum of Lab Amount": float(group_work["Lab Amount"].sum()),
+                "Sum of Radio Amount": float(group_work["Radio Amount"].sum()),
+                "Sum of PH Amount": float(group_work["PH Amount"].sum()),
+                "Sum of PHRet Amount": float(group_work["PHRet Amount"].sum()),
+                "Gross Billing": float(group_work["Gross Billing"].sum()),
+                "Sum of Discount Amount": float(group_work["Discount Amount"].sum()),
+                "Net Billing": float(group_work["Net Billing"].sum()),
+            }
+
+            rows.append(row)
+
+        result = pd.DataFrame(rows, columns=columns)
+
+        if not result.empty and not ordered_names:
+            result = result.sort_values("Gross Billing", ascending=False).reset_index(drop=True)
+
+        return result
+
+    def _date_days_inclusive(start_text, end_text):
+        try:
+            start = datetime.strptime(start_text, "%Y-%m-%d").date()
+            end = datetime.strptime(end_text, "%Y-%m-%d").date()
+            return max(1, (end - start).days + 1)
+        except Exception:
+            return 1
+
+    def _unit_title(unit):
+        unit_key = str(unit or "").strip().upper()
+        if unit_key == "AHL":
+            return "ASARFI HOSPITAL LIMITED - SUPER SPECIALITY HOSPITAL"
+        if unit_key == "ACI":
+            return "ASARFI HOSPITAL LIMITED - CANCER UNIT"
+        if unit_key == "BALLIA":
+            return "ASARFI HOSPITAL BALLIA"
+        return f"{unit_key} REVENUE REPORT"
+
+    def _sheet_title(unit):
+        unit_key = str(unit or "").strip().upper()
+        if unit_key == "AHL":
+            return "AHL 3RD QTR"
+        if unit_key == "ACI":
+            return "ACI 3RD QTR"
+        if unit_key == "BALLIA":
+            return "BALLIA 3RD QTR"
+        return _safe_sheet_name(f"{unit_key} 3RD QTR")
+
+    if refresh_flag and _is_today_range(from_date, to_date):
+        _fetch_live_and_refresh_cache(allowed_units, from_date, to_date)
+
+    raw_unit_data = {}
+
+    with ThreadPoolExecutor(max_workers=_revenue_pool_workers(len(allowed_units))) as executor:
+        futures = {
+            executor.submit(_get_or_fetch_unit, unit, from_date, to_date): unit
+            for unit in allowed_units
+        }
+
+        for future in as_completed(futures):
+            unit = futures[future]
+            try:
+                df = future.result()
+                if df is not None and not df.empty:
+                    raw_unit_data[str(unit).upper()] = df
+            except Exception as e:
+                print(f"Investor revenue report fetch failed for {unit}: {e}")
+
+    if not raw_unit_data:
+        return jsonify({"status": "error", "message": "No data available to export"}), 400
+
+    prepared_data = {}
+    report_data = {}
+
+    for unit, raw_df in raw_unit_data.items():
+        prepared = _prepare_revenue_df(raw_df, unit)
+        prepared_data[unit] = prepared
+
+        report_data[unit] = {
+            "department": _summary_by_group(prepared, "Department"),
+            "category": _summary_by_group(
+                prepared,
+                "Category",
+                ["Cash-Category", "Cashless-Category", "TPA Cashless Category"],
+            ),
+            "visit": _summary_by_group(prepared, "TypeOfVisit", ["DPV", "IPD", "OPD", "HCV"]),
+        }
+
+    export_dir = os.path.join("data", "exports")
+    os.makedirs(export_dir, exist_ok=True)
+
+    file_name = f"Investor_Revenue_Report_{from_date}_to_{to_date}.xlsx"
+    file_path = os.path.join(export_dir, file_name)
+
+    headers = [
+        "Department AHL",
+        "OPD VOLUME",
+        "DPV VOLUME",
+        "IPD VOLUME",
+        "HCV VOLUME",
+        "Sum of Hosp Amount",
+        "Sum of Hospital Consumables",
+        "Sum of Lab Amount",
+        "Sum of Radio Amount",
+        "Sum of PH Amount",
+        "Sum of PHRet Amount",
+        "Gross Billing",
+        "Sum of Discount Amount",
+        "Net Billing",
+        "Ratio",
+    ]
+
+    metric_cols = [
+        "OPD VOLUME",
+        "DPV VOLUME",
+        "IPD VOLUME",
+        "HCV VOLUME",
+        "Sum of Hosp Amount",
+        "Sum of Hospital Consumables",
+        "Sum of Lab Amount",
+        "Sum of Radio Amount",
+        "Sum of PH Amount",
+        "Sum of PHRet Amount",
+        "Gross Billing",
+        "Sum of Discount Amount",
+        "Net Billing",
+    ]
+
+    try:
+        with pd.ExcelWriter(file_path, engine="xlsxwriter") as writer:
+            wb = writer.book
+
+            fmt_title = wb.add_format({
+                "bold": True,
+                "font_size": 10,
+                "font_color": "#ff0000",
+                "align": "center",
+                "valign": "vcenter",
+                "bg_color": "#ffc000",
+                "border": 1,
+            })
+
+            fmt_header = wb.add_format({
+                "bold": True,
+                "font_size": 9,
+                "font_color": "#000000",
+                "align": "center",
+                "valign": "vcenter",
+                "text_wrap": True,
+                "bg_color": "#b4c6e7",
+                "border": 1,
+            })
+
+            fmt_header_red = wb.add_format({
+                "bold": True,
+                "font_size": 9,
+                "font_color": "#ff0000",
+                "align": "center",
+                "valign": "vcenter",
+                "text_wrap": True,
+                "bg_color": "#b4c6e7",
+                "border": 1,
+            })
+
+            fmt_text = wb.add_format({
+                "font_size": 9,
+                "border": 1,
+                "valign": "vcenter",
+            })
+
+            fmt_num = wb.add_format({
+                "font_size": 9,
+                "border": 1,
+                "align": "right",
+                "valign": "vcenter",
+                "num_format": "#,##0",
+            })
+
+            fmt_money = wb.add_format({
+                "font_size": 9,
+                "border": 1,
+                "align": "right",
+                "valign": "vcenter",
+                "num_format": "#,##,##0.00",
+            })
+
+            fmt_ratio = wb.add_format({
+                "font_size": 9,
+                "border": 1,
+                "align": "right",
+                "valign": "vcenter",
+                "num_format": "0.0%",
+            })
+
+            fmt_total_text = wb.add_format({
+                "bold": True,
+                "font_size": 9,
+                "border": 1,
+                "valign": "vcenter",
+                "bg_color": "#fff2cc",
+            })
+
+            fmt_total_num = wb.add_format({
+                "bold": True,
+                "font_size": 9,
+                "border": 1,
+                "align": "right",
+                "valign": "vcenter",
+                "num_format": "#,##0",
+                "bg_color": "#fff2cc",
+            })
+
+            fmt_total_money = wb.add_format({
+                "bold": True,
+                "font_size": 9,
+                "border": 1,
+                "align": "right",
+                "valign": "vcenter",
+                "num_format": "#,##,##0.00",
+                "bg_color": "#fff2cc",
+            })
+
+            fmt_total_ratio = wb.add_format({
+                "bold": True,
+                "font_size": 9,
+                "border": 1,
+                "align": "right",
+                "valign": "vcenter",
+                "num_format": "0.0%",
+                "bg_color": "#fff2cc",
+            })
+
+            fmt_ar_title = wb.add_format({
+                "bold": True,
+                "font_size": 11,
+                "font_color": "#000000",
+                "align": "center",
+                "valign": "vcenter",
+                "bg_color": "#ddebf7",
+                "border": 1,
+            })
+
+            fmt_ar_header = wb.add_format({
+                "bold": True,
+                "font_size": 9,
+                "align": "center",
+                "valign": "vcenter",
+                "bg_color": "#b4c6e7",
+                "border": 1,
+                "text_wrap": True,
+            })
+
+            fmt_ar_label = wb.add_format({
+                "font_size": 9,
+                "border": 1,
+                "valign": "vcenter",
+            })
+
+            fmt_ar_num = wb.add_format({
+                "font_size": 9,
+                "border": 1,
+                "align": "right",
+                "num_format": "#,##0.00",
+            })
+
+            fmt_ar_int = wb.add_format({
+                "font_size": 9,
+                "border": 1,
+                "align": "right",
+                "num_format": "#,##0",
+            })
+
+            fmt_ar_percent = wb.add_format({
+                "font_size": 9,
+                "border": 1,
+                "align": "right",
+                "num_format": "0.0%",
+            })
+
+            fmt_note = wb.add_format({
+                "font_size": 9,
+                "font_color": "#666666",
+                "italic": True,
+            })
+
+            def write_investor_section(ws, start_row, unit, section_label, df_section, red_header=False):
+                ws.merge_range(start_row, 0, start_row + 1, 14, _unit_title(unit), fmt_title)
+
+                header_row = start_row + 2
+
+                local_headers = list(headers)
+                local_headers[0] = section_label
+
+                for col_idx, header in enumerate(local_headers):
+                    ws.write(header_row, col_idx, header, fmt_header_red if red_header else fmt_header)
+
+                row = header_row + 1
+
+                if df_section is not None and not df_section.empty:
+                    for _, rec in df_section.iterrows():
+                        ws.write(row, 0, rec.get("Name", ""), fmt_text)
+
+                        for idx, col_name in enumerate(metric_cols, start=1):
+                            value = rec.get(col_name, 0)
+                            if idx <= 4:
+                                ws.write(row, idx, int(value or 0), fmt_num)
+                            else:
+                                ws.write(row, idx, float(value or 0), fmt_money)
+
+                        ws.write(row, 14, 0, fmt_ratio)
+                        row += 1
+
+                total_row = row
+                ws.write(total_row, 0, "Grand Total", fmt_total_text)
+
+                first_data_excel_row = header_row + 2
+                last_data_excel_row = total_row
+
+                for col_idx in range(1, 14):
+                    col_letter = xl_col_to_name(col_idx)
+                    formula = f"=SUM({col_letter}{first_data_excel_row}:{col_letter}{last_data_excel_row})"
+
+                    if col_idx <= 4:
+                        ws.write_formula(total_row, col_idx, formula, fmt_total_num)
+                    else:
+                        ws.write_formula(total_row, col_idx, formula, fmt_total_money)
+
+                net_col_letter = xl_col_to_name(13)
+                total_net_cell = f"{net_col_letter}{total_row + 1}"
+
+                for data_row in range(header_row + 1, total_row):
+                    net_cell = f"{net_col_letter}{data_row + 1}"
+                    ws.write_formula(
+                        data_row,
+                        14,
+                        f'=IFERROR({net_cell}/${total_net_cell},0)',
+                        fmt_ratio,
+                    )
+
+                ws.write_formula(total_row, 14, "=SUM(O{}:O{})".format(first_data_excel_row, last_data_excel_row), fmt_total_ratio)
+
+                return total_row + 3
+
+            unit_sheet_map = {}
+
+            for unit in sorted(report_data.keys()):
+                sheet_name = _sheet_title(unit)
+                unit_sheet_map[unit] = sheet_name
+
+                ws = wb.add_worksheet(sheet_name)
+                ws.hide_gridlines(2)
+
+                current_row = 0
+
+                current_row = write_investor_section(
+                    ws,
+                    current_row,
+                    unit,
+                    f"Department {unit} (Department Wise)",
+                    report_data[unit]["department"],
+                    red_header=False,
+                )
+
+                current_row = write_investor_section(
+                    ws,
+                    current_row,
+                    unit,
+                    f"Department {unit} (Category Wise)",
+                    report_data[unit]["category"],
+                    red_header=False,
+                )
+
+                current_row = write_investor_section(
+                    ws,
+                    current_row,
+                    unit,
+                    f"Department {unit} (Visit Wise)",
+                    report_data[unit]["visit"],
+                    red_header=True,
+                )
+
+                ws.set_column(0, 0, 34)
+                ws.set_column(1, 4, 11)
+                ws.set_column(5, 5, 15)
+                ws.set_column(6, 6, 16)
+                ws.set_column(7, 10, 15)
+                ws.set_column(11, 13, 15)
+                ws.set_column(14, 14, 10)
+
+                for r in range(0, current_row + 1):
+                    ws.set_row(r, 18)
+
+                ws.set_row(0, 24)
+                ws.freeze_panes(3, 1)
+
+            ws_ar = wb.add_worksheet("ARPOB")
+            ws_ar.hide_gridlines(2)
+
+            days = _date_days_inclusive(from_date, to_date)
+
+            arpob_snapshot_map = _fetch_arpob_occupancy_from_snapshots(
+                from_date,
+                to_date,
+                sorted(report_data.keys()),
+            )
+
+            ws_ar.merge_range(0, 0, 0, 7, "Final Calculation of ARPOB", fmt_ar_title)
+            ws_ar.merge_range(
+            1,
+            0,
+            1,
+            7,
+                f"Period: {from_date} to {to_date}",
+                fmt_ar_title,
+        )
+
+            ar_headers = ["Particulars"] + sorted(report_data.keys()) + ["Combined"]
+
+            for col_idx, header in enumerate(ar_headers):
+                ws_ar.write(3, col_idx, header, fmt_ar_header)
+
+            ar_rows = [
+                "Total bed",
+                "Effective bed (A)",
+                "Total bed days (B)",
+                "Effective bed occupied (C)",
+                "Occupancy %",
+                "Available bed days (A*B)",
+                "Effective bed days occupied (B*C)",
+                "IPD-Revenue (Rs. Crores)",
+                "ARPOB (Rs/bed)",
+            ]
+
+            for row_offset, label in enumerate(ar_rows, start=4):
+                ws_ar.write(row_offset, 0, label, fmt_ar_label)
+
+            unit_cols = {}
+
+            for col_idx, unit in enumerate(sorted(report_data.keys()), start=1):
+                unit_cols[unit] = col_idx
+                occ_meta = arpob_snapshot_map.get(unit, {})
+
+                total_bed = float(occ_meta.get("avg_total_beds", 0) or 0)
+                effective_bed = total_bed
+                occupied = float(occ_meta.get("avg_occupied_beds", 0) or 0)
+                snapshot_days = int(occ_meta.get("snapshot_days", 0) or 0)
+
+                visit_df = report_data[unit]["visit"]
+                ipd_net = 0.0
+
+                if visit_df is not None and not visit_df.empty:
+                    ipd_row = visit_df[visit_df["Name"].astype(str).str.upper() == "IPD"]
+                    if not ipd_row.empty:
+                        ipd_net = float(ipd_row["Net Billing"].sum())
+
+                ws_ar.write(4, col_idx, total_bed, fmt_ar_int)
+                ws_ar.write(5, col_idx, effective_bed, fmt_ar_int)
+                ws_ar.write(6, col_idx, days, fmt_ar_int)
+                ws_ar.write(7, col_idx, occupied, fmt_ar_num)
+
+                col_letter = xl_col_to_name(col_idx)
+
+                # Row numbers in Excel:
+                # 5  = Total bed
+                # 6  = Effective bed
+                # 7  = Total days
+                # 8  = Avg occupied beds
+                # 9  = Occupancy %
+                # 10 = Available bed days
+                # 11 = Effective occupied bed days
+                # 12 = IPD Revenue in Crores
+                # 13 = ARPOB
+
+                ws_ar.write_formula(8, col_idx, f'=IFERROR({col_letter}11/{col_letter}10,0)', fmt_ar_percent)
+                ws_ar.write_formula(9, col_idx, f"={col_letter}6*{col_letter}7", fmt_ar_num)
+                ws_ar.write_formula(10, col_idx, f"={col_letter}8*{col_letter}7", fmt_ar_num)
+                ws_ar.write(11, col_idx, ipd_net / 10000000, fmt_ar_num)
+                ws_ar.write_formula(
+                    12,
+                    col_idx,
+                    f'=IFERROR(({col_letter}12*10000000)/{col_letter}11,0)',
+                    fmt_ar_num,
+                )
+
+            combined_col = len(ar_headers) - 1
+            combined_letter = xl_col_to_name(combined_col)
+            first_unit_col = xl_col_to_name(1)
+            last_unit_col = xl_col_to_name(max(1, combined_col - 1))
+
+            ws_ar.write_formula(4, combined_col, f"=SUM({first_unit_col}5:{last_unit_col}5)", fmt_ar_num)
+            ws_ar.write_formula(5, combined_col, f"=SUM({first_unit_col}6:{last_unit_col}6)", fmt_ar_num)
+            ws_ar.write(6, combined_col, days, fmt_ar_int)
+
+            # Weighted average occupied beds across units
+            ws_ar.write_formula(7, combined_col, f"=SUM({first_unit_col}8:{last_unit_col}8)", fmt_ar_num)
+
+            # Occupancy %
+            ws_ar.write_formula(8, combined_col, f'=IFERROR({combined_letter}11/{combined_letter}10,0)', fmt_ar_percent)
+
+            # Available bed days
+            ws_ar.write_formula(9, combined_col, f"={combined_letter}6*{combined_letter}7", fmt_ar_num)
+
+            # Effective occupied bed days
+            ws_ar.write_formula(10, combined_col, f"={combined_letter}8*{combined_letter}7", fmt_ar_num)
+
+            # IPD Revenue in Crores
+            ws_ar.write_formula(11, combined_col, f"=SUM({first_unit_col}12:{last_unit_col}12)", fmt_ar_num)
+
+            # ARPOB
+            ws_ar.write_formula(
+                12,
+                combined_col,
+                f'=IFERROR(({combined_letter}12*10000000)/{combined_letter}11,0)',
+                fmt_ar_num,
+            )
+
+            ws_ar.write(
+                15,
+                0,
+                "Note: ARPOB occupancy is calculated from occupancy_snapshot. Open Occupancy dashboard daily or ensure midnight snapshot runs, otherwise missing dates will reduce snapshot coverage.",
+
+                fmt_note,
+            )
+
+            ws_ar.set_column(0, 0, 34)
+            ws_ar.set_column(1, combined_col, 16)
+            ws_ar.set_row(0, 22)
+            ws_ar.set_row(1, 22)
+            ws_ar.set_row(3, 28)
+
+        return send_file(
+            file_path,
+            as_attachment=True,
+            download_name=file_name,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+
+    except Exception as e:
+        print(f"Investor revenue Excel export failed: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": "Investor revenue export failed"}), 500
+
 # ============================================================
 # NEW: Breakdown (Department / Patient Category / TypeOfVisit) for a Unit
 # ============================================================
@@ -17078,7 +19804,7 @@ def api_revenue_segregation():
 # Dashboard Routes (Role-gated)
 # ============================================================
 @app.route('/revenue')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
 def revenue_dashboard():
     return render_template('revenue.html')
 
@@ -20555,6 +23281,7 @@ def corporate_management():
         unit_labels={u: _unit_display_name(u) for u in allowed_units},
         can_receipt=_corp_recon_can_take_receipt_session(),
         can_writeoff=_corp_recon_can_writeoff_session(),
+        can_cancel_receipt=_corp_recon_can_cancel_receipt_session(),
         can_unsubmit_bill=_corp_recon_can_unsubmit_bill_session(),
     )
 
@@ -21441,7 +24168,7 @@ def _fetch_purchase_incharge_emails_for_unit(unit: str, purchasing_dept_id: int 
         return []
 
 
-def _send_graph_mail(subject: str, body_html: str, to_recipients: list[str]):
+def _send_graph_mail(subject: str, body_html: str, to_recipients: list[str], cc_recipients: list[str] | None = None):
     if not to_recipients:
         return {"status": "skipped", "message": "No recipients"}
     try:
@@ -21458,6 +24185,9 @@ def _send_graph_mail(subject: str, body_html: str, to_recipients: list[str]):
             "body": {"contentType": "HTML", "content": body_html},
             "toRecipients": [{"emailAddress": {"address": addr}} for addr in to_recipients],
         }
+        cc_clean = [str(addr or "").strip() for addr in (cc_recipients or []) if str(addr or "").strip()]
+        if cc_clean:
+            message["ccRecipients"] = [{"emailAddress": {"address": addr}} for addr in cc_clean]
         request_body = {"message": message, "saveToSentItems": True}
         resp = requests.post(f"{GRAPH_API_ENDPOINT}/me/sendMail", headers=headers, json=request_body)
         if resp.status_code not in (200, 202):
@@ -21465,6 +24195,152 @@ def _send_graph_mail(subject: str, body_html: str, to_recipients: list[str]):
         return {"status": "success"}
     except Exception as e:
         return {"status": "error", "message": str(e)}
+
+
+def _dedupe_email_rows(rows: list[dict]) -> list[dict]:
+    out = []
+    seen = set()
+    for row in rows or []:
+        email = str((row or {}).get("Email") or (row or {}).get("email") or "").strip().lower()
+        if not email or email in seen:
+            continue
+        seen.add(email)
+        out.append(row)
+    return out
+
+
+def _build_canteen_bulk_order_email_body(result: dict, role_labels: list[str], missing_roles: list[str]) -> str:
+    bill_no = escape(str(result.get("bill_no") or "-"))
+    unit = escape(str(result.get("unit") or result.get("unit_key") or ""))
+    category = escape(str(result.get("billing_category_name") or "Bulk / Institutional Orders"))
+    subtype = escape(str(result.get("bulk_subcategory_name") or "-"))
+    customer = escape(str(result.get("registration_no") or "-"))
+    created_by = escape(str(result.get("created_by") or result.get("actor_username") or "-"))
+    payment = escape(str(result.get("payment_classification") or "-").title())
+    roles_text = escape(", ".join(role_labels or []) or "-")
+    return f"""
+    <html>
+    <body style="font-family:Arial,sans-serif;color:#172033;font-size:14px;">
+      <div style="max-width:680px;border:1px solid #dbe6ee;border-radius:10px;padding:18px;background:#ffffff;">
+        <h2 style="margin:0 0 8px;color:#0f4f63;">Canteen Bulk Order Notification</h2>
+        <p style="margin:0 0 14px;color:#52677c;">A Bulk / institutional order has been saved and requires the concerned departments to be informed.</p>
+        <table style="width:100%;border-collapse:collapse;">
+          <tr><td style="padding:6px 8px;font-weight:700;width:34%;background:#f4f8fb;">Unit</td><td style="padding:6px 8px;">{unit}</td></tr>
+          <tr><td style="padding:6px 8px;font-weight:700;background:#f4f8fb;">Bill No</td><td style="padding:6px 8px;">{bill_no}</td></tr>
+          <tr><td style="padding:6px 8px;font-weight:700;background:#f4f8fb;">Category</td><td style="padding:6px 8px;">{category}</td></tr>
+          <tr><td style="padding:6px 8px;font-weight:700;background:#f4f8fb;">Order Type</td><td style="padding:6px 8px;">{subtype}</td></tr>
+          <tr><td style="padding:6px 8px;font-weight:700;background:#f4f8fb;">Customer / Label</td><td style="padding:6px 8px;">{customer}</td></tr>
+          <tr><td style="padding:6px 8px;font-weight:700;background:#f4f8fb;">Net Amount</td><td style="padding:6px 8px;">{escape(_format_indian_currency(result.get("net_amount") or 0))}</td></tr>
+          <tr><td style="padding:6px 8px;font-weight:700;background:#f4f8fb;">Received</td><td style="padding:6px 8px;">{escape(_format_indian_currency(result.get("received_amount") or 0))}</td></tr>
+          <tr><td style="padding:6px 8px;font-weight:700;background:#f4f8fb;">Due</td><td style="padding:6px 8px;">{escape(_format_indian_currency(result.get("due_amount") or 0))}</td></tr>
+          <tr><td style="padding:6px 8px;font-weight:700;background:#f4f8fb;">Payment Posting</td><td style="padding:6px 8px;">{payment}</td></tr>
+          <tr><td style="padding:6px 8px;font-weight:700;background:#f4f8fb;">Required Roles</td><td style="padding:6px 8px;">{roles_text}</td></tr>
+          <tr><td style="padding:6px 8px;font-weight:700;background:#f4f8fb;">Created By</td><td style="padding:6px 8px;">{created_by}</td></tr>
+        </table>
+        <p style="margin-top:16px;color:#64748b;font-size:12px;">This is an automated notification from HID Canteen.</p>
+      </div>
+    </body>
+    </html>
+    """
+
+
+def _queue_canteen_bulk_order_notification(unit: str, bill_result: dict, actor: dict | None = None):
+    result = dict(bill_result or {})
+    unit_key = str(unit or "").strip().upper()
+    result["unit"] = unit_key
+    role_labels = [str(role or "").strip() for role in (result.get("notification_roles") or []) if str(role or "").strip()]
+    role_keys = [_canteen_notification_role_key(role) for role in role_labels]
+    role_keys = [role for role in role_keys if role and role != "ACCOUNTS_CC"]
+    if not role_keys:
+        return {"status": "skipped", "message": "No bulk notification roles were resolved."}
+
+    primary_rows = _fetch_canteen_notification_recipients(unit_key, role_keys, only_active=True)
+    accounts_rows = _fetch_canteen_notification_recipients(unit_key, ["ACCOUNTS_CC"], only_active=True)
+    primary_rows = _dedupe_email_rows(primary_rows)
+    accounts_rows = _dedupe_email_rows(accounts_rows)
+
+    primary_roles_present = {
+        _canteen_notification_role_key(row.get("RoleKey"))
+        for row in primary_rows
+        if str(row.get("Email") or "").strip()
+    }
+    missing_role_keys = [role for role in role_keys if role not in primary_roles_present]
+    missing_roles = [_canteen_notification_role_label(role) for role in missing_role_keys]
+
+    to_recipients = [str(row.get("Email") or "").strip().lower() for row in primary_rows if str(row.get("Email") or "").strip()]
+    cc_recipients = [str(row.get("Email") or "").strip().lower() for row in accounts_rows if str(row.get("Email") or "").strip()]
+    if not to_recipients and cc_recipients:
+        # Keep Accounts informed even if the primary role mapping is incomplete.
+        to_recipients = cc_recipients
+        cc_recipients = []
+    if not to_recipients:
+        _audit_log_event(
+            "canteen",
+            "bulk_order_notification_no_recipient_configured",
+            status="warning",
+            entity_type="bill",
+            entity_id=str(result.get("bill_id") or ""),
+            unit=unit_key,
+            summary="No active canteen bulk notification recipients configured",
+            details={
+                "bill_no": result.get("bill_no"),
+                "required_roles": role_labels,
+                "missing_roles": missing_roles,
+                "accounts_cc_configured": len(accounts_rows),
+            },
+            username=(actor or {}).get("username"),
+            role=(actor or {}).get("role"),
+            account_id=(actor or {}).get("account_id"),
+        )
+        return {
+            "status": "skipped",
+            "message": "No active canteen bulk notification recipient configured.",
+            "required_roles": role_labels,
+            "missing_roles": missing_roles,
+            "accounts_cc_count": len(accounts_rows),
+        }
+
+    subject = f"{unit_key} Canteen Bulk Order - {result.get('bill_no') or ''} - {result.get('bulk_subcategory_name') or 'Bulk Order'}"
+    body_html = _build_canteen_bulk_order_email_body(result, role_labels, missing_roles)
+    actor_info = dict(actor or {})
+
+    def _send_job():
+        mail_result = _send_graph_mail(subject, body_html, to_recipients, cc_recipients=cc_recipients)
+        mail_status = str(mail_result.get("status") or "").strip().lower()
+        action = "bulk_order_notification_sent" if mail_status == "success" else "bulk_order_notification_failed"
+        audit_status = "success" if mail_status == "success" else "error"
+        _audit_log_event(
+            "canteen",
+            action,
+            status=audit_status,
+            entity_type="bill",
+            entity_id=str(result.get("bill_id") or ""),
+            unit=unit_key,
+            summary="Canteen bulk order notification dispatch completed",
+            details={
+                "bill_no": result.get("bill_no"),
+                "required_roles": role_labels,
+                "missing_roles": missing_roles,
+                "to_count": len(to_recipients),
+                "cc_count": len(cc_recipients),
+                "accounts_cc_count": len(accounts_rows),
+                "mail_result": mail_result,
+            },
+            username=actor_info.get("username"),
+            role=actor_info.get("role"),
+            account_id=actor_info.get("account_id"),
+        )
+
+    Thread(target=_send_job, daemon=True).start()
+    return {
+        "status": "queued",
+        "message": "Bulk order notification queued.",
+        "required_roles": role_labels,
+        "missing_roles": missing_roles,
+        "to_count": len(to_recipients),
+        "cc_count": len(cc_recipients),
+        "accounts_cc_count": len(accounts_rows),
+    }
 
 
 def _build_po_otp_email_body(snapshot: dict, otp_plain: str):
@@ -22346,6 +25222,35 @@ def _send_work_order_otp_email(
     }
     subject = f"OTP Approval - Work Order {wo_no}"
     body = _build_work_order_otp_email_body(snapshot, otp_plain)
+    pdf_bytes = b""
+    try:
+        wo_id_int = _safe_int(wo_id)
+        if wo_id_int > 0:
+            header_df = data_fetch.fetch_work_order_header(unit, wo_id=wo_id_int)
+            header_row = None
+            if header_df is not None and not header_df.empty:
+                header_df = _clean_df_columns(header_df)
+                header_row = header_df.iloc[0].to_dict()
+            if header_row:
+                items_df = data_fetch.fetch_work_order_items(unit, wo_id_int)
+                if items_df is None:
+                    items = []
+                else:
+                    items_df = _clean_df_columns(items_df)
+                    items = items_df.to_dict(orient="records") if not items_df.empty else []
+
+                header_row = dict(header_row)
+                header_row["Status"] = "P"
+                header_row["PurchasingDeptName"] = purchasing_dept_name
+                approval_meta = _fetch_purchase_approval_meta(wo_id_int)
+                pdf_buffer = _build_work_order_pdf_buffer(unit, header_row, items, approval_meta)
+                pdf_bytes = pdf_buffer.getvalue() if pdf_buffer else b""
+    except Exception as e:
+        print(f"Work Order OTP PDF attachment build failed: {e}")
+
+    if pdf_bytes:
+        filename = f"WO_{wo_no}.pdf"
+        return _send_graph_mail_with_attachment(subject, body, email_list, filename, pdf_bytes)
     return _send_graph_mail(subject, body, email_list)
 
 
@@ -24814,10 +27719,15 @@ def _build_work_order_pdf_buffer(unit: str, header: dict, items: list[dict], app
 
 
 @app.route('/discount-module')
-@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
 def discount_module():
     allowed_units = _modification_units(_allowed_units_for_session())
-    return render_template('discount_module.html', allowed_units=allowed_units)
+    return render_template(
+        'discount_module.html',
+        allowed_units=allowed_units,
+        can_discount_module=has_section_access("discount_module"),
+        can_canteen_cancel=has_section_access(CANTEEN_BILL_RECEIPT_CANCEL_SECTION),
+    )
 
 
 # ---------- Audit & Tax Compliance: GST sales/returns ----------
@@ -25036,6 +27946,13 @@ def api_fund_position_logs():
 @login_required(allowed_roles={"IT"})
 def api_mod_report_logs():
     payload, status = _fetch_audit_logs_payload(force_module="mod_reports")
+    return jsonify(payload), status
+
+
+@app.route('/api/modifications/logs')
+@login_required(allowed_roles={"IT"})
+def api_modification_logs():
+    payload, status = _fetch_audit_logs_payload(force_module=MODIFICATIONS_AUDIT_MODULE)
     return jsonify(payload), status
 
 
@@ -25923,14 +28840,36 @@ def _rebalance_revenue_sheet(
 @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
 def api_modifications_revenue_component_rebalance():
     uploaded = request.files.get("file")
-    if not uploaded or not str(uploaded.filename or "").strip():
-        return jsonify({"status": "error", "message": "Please upload an Excel file (.xlsx or .xlsm)."}), 400
+    original_name = os.path.basename(str(getattr(uploaded, "filename", "") or "").strip()) if uploaded else ""
 
-    original_name = os.path.basename(str(uploaded.filename or "").strip())
+    def _rebalance_failure(message: str, status_code: int = 400, extra_details: dict | None = None):
+        details = {
+            "file_name": original_name or None,
+            "requested_sheet": str(request.form.get("sheet_name") or "").strip() or None,
+            "process_all": bool(_is_truthy(request.form.get("process_all"))),
+            "reduce_only_raw": str(request.form.get("reduce_only") or "").strip() or None,
+            "allow_increase_raw": str(request.form.get("allow_increase") or "").strip() or None,
+            "target_net_basis": str(request.form.get("target_net_basis") or "original").strip().lower() or "original",
+        }
+        if isinstance(extra_details, dict) and extra_details:
+            details.update(extra_details)
+        _modification_audit_log(
+            "revenue_component_rebalance",
+            status="error",
+            entity_type="workbook",
+            entity_id=_modification_audit_entity_id(original_name),
+            summary=message,
+            details=details,
+        )
+        return jsonify({"status": "error", "message": message}), status_code
+
+    if not uploaded or not str(uploaded.filename or "").strip():
+        return _rebalance_failure("Please upload an Excel file (.xlsx or .xlsm).", 400)
+
     _, ext = os.path.splitext(original_name)
     ext = ext.lower()
     if ext not in {".xlsx", ".xlsm"}:
-        return jsonify({"status": "error", "message": "Unsupported file type. Upload .xlsx or .xlsm."}), 400
+        return _rebalance_failure("Unsupported file type. Upload .xlsx or .xlsm.", 400, {"extension": ext or None})
 
     reduce_only_raw = request.form.get("reduce_only")
     allow_increase_raw = request.form.get("allow_increase")
@@ -25942,22 +28881,34 @@ def api_modifications_revenue_component_rebalance():
         allow_increase = not reduce_only
     target_net_basis = str(request.form.get("target_net_basis") or "original").strip().lower()
     if target_net_basis not in {"original", "percentage", "absolute"}:
-        return jsonify({"status": "error", "message": "Invalid target net basis. Use original, percentage, or absolute."}), 400
+        return _rebalance_failure(
+            "Invalid target net basis. Use original, percentage, or absolute.",
+            400,
+            {"target_net_basis": target_net_basis or None},
+        )
 
     target_net_percent = None
     target_net_value = None
     if target_net_basis == "percentage":
         target_net_percent = _parse_excel_amount(request.form.get("target_net_percent"))
         if target_net_percent is None:
-            return jsonify({"status": "error", "message": "Enter a valid net percentage."}), 400
+            return _rebalance_failure("Enter a valid net percentage.", 400)
         if target_net_percent < Decimal("-100"):
-            return jsonify({"status": "error", "message": "Net percentage cannot be below -100%."}), 400
+            return _rebalance_failure(
+                "Net percentage cannot be below -100%.",
+                400,
+                {"target_net_percent": str(target_net_percent)},
+            )
     elif target_net_basis == "absolute":
         target_net_value = _parse_excel_amount(request.form.get("target_net_value"))
         if target_net_value is None:
-            return jsonify({"status": "error", "message": "Enter a valid fixed net value."}), 400
+            return _rebalance_failure("Enter a valid fixed net value.", 400)
         if target_net_value < 0:
-            return jsonify({"status": "error", "message": "Fixed net value cannot be negative."}), 400
+            return _rebalance_failure(
+                "Fixed net value cannot be negative.",
+                400,
+                {"target_net_value": str(target_net_value)},
+            )
 
     process_all = _is_truthy(request.form.get("process_all"))
     requested_sheet = (request.form.get("sheet_name") or "").strip()
@@ -25970,11 +28921,11 @@ def api_modifications_revenue_component_rebalance():
     try:
         workbook = load_workbook(uploaded, data_only=False, keep_vba=(ext == ".xlsm"))
     except Exception as exc:
-        return jsonify({"status": "error", "message": f"Failed to read workbook: {exc}"}), 400
+        return _rebalance_failure(f"Failed to read workbook: {exc}", 400, {"error": str(exc)})
 
     target_sheets, select_error = _select_revenue_rebalance_sheets(workbook, requested_sheet, process_all)
     if select_error:
-        return jsonify({"status": "error", "message": select_error}), 400
+        return _rebalance_failure(select_error, 400)
 
     sheet_stats = []
     for ws in target_sheets:
@@ -25993,10 +28944,10 @@ def api_modifications_revenue_component_rebalance():
             sheet_stats.append(stats)
 
     if not sheet_stats:
-        return jsonify({
-            "status": "error",
-            "message": "No compatible sheet found. Expected NetAmount and at least two component columns.",
-        }), 400
+        return _rebalance_failure(
+            "No compatible sheet found. Expected NetAmount and at least two component columns.",
+            400,
+        )
 
     total_rows_seen = int(sum(item["rows_seen"] for item in sheet_stats))
     total_rows_adjusted = int(sum(item["rows_adjusted"] for item in sheet_stats))
@@ -26073,11 +29024,23 @@ def api_modifications_revenue_component_rebalance():
     try:
         workbook.save(output)
     except Exception as exc:
-        return jsonify({"status": "error", "message": f"Failed to save workbook: {exc}"}), 500
+        return _rebalance_failure(f"Failed to save workbook: {exc}", 500, {"error": str(exc)})
     output.seek(0)
 
     summary_json = json.dumps(summary, separators=(",", ":"))
     summary_b64 = base64.b64encode(summary_json.encode("utf-8")).decode("ascii")
+    _modification_audit_log(
+        "revenue_component_rebalance",
+        status="success",
+        entity_type="workbook",
+        entity_id=_modification_audit_entity_id(original_name, download_name),
+        summary="Revenue workbook rebalanced",
+        details={
+            "file_name": original_name,
+            "download_name": download_name,
+            "summary": summary,
+        },
+    )
     mime = (
         "application/vnd.ms-excel.sheet.macroEnabled.12"
         if ext == ".xlsm"
@@ -26366,16 +29329,62 @@ def api_modification_virtual_visit_create():
     referral_date_provided = ("referral_date" in data) or ("referralDate" in data)
     payer_tpa_name_provided = ("payer_tpa_name" in data) or ("payerTpaName" in data)
 
+    def _virtual_visit_create_context(extra_details: dict | None = None):
+        details = {
+            "mode": data.get("mode"),
+            "unit": unit or None,
+            "source_visit_id": data.get("source_visit_id", data.get("sourceVisitId")),
+            "patient_id": data.get("patient_id", data.get("patientId")),
+            "visit_date": data.get("visit_date", data.get("visitDate")),
+            "discharge_date": data.get("discharge_date", data.get("dischargeDate")),
+            "patient_sub_type_id": data.get("patient_sub_type_id", data.get("patientSubTypeId")),
+            "patient_type_id": data.get("patient_type_id", data.get("patientTypeId")),
+            "pay_type": data.get("pay_type", data.get("payType")),
+            "visit_type_id": data.get("visit_type_id", data.get("visitTypeId")),
+            "doc_id": data.get("doc_id", data.get("docId")),
+            "discharge_type_id": data.get("discharge_type_id", data.get("dischargeTypeId")),
+            "visit_status": data.get("visit_status", data.get("visitStatus")),
+            "referral_no": data.get("referral_no", data.get("referralNo")),
+            "referral_date": data.get("referral_date", data.get("referralDate")),
+            "payer_tpa_name": data.get("payer_tpa_name", data.get("payerTpaName")),
+            "referral_no_provided": bool(referral_no_provided),
+            "referral_date_provided": bool(referral_date_provided),
+            "payer_tpa_name_provided": bool(payer_tpa_name_provided),
+        }
+        if isinstance(extra_details, dict) and extra_details:
+            details.update(extra_details)
+        return details
+
+    def _virtual_visit_create_failure(message: str, status_code: int = 400, extra_payload: dict | None = None, extra_details: dict | None = None):
+        _modification_audit_log(
+            "virtual_visit_create",
+            status="error",
+            entity_type="virtual_visit",
+            entity_id=_modification_audit_entity_id(
+                data.get("visit_id", data.get("visitId")),
+                data.get("source_visit_id", data.get("sourceVisitId")),
+                data.get("patient_id", data.get("patientId")),
+            ),
+            unit=unit,
+            summary=message,
+            details=_virtual_visit_create_context(extra_details),
+            username=username or None,
+        )
+        response = {"success": False, "message": message}
+        if isinstance(extra_payload, dict) and extra_payload:
+            response.update(extra_payload)
+        return jsonify(response), status_code
+
     allowed_units = _modification_units(_allowed_units_for_session())
     if not unit:
         if len(allowed_units) == 1:
             unit = allowed_units[0]
         else:
-            return jsonify({"success": False, "message": "Select a unit"}), 400
+            return _virtual_visit_create_failure("Select a unit", 400)
     if allowed_units and unit not in allowed_units:
-        return jsonify({"success": False, "message": "Unit not allowed"}), 403
+        return _virtual_visit_create_failure("Unit not allowed", 403)
     if not username:
-        return jsonify({"success": False, "message": "Missing username"}), 400
+        return _virtual_visit_create_failure("Missing username", 400)
 
     result = _create_virtual_visit_duplicate(
         unit=unit,
@@ -26401,15 +29410,32 @@ def api_modification_virtual_visit_create():
     )
     if result.get("error"):
         status_code = int(result.get("status_code") or (409 if result.get("error_code") == "duplicate_exists" else 400))
-        response = {
-            "success": False,
-            "message": result["error"],
-            "error_code": result.get("error_code"),
-            "existing_visit_id": result.get("existing_visit_id"),
-            "source_visit_id": result.get("source_visit_id"),
-            "mode": result.get("mode"),
-        }
-        return jsonify(response), status_code
+        return _virtual_visit_create_failure(
+            result["error"],
+            status_code,
+            extra_payload={
+                "error_code": result.get("error_code"),
+                "existing_visit_id": result.get("existing_visit_id"),
+                "source_visit_id": result.get("source_visit_id"),
+                "mode": result.get("mode"),
+            },
+            extra_details={
+                "error_code": result.get("error_code"),
+                "existing_visit_id": result.get("existing_visit_id"),
+                "source_visit_id": result.get("source_visit_id"),
+                "result_mode": result.get("mode"),
+            },
+        )
+    _modification_audit_log(
+        "virtual_visit_create",
+        status="success",
+        entity_type="virtual_visit",
+        entity_id=_modification_audit_entity_id(result.get("visit_id"), data.get("patient_id", data.get("patientId"))),
+        unit=unit,
+        summary="Virtual visit created",
+        details=_virtual_visit_create_context({"result": result}),
+        username=username or None,
+    )
     return jsonify(result)
 
 
@@ -26423,16 +29449,63 @@ def api_modification_virtual_visit_update():
     referral_date_provided = ("referral_date" in data) or ("referralDate" in data)
     payer_tpa_name_provided = ("payer_tpa_name" in data) or ("payerTpaName" in data)
 
+    def _virtual_visit_update_context(extra_details: dict | None = None):
+        details = {
+            "mode": data.get("mode"),
+            "unit": unit or None,
+            "visit_id": data.get("visit_id", data.get("visitId")),
+            "source_visit_id": data.get("source_visit_id", data.get("sourceVisitId")),
+            "patient_id": data.get("patient_id", data.get("patientId")),
+            "visit_date": data.get("visit_date", data.get("visitDate")),
+            "discharge_date": data.get("discharge_date", data.get("dischargeDate")),
+            "patient_sub_type_id": data.get("patient_sub_type_id", data.get("patientSubTypeId")),
+            "patient_type_id": data.get("patient_type_id", data.get("patientTypeId")),
+            "pay_type": data.get("pay_type", data.get("payType")),
+            "visit_type_id": data.get("visit_type_id", data.get("visitTypeId")),
+            "doc_id": data.get("doc_id", data.get("docId")),
+            "discharge_type_id": data.get("discharge_type_id", data.get("dischargeTypeId")),
+            "visit_status": data.get("visit_status", data.get("visitStatus")),
+            "referral_no": data.get("referral_no", data.get("referralNo")),
+            "referral_date": data.get("referral_date", data.get("referralDate")),
+            "payer_tpa_name": data.get("payer_tpa_name", data.get("payerTpaName")),
+            "referral_no_provided": bool(referral_no_provided),
+            "referral_date_provided": bool(referral_date_provided),
+            "payer_tpa_name_provided": bool(payer_tpa_name_provided),
+        }
+        if isinstance(extra_details, dict) and extra_details:
+            details.update(extra_details)
+        return details
+
+    def _virtual_visit_update_failure(message: str, status_code: int = 400, extra_payload: dict | None = None, extra_details: dict | None = None):
+        _modification_audit_log(
+            "virtual_visit_update",
+            status="error",
+            entity_type="virtual_visit",
+            entity_id=_modification_audit_entity_id(
+                data.get("visit_id", data.get("visitId")),
+                data.get("source_visit_id", data.get("sourceVisitId")),
+                data.get("patient_id", data.get("patientId")),
+            ),
+            unit=unit,
+            summary=message,
+            details=_virtual_visit_update_context(extra_details),
+            username=username or None,
+        )
+        response = {"success": False, "message": message}
+        if isinstance(extra_payload, dict) and extra_payload:
+            response.update(extra_payload)
+        return jsonify(response), status_code
+
     allowed_units = _modification_units(_allowed_units_for_session())
     if not unit:
         if len(allowed_units) == 1:
             unit = allowed_units[0]
         else:
-            return jsonify({"success": False, "message": "Select a unit"}), 400
+            return _virtual_visit_update_failure("Select a unit", 400)
     if allowed_units and unit not in allowed_units:
-        return jsonify({"success": False, "message": "Unit not allowed"}), 403
+        return _virtual_visit_update_failure("Unit not allowed", 403)
     if not username:
-        return jsonify({"success": False, "message": "Missing username"}), 400
+        return _virtual_visit_update_failure("Missing username", 400)
 
     visit_status_provided = ("visit_status" in data) or ("visitStatus" in data)
     result = _update_virtual_visit_duplicate(
@@ -26461,15 +29534,32 @@ def api_modification_virtual_visit_update():
     )
     if result.get("error"):
         status_code = int(result.get("status_code") or (409 if result.get("error_code") == "duplicate_exists" else 400))
-        response = {
-            "success": False,
-            "message": result["error"],
-            "error_code": result.get("error_code"),
-            "existing_visit_id": result.get("existing_visit_id"),
-            "source_visit_id": result.get("source_visit_id"),
-            "mode": result.get("mode"),
-        }
-        return jsonify(response), status_code
+        return _virtual_visit_update_failure(
+            result["error"],
+            status_code,
+            extra_payload={
+                "error_code": result.get("error_code"),
+                "existing_visit_id": result.get("existing_visit_id"),
+                "source_visit_id": result.get("source_visit_id"),
+                "mode": result.get("mode"),
+            },
+            extra_details={
+                "error_code": result.get("error_code"),
+                "existing_visit_id": result.get("existing_visit_id"),
+                "source_visit_id": result.get("source_visit_id"),
+                "result_mode": result.get("mode"),
+            },
+        )
+    _modification_audit_log(
+        "virtual_visit_update",
+        status="success",
+        entity_type="virtual_visit",
+        entity_id=_modification_audit_entity_id(result.get("visit_id"), data.get("visit_id", data.get("visitId"))),
+        unit=unit,
+        summary="Virtual visit updated",
+        details=_virtual_visit_update_context({"result": result}),
+        username=username or None,
+    )
     return jsonify(result)
 
 
@@ -26651,41 +29741,78 @@ def api_modification_bed_status_update():
     unit = (data.get("unit") or "").strip().upper()
     bed_id = _coerce_int(data.get("bed_id"), allow_none=True)
     status = _coerce_int(data.get("status"), allow_none=True)
+
+    def _bed_status_context(extra_details: dict | None = None):
+        details = {
+            "unit": unit or None,
+            "bed_id": bed_id,
+            "requested_status": status,
+        }
+        if isinstance(extra_details, dict) and extra_details:
+            details.update(extra_details)
+        return details
+
+    def _bed_status_failure(message: str, status_code: int = 400, extra_details: dict | None = None):
+        _modification_audit_log(
+            "bed_status_update",
+            status="error",
+            entity_type="bed",
+            entity_id=_modification_audit_entity_id(bed_id),
+            unit=unit,
+            summary=message,
+            details=_bed_status_context(extra_details),
+        )
+        return jsonify({"status": "error", "message": message}), status_code
+
     allowed_units = _modification_units(_allowed_units_for_session())
     if not unit:
         if len(allowed_units) == 1:
             unit = allowed_units[0]
         else:
-            return jsonify({"status": "error", "message": "Select a unit"}), 400
+            return _bed_status_failure("Select a unit", 400)
     if allowed_units and unit not in allowed_units:
-        return jsonify({"status": "error", "message": "Unit not allowed"}), 403
+        return _bed_status_failure("Unit not allowed", 403)
     if not bed_id:
-        return jsonify({"status": "error", "message": "Missing bed id"}), 400
+        return _bed_status_failure("Missing bed id", 400)
     if status not in (1, 2):
-        return jsonify({"status": "error", "message": "Invalid bed status"}), 400
+        return _bed_status_failure("Invalid bed status", 400)
 
     from modules.db_connection import get_sql_connection
     conn = get_sql_connection(unit)
     if not conn:
-        return jsonify({"status": "error", "message": f"Unable to connect to unit {unit}"}), 500
+        return _bed_status_failure(f"Unable to connect to unit {unit}", 500)
     try:
         cursor = conn.cursor()
+        current_status = _fetch_bed_status(cursor, int(bed_id))
         if status == 1:
             active_visit = _fetch_active_bed_visit(cursor, int(bed_id))
             if active_visit:
-                return jsonify({"status": "error", "message": "Bed is occupied by an undischarged patient."}), 400
+                return _bed_status_failure(
+                    "Bed is occupied by an undischarged patient.",
+                    400,
+                    {"current_status": current_status, "active_visit": active_visit},
+                )
         cursor.execute(
             "UPDATE Bed_mst SET Bed_Status_ID = ? WHERE Bed_ID = ?",
             (int(status), int(bed_id)),
         )
         conn.commit()
+        _modification_audit_log(
+            "bed_status_update",
+            status="success",
+            entity_type="bed",
+            entity_id=_modification_audit_entity_id(bed_id),
+            unit=unit,
+            summary="Bed status updated",
+            details=_bed_status_context({"current_status": current_status, "new_status": status}),
+        )
         return jsonify({"status": "success"})
     except Exception as e:
         try:
             conn.rollback()
         except Exception:
             pass
-        return jsonify({"status": "error", "message": str(e)}), 500
+        return _bed_status_failure(str(e), 500)
     finally:
         try:
             conn.close()
@@ -30435,26 +33562,57 @@ def api_bill_edit_request_otp():
     request_type_detail = (data.get("request_type_detail") or "").strip()
     requested_by = (session.get("username") or session.get("user") or "").strip()
 
+    def _bill_edit_request_context(extra_details: dict | None = None):
+        details = {
+            "unit": unit or None,
+            "bill_no": bill_no or None,
+            "bill_id": bill_id,
+            "reg_no": reg_no or None,
+            "bill_date": bill_date or None,
+            "patient": patient or None,
+            "uhid": uhid or None,
+            "amount": amount,
+            "reason": reason or None,
+            "request_type_detail": request_type_detail or None,
+            "changes": changes,
+        }
+        if isinstance(extra_details, dict) and extra_details:
+            details.update(extra_details)
+        return details
+
+    def _bill_edit_request_failure(message: str, status_code: int = 400, extra_details: dict | None = None):
+        _modification_audit_log(
+            "bill_edit_request_otp",
+            status="error",
+            entity_type="bill",
+            entity_id=_modification_audit_entity_id(bill_id, bill_no, reg_no),
+            unit=unit,
+            summary=message,
+            details=_bill_edit_request_context(extra_details),
+            username=requested_by or None,
+        )
+        return jsonify({"success": False, "message": message}), status_code
+
     allowed_units = _modification_units(_allowed_units_for_session())
     if not unit:
         if len(allowed_units) == 1:
             unit = allowed_units[0]
         else:
-            return jsonify({"success": False, "message": "Select a unit"}), 400
+            return _bill_edit_request_failure("Select a unit", 400)
     if allowed_units and unit not in allowed_units:
-        return jsonify({"success": False, "message": "Unit not allowed"}), 403
+        return _bill_edit_request_failure("Unit not allowed", 403)
     if not bill_no and bill_id is not None:
         bill_no = str(bill_id).strip()
     if not bill_no and not reg_no:
-        return jsonify({"success": False, "message": "Missing bill identifier"}), 400
+        return _bill_edit_request_failure("Missing bill identifier", 400)
     if not reason:
-        return jsonify({"success": False, "message": "Reason is required"}), 400
+        return _bill_edit_request_failure("Reason is required", 400)
     if not request_type_detail:
-        return jsonify({"success": False, "message": "Request type detail is required"}), 400
+        return _bill_edit_request_failure("Request type detail is required", 400)
     if not requested_by:
-        return jsonify({"success": False, "message": "Missing requester username"}), 400
+        return _bill_edit_request_failure("Missing requester username", 400)
     if not isinstance(changes, dict) or not changes:
-        return jsonify({"success": False, "message": "No changes detected."}), 400
+        return _bill_edit_request_failure("No changes detected.", 400)
 
     validate_result = _apply_bill_edit_updates(
         unit=unit,
@@ -30467,13 +33625,17 @@ def api_bill_edit_request_otp():
         dry_run=True,
     )
     if validate_result.get("error"):
-        return jsonify({"success": False, "message": validate_result["error"]}), 400
+        return _bill_edit_request_failure(
+            validate_result["error"],
+            400,
+            {"validation_error": validate_result.get("error")},
+        )
 
     result = _create_bill_edit_otp_request(
         unit, bill_no, reg_no, patient, amount, reason, requested_by, request_type_detail
     )
     if result.get("error"):
-        return jsonify({"success": False, "message": result["error"]}), 500
+        return _bill_edit_request_failure(result["error"], 500)
 
     request_id = result.get("request_id")
     session["bill_edit_otp_id"] = request_id
@@ -30481,7 +33643,17 @@ def api_bill_edit_request_otp():
     session["bill_edit_otp_bill_date"] = bill_date
     session["bill_edit_otp_valid"] = False
     session.modified = True
-
+    _modification_audit_log(
+        "bill_edit_request_otp",
+        status="success",
+        entity_type="bill",
+        entity_id=_modification_audit_entity_id(bill_id, bill_no, reg_no),
+        unit=unit,
+        summary="Bill edit OTP requested",
+        details=_bill_edit_request_context({"request_id": request_id}),
+        request_id=request_id,
+        username=requested_by or None,
+    )
     return jsonify({"success": True, "request_id": request_id})
 
 
@@ -30491,25 +33663,55 @@ def api_bill_edit_validate_otp():
     data = request.get_json(silent=True) or {}
     request_id = data.get("request_id")
     otp = (data.get("otp") or "").strip()
+    def _bill_edit_validate_context(extra_details: dict | None = None):
+        details = {
+            "request_id": request_id,
+            "otp_present": bool(otp),
+            "otp_length": len(otp or ""),
+        }
+        if isinstance(extra_details, dict) and extra_details:
+            details.update(extra_details)
+        return details
+
+    def _bill_edit_validate_failure(message: str, status_code: int = 400, extra_details: dict | None = None):
+        _modification_audit_log(
+            "bill_edit_validate_otp",
+            status="error",
+            entity_type="bill_edit_request",
+            entity_id=_modification_audit_entity_id(request_id),
+            summary=message,
+            details=_bill_edit_validate_context(extra_details),
+        )
+        return jsonify({"success": False, "message": message}), status_code
+
     if not request_id or not otp:
-        return jsonify({"success": False, "message": "Missing request_id or otp"}), 400
+        return _bill_edit_validate_failure("Missing request_id or otp", 400)
     try:
         request_id = int(str(request_id).strip())
     except Exception:
-        return jsonify({"success": False, "message": "Invalid request_id"}), 400
+        return _bill_edit_validate_failure("Invalid request_id", 400)
     if session.get("bill_edit_otp_id") != request_id:
-        return jsonify({"success": False, "message": "OTP does not match this session"}), 403
+        return _bill_edit_validate_failure("OTP does not match this session", 403)
 
     result = _validate_purchase_otp(request_id, otp)
     if result.get("error"):
-        return jsonify({"success": False, "message": result["error"]}), 500
+        return _bill_edit_validate_failure(result["error"], 500)
     if not result.get("valid"):
-        return jsonify({"success": False, "message": result.get("message") or "Invalid OTP"}), 400
+        return _bill_edit_validate_failure(result.get("message") or "Invalid OTP", 400)
     if not _is_bill_edit_request_type(result.get("request_type")):
-        return jsonify({"success": False, "message": "OTP type mismatch"}), 400
+        return _bill_edit_validate_failure("OTP type mismatch", 400, {"request_type": result.get("request_type")})
 
     session["bill_edit_otp_valid"] = True
     session.modified = True
+    _modification_audit_log(
+        "bill_edit_validate_otp",
+        status="success",
+        entity_type="bill_edit_request",
+        entity_id=_modification_audit_entity_id(request_id),
+        summary="Bill edit OTP validated",
+        details=_bill_edit_validate_context({"request_type": result.get("request_type")}),
+        request_id=request_id,
+    )
     return jsonify({"success": True})
 
 
@@ -30525,30 +33727,60 @@ def api_bill_edit_apply():
     bill_date = str(data.get("bill_date") or "").strip()
     changes = data.get("changes") or {}
     username = (session.get("username") or session.get("user") or "").strip()
+    otp_request_id = None
+    otp_mark = False
+
+    def _bill_edit_apply_context(extra_details: dict | None = None):
+        details = {
+            "unit": unit or None,
+            "request_id": request_id,
+            "otp_request_id": otp_request_id,
+            "bill_no": bill_no or None,
+            "bill_id": bill_id,
+            "reg_no": reg_no or None,
+            "bill_date": bill_date or None,
+            "changes": changes,
+            "otp_mark": bool(otp_mark),
+        }
+        if isinstance(extra_details, dict) and extra_details:
+            details.update(extra_details)
+        return details
+
+    def _bill_edit_apply_failure(message: str, status_code: int = 400, extra_details: dict | None = None):
+        _modification_audit_log(
+            "bill_edit_apply",
+            status="error",
+            entity_type="bill",
+            entity_id=_modification_audit_entity_id(bill_id, bill_no, reg_no),
+            unit=unit,
+            summary=message,
+            details=_bill_edit_apply_context(extra_details),
+            request_id=otp_request_id or request_id,
+            username=username or None,
+        )
+        return jsonify({"success": False, "message": message}), status_code
 
     allowed_units = _modification_units(_allowed_units_for_session())
     if not unit:
-        return jsonify({"success": False, "message": "Select a unit"}), 400
+        return _bill_edit_apply_failure("Select a unit", 400)
     if allowed_units and unit not in allowed_units:
-        return jsonify({"success": False, "message": "Unit not allowed"}), 403
+        return _bill_edit_apply_failure("Unit not allowed", 403)
     if not username:
-        return jsonify({"success": False, "message": "Missing username"}), 400
+        return _bill_edit_apply_failure("Missing username", 400)
 
     role_base = _role_base(session.get("role") or "")
     is_it = role_base == "IT"
-    otp_request_id = None
     if request_id not in (None, "", " "):
         try:
             otp_request_id = int(str(request_id).strip())
         except Exception:
-            return jsonify({"success": False, "message": "Invalid request_id"}), 400
+            return _bill_edit_apply_failure("Invalid request_id", 400)
 
-    otp_mark = False
     if not is_it:
         if not otp_request_id:
-            return jsonify({"success": False, "message": "Missing request_id"}), 400
+            return _bill_edit_apply_failure("Missing request_id", 400)
         if session.get("bill_edit_otp_id") != otp_request_id or not session.get("bill_edit_otp_valid"):
-            return jsonify({"success": False, "message": "OTP not validated for this session"}), 403
+            return _bill_edit_apply_failure("OTP not validated for this session", 403)
         otp_mark = True
     else:
         if otp_request_id and session.get("bill_edit_otp_id") == otp_request_id and session.get("bill_edit_otp_valid"):
@@ -30556,12 +33788,12 @@ def api_bill_edit_apply():
 
     result = _apply_bill_edit_updates(unit, bill_no, bill_id, reg_no, bill_date, changes, username)
     if result.get("error"):
-        return jsonify({"success": False, "message": result["error"]}), 400
+        return _bill_edit_apply_failure(result["error"], 400)
 
     if otp_mark and otp_request_id:
         mark_result = _mark_central_otp_used(otp_request_id, username)
         if mark_result.get("error"):
-            return jsonify({"success": False, "message": mark_result["error"]}), 500
+            return _bill_edit_apply_failure(mark_result["error"], 500)
 
     if otp_mark or is_it:
         session.pop("bill_edit_otp_id", None)
@@ -30569,6 +33801,17 @@ def api_bill_edit_apply():
         session.pop("bill_edit_otp_bill_date", None)
         session.pop("bill_edit_otp_valid", None)
         session.modified = True
+    _modification_audit_log(
+        "bill_edit_apply",
+        status="success",
+        entity_type="bill",
+        entity_id=_modification_audit_entity_id(bill_id, bill_no, reg_no),
+        unit=unit,
+        summary="Bill edit applied",
+        details=_bill_edit_apply_context({"is_it": bool(is_it)}),
+        request_id=otp_request_id or request_id,
+        username=username or None,
+    )
     return jsonify({"success": True})
 
 
@@ -30586,24 +33829,52 @@ def api_receipt_edit_request_otp():
     request_type_detail = (data.get("request_type_detail") or "").strip()
     requested_by = (session.get("username") or session.get("user") or "").strip()
 
+    def _receipt_edit_request_context(extra_details: dict | None = None):
+        details = {
+            "unit": unit or None,
+            "receipt_no": receipt_no or None,
+            "patient": patient or None,
+            "reg_no": reg_no or None,
+            "amount": amount,
+            "reason": reason or None,
+            "request_type_detail": request_type_detail or None,
+            "changes": changes,
+        }
+        if isinstance(extra_details, dict) and extra_details:
+            details.update(extra_details)
+        return details
+
+    def _receipt_edit_request_failure(message: str, status_code: int = 400, extra_details: dict | None = None):
+        _modification_audit_log(
+            "receipt_edit_request_otp",
+            status="error",
+            entity_type="receipt",
+            entity_id=_modification_audit_entity_id(receipt_no),
+            unit=unit,
+            summary=message,
+            details=_receipt_edit_request_context(extra_details),
+            username=requested_by or None,
+        )
+        return jsonify({"success": False, "message": message}), status_code
+
     allowed_units = _modification_units(_allowed_units_for_session())
     if not unit:
         if len(allowed_units) == 1:
             unit = allowed_units[0]
         else:
-            return jsonify({"success": False, "message": "Select a unit"}), 400
+            return _receipt_edit_request_failure("Select a unit", 400)
     if allowed_units and unit not in allowed_units:
-        return jsonify({"success": False, "message": "Unit not allowed"}), 403
+        return _receipt_edit_request_failure("Unit not allowed", 403)
     if not receipt_no:
-        return jsonify({"success": False, "message": "Missing receipt number"}), 400
+        return _receipt_edit_request_failure("Missing receipt number", 400)
     if not reason:
-        return jsonify({"success": False, "message": "Reason is required"}), 400
+        return _receipt_edit_request_failure("Reason is required", 400)
     if not request_type_detail:
-        return jsonify({"success": False, "message": "Request type detail is required"}), 400
+        return _receipt_edit_request_failure("Request type detail is required", 400)
     if not requested_by:
-        return jsonify({"success": False, "message": "Missing requester username"}), 400
+        return _receipt_edit_request_failure("Missing requester username", 400)
     if not isinstance(changes, dict) or not changes:
-        return jsonify({"success": False, "message": "No changes detected."}), 400
+        return _receipt_edit_request_failure("No changes detected.", 400)
 
     validate_result = _apply_receipt_edit_updates(
         unit=unit,
@@ -30613,20 +33884,34 @@ def api_receipt_edit_request_otp():
         dry_run=True,
     )
     if validate_result.get("error"):
-        return jsonify({"success": False, "message": validate_result["error"]}), 400
+        return _receipt_edit_request_failure(
+            validate_result["error"],
+            400,
+            {"validation_error": validate_result.get("error")},
+        )
 
     result = _create_receipt_edit_otp_request(
         unit, receipt_no, reg_no, patient, amount, reason, requested_by, request_type_detail
     )
     if result.get("error"):
-        return jsonify({"success": False, "message": result["error"]}), 500
+        return _receipt_edit_request_failure(result["error"], 500)
 
     request_id = result.get("request_id")
     session["receipt_edit_otp_id"] = request_id
     session["receipt_edit_otp_unit"] = unit
     session["receipt_edit_otp_valid"] = False
     session.modified = True
-
+    _modification_audit_log(
+        "receipt_edit_request_otp",
+        status="success",
+        entity_type="receipt",
+        entity_id=_modification_audit_entity_id(receipt_no),
+        unit=unit,
+        summary="Receipt edit OTP requested",
+        details=_receipt_edit_request_context({"request_id": request_id}),
+        request_id=request_id,
+        username=requested_by or None,
+    )
     return jsonify({"success": True, "request_id": request_id})
 
 
@@ -30636,25 +33921,55 @@ def api_receipt_edit_validate_otp():
     data = request.get_json(silent=True) or {}
     request_id = data.get("request_id")
     otp = (data.get("otp") or "").strip()
+    def _receipt_edit_validate_context(extra_details: dict | None = None):
+        details = {
+            "request_id": request_id,
+            "otp_present": bool(otp),
+            "otp_length": len(otp or ""),
+        }
+        if isinstance(extra_details, dict) and extra_details:
+            details.update(extra_details)
+        return details
+
+    def _receipt_edit_validate_failure(message: str, status_code: int = 400, extra_details: dict | None = None):
+        _modification_audit_log(
+            "receipt_edit_validate_otp",
+            status="error",
+            entity_type="receipt_edit_request",
+            entity_id=_modification_audit_entity_id(request_id),
+            summary=message,
+            details=_receipt_edit_validate_context(extra_details),
+        )
+        return jsonify({"success": False, "message": message}), status_code
+
     if not request_id or not otp:
-        return jsonify({"success": False, "message": "Missing request_id or otp"}), 400
+        return _receipt_edit_validate_failure("Missing request_id or otp", 400)
     try:
         request_id = int(str(request_id).strip())
     except Exception:
-        return jsonify({"success": False, "message": "Invalid request_id"}), 400
+        return _receipt_edit_validate_failure("Invalid request_id", 400)
     if session.get("receipt_edit_otp_id") != request_id:
-        return jsonify({"success": False, "message": "OTP does not match this session"}), 403
+        return _receipt_edit_validate_failure("OTP does not match this session", 403)
 
     result = _validate_purchase_otp(request_id, otp)
     if result.get("error"):
-        return jsonify({"success": False, "message": result["error"]}), 500
+        return _receipt_edit_validate_failure(result["error"], 500)
     if not result.get("valid"):
-        return jsonify({"success": False, "message": result.get("message") or "Invalid OTP"}), 400
+        return _receipt_edit_validate_failure(result.get("message") or "Invalid OTP", 400)
     if not _is_receipt_edit_request_type(result.get("request_type")):
-        return jsonify({"success": False, "message": "OTP type mismatch"}), 400
+        return _receipt_edit_validate_failure("OTP type mismatch", 400, {"request_type": result.get("request_type")})
 
     session["receipt_edit_otp_valid"] = True
     session.modified = True
+    _modification_audit_log(
+        "receipt_edit_validate_otp",
+        status="success",
+        entity_type="receipt_edit_request",
+        entity_id=_modification_audit_entity_id(request_id),
+        summary="Receipt edit OTP validated",
+        details=_receipt_edit_validate_context({"request_type": result.get("request_type")}),
+        request_id=request_id,
+    )
     return jsonify({"success": True})
 
 
@@ -30667,32 +33982,59 @@ def api_receipt_edit_apply():
     receipt_no = str(data.get("receipt_no") or "").strip()
     changes = data.get("changes") or {}
     username = (session.get("username") or session.get("user") or "").strip()
+    otp_request_id = None
+    otp_mark = False
+
+    def _receipt_edit_apply_context(extra_details: dict | None = None):
+        details = {
+            "unit": unit or None,
+            "request_id": request_id,
+            "otp_request_id": otp_request_id,
+            "receipt_no": receipt_no or None,
+            "changes": changes,
+            "otp_mark": bool(otp_mark),
+        }
+        if isinstance(extra_details, dict) and extra_details:
+            details.update(extra_details)
+        return details
+
+    def _receipt_edit_apply_failure(message: str, status_code: int = 400, extra_details: dict | None = None):
+        _modification_audit_log(
+            "receipt_edit_apply",
+            status="error",
+            entity_type="receipt",
+            entity_id=_modification_audit_entity_id(receipt_no),
+            unit=unit,
+            summary=message,
+            details=_receipt_edit_apply_context(extra_details),
+            request_id=otp_request_id or request_id,
+            username=username or None,
+        )
+        return jsonify({"success": False, "message": message}), status_code
 
     allowed_units = _modification_units(_allowed_units_for_session())
     if not unit:
-        return jsonify({"success": False, "message": "Select a unit"}), 400
+        return _receipt_edit_apply_failure("Select a unit", 400)
     if allowed_units and unit not in allowed_units:
-        return jsonify({"success": False, "message": "Unit not allowed"}), 403
+        return _receipt_edit_apply_failure("Unit not allowed", 403)
     if not receipt_no:
-        return jsonify({"success": False, "message": "Missing receipt number"}), 400
+        return _receipt_edit_apply_failure("Missing receipt number", 400)
     if not username:
-        return jsonify({"success": False, "message": "Missing username"}), 400
+        return _receipt_edit_apply_failure("Missing username", 400)
 
     role_base = _role_base(session.get("role") or "")
     is_it = role_base == "IT"
-    otp_request_id = None
     if request_id not in (None, "", " "):
         try:
             otp_request_id = int(str(request_id).strip())
         except Exception:
-            return jsonify({"success": False, "message": "Invalid request_id"}), 400
+            return _receipt_edit_apply_failure("Invalid request_id", 400)
 
-    otp_mark = False
     if not is_it:
         if not otp_request_id:
-            return jsonify({"success": False, "message": "Missing request_id"}), 400
+            return _receipt_edit_apply_failure("Missing request_id", 400)
         if session.get("receipt_edit_otp_id") != otp_request_id or not session.get("receipt_edit_otp_valid"):
-            return jsonify({"success": False, "message": "OTP not validated for this session"}), 403
+            return _receipt_edit_apply_failure("OTP not validated for this session", 403)
         otp_mark = True
     else:
         if otp_request_id and session.get("receipt_edit_otp_id") == otp_request_id and session.get("receipt_edit_otp_valid"):
@@ -30700,18 +34042,29 @@ def api_receipt_edit_apply():
 
     result = _apply_receipt_edit_updates(unit, receipt_no, changes, username)
     if result.get("error"):
-        return jsonify({"success": False, "message": result["error"]}), 400
+        return _receipt_edit_apply_failure(result["error"], 400)
 
     if otp_mark and otp_request_id:
         mark_result = _mark_central_otp_used(otp_request_id, username)
         if mark_result.get("error"):
-            return jsonify({"success": False, "message": mark_result["error"]}), 500
+            return _receipt_edit_apply_failure(mark_result["error"], 500)
 
     if otp_mark or is_it:
         session.pop("receipt_edit_otp_id", None)
         session.pop("receipt_edit_otp_unit", None)
         session.pop("receipt_edit_otp_valid", None)
         session.modified = True
+    _modification_audit_log(
+        "receipt_edit_apply",
+        status="success",
+        entity_type="receipt",
+        entity_id=_modification_audit_entity_id(receipt_no),
+        unit=unit,
+        summary="Receipt edit applied",
+        details=_receipt_edit_apply_context({"is_it": bool(is_it)}),
+        request_id=otp_request_id or request_id,
+        username=username or None,
+    )
     return jsonify({"success": True})
 
 
@@ -30729,24 +34082,52 @@ def api_visit_edit_request_otp():
     request_type_detail = (data.get("request_type_detail") or "").strip()
     requested_by = (session.get("username") or session.get("user") or "").strip()
 
+    def _visit_edit_request_context(extra_details: dict | None = None):
+        details = {
+            "unit": unit or None,
+            "visit_id": visit_id,
+            "visit_no": visit_no or None,
+            "reg_no": reg_no or None,
+            "patient": patient or None,
+            "reason": reason or None,
+            "request_type_detail": request_type_detail or None,
+            "changes": changes,
+        }
+        if isinstance(extra_details, dict) and extra_details:
+            details.update(extra_details)
+        return details
+
+    def _visit_edit_request_failure(message: str, status_code: int = 400, extra_details: dict | None = None):
+        _modification_audit_log(
+            "visit_edit_request_otp",
+            status="error",
+            entity_type="visit",
+            entity_id=_modification_audit_entity_id(visit_id, visit_no, reg_no),
+            unit=unit,
+            summary=message,
+            details=_visit_edit_request_context(extra_details),
+            username=requested_by or None,
+        )
+        return jsonify({"success": False, "message": message}), status_code
+
     allowed_units = _modification_units(_allowed_units_for_session())
     if not unit:
         if len(allowed_units) == 1:
             unit = allowed_units[0]
         else:
-            return jsonify({"success": False, "message": "Select a unit"}), 400
+            return _visit_edit_request_failure("Select a unit", 400)
     if allowed_units and unit not in allowed_units:
-        return jsonify({"success": False, "message": "Unit not allowed"}), 403
+        return _visit_edit_request_failure("Unit not allowed", 403)
     if not visit_id:
-        return jsonify({"success": False, "message": "Missing visit id"}), 400
+        return _visit_edit_request_failure("Missing visit id", 400)
     if not reason:
-        return jsonify({"success": False, "message": "Reason is required"}), 400
+        return _visit_edit_request_failure("Reason is required", 400)
     if not request_type_detail:
-        return jsonify({"success": False, "message": "Request type detail is required"}), 400
+        return _visit_edit_request_failure("Request type detail is required", 400)
     if not requested_by:
-        return jsonify({"success": False, "message": "Missing requester username"}), 400
+        return _visit_edit_request_failure("Missing requester username", 400)
     if not isinstance(changes, dict) or not changes:
-        return jsonify({"success": False, "message": "No changes detected."}), 400
+        return _visit_edit_request_failure("No changes detected.", 400)
 
     validate_result = _apply_visit_edit_updates(
         unit=unit,
@@ -30756,13 +34137,17 @@ def api_visit_edit_request_otp():
         dry_run=True,
     )
     if validate_result.get("error"):
-        return jsonify({"success": False, "message": validate_result["error"]}), 400
+        return _visit_edit_request_failure(
+            validate_result["error"],
+            400,
+            {"validation_error": validate_result.get("error")},
+        )
 
     result = _create_visit_edit_otp_request(
         unit, visit_no, reg_no, patient, reason, requested_by, request_type_detail
     )
     if result.get("error"):
-        return jsonify({"success": False, "message": result["error"]}), 500
+        return _visit_edit_request_failure(result["error"], 500)
 
     request_id = result.get("request_id")
     session["visit_edit_otp_id"] = request_id
@@ -30770,7 +34155,17 @@ def api_visit_edit_request_otp():
     session["visit_edit_otp_visit_id"] = visit_id
     session["visit_edit_otp_valid"] = False
     session.modified = True
-
+    _modification_audit_log(
+        "visit_edit_request_otp",
+        status="success",
+        entity_type="visit",
+        entity_id=_modification_audit_entity_id(visit_id, visit_no, reg_no),
+        unit=unit,
+        summary="Visit edit OTP requested",
+        details=_visit_edit_request_context({"request_id": request_id}),
+        request_id=request_id,
+        username=requested_by or None,
+    )
     return jsonify({"success": True, "request_id": request_id})
 
 
@@ -30780,25 +34175,55 @@ def api_visit_edit_validate_otp():
     data = request.get_json(silent=True) or {}
     request_id = data.get("request_id")
     otp = (data.get("otp") or "").strip()
+    def _visit_edit_validate_context(extra_details: dict | None = None):
+        details = {
+            "request_id": request_id,
+            "otp_present": bool(otp),
+            "otp_length": len(otp or ""),
+        }
+        if isinstance(extra_details, dict) and extra_details:
+            details.update(extra_details)
+        return details
+
+    def _visit_edit_validate_failure(message: str, status_code: int = 400, extra_details: dict | None = None):
+        _modification_audit_log(
+            "visit_edit_validate_otp",
+            status="error",
+            entity_type="visit_edit_request",
+            entity_id=_modification_audit_entity_id(request_id),
+            summary=message,
+            details=_visit_edit_validate_context(extra_details),
+        )
+        return jsonify({"success": False, "message": message}), status_code
+
     if not request_id or not otp:
-        return jsonify({"success": False, "message": "Missing request_id or otp"}), 400
+        return _visit_edit_validate_failure("Missing request_id or otp", 400)
     try:
         request_id = int(str(request_id).strip())
     except Exception:
-        return jsonify({"success": False, "message": "Invalid request_id"}), 400
+        return _visit_edit_validate_failure("Invalid request_id", 400)
     if session.get("visit_edit_otp_id") != request_id:
-        return jsonify({"success": False, "message": "OTP does not match this session"}), 403
+        return _visit_edit_validate_failure("OTP does not match this session", 403)
 
     result = _validate_purchase_otp(request_id, otp)
     if result.get("error"):
-        return jsonify({"success": False, "message": result["error"]}), 500
+        return _visit_edit_validate_failure(result["error"], 500)
     if not result.get("valid"):
-        return jsonify({"success": False, "message": result.get("message") or "Invalid OTP"}), 400
+        return _visit_edit_validate_failure(result.get("message") or "Invalid OTP", 400)
     if not _is_visit_edit_request_type(result.get("request_type")):
-        return jsonify({"success": False, "message": "OTP type mismatch"}), 400
+        return _visit_edit_validate_failure("OTP type mismatch", 400, {"request_type": result.get("request_type")})
 
     session["visit_edit_otp_valid"] = True
     session.modified = True
+    _modification_audit_log(
+        "visit_edit_validate_otp",
+        status="success",
+        entity_type="visit_edit_request",
+        entity_id=_modification_audit_entity_id(request_id),
+        summary="Visit edit OTP validated",
+        details=_visit_edit_validate_context({"request_type": result.get("request_type")}),
+        request_id=request_id,
+    )
     return jsonify({"success": True})
 
 
@@ -30811,37 +34236,64 @@ def api_visit_edit_apply():
     visit_id = _coerce_int(data.get("visit_id"), allow_none=True)
     changes = data.get("changes") or {}
     username = (session.get("username") or session.get("user") or "").strip()
+    otp_request_id = None
+    otp_mark = False
+
+    def _visit_edit_apply_context(extra_details: dict | None = None):
+        details = {
+            "unit": unit or None,
+            "request_id": request_id,
+            "otp_request_id": otp_request_id,
+            "visit_id": visit_id,
+            "changes": changes,
+            "otp_mark": bool(otp_mark),
+        }
+        if isinstance(extra_details, dict) and extra_details:
+            details.update(extra_details)
+        return details
+
+    def _visit_edit_apply_failure(message: str, status_code: int = 400, extra_details: dict | None = None):
+        _modification_audit_log(
+            "visit_edit_apply",
+            status="error",
+            entity_type="visit",
+            entity_id=_modification_audit_entity_id(visit_id),
+            unit=unit,
+            summary=message,
+            details=_visit_edit_apply_context(extra_details),
+            request_id=otp_request_id or request_id,
+            username=username or None,
+        )
+        return jsonify({"success": False, "message": message}), status_code
 
     allowed_units = _modification_units(_allowed_units_for_session())
     if not unit:
         if len(allowed_units) == 1:
             unit = allowed_units[0]
         else:
-            return jsonify({"success": False, "message": "Select a unit"}), 400
+            return _visit_edit_apply_failure("Select a unit", 400)
     if allowed_units and unit not in allowed_units:
-        return jsonify({"success": False, "message": "Unit not allowed"}), 403
+        return _visit_edit_apply_failure("Unit not allowed", 403)
     if not visit_id:
-        return jsonify({"success": False, "message": "Missing visit id"}), 400
+        return _visit_edit_apply_failure("Missing visit id", 400)
     if not username:
-        return jsonify({"success": False, "message": "Missing username"}), 400
+        return _visit_edit_apply_failure("Missing username", 400)
     if not isinstance(changes, dict) or not changes:
-        return jsonify({"success": False, "message": "No changes detected."}), 400
+        return _visit_edit_apply_failure("No changes detected.", 400)
 
     role_base = _role_base(session.get("role") or "")
     is_it = role_base == "IT"
-    otp_request_id = None
     if request_id not in (None, "", " "):
         try:
             otp_request_id = int(str(request_id).strip())
         except Exception:
-            return jsonify({"success": False, "message": "Invalid request_id"}), 400
+            return _visit_edit_apply_failure("Invalid request_id", 400)
 
-    otp_mark = False
     if not is_it:
         if not otp_request_id:
-            return jsonify({"success": False, "message": "Missing request_id"}), 400
+            return _visit_edit_apply_failure("Missing request_id", 400)
         if session.get("visit_edit_otp_id") != otp_request_id or not session.get("visit_edit_otp_valid"):
-            return jsonify({"success": False, "message": "OTP not validated for this session"}), 403
+            return _visit_edit_apply_failure("OTP not validated for this session", 403)
         otp_mark = True
     else:
         if otp_request_id and session.get("visit_edit_otp_id") == otp_request_id and session.get("visit_edit_otp_valid"):
@@ -30849,12 +34301,12 @@ def api_visit_edit_apply():
 
     result = _apply_visit_edit_updates(unit, visit_id, changes, username)
     if result.get("error"):
-        return jsonify({"success": False, "message": result["error"]}), 400
+        return _visit_edit_apply_failure(result["error"], 400)
 
     if otp_mark and otp_request_id:
         mark_result = _mark_central_otp_used(otp_request_id, username)
         if mark_result.get("error"):
-            return jsonify({"success": False, "message": mark_result["error"]}), 500
+            return _visit_edit_apply_failure(mark_result["error"], 500)
 
     if otp_mark or is_it:
         session.pop("visit_edit_otp_id", None)
@@ -30862,6 +34314,17 @@ def api_visit_edit_apply():
         session.pop("visit_edit_otp_visit_id", None)
         session.pop("visit_edit_otp_valid", None)
         session.modified = True
+    _modification_audit_log(
+        "visit_edit_apply",
+        status="success",
+        entity_type="visit",
+        entity_id=_modification_audit_entity_id(visit_id),
+        unit=unit,
+        summary="Visit edit applied",
+        details=_visit_edit_apply_context({"is_it": bool(is_it)}),
+        request_id=otp_request_id or request_id,
+        username=username or None,
+    )
     return jsonify({"success": True})
 
 
@@ -31106,6 +34569,13 @@ def _corp_recon_can_take_receipt_session() -> bool:
         or has_section_access("corporate_management")
         or has_section_access(CORP_RECON_WRITEOFF_SECTION)
     )
+
+
+def _corp_recon_can_cancel_receipt_session() -> bool:
+    role_base = _role_base(session.get("role") or "")
+    if role_base == "IT":
+        return True
+    return has_section_access(CORP_RECON_RECEIPT_CANCEL_SECTION)
 
 
 def _corp_recon_can_bulk_receipt_date_edit_session() -> bool:
@@ -32822,6 +36292,7 @@ def _corp_recon_query(
         "DueDate",
         "BillAmount",
         "BillNo",
+        "ClaimId",
         "Registration_No",
         "PatientId",
         "VisitId",
@@ -32892,6 +36363,7 @@ def _corp_recon_query(
         for text_col in [
             "BillSource",
             "BillNo",
+            "ClaimId",
             "Registration_No",
             "SourcePatientName",
             "BillStatusRaw",
@@ -33208,6 +36680,7 @@ def _corp_recon_query(
         else:
             search_columns = [
                 "BillNo",
+                "ClaimId",
                 "Registration_No",
                 "BillSource",
                 "BillDate",
@@ -33371,6 +36844,7 @@ def _corp_recon_query(
             "bill_source_key": page_rows_df["BillSourceKey"],
             "bill_source": page_rows_df["BillSource"],
             "bill_no": page_rows_df["BillNo"],
+            "claim_id": page_rows_df["ClaimId"],
             "registration_no": page_rows_df["Registration_No"],
             "bill_date": page_rows_df["bill_date"],
             "submit_date_raw": page_rows_df["submit_date_raw"],
@@ -33678,6 +37152,7 @@ def _corp_recon_action_rows_payload_from_df(
             "bill_source_key": str(rec.get("BillSourceKey") or "").strip().upper(),
             "bill_source": str(rec.get("BillSource") or "").strip(),
             "bill_no": str(rec.get("BillNo") or "").strip(),
+            "claim_id": str(rec.get("ClaimId") or rec.get("claim_id") or "").strip(),
             "registration_no": str(rec.get("Registration_No") or "").strip(),
             "bill_date": _corp_recon_fmt_date(rec.get("BillDate")),
             "submit_date_raw": _corp_recon_fmt_date(rec.get("SubmitDateRaw")),
@@ -34453,7 +37928,8 @@ def api_corporate_reconciliation_writeoff():
             }
         ), 400
 
-    if source_key not in {"OPENING", "BILL_MST_POST"}:
+    allowed_writeoff_sources = {"OPENING", _corp_recon_corporate_bill_source_key(unit)}
+    if source_key not in allowed_writeoff_sources:
         return jsonify(
             {
                 "status": "error",
@@ -34491,6 +37967,8 @@ def api_corporate_reconciliation_writeoff():
         bill_id=int(bill_id),
         writeoff_amount=float(writeoff_to_apply),
         target_receipt_id=int(target_receipt_id) if target_receipt_id and target_receipt_id > 0 else None,
+        actor_user_id=_session_user_id(),
+        writeoff_entry_date=datetime.now(tz=LOCAL_TZ).date().isoformat(),
     )
     if not isinstance(update_result, dict) or str(update_result.get("status") or "").lower() != "success":
         msg = (
@@ -35071,6 +38549,138 @@ def api_corporate_receipt():
         "updated_at": datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S"),
     }
     return jsonify(result_payload)
+
+
+@app.route('/api/corporate/reconciliation/cancel_receipt', methods=["POST"])
+@login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
+def api_corporate_reconciliation_cancel_receipt():
+    payload = request.get_json(silent=True) or {}
+    actor_username = (session.get("username") or session.get("user") or "").strip() or "Unknown"
+    actor_role = (session.get("role") or "").strip()
+    actor_id = _session_user_id()
+    raw_unit = payload.get("unit") or request.args.get("unit")
+    unit = str(raw_unit or "").strip().upper()
+    receipt_id = _corp_recon_parse_int(payload.get("receipt_id"), 0, 0, None)
+    receipt_no = str(payload.get("receipt_no") or "").strip()
+    bill_id = _corp_recon_parse_int(payload.get("bill_id"), 0, 0, None)
+    reason = str(payload.get("reason") or "").strip()
+    if len(reason) > 1000:
+        reason = reason[:1000]
+
+    def _audit_entity_id() -> str | None:
+        if receipt_id and receipt_id > 0:
+            return str(receipt_id)
+        if receipt_no:
+            return receipt_no
+        return None
+
+    def _audit_details(extra: dict | None = None) -> dict:
+        details = {
+            "unit": unit or None,
+            "receipt_id": receipt_id or None,
+            "receipt_no": receipt_no or None,
+            "bill_id": bill_id or None,
+            "reason": reason or None,
+            "cancelled_by_user": actor_username,
+        }
+        if isinstance(extra, dict) and extra:
+            details.update(extra)
+        return details
+
+    def _fail(message: str, status_code: int = 400, *, extra: dict | None = None):
+        _audit_log_event(
+            module="corporate_receipt",
+            action="receipt_cancel",
+            status="error",
+            entity_type="corp_receipt",
+            entity_id=_audit_entity_id(),
+            unit=unit or None,
+            summary=message,
+            details=_audit_details(extra),
+            username=actor_username,
+            role=actor_role,
+            account_id=actor_id,
+        )
+        return jsonify({"status": "error", "message": message}), status_code
+
+    if not _corp_recon_can_cancel_receipt_session():
+        return _fail("You do not have the corporate receipt cancellation right.", 403)
+
+    unit, unit_err = _corp_recon_resolve_unit(raw_unit)
+    if unit_err:
+        return unit_err
+    if receipt_id <= 0 and not receipt_no:
+        return _fail("Provide a valid receipt to cancel.")
+
+    try:
+        result = data_fetch.cancel_corporate_receipt(
+            unit,
+            receipt_id=receipt_id if receipt_id > 0 else None,
+            receipt_no=receipt_no or None,
+            canceled_by_id=actor_id,
+            canceled_by_username=actor_username,
+            cancellation_reason=reason,
+        )
+    except Exception as exc:
+        app.logger.exception(
+            "Corporate receipt cancellation failed for unit=%s receipt_id=%s receipt_no=%s",
+            unit,
+            receipt_id,
+            receipt_no,
+        )
+        return _fail(f"Failed to cancel receipt: {exc}", 500)
+
+    if not isinstance(result, dict) or str(result.get("status") or "").lower() != "success":
+        msg = result.get("message") if isinstance(result, dict) else "Unable to cancel receipt."
+        return _fail(
+            msg or "Unable to cancel receipt.",
+            400,
+            extra={"result": result if isinstance(result, dict) else None},
+        )
+
+    _corp_recon_cache_invalidate(unit)
+    _corp_recon_result_cache_invalidate(unit)
+
+    cancelled_at = str(result.get("cancelled_at") or datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S"))
+    receipt_ref = str(result.get("receipt_no") or receipt_no or result.get("receipt_id") or receipt_id or "").strip()
+    _audit_log_event(
+        module="corporate_receipt",
+        action="receipt_cancel",
+        status="success",
+        entity_type="corp_receipt",
+        entity_id=str(result.get("receipt_id") or receipt_id or receipt_no or ""),
+        unit=unit,
+        summary=f"Corporate receipt {receipt_ref or '-'} cancelled",
+        details=_audit_details(
+            {
+                "receipt_id": result.get("receipt_id") or receipt_id or None,
+                "receipt_no": result.get("receipt_no") or receipt_no or None,
+                "cancelled_at": cancelled_at,
+                "detail_rows_updated": result.get("detail_rows_updated"),
+                "linked_bill_ids": result.get("linked_bill_ids") or [],
+                "db_reason_column": result.get("reason_column"),
+            }
+        ),
+        username=actor_username,
+        role=actor_role,
+        account_id=actor_id,
+    )
+
+    return jsonify(
+        {
+            "status": "success",
+            "message": f"Receipt {receipt_ref or '-'} cancelled successfully.",
+            "unit": unit,
+            "receipt": {
+                "receipt_id": result.get("receipt_id") or receipt_id or None,
+                "receipt_no": result.get("receipt_no") or receipt_no or None,
+                "cancelled_at": cancelled_at,
+                "reason": reason or None,
+            },
+            "updated_by": actor_username,
+            "updated_at": cancelled_at,
+        }
+    )
 
 
 @app.route('/api/corporate/receipts/daily_print')
@@ -36546,7 +40156,7 @@ def api_corporate_bill_summary():
         sf = status_filter if status_filter in CORP_BILL_ALLOWED_STATUS_FILTERS else "all"
         subtype_norm = patient_subtype.lower()
         q_norm = search_query.lower()
-        page_cache_key = ("sql_local_v3", unit, from_iso, to_iso, int(vt_int), sf, subtype_norm, q_norm, int(page), int(page_size))
+        page_cache_key = ("sql_local_v4", unit, from_iso, to_iso, int(vt_int), sf, subtype_norm, q_norm, int(page), int(page_size))
         cached_page = _corp_bill_page_cache_get(page_cache_key)
         if isinstance(cached_page, dict) and isinstance(cached_page.get("payload"), dict):
             return jsonify(cached_page["payload"])
@@ -40088,6 +43698,7 @@ BILLWISE_DOCSHARE_DETAIL_COLUMNS = [
     "PatientType",
     "TypeOfVisit",
     "DoctorName",
+    "DoctorInCharge",
     "SecondaryDoc",
     "Service_Name",
     "BillQty",
@@ -40147,6 +43758,7 @@ def _build_billwise_doctorshare_details_df(df_raw: pd.DataFrame) -> pd.DataFrame
         "PatientType": _pick(["PatientType", "Patienttype", "Patient_Type", "PatType"]),
         "TypeOfVisit": _pick(["TypeOfVisit", "VisitType", "Visit Type", "Type Of Visit"]),
         "DoctorName": _pick(["DoctorName", "Doctor", "Doctorname", "DocInCharge", "DocIncharge"]),
+        "DoctorInCharge": _pick(["DoctorInCharge", "Doctor In Charge", "DocInChargeName", "DocInchargeName", "AdmittedUnderDoctor", "Admitted Under Doctor", "AdmittedUnder"]),
         "SecondaryDoc": _pick(["SecondaryDoc", "Secondary", "SecondaryDoctor"]),
         "Service_Name": _pick(["Service_Name", "ServiceName", "Service", "Service Name"]),
         "BillQty": _pick(["BillQty", "Quantity", "Qty", "QTY"]),
@@ -40171,7 +43783,7 @@ def _build_billwise_doctorshare_details_df(df_raw: pd.DataFrame) -> pd.DataFrame
     for col in ["BillQty", "Rate", "Amount"]:
         details[col] = pd.to_numeric(details[col], errors="coerce").fillna(0.0).astype(float)
 
-    for col in ["Registration_No", "BillNo", "PatientName", "PatientType", "TypeOfVisit", "DoctorName", "SecondaryDoc", "Service_Name"]:
+    for col in ["Registration_No", "BillNo", "PatientName", "PatientType", "TypeOfVisit", "DoctorName", "DoctorInCharge", "SecondaryDoc", "Service_Name"]:
         details[col] = details[col].astype(str).replace({"nan": "", "None": ""}).str.strip()
 
     return details[BILLWISE_DOCSHARE_DETAIL_COLUMNS]
@@ -40299,6 +43911,7 @@ def api_mis_billwise_doctorshare():
             "PatientType",
             "TypeOfVisit",
             "DoctorName",
+            "DoctorInCharge",
             "SecondaryDoc",
             "Service_Name",
             "BillQty",
@@ -40476,7 +44089,7 @@ def _build_billwise_doctorshare_excel(unit: str, from_date: str, to_date: str, d
                 fmt = money_col_fmt
             elif col_name in {"PatientName", "Service_Name"}:
                 width = 26
-            elif col_name in {"DoctorName", "SecondaryDoc"}:
+            elif col_name in {"DoctorName", "DoctorInCharge", "SecondaryDoc"}:
                 width = 20
             details_ws.set_column(col_num, col_num, width, fmt)
 
@@ -40775,6 +44388,7 @@ def _build_billwise_doctorshare_pdf_buffer(unit: str, from_date: str, to_date: s
         Paragraph("Patient Type", style_th),
         Paragraph("Visit Type", style_th),
         Paragraph("Doctor", style_th),
+        Paragraph("Doctor In Charge", style_th),
         Paragraph("Secondary Doc", style_th),
         Paragraph("Service", style_th),
         Paragraph("Qty", style_th),
@@ -40793,6 +44407,7 @@ def _build_billwise_doctorshare_pdf_buffer(unit: str, from_date: str, to_date: s
             Paragraph(escape(str(row.get("PatientType") or "")), style_td_wrap),
             Paragraph(escape(str(row.get("TypeOfVisit") or "")), style_td),
             Paragraph(escape(str(row.get("DoctorName") or "")), style_td_wrap),
+            Paragraph(escape(str(row.get("DoctorInCharge") or "")), style_td_wrap),
             Paragraph(escape(str(row.get("SecondaryDoc") or "")), style_td_wrap),
             Paragraph(escape(str(row.get("Service_Name") or "")), style_td_wrap),
             Paragraph(f"{float(row.get('BillQty') or 0):,.2f}", style_td_right),
@@ -40804,7 +44419,7 @@ def _build_billwise_doctorshare_pdf_buffer(unit: str, from_date: str, to_date: s
 
     detail_tbl = Table(
         detail_rows,
-        colWidths=[16 * mm, 16 * mm, 18 * mm, 28 * mm, 22 * mm, 16 * mm, 24 * mm, 24 * mm, 36 * mm, 12 * mm, 16 * mm, 16 * mm, 16 * mm, 18 * mm],
+        colWidths=[15 * mm, 15 * mm, 17 * mm, 24 * mm, 20 * mm, 15 * mm, 22 * mm, 22 * mm, 20 * mm, 31 * mm, 10 * mm, 14 * mm, 15 * mm, 15 * mm, 16 * mm],
         repeatRows=1,
     )
     detail_tbl.setStyle(TableStyle([
@@ -40814,7 +44429,7 @@ def _build_billwise_doctorshare_pdf_buffer(unit: str, from_date: str, to_date: s
         ("FONTSIZE", (0, 0), (-1, -1), 6.5),
         ("GRID", (0, 0), (-1, -1), 0.4, colors.HexColor("#1f2937")),
         ("VALIGN", (0, 0), (-1, -1), "TOP"),
-        ("ALIGN", (9, 1), (11, -1), "RIGHT"),
+        ("ALIGN", (10, 1), (12, -1), "RIGHT"),
     ]))
     elements.append(detail_tbl)
 
@@ -41088,6 +44703,25 @@ REFUND_TRACKER_DETAIL_COLUMNS = [
     "InsertedDate",
 ]
 
+REFUND_TRACKER_TAT_COLUMNS = [
+    "RefundId",
+    "RegNo",
+    "PatientName",
+    "PatientType",
+    "CorpType",
+    "RefundStatus",
+    "AdminStatus",
+    "AccountStatus",
+    "CorporateInitiatedDate",
+    "AdminApprovalDate",
+    "AccountsApprovalDate",
+    "CorporateToAdminTAT",
+    "AdminToAccountsTAT",
+    "CorporateToAccountsTAT",
+    "CurrentPendingStage",
+    "CurrentPendingTAT",
+]
+
 
 def _refund_tracker_norm_text(value, fallback: str = "") -> str:
     txt = str(value or "").strip()
@@ -41120,6 +44754,115 @@ def _refund_tracker_fmt_dt(value) -> str:
     if pd.isna(dt_val):
         return ""
     return dt_val.strftime("%Y-%m-%d %H:%M:%S")
+
+
+def _refund_tracker_duration_text(start_value, end_value) -> str:
+    start_dt = pd.to_datetime(start_value, errors="coerce")
+    end_dt = pd.to_datetime(end_value, errors="coerce")
+    if pd.isna(start_dt) or pd.isna(end_dt):
+        return ""
+    seconds = int(max((end_dt - start_dt).total_seconds(), 0))
+    days, rem = divmod(seconds, 86400)
+    hours, rem = divmod(rem, 3600)
+    minutes, _seconds = divmod(rem, 60)
+    if days:
+        return f"{days}d {hours:02d}:{minutes:02d}"
+    return f"{hours:02d}:{minutes:02d}"
+
+
+def _refund_tracker_duration_hours(start_value, end_value):
+    start_dt = pd.to_datetime(start_value, errors="coerce")
+    end_dt = pd.to_datetime(end_value, errors="coerce")
+    if pd.isna(start_dt) or pd.isna(end_dt):
+        return None
+    hours = max((end_dt - start_dt).total_seconds(), 0) / 3600
+    return round(float(hours), 2)
+
+
+def _build_refund_tracker_tat_frame(df_raw: pd.DataFrame, masters_df: pd.DataFrame | None = None) -> pd.DataFrame:
+    if df_raw is None or df_raw.empty:
+        return pd.DataFrame(columns=REFUND_TRACKER_TAT_COLUMNS)
+
+    df = _clean_df_columns(df_raw.copy())
+    expected_cols = {
+        "RefundId", "RegNo", "PatientName", "PatientType", "CorpType",
+        "RefundStatus", "AdminStatus", "AccountStatus", "RefundInitializeDate",
+        "AdminLockDate", "AccountLockDate",
+    }
+    for col in expected_cols:
+        if col not in df.columns:
+            df[col] = None
+
+    df["_RefundInitializeDateSort"] = pd.to_datetime(df["RefundInitializeDate"], errors="coerce")
+    df["_RefundIdSort"] = pd.to_numeric(df["RefundId"], errors="coerce").fillna(0).astype(int)
+    base = (
+        df.sort_values(
+            ["_RefundInitializeDateSort", "_RefundIdSort"],
+            ascending=[False, False],
+            na_position="last",
+            kind="stable",
+        )
+        .drop_duplicates(subset=["RefundId"], keep="first")
+        .copy()
+    )
+
+    if masters_df is not None and not masters_df.empty:
+        selected_ids = set(pd.to_numeric(masters_df["RefundId"], errors="coerce").dropna().astype(int).tolist())
+        base = base[pd.to_numeric(base["RefundId"], errors="coerce").fillna(-1).astype(int).isin(selected_ids)].copy()
+    elif masters_df is not None and masters_df.empty:
+        return pd.DataFrame(columns=REFUND_TRACKER_TAT_COLUMNS)
+
+    if base.empty:
+        return pd.DataFrame(columns=REFUND_TRACKER_TAT_COLUMNS)
+
+    init_dt = pd.to_datetime(base["RefundInitializeDate"], errors="coerce")
+    admin_dt = pd.to_datetime(base["AdminLockDate"], errors="coerce")
+    account_dt = pd.to_datetime(base["AccountLockDate"], errors="coerce")
+    now_local = datetime.now(tz=LOCAL_TZ).replace(tzinfo=None)
+
+    tat_df = pd.DataFrame()
+    tat_df["RefundId"] = pd.to_numeric(base["RefundId"], errors="coerce").fillna(0).astype(int)
+    for col in ["RegNo", "PatientName", "PatientType", "CorpType"]:
+        tat_df[col] = base[col].apply(lambda v: _refund_tracker_norm_text(v, "Unknown" if col in {"PatientType", "CorpType"} else ""))
+    for col in ["RefundStatus", "AdminStatus", "AccountStatus"]:
+        tat_df[col] = base[col].apply(_refund_tracker_status_label)
+
+    tat_df["CorporateInitiatedDate"] = init_dt.apply(_refund_tracker_fmt_dt)
+    tat_df["AdminApprovalDate"] = admin_dt.apply(_refund_tracker_fmt_dt)
+    tat_df["AccountsApprovalDate"] = account_dt.apply(_refund_tracker_fmt_dt)
+    tat_df["CorporateToAdminTAT"] = [
+        _refund_tracker_duration_text(start, end) for start, end in zip(init_dt, admin_dt)
+    ]
+    tat_df["AdminToAccountsTAT"] = [
+        _refund_tracker_duration_text(start, end) for start, end in zip(admin_dt, account_dt)
+    ]
+    tat_df["CorporateToAccountsTAT"] = [
+        _refund_tracker_duration_text(start, end) for start, end in zip(init_dt, account_dt)
+    ]
+
+    pending_stage = []
+    pending_tat = []
+    for start, admin, account in zip(init_dt, admin_dt, account_dt):
+        if pd.isna(start):
+            pending_stage.append("Initiation Date Missing")
+            pending_tat.append("")
+        elif pd.isna(admin):
+            pending_stage.append("Pending Admin Approval")
+            pending_tat.append(_refund_tracker_duration_text(start, now_local))
+        elif pd.isna(account):
+            pending_stage.append("Pending Accounts Approval")
+            pending_tat.append(_refund_tracker_duration_text(admin, now_local))
+        else:
+            pending_stage.append("Completed")
+            pending_tat.append("")
+
+    tat_df["CurrentPendingStage"] = pending_stage
+    tat_df["CurrentPendingTAT"] = pending_tat
+
+    for col in REFUND_TRACKER_TAT_COLUMNS:
+        if col not in tat_df.columns:
+            tat_df[col] = None
+    return tat_df[REFUND_TRACKER_TAT_COLUMNS].reset_index(drop=True)
 
 
 def _build_refund_tracker_frames(df_raw: pd.DataFrame):
@@ -41461,6 +45204,7 @@ def _build_refund_tracker_excel(
     if masters_df.empty:
         return None, None, "No data available to export"
 
+    tat_df = _build_refund_tracker_tat_frame(df_raw, masters_df)
     kpis = _compute_refund_tracker_kpis(masters_df)
     status_summary = kpis.get("status_summary") or {}
     output = io.BytesIO()
@@ -41653,6 +45397,7 @@ def _build_refund_tracker_excel(
 
         masters_export_df = masters_df[REFUND_TRACKER_MASTER_COLUMNS].copy()
         details_export_df = details_df[REFUND_TRACKER_DETAIL_COLUMNS].copy()
+        tat_export_df = tat_df[REFUND_TRACKER_TAT_COLUMNS].copy()
 
         def _write_data_sheet(sheet_name: str, title: str, frame: pd.DataFrame):
             frame = frame.copy()
@@ -41689,6 +45434,8 @@ def _build_refund_tracker_excel(
                 elif key in money_keys:
                     width = 18
                     fmt = money_fmt
+                elif "tat" in key:
+                    width = 18
                 elif key in {"patientname", "refundremark", "accountremark", "corpremarks", "patientbankname"}:
                     width = 24
                 elif key in {"patientaccountno", "patientbankifsc", "patientaccholdername", "patientrelationname"}:
@@ -41743,6 +45490,7 @@ def _build_refund_tracker_excel(
 
         _write_data_sheet("Refund Masters", "Refund Tracker - Master Records", masters_export_df)
         _write_data_sheet("Receipt Details", "Refund Tracker - Linked Receipt Details", details_export_df)
+        _write_data_sheet("TAT Report", "Refund Tracker - TAT Report", tat_export_df)
 
     output.seek(0)
     filename = f"Refund_Tracker_{unit}_{from_date}_to_{to_date}.xlsx"
@@ -41919,6 +45667,100 @@ def api_mis_refund_tracker_export_excel_job_result():
     )
 
 
+def _load_canteen_collections_for_mis(target_unit: str, from_date: str, to_date: str):
+    unit_key = str(target_unit or "").strip().upper()
+    if unit_key not in data_fetch.CANTEEN_ALLOWED_UNITS:
+        return pd.DataFrame()
+    df = data_fetch.fetch_canteen_collection_rows(unit_key, from_date=from_date, to_date=to_date, limit=25000)
+    if df is None or df.empty:
+        return pd.DataFrame()
+
+    df = _clean_df_columns(df.copy())
+
+    def pick(row, *keys, default=""):
+        for key in keys:
+            value = row.get(key)
+            if value is None:
+                continue
+            text = str(value).strip()
+            if text and text.lower() not in {"nan", "none", "nat"}:
+                return value
+        return default
+
+    rows = []
+    for idx, row in enumerate(df.to_dict(orient="records"), start=1):
+        customer = pick(row, "LedgerName", "CustomerName", "RegistrationNo", default="Walk-In")
+        reg_no = pick(row, "LedgerCode", "CustomerCode", "RegistrationNo", default="")
+        rows.append(
+            {
+                "Unit": unit_key,
+                "ReceiptSource": "Canteen",
+                "Source": "Canteen",
+                "Sl.": idx,
+                "Receipt_ID": row.get("ReceiptID"),
+                "Receipt_No": row.get("ReceiptNo"),
+                "Receipt_Date": row.get("ReceiptDate"),
+                "Receipt_Time": row.get("ReceiptTime") or row.get("ReceiptDate"),
+                "ReceiptCategory": "Canteen Receipts",
+                "ReceiptType": "CANTEEN",
+                "PModeName": pick(row, "PaymentModeName", default="Cash"),
+                "PaymentMode": pick(row, "PaymentModeName", default="Cash"),
+                "PayType": "Canteen",
+                "Amount": row.get("Amount") or 0,
+                "BillNo": row.get("BillNo"),
+                "BillDate": row.get("BillDate"),
+                "NetAmount": row.get("BillNetAmount") or 0,
+                "Patient": customer,
+                "Patientname": customer,
+                "PatientName": customer,
+                "RegNo": reg_no,
+                "VisitNo": row.get("BillNo"),
+                "PatientTypes": pick(row, "TypeName", default="Canteen"),
+                "PatientType": pick(row, "TypeName", default="Canteen"),
+                "TypeOfVisit": "Canteen",
+                "VisitType": "Canteen",
+                "UserName": pick(row, "CollectionByName", default="Unknown"),
+                "User": pick(row, "CollectionByName", default="Unknown"),
+                "PayeeId": "",
+                "Admission_Dt": "",
+                "CanteenBillCreatedBy": row.get("CreatedByName") or "",
+                "DepartmentName": row.get("DepartmentName") or "",
+                "Note": row.get("Note") or "",
+            }
+        )
+    return pd.DataFrame(rows)
+
+
+def _canteen_collections_summary(canteen_df):
+    if canteen_df is None or canteen_df.empty:
+        return {
+            "rows": 0,
+            "total_amount": 0.0,
+            "mode_totals": pd.DataFrame(columns=["Unit", "PModeName", "Amount", "Receipts"]),
+            "type_totals": pd.DataFrame(columns=["Unit", "PatientTypes", "Amount", "Receipts"]),
+        }
+    work = canteen_df.copy()
+    work["Amount"] = pd.to_numeric(work.get("Amount", 0), errors="coerce").fillna(0.0)
+    mode_totals = (
+        work.groupby(["Unit", "PModeName"], dropna=False)
+        .agg(Amount=("Amount", "sum"), Receipts=("Amount", "count"))
+        .reset_index()
+        .sort_values(["Unit", "Amount", "PModeName"], ascending=[True, False, True], kind="stable")
+    )
+    type_totals = (
+        work.groupby(["Unit", "PatientTypes"], dropna=False)
+        .agg(Amount=("Amount", "sum"), Receipts=("Amount", "count"))
+        .reset_index()
+        .sort_values(["Unit", "Amount", "PatientTypes"], ascending=[True, False, True], kind="stable")
+    )
+    return {
+        "rows": int(len(work)),
+        "total_amount": float(work["Amount"].sum()),
+        "mode_totals": mode_totals,
+        "type_totals": type_totals,
+    }
+
+
 @app.route('/api/mis/collections')
 @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
 def api_mis_collections():
@@ -41934,10 +45776,20 @@ def api_mis_collections():
         return jsonify({"status": "error", "message": "Unit not allowed"}), 403
 
     df = data_fetch.fetch_receipt_summary(target_unit, from_date, to_date)
+    canteen_df = _load_canteen_collections_for_mis(target_unit, from_date, to_date)
     if df is None:
         return jsonify({"status": "error", "message": "Database error"}), 500
-    if df.empty:
+    frames = []
+    if df is not None and not df.empty:
+        hospital_df = _clean_df_columns(df.copy())
+        hospital_df["ReceiptSource"] = "Hospital"
+        frames.append(hospital_df)
+    if canteen_df is not None and not canteen_df.empty:
+        frames.append(canteen_df)
+
+    if not frames:
         return jsonify({"status": "success", "data": [], "unit": target_unit, "count": 0}), 200
+    df = pd.concat(frames, ignore_index=True, sort=False)
 
     # Clean up NaT/NaN and convert datetimes to strings for JSON safety
     for col in df.columns:
@@ -42704,13 +46556,14 @@ def api_mis_collections_export_excel():
 
     # Fetch Data
     df = data_fetch.fetch_receipt_summary(target_unit, from_date, to_date)
+    canteen_df = _load_canteen_collections_for_mis(target_unit, from_date, to_date)
     if df is None:
         return jsonify({"status": "error", "message": "Database error"}), 500
-    if df.empty:
+    if df.empty and (canteen_df is None or canteen_df.empty):
         return jsonify({"status": "error", "message": "No data available to export"}), 400
 
     # --- 1. Clean Data ---
-    df = _clean_df_columns(df.copy())
+    df = _clean_df_columns(df.copy()) if not df.empty else pd.DataFrame()
     cols_map = {c.lower(): c for c in df.columns}
     
     def get_col(candidates):
@@ -42804,8 +46657,11 @@ def api_mis_collections_export_excel():
         inr_num_format = "[$\u20B9-4009] #,##,##0.00"
         fmt_curr = wb.add_format({"border": 1, "align": "right", "num_format": inr_num_format, "valign": "vcenter"})
         fmt_curr_bold = wb.add_format({"border": 1, "align": "right", "bold": True, "num_format": inr_num_format, "bg_color": "#F8FAFC", "valign": "vcenter"})
+        fmt_count = wb.add_format({"border": 1, "align": "right", "num_format": "#,##0", "valign": "vcenter"})
+        fmt_count_bold = wb.add_format({"border": 1, "align": "right", "bold": True, "num_format": "#,##0", "bg_color": "#F8FAFC", "valign": "vcenter"})
         
         fmt_sec_title = wb.add_format({"bold": True, "font_size": 11, "underline": True, "font_color": "#000000"})
+        canteen_summary = _canteen_collections_summary(canteen_df)
 
         # ==========================================
         # SHEET 1: SUMMARY
@@ -42993,6 +46849,52 @@ def api_mis_collections_export_excel():
             ws_sum.write(row_cur, 1, pt_grps.sum(), fmt_curr_bold)
             row_cur += 3
 
+        # ---------------------------------------------------------
+        # 6. CANTEEN COLLECTION SUMMARY
+        # ---------------------------------------------------------
+        ws_sum.write(row_cur, 0, "Canteen Collection Summary", fmt_sec_title)
+        row_cur += 1
+
+        if canteen_df is not None and not canteen_df.empty:
+            ws_sum.write(row_cur, 0, "Unit", fmt_header)
+            ws_sum.write(row_cur, 1, "Receipts", fmt_header)
+            ws_sum.write(row_cur, 2, "Amount", fmt_header)
+            row_cur += 1
+
+            ws_sum.write(row_cur, 0, target_unit, fmt_text_bold)
+            ws_sum.write(row_cur, 1, canteen_summary["rows"], fmt_count_bold)
+            ws_sum.write(row_cur, 2, canteen_summary["total_amount"], fmt_curr_bold)
+            row_cur += 2
+
+            mode_totals = canteen_summary["mode_totals"]
+            if mode_totals is not None and not mode_totals.empty:
+                ws_sum.write(row_cur, 0, "Payment Mode", fmt_header)
+                ws_sum.write(row_cur, 1, "Receipts", fmt_header)
+                ws_sum.write(row_cur, 2, "Amount", fmt_header)
+                row_cur += 1
+                for _, mode_row in mode_totals.iterrows():
+                    ws_sum.write(row_cur, 0, str(mode_row.get("PModeName") or "Unknown"), fmt_text)
+                    ws_sum.write(row_cur, 1, int(mode_row.get("Receipts") or 0), fmt_count)
+                    ws_sum.write(row_cur, 2, float(mode_row.get("Amount") or 0), fmt_curr)
+                    row_cur += 1
+                row_cur += 1
+
+            type_totals = canteen_summary["type_totals"]
+            if type_totals is not None and not type_totals.empty:
+                ws_sum.write(row_cur, 0, "Customer Type", fmt_header)
+                ws_sum.write(row_cur, 1, "Receipts", fmt_header)
+                ws_sum.write(row_cur, 2, "Amount", fmt_header)
+                row_cur += 1
+                for _, type_row in type_totals.iterrows():
+                    ws_sum.write(row_cur, 0, str(type_row.get("PatientTypes") or "Canteen"), fmt_text)
+                    ws_sum.write(row_cur, 1, int(type_row.get("Receipts") or 0), fmt_count)
+                    ws_sum.write(row_cur, 2, float(type_row.get("Amount") or 0), fmt_curr)
+                    row_cur += 1
+                row_cur += 2
+        else:
+            ws_sum.write(row_cur, 0, "No canteen collections for the selected unit/date range.", fmt_text)
+            row_cur += 2
+
         # ==========================================
         # SHEET 2+: RAW DATA
         # ==========================================
@@ -43039,6 +46941,7 @@ def api_mis_collections_export_excel():
         header_raw_fmt = wb.add_format({"bold": True, "font_color": "white", "bg_color": "#1E3A8A", "align": "center", "valign": "vcenter", "border": 1})
         cashless_row_fmt = wb.add_format({"bg_color": "#FDE2E4"})
         curr_raw_fmt = wb.add_format({"num_format": "#,##0.00"})
+        canteen_amount_fmt = wb.add_format({"num_format": inr_num_format, "align": "right", "valign": "vcenter"})
 
         def write_sheet(sheet_name, data):
             if data is None or data.empty: return
@@ -43074,6 +46977,78 @@ def api_mis_collections_export_excel():
                 })
             except: pass
 
+        def build_canteen_export_df():
+            if canteen_df is None or canteen_df.empty:
+                return pd.DataFrame()
+
+            source_df = canteen_df.copy()
+
+            def canteen_series(candidates, default=""):
+                for c in candidates:
+                    if c in source_df.columns:
+                        return source_df[c]
+                return pd.Series([default] * len(source_df))
+
+            canteen_export = pd.DataFrame()
+            canteen_export["Sl."] = range(1, len(source_df) + 1)
+            canteen_export["Unit"] = canteen_series(["Unit"], target_unit)
+            canteen_export["Receipt No"] = canteen_series(["Receipt_No", "ReceiptNo"])
+            canteen_export["Receipt Date"] = fmt_date(canteen_series(["Receipt_Date", "ReceiptDate"]))
+            canteen_export["Receipt Time"] = canteen_series(["Receipt_Time", "ReceiptTime"])
+            canteen_export["Bill No"] = canteen_series(["BillNo"])
+            canteen_export["Bill Date"] = fmt_date(canteen_series(["BillDate"]))
+            canteen_export["Customer"] = canteen_series(["Patientname", "PatientName", "Patient"])
+            canteen_export["Reg / Ledger"] = canteen_series(["RegNo", "LedgerCode", "CustomerCode"])
+            canteen_export["Customer Type"] = canteen_series(["PatientTypes", "PatientType"])
+            canteen_export["Payment Mode"] = canteen_series(["PModeName", "PaymentMode"])
+            canteen_export["Amount"] = pd.to_numeric(canteen_series(["Amount"], 0), errors="coerce").fillna(0.0)
+            canteen_export["Collected By"] = canteen_series(["UserName", "User", "CollectionByName"])
+            canteen_export["Bill Created By"] = canteen_series(["CanteenBillCreatedBy", "CreatedByName"])
+            canteen_export["Department"] = canteen_series(["DepartmentName"])
+            canteen_export["Note"] = canteen_series(["Note"])
+            return canteen_export
+
+        def write_canteen_sheet(data):
+            if data is None or data.empty:
+                return
+
+            local_df = data.copy()
+            for col in local_df.columns:
+                if col != "Amount":
+                    local_df[col] = local_df[col].fillna("")
+
+            sheet_name = "Canteen Collections"
+            local_df.to_excel(writer, sheet_name=sheet_name, index=False, startrow=3)
+            ws = writer.sheets[sheet_name]
+
+            ws.write(0, 0, "ASARFI HOSPITAL", wb.add_format({"bold": True, "font_size": 14, "color": "#1E3A8A"}))
+            ws.write(1, 0, "RECEIPTS EXPORT (CANTEEN COLLECTIONS)", wb.add_format({"bold": True, "font_size": 11}))
+            ws.write(2, 0, f"Unit: {target_unit} | Date: {from_date} to {to_date} | User: {session_user}")
+
+            for col_idx, col_name in enumerate(local_df.columns):
+                ws.write(3, col_idx, col_name, header_raw_fmt)
+
+            last_row = 3 + len(local_df)
+            ws.autofilter(3, 0, last_row, len(local_df.columns) - 1)
+            ws.freeze_panes(4, 0)
+
+            for idx, col_name in enumerate(local_df.columns):
+                width = 15
+                if col_name in {"Customer", "Bill Created By", "Collected By"}:
+                    width = 24
+                elif col_name in {"Note", "Department"}:
+                    width = 28
+                elif col_name in {"Receipt No", "Bill No", "Reg / Ledger"}:
+                    width = 18
+                elif col_name == "Sl.":
+                    width = 6
+                ws.set_column(idx, idx, width, canteen_amount_fmt if col_name == "Amount" else None)
+
+            amount_idx = list(local_df.columns).index("Amount")
+            total_row = 4 + len(local_df)
+            ws.write(total_row, max(0, amount_idx - 1), "Total", fmt_text_bold)
+            ws.write(total_row, amount_idx, float(local_df["Amount"].sum()), fmt_curr_bold)
+
         write_sheet("All Receipts", export_df)
         if "Payment Mode" in export_df.columns:
             for mode_val, grp in export_df.groupby("Payment Mode", dropna=False):
@@ -43082,6 +47057,7 @@ def api_mis_collections_export_excel():
             cat_s = export_df["Category"].astype(str).str.lower()
             write_sheet("Advance Receipts", export_df[cat_s.str.contains("advance", na=False)])
             write_sheet("Against Bill", export_df[cat_s.str.contains("receipt against bill", na=False)])
+        write_canteen_sheet(build_canteen_export_df())
 
     output.seek(0)
     return send_file(output, as_attachment=True, download_name=f"Collections_{target_unit}_{from_date}.xlsx", mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet")
@@ -44014,10 +47990,13 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
             return "Category Undefined"
 
     df = data_fetch.fetch_receipt_summary(target_unit, from_date, to_date)
-    if df is None or df.empty:
+    canteen_df = _load_canteen_collections_for_mis(target_unit, from_date, to_date)
+    if df is None:
+        return None
+    if df.empty and (canteen_df is None or canteen_df.empty):
         return None
 
-    df = _clean_df_columns(df)
+    df = _clean_df_columns(df.copy()) if not df.empty else pd.DataFrame()
 
     # Pre-calc columns
     def txt(val): return str(val).strip() if pd.notna(val) else ""
@@ -44058,7 +48037,7 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
     # --- 3. PDF Setup ---
     buffer = io.BytesIO()
     doc = SimpleDocTemplate(buffer, pagesize=landscape(A4),
-                            topMargin=10*mm, bottomMargin=15*mm,
+                            topMargin=22*mm, bottomMargin=15*mm,
                             leftMargin=10*mm, rightMargin=10*mm)
     elements = []
     styles = getSampleStyleSheet()
@@ -44463,6 +48442,146 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
 
         elements.append(Spacer(1, 5*mm))
 
+    def add_canteen_summary_page():
+        elements.append(Paragraph("4. Canteen Collection Summary", style_section))
+
+        if canteen_df is None or canteen_df.empty:
+            elements.append(Paragraph("No canteen collections found for the selected unit/date range.", styles['Normal']))
+            return
+
+        summary = _canteen_collections_summary(canteen_df)
+        money = lambda value: f"Rs. {format_inr(value)}"
+
+        overview_data = [
+            [make_paragraph("Unit", style_th), make_paragraph("Receipts", style_th), make_paragraph("Amount", style_th)],
+            [
+                make_paragraph(target_unit, style_td, bold=True),
+                make_paragraph(str(summary["rows"]), style_td_right, bold=True),
+                make_paragraph(money(summary["total_amount"]), style_td_right, bold=True),
+            ],
+        ]
+        overview = Table(overview_data, colWidths=[55*mm, 35*mm, 45*mm], hAlign='LEFT')
+        overview.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')),
+            ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#cbd5e1')),
+            ('BACKGROUND', (0, 1), (-1, 1), colors.HexColor('#f8fafc')),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 5),
+            ('TOPPADDING', (0, 0), (-1, -1), 5),
+        ]))
+        elements.append(overview)
+        elements.append(Spacer(1, 5*mm))
+
+        def add_breakup(title, source_df, label_col):
+            if source_df is None or source_df.empty:
+                return
+            data = [[
+                make_paragraph(title, style_th),
+                make_paragraph("Receipts", style_th),
+                make_paragraph("Amount", style_th),
+            ]]
+            total_receipts = 0
+            total_amount = 0.0
+            for _, row in source_df.iterrows():
+                receipts = int(row.get("Receipts") or 0)
+                amount = float(row.get("Amount") or 0)
+                total_receipts += receipts
+                total_amount += amount
+                data.append([
+                    make_paragraph(row.get(label_col) or "Unknown", style_td),
+                    make_paragraph(str(receipts), style_td_right),
+                    make_paragraph(money(amount), style_td_right),
+                ])
+            data.append([
+                make_paragraph("Total", style_td, bold=True),
+                make_paragraph(str(total_receipts), style_td_right, bold=True),
+                make_paragraph(money(total_amount), style_td_right, bold=True),
+            ])
+            table = Table(data, colWidths=[85*mm, 35*mm, 45*mm], hAlign='LEFT', repeatRows=1)
+            table.setStyle(TableStyle([
+                ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')),
+                ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#cbd5e1')),
+                ('BACKGROUND', (0, -1), (-1, -1), colors.HexColor('#f1f5f9')),
+                ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+                ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+                ('TOPPADDING', (0, 0), (-1, -1), 4),
+            ]))
+            elements.append(table)
+            elements.append(Spacer(1, 5*mm))
+
+        add_breakup("Payment Mode", summary["mode_totals"], "PModeName")
+        add_breakup("Customer Type", summary["type_totals"], "PatientTypes")
+
+    def add_canteen_details_page():
+        elements.append(Paragraph("5. Canteen Collection Details", style_section))
+
+        if canteen_df is None or canteen_df.empty:
+            elements.append(Paragraph("No canteen collection details found for the selected unit/date range.", styles['Normal']))
+            return
+
+        rows = canteen_df.copy()
+        rows["Amount"] = pd.to_numeric(rows.get("Amount", 0), errors="coerce").fillna(0.0)
+        records = rows.to_dict(orient="records")
+        records.sort(key=lambda r: (txt(r.get("Receipt_Date")), txt(r.get("Receipt_No"))))
+
+        table_data = [[
+            make_paragraph("Sl.", style_th),
+            make_paragraph("Receipt No", style_th),
+            make_paragraph("Date", style_th),
+            make_paragraph("Bill No", style_th),
+            make_paragraph("Customer", style_th),
+            make_paragraph("Type", style_th),
+            make_paragraph("Mode", style_th),
+            make_paragraph("Amount", style_th),
+            make_paragraph("Collected By", style_th),
+            make_paragraph("Bill By", style_th),
+        ]]
+
+        total_amount = 0.0
+        for idx, row in enumerate(records, start=1):
+            amount = num(row.get("Amount"))
+            total_amount += amount
+            customer = txt(row.get("Patientname") or row.get("PatientName") or row.get("Patient") or "Walk-In")
+            table_data.append([
+                make_paragraph(str(idx), style_td),
+                make_paragraph(row.get("Receipt_No"), style_td),
+                make_paragraph(fmt_date(row.get("Receipt_Date")), style_td),
+                make_paragraph(row.get("BillNo"), style_td),
+                make_paragraph(customer, style_td),
+                make_paragraph(row.get("PatientTypes") or "Canteen", style_td),
+                make_paragraph(row.get("PModeName") or "Cash", style_td),
+                make_paragraph(f"Rs. {format_inr(amount)}", style_td_right),
+                make_paragraph(row.get("UserName") or row.get("User") or "Unknown", style_td),
+                make_paragraph(row.get("CanteenBillCreatedBy") or "", style_td),
+            ])
+
+        table_data.append([
+            "", "", "", "", "", "",
+            make_paragraph("Total", style_td_right, bold=True),
+            make_paragraph(f"Rs. {format_inr(total_amount)}", style_td_right, bold=True),
+            "", "",
+        ])
+        total_row = len(table_data) - 1
+
+        table = Table(
+            table_data,
+            colWidths=[9*mm, 24*mm, 25*mm, 24*mm, 45*mm, 24*mm, 22*mm, 24*mm, 30*mm, 30*mm],
+            repeatRows=1,
+        )
+        table.setStyle(TableStyle([
+            ('BACKGROUND', (0, 0), (-1, 0), colors.HexColor('#1e3a8a')),
+            ('TEXTCOLOR', (0, 0), (-1, 0), colors.white),
+            ('GRID', (0, 0), (-1, -1), 0.25, colors.HexColor('#e2e8f0')),
+            ('ALIGN', (7, 0), (7, -1), 'RIGHT'),
+            ('BACKGROUND', (0, total_row), (-1, total_row), colors.HexColor('#f1f5f9')),
+            ('SPAN', (0, total_row), (5, total_row)),
+            ('SPAN', (8, total_row), (9, total_row)),
+            ('VALIGN', (0, 0), (-1, -1), 'TOP'),
+            ('BOTTOMPADDING', (0, 0), (-1, -1), 4),
+            ('TOPPADDING', (0, 0), (-1, -1), 4),
+        ]))
+        elements.append(table)
+
     # --- 5. Orchestration (Sequence) ---
     elements.append(Paragraph("Daily Collection Report", style_title))
     elements.append(Paragraph(f"Unit: {target_unit} | Date Range: {from_date} to {to_date}", style_subtitle))
@@ -44487,6 +48606,14 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
         add_detail_list(sections["OPD"])
         elements.append(PageBreak())
         add_summaries(sections["OPD"])
+
+    canteen_supported_unit = str(target_unit or "").strip().upper() in data_fetch.CANTEEN_ALLOWED_UNITS
+    if canteen_supported_unit:
+        if sections["OPD"]:
+            elements.append(PageBreak())
+        add_canteen_summary_page()
+        elements.append(PageBreak())
+        add_canteen_details_page()
 
     doc.build(elements, onFirstPage=header_footer, onLaterPages=header_footer)
     buffer.seek(0)
@@ -45362,6 +49489,16 @@ def user_management():
     username = (session.get("username") or "").strip()
     requests = _fetch_user_requests(role, username)
     allowed_units = _allowed_units_for_session()
+    canteen_notification_units = [
+        str(u or "").strip().upper()
+        for u in (allowed_units or [])
+        if str(u or "").strip().upper() in data_fetch.CANTEEN_ALLOWED_UNITS
+    ]
+    allowed_unit_set = {str(u or "").strip().upper() for u in (allowed_units or []) if str(u or "").strip()}
+    asset_coverage_units = [
+        unit for unit in ASSET_COVERAGE_RECIPIENT_UNITS
+        if role_base == "IT" or not allowed_unit_set or unit in allowed_unit_set
+    ]
     purchase_scope_units = _allowed_purchase_scope_units_for_session()
     scope_units = _user_management_scope_units_for_session()
     fund_acl = _allowed_fund_firms_for_session()
@@ -45384,6 +49521,8 @@ def user_management():
     purchase_approval_recipients = _fetch_purchase_approval_recipients() if role == "IT" else []
     bill_edit_directors = _fetch_bill_edit_directors() if role == "IT" else []
     fund_position_recipients = _fetch_fund_position_recipients() if role == "IT" else []
+    canteen_notification_recipients = _fetch_canteen_notification_recipients() if role == "IT" else []
+    asset_coverage_recipients = data_fetch.fetch_asset_coverage_recipients(only_active=False) if role == "IT" else []
     it_direct_users = _fetch_hid_users_for_it_admin() if role == "IT" else []
     return render_template(
         'user_management.html',
@@ -45406,6 +49545,12 @@ def user_management():
         purchase_approval_recipients=purchase_approval_recipients,
         bill_edit_directors=bill_edit_directors,
         fund_position_recipients=fund_position_recipients,
+        canteen_notification_recipients=canteen_notification_recipients,
+        canteen_notification_roles=CANTEEN_BULK_NOTIFICATION_ROLE_CHOICES,
+        canteen_notification_units=canteen_notification_units,
+        asset_coverage_recipients=asset_coverage_recipients,
+        asset_coverage_roles=ASSET_COVERAGE_RECIPIENT_ROLE_CHOICES,
+        asset_coverage_units=asset_coverage_units,
         it_direct_users=it_direct_users,
         allowed_units=allowed_units,
         purchase_scope_units=purchase_scope_units,
@@ -45949,6 +50094,119 @@ def user_management_purchase_approval_recipient_toggle():
     except Exception:
         return _user_management_error("Invalid recipient id", 400)
     return _user_management_success("PO approval recipient status updated.")
+
+
+@app.route('/user_management/canteen_notification_recipient/add', methods=['POST'])
+@login_required(allowed_roles={"IT"})
+def user_management_canteen_notification_recipient_add():
+    name = (request.form.get("canteen_recipient_name") or "").strip()
+    email = (request.form.get("canteen_recipient_email") or "").strip().lower()
+    unit = (request.form.get("canteen_recipient_unit") or "").strip().upper()
+    role_key = _canteen_notification_role_key(request.form.get("canteen_recipient_role"))
+    if not name or not email:
+        return _user_management_error("Missing name or email", 400)
+    if not _purchase_is_valid_email(email):
+        return _user_management_error("Invalid email address", 400)
+
+    allowed_units_set = {
+        str(u or "").strip().upper()
+        for u in (_allowed_units_for_session() or [])
+        if str(u or "").strip().upper() in data_fetch.CANTEEN_ALLOWED_UNITS
+    }
+    if unit and unit not in data_fetch.CANTEEN_ALLOWED_UNITS:
+        return _user_management_error("Invalid canteen unit selection", 400)
+    if unit and allowed_units_set and unit not in allowed_units_set:
+        return _user_management_error("Invalid unit selection", 400)
+    if role_key not in {row["key"] for row in CANTEEN_BULK_NOTIFICATION_ROLE_CHOICES}:
+        return _user_management_error("Invalid canteen notification role", 400)
+
+    result = _add_canteen_notification_recipient(
+        name,
+        email,
+        unit,
+        role_key,
+        (session.get("username") or "").strip(),
+    )
+    if result.get("error"):
+        return _user_management_error(result["error"], 500)
+    return _user_management_success("Canteen notification recipient added.")
+
+
+@app.route('/user_management/canteen_notification_recipient/toggle', methods=['POST'])
+@login_required(allowed_roles={"IT"})
+def user_management_canteen_notification_recipient_toggle():
+    recipient_id = request.form.get("canteen_recipient_id")
+    active_raw = request.form.get("is_active")
+    if not recipient_id:
+        return _user_management_error("Missing recipient id", 400)
+    try:
+        is_active = str(active_raw or "").strip().lower() in ("1", "true", "yes", "on")
+        _set_canteen_notification_recipient_active(
+            int(recipient_id),
+            is_active,
+            (session.get("username") or "").strip(),
+        )
+    except Exception:
+        return _user_management_error("Invalid recipient id", 400)
+    return _user_management_success("Canteen notification recipient status updated.")
+
+
+@app.route('/user_management/asset_coverage_recipient/add', methods=['POST'])
+@login_required(allowed_roles={"IT"})
+def user_management_asset_coverage_recipient_add():
+    name = (request.form.get("asset_coverage_recipient_name") or "").strip()
+    email = (request.form.get("asset_coverage_recipient_email") or "").strip().lower()
+    unit = (request.form.get("asset_coverage_recipient_unit") or "").strip().upper()
+    role_key = _asset_coverage_recipient_role_key(request.form.get("asset_coverage_recipient_role"))
+    if not name or not email:
+        return _user_management_error("Missing name or email", 400)
+    if not _purchase_is_valid_email(email):
+        return _user_management_error("Invalid email address", 400)
+    if unit not in ASSET_COVERAGE_RECIPIENT_UNITS:
+        return _user_management_error("Invalid asset coverage unit selection", 400)
+    if role_key not in {row["key"] for row in ASSET_COVERAGE_RECIPIENT_ROLE_CHOICES}:
+        return _user_management_error("Invalid asset coverage stakeholder role", 400)
+
+    allowed_unit_set = {
+        str(u or "").strip().upper()
+        for u in (_allowed_units_for_session() or [])
+        if str(u or "").strip()
+    }
+    if allowed_unit_set and unit not in allowed_unit_set:
+        return _user_management_error("Invalid unit selection", 400)
+
+    role_name = _asset_coverage_recipient_role_label(role_key, unit)
+    result = data_fetch.upsert_asset_coverage_recipient(
+        name,
+        email,
+        unit,
+        role_name,
+        (session.get("username") or "").strip(),
+    )
+    if result.get("status") != "success":
+        return _user_management_error(result.get("message") or "Unable to save asset coverage recipient", 500)
+    return _user_management_success("Asset coverage recipient added.")
+
+
+@app.route('/user_management/asset_coverage_recipient/toggle', methods=['POST'])
+@login_required(allowed_roles={"IT"})
+def user_management_asset_coverage_recipient_toggle():
+    recipient_id = request.form.get("asset_coverage_recipient_id")
+    active_raw = request.form.get("is_active")
+    if not recipient_id:
+        return _user_management_error("Missing recipient id", 400)
+    try:
+        is_active = str(active_raw or "").strip().lower() in ("1", "true", "yes", "on")
+        result = data_fetch.set_asset_coverage_recipient_active(
+            int(recipient_id),
+            is_active,
+            (session.get("username") or "").strip(),
+        )
+    except Exception:
+        return _user_management_error("Invalid recipient id", 400)
+    if result.get("status") != "success":
+        return _user_management_error(result.get("message") or "Unable to update asset coverage recipient", 500)
+    return _user_management_success("Asset coverage recipient status updated.")
 
 
 @app.route('/user_management/fund_position_recipient/add', methods=['POST'])
@@ -46896,8 +51154,333 @@ def api_mis_admission_discharge_summary_export_pdf():
         return "No data available to export", 404
     filename = f"Admission_Discharge_Summary_{unit}_{from_date}_to_{to_date}.pdf"
     return send_file(buffer, mimetype="application/pdf", as_attachment=True, download_name=filename)
+def _volume_ipd_census_units_for_request(req_unit: str, allowed_units: list[str]) -> list[str]:
+    unit = (req_unit or "").strip().upper()
+    if unit and unit not in {"__ALL__", "ALL"} and unit in allowed_units:
+        return [unit]
+    return allowed_units
 
 
+def _build_volume_ipd_census_pdf_buffer(report_date: str, unit: str, allowed_units: list[str]):
+    from reportlab.lib.pagesizes import A4, landscape
+    from reportlab.platypus import SimpleDocTemplate, Paragraph, Spacer, Table, TableStyle, PageBreak
+    from reportlab.lib.styles import getSampleStyleSheet, ParagraphStyle
+    from reportlab.lib.units import inch
+    from reportlab.lib import colors
+    from reportlab.lib.enums import TA_CENTER, TA_LEFT
+    from io import BytesIO
+    from xml.sax.saxutils import escape as xml_escape
+
+    unit = (unit or "__ALL__").strip().upper() or "__ALL__"
+    cache_key = ("v2_ipd_census_dept_pages", report_date, unit, ",".join(sorted(allowed_units or [])))
+    cached = _export_cache_get_bytes("volume_ipd_census_pdf", cache_key)
+    if cached:
+        return io.BytesIO(cached)
+
+    if not allowed_units:
+        raise ValueError("No unit access assigned")
+
+    units_to_use = _volume_ipd_census_units_for_request(unit, allowed_units)
+    census_df = data_fetch.get_volume_ipd_census(units_to_use, report_date)
+
+    buffer = BytesIO()
+    doc = SimpleDocTemplate(
+        buffer,
+        pagesize=landscape(A4),
+        rightMargin=24,
+        leftMargin=24,
+        topMargin=34,
+        bottomMargin=28,
+    )
+
+    styles = getSampleStyleSheet()
+    title_style = ParagraphStyle(
+        "CensusTitle",
+        parent=styles["Heading1"],
+        fontSize=19,
+        leading=23,
+        textColor=colors.HexColor("#1e40af"),
+        alignment=TA_CENTER,
+        spaceAfter=6,
+        fontName="Helvetica-Bold",
+    )
+    meta_style = ParagraphStyle(
+        "CensusMeta",
+        parent=styles["Normal"],
+        fontSize=9,
+        leading=11,
+        textColor=colors.HexColor("#475569"),
+        alignment=TA_CENTER,
+        spaceAfter=10,
+    )
+    unit_style = ParagraphStyle(
+        "CensusUnit",
+        parent=styles["Heading2"],
+        fontSize=13,
+        leading=16,
+        textColor=colors.HexColor("#1d4ed8"),
+        spaceBefore=8,
+        spaceAfter=5,
+        fontName="Helvetica-Bold",
+    )
+    dept_style = ParagraphStyle(
+        "CensusDept",
+        parent=styles["Heading3"],
+        fontSize=10,
+        leading=13,
+        textColor=colors.HexColor("#0f172a"),
+        backColor=colors.HexColor("#eff6ff"),
+        leftIndent=5,
+        spaceBefore=5,
+        spaceAfter=4,
+        fontName="Helvetica-Bold",
+    )
+    doctor_style = ParagraphStyle(
+        "CensusDoctor",
+        parent=styles["Normal"],
+        fontSize=8,
+        leading=10,
+        textColor=colors.HexColor("#1f2937"),
+        spaceBefore=3,
+        spaceAfter=3,
+        fontName="Helvetica-Bold",
+    )
+    header_cell_style = ParagraphStyle(
+        "CensusHeaderCell",
+        parent=styles["Normal"],
+        fontName="Helvetica-Bold",
+        fontSize=6.8,
+        leading=8,
+        textColor=colors.white,
+        alignment=TA_CENTER,
+        wordWrap="CJK",
+    )
+    body_cell_style = ParagraphStyle(
+        "CensusBodyCell",
+        parent=styles["Normal"],
+        fontName="Helvetica",
+        fontSize=6.6,
+        leading=8,
+        textColor=colors.HexColor("#1f2937"),
+        alignment=TA_LEFT,
+        wordWrap="CJK",
+    )
+    center_cell_style = ParagraphStyle(
+        "CensusCenterCell",
+        parent=body_cell_style,
+        alignment=TA_CENTER,
+    )
+
+    def _p(value, style=body_cell_style):
+        return Paragraph(xml_escape(str(value or "")), style)
+
+    def _format_dt(value):
+        try:
+            if value is None or pd.isna(value):
+                return ""
+            ts = pd.Timestamp(value)
+            if getattr(ts, "tzinfo", None) is not None:
+                ts = ts.tz_convert(LOCAL_TZ)
+            return ts.strftime("%d-%b-%Y %I:%M %p").lstrip("0")
+        except Exception:
+            return ""
+
+    story = [
+        Paragraph("Daily IPD Patient Census", title_style),
+        Paragraph(f"As on {xml_escape(str(report_date))}", meta_style),
+        Paragraph(f"Units: {xml_escape(', '.join(units_to_use))}", meta_style),
+        Spacer(1, 6),
+    ]
+
+    if census_df is None or census_df.empty:
+        empty_style = ParagraphStyle(
+            "CensusEmpty",
+            parent=styles["Normal"],
+            fontSize=10,
+            textColor=colors.HexColor("#64748b"),
+            alignment=TA_CENTER,
+        )
+        story.append(Spacer(1, 80))
+        story.append(Paragraph("No IPD census data available for the selected report date.", empty_style))
+    else:
+        first_department = True
+        headers = [
+            "S.No.",
+            "Status",
+            "Reg No",
+            "Patient Name",
+            "Ward",
+            "Condition",
+            "Patient Type",
+            "Admission Date",
+            "Discharge Date",
+        ]
+        col_widths = [
+            0.38 * inch,
+            0.82 * inch,
+            0.82 * inch,
+            1.55 * inch,
+            1.12 * inch,
+            1.20 * inch,
+            1.22 * inch,
+            1.12 * inch,
+            1.12 * inch,
+        ]
+        sl_no = 1
+        for unit_name, unit_df in census_df.groupby("Unit", dropna=False, sort=False):
+            for dept_name, dept_df in unit_df.groupby("Department", dropna=False, sort=False):
+                if not first_department:
+                    story.append(PageBreak())
+                first_department = False
+                story.append(Paragraph(f"Unit: {xml_escape(str(unit_name or 'UNKNOWN'))}", unit_style))
+                story.append(
+                    Paragraph(
+                        f"Department: {xml_escape(str(dept_name or 'Unknown Department'))} | Patients: {len(dept_df):,}",
+                        dept_style,
+                    )
+                )
+                for doctor_name, doctor_df in dept_df.groupby("Doctor", dropna=False, sort=False):
+                    status_counts = (
+                        doctor_df["Patient Status"]
+                        .value_counts()
+                        .reindex(["Occupied", "New Admission", "Discharge"], fill_value=0)
+                    )
+                    story.append(
+                        Paragraph(
+                            (
+                                f"Doctor: {xml_escape(str(doctor_name or 'Unassigned Doctor'))} | "
+                                f"Occupied: {int(status_counts.get('Occupied', 0)):,} | "
+                                f"New Admission: {int(status_counts.get('New Admission', 0)):,} | "
+                                f"Discharge: {int(status_counts.get('Discharge', 0)):,}"
+                            ),
+                            doctor_style,
+                        )
+                    )
+                    table_data = [[_p(h, header_cell_style) for h in headers]]
+                    for _, item in doctor_df.iterrows():
+                        table_data.append([
+                            _p(sl_no, center_cell_style),
+                            _p(item.get("Patient Status"), center_cell_style),
+                            _p(item.get("Reg No")),
+                            _p(item.get("Patient Name")),
+                            _p(item.get("Ward Name")),
+                            _p(item.get("Condition")),
+                            _p(item.get("Patient Type")),
+                            _p(_format_dt(item.get("Admission Date"))),
+                            _p(_format_dt(item.get("Discharge Date"))),
+                        ])
+                        sl_no += 1
+
+                    table = Table(table_data, colWidths=col_widths, repeatRows=1)
+                    table.setStyle(TableStyle([
+                        ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#0f172a")),
+                        ("TEXTCOLOR", (0, 0), (-1, 0), colors.white),
+                        ("ALIGN", (0, 0), (-1, 0), "CENTER"),
+                        ("VALIGN", (0, 0), (-1, -1), "TOP"),
+                        ("GRID", (0, 0), (-1, -1), 0.35, colors.HexColor("#dbe3ef")),
+                        ("ROWBACKGROUNDS", (0, 1), (-1, -1), [colors.white, colors.HexColor("#f8fafc")]),
+                        ("TOPPADDING", (0, 0), (-1, -1), 3),
+                        ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                        ("LEFTPADDING", (0, 0), (-1, -1), 3),
+                        ("RIGHTPADDING", (0, 0), (-1, -1), 3),
+                    ]))
+                    story.append(table)
+                    story.append(Spacer(1, 7))
+
+    footer_style = ParagraphStyle(
+        "CensusFooter",
+        parent=styles["Normal"],
+        fontSize=8,
+        textColor=colors.HexColor("#64748b"),
+        alignment=TA_CENTER,
+    )
+    story.append(Spacer(1, 18))
+    story.append(Paragraph(f"Generated: {datetime.now(tz=LOCAL_TZ).strftime('%d %B %Y at %H:%M:%S')} | Asarfi Hospital Ltd", footer_style))
+
+    def _draw_page_footer(canvas_obj, doc_obj):
+        canvas_obj.saveState()
+        canvas_obj.setFont("Helvetica", 7)
+        canvas_obj.setFillColor(colors.HexColor("#64748b"))
+        canvas_obj.drawRightString(
+            doc_obj.pagesize[0] - doc_obj.rightMargin,
+            14,
+            f"Page {canvas_obj.getPageNumber()}",
+        )
+        canvas_obj.restoreState()
+
+    doc.build(story, onFirstPage=_draw_page_footer, onLaterPages=_draw_page_footer)
+    buffer.seek(0)
+    try:
+        _export_cache_put_bytes("volume_ipd_census_pdf", buffer.getvalue(), cache_key)
+    except Exception:
+        pass
+    return buffer
+
+
+@app.route('/api/volume_ipd_census_export', methods=['GET'])
+@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+def api_volume_ipd_census_export():
+    report_date = (request.args.get('date') or '').strip()
+    req_unit = (request.args.get('unit') or '__ALL__').strip().upper()
+    if not report_date:
+        return jsonify({"status": "error", "message": "Missing report date"}), 400
+    try:
+        datetime.strptime(report_date, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid report date"}), 400
+
+    allowed_units = _analytics_allowed_units_for_session()
+    if not allowed_units:
+        return jsonify({"status": "error", "message": "No unit access assigned"}), 403
+
+    units_to_use = _volume_ipd_census_units_for_request(req_unit, allowed_units)
+    try:
+        census_df = data_fetch.get_volume_ipd_census(units_to_use, report_date)
+        xlsx_bytes = data_fetch.build_volume_ipd_census_excel(census_df, report_date=report_date)
+        unit_label = req_unit if req_unit in allowed_units else "__ALL__"
+        fname = f"IPD_Daily_Census_{_volume_unit_label(unit_label)}_{report_date}.xlsx"
+        return send_file(
+            io.BytesIO(xlsx_bytes),
+            as_attachment=True,
+            download_name=fname,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
+    except Exception as e:
+        print(f"/api/volume_ipd_census_export error: {e}")
+        return jsonify({"status": "error", "message": "IPD census export failed"}), 500
+
+
+@app.route('/api/volume_ipd_census_export_pdf', methods=['GET'])
+@login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+def api_volume_ipd_census_export_pdf():
+    report_date = (request.args.get('date') or '').strip()
+    req_unit = (request.args.get('unit') or '__ALL__').strip().upper()
+    if not report_date:
+        return jsonify({"status": "error", "message": "Missing report date"}), 400
+    try:
+        datetime.strptime(report_date, "%Y-%m-%d")
+    except ValueError:
+        return jsonify({"status": "error", "message": "Invalid report date"}), 400
+
+    allowed_units = _analytics_allowed_units_for_session()
+    if not allowed_units:
+        return jsonify({"status": "error", "message": "No unit access assigned"}), 403
+
+    try:
+        buffer = _build_volume_ipd_census_pdf_buffer(report_date, req_unit, allowed_units)
+        unit_label = req_unit if req_unit in allowed_units else "__ALL__"
+        filename = f"IPD_Daily_Census_{_volume_unit_label(unit_label)}_{report_date}.pdf"
+        return send_file(
+            buffer,
+            mimetype="application/pdf",
+            as_attachment=True,
+            download_name=filename,
+        )
+    except Exception as e:
+        print(f"/api/volume_ipd_census_export_pdf error: {e}")
+        import traceback
+        traceback.print_exc()
+        return jsonify({"status": "error", "message": "IPD census PDF export failed"}), 500
 
 
 # ============================================================
@@ -53730,26 +58313,53 @@ def _mirror_new_item_master_to_family(source_unit: str, item: dict, user_token: 
 
 
 def _load_item_master_lists(unit: str, selected_type_id: int | None = None, selected_group_id: int | None = None):
-    pack_df = data_fetch.fetch_purchase_pack_sizes(unit)
-    type_df = data_fetch.fetch_item_categories(unit)
-    unit_df = data_fetch.fetch_item_units(unit)
-    location_df = data_fetch.fetch_item_locations(unit)
+    unit_key = _normalize_purchase_unit_text(unit)
+    cache_type_id = _safe_int(selected_type_id, 0) or 0
+    cache_group_id = _safe_int(selected_group_id, 0) or 0
+    cached_payload = _live_response_cache_get("item_master_lists", unit_key, cache_type_id, cache_group_id)
+    if cached_payload:
+        return cached_payload
+
+    fetch_results = {
+        "pack": None,
+        "type": None,
+        "unit": None,
+        "location": None,
+    }
+    with ThreadPoolExecutor(max_workers=4) as executor:
+        future_map = {
+            executor.submit(data_fetch.fetch_purchase_pack_sizes, unit): "pack",
+            executor.submit(data_fetch.fetch_item_categories, unit, False): "type",
+            executor.submit(data_fetch.fetch_item_units, unit): "unit",
+            executor.submit(data_fetch.fetch_item_locations, unit): "location",
+        }
+        for future in as_completed(future_map):
+            result_key = future_map[future]
+            try:
+                fetch_results[result_key] = future.result()
+            except Exception:
+                fetch_results[result_key] = None
+
+    pack_df = fetch_results.get("pack")
+    type_df = fetch_results.get("type")
+    unit_df = fetch_results.get("unit")
+    location_df = fetch_results.get("location")
 
     pack_sizes = _build_master_list(pack_df, ["id"], ["name"], ["code"])
     categories = _build_master_list(type_df, ["id"], ["name"], ["code"])
 
     default_type_id = _pick_default_id(categories, ITEM_MASTER_DEFAULTS["item_type_id"])
     active_type_id = _safe_int(selected_type_id, default_type_id) or default_type_id
-    group_df = data_fetch.fetch_item_groups_by_type(unit, active_type_id)
+    group_df = data_fetch.fetch_item_groups_by_type(unit, active_type_id, include_inactive=False)
     if group_df is None or group_df.empty:
-        group_df = data_fetch.fetch_item_groups(unit)
+        group_df = data_fetch.fetch_item_groups(unit, include_inactive=False)
     groups = _build_master_list(group_df, ["id"], ["name"], ["code"])
 
     default_group_id = _pick_default_id(groups, ITEM_MASTER_DEFAULTS["item_group_id"])
     active_group_id = _safe_int(selected_group_id, default_group_id) or default_group_id
-    subgroup_df = data_fetch.fetch_item_subgroups_by_group(unit, active_group_id)
+    subgroup_df = data_fetch.fetch_item_subgroups_by_group(unit, active_group_id, include_inactive=False)
     if subgroup_df is None or subgroup_df.empty:
-        subgroup_df = data_fetch.fetch_item_subgroups(unit, active_group_id)
+        subgroup_df = data_fetch.fetch_item_subgroups(unit, active_group_id, include_inactive=False)
     subgroups = _build_master_list(
         subgroup_df,
         ["id"],
@@ -53775,7 +58385,7 @@ def _load_item_master_lists(unit: str, selected_type_id: int | None = None, sele
         "location_by_name": _build_name_lookup(locations),
     }
 
-    return {
+    payload = {
         "pack_sizes": pack_sizes,
         "categories": categories,
         "groups": groups,
@@ -53785,6 +58395,8 @@ def _load_item_master_lists(unit: str, selected_type_id: int | None = None, sele
         "defaults": defaults,
         "lookups": lookups,
     }
+    _live_response_cache_put("item_master_lists", payload, unit_key, cache_type_id, cache_group_id)
+    return payload
 
 
 def _build_item_master_params(item: dict, defaults: dict, lookups: dict, user_token: str, now_str: str, remote_addr: str):
@@ -54083,10 +58695,112 @@ def _build_manufacturer_params(
 
 
 def _ensure_item_masters_for_po(unit: str, items: list, now_str: str):
+    unresolved_items = []
+    for item in (items or []):
+        item_id = _safe_int(item.get("item_id"))
+        name = str(item.get("item_name") or "").strip()
+        if item_id or not name:
+            continue
+        unresolved_items.append(item)
+    if not unresolved_items:
+        return [], []
+
+    meta = _load_item_master_lists(unit)
+    defaults = meta.get("defaults", {})
+    lookups = meta.get("lookups", {})
+    allow_zero_rate_mrp = _unit_allows_zero_rate_mrp(unit)
+    default_store_name = _default_store_name_for_unit(unit)
+    existing_name_map = _item_name_map_for_unit(unit)
+    existing_resolution_cache = {}
+
+    def _resolve_existing_item_id(item: dict) -> int:
+        item_name = str(item.get("item_name") or "").strip()
+        item_name_key = _norm_key(item_name)
+        if not item_name_key:
+            return 0
+
+        requested_unit_id = _safe_int(item.get("unit_id"))
+        requested_unit_name = _normalize_purchase_unit_text(item.get("unit") or "")
+        if requested_unit_id <= 0 and requested_unit_name:
+            requested_unit_id = _safe_int(lookups.get("unit_by_name", {}).get(_norm_key(requested_unit_name)))
+
+        requested_store_name = str(item.get("item_code") or item.get("store_name") or "").strip()
+        if not requested_store_name and default_store_name:
+            requested_store_name = default_store_name
+        requested_location_id = _safe_int(item.get("location_id"))
+        if requested_location_id <= 0 and requested_store_name:
+            requested_location_id = _safe_int(lookups.get("location_by_name", {}).get(_norm_key(requested_store_name)))
+
+        requested_pack_size_id = _safe_int(item.get("pack_size_id"))
+        cache_key = (item_name_key, requested_location_id, requested_unit_id, requested_pack_size_id)
+        if cache_key in existing_resolution_cache:
+            return _safe_int(existing_resolution_cache.get(cache_key))
+
+        name_map_item_id = _safe_int(existing_name_map.get(item_name_key))
+        candidate_rows = []
+        seen_candidate_ids = set()
+
+        def _append_candidate_rows(df):
+            if df is None or df.empty:
+                return
+            cleaned_df = _clean_df_columns(df)
+            for _, row in cleaned_df.iterrows():
+                row_dict = row.to_dict()
+                candidate_id = _safe_int(row_dict.get("ID") or row_dict.get("Id"))
+                candidate_name = str(row_dict.get("Name") or "").strip()
+                if candidate_id <= 0 or _norm_key(candidate_name) != item_name_key:
+                    continue
+                if candidate_id in seen_candidate_ids:
+                    continue
+                seen_candidate_ids.add(candidate_id)
+                candidate_rows.append(row_dict)
+
+        if name_map_item_id > 0:
+            _append_candidate_rows(data_fetch.fetch_item_master_detail(unit, name_map_item_id))
+        _append_candidate_rows(data_fetch.fetch_item_master_details_by_exact_name(unit, item_name))
+
+        best_candidate_id = 0
+        best_rank = None
+        for candidate in candidate_rows:
+            candidate_id = _safe_int(candidate.get("ID") or candidate.get("Id"))
+            if candidate_id <= 0:
+                continue
+
+            score = 0
+            candidate_location_id = _safe_int(candidate.get("LocationID") or candidate.get("LocationId"))
+            candidate_unit_id = _safe_int(candidate.get("UnitID") or candidate.get("UnitId"))
+            candidate_pack_size_id = _safe_int(candidate.get("PackSizeID") or candidate.get("PackSizeId"))
+
+            if requested_location_id > 0:
+                score += 120 if candidate_location_id == requested_location_id else -30
+            if requested_unit_id > 0:
+                score += 80 if candidate_unit_id == requested_unit_id else -20
+            if requested_pack_size_id > 0:
+                score += 60 if candidate_pack_size_id == requested_pack_size_id else -15
+
+            rank = (
+                score,
+                1 if candidate_id == name_map_item_id else 0,
+                -candidate_id,
+            )
+            if best_rank is None or rank > best_rank:
+                best_rank = rank
+                best_candidate_id = candidate_id
+
+        if best_rank is not None and best_rank[0] < 0:
+            best_candidate_id = 0
+        existing_resolution_cache[cache_key] = best_candidate_id
+        return best_candidate_id
+
+    for item in unresolved_items:
+        resolved_existing_item_id = _resolve_existing_item_id(item)
+        if resolved_existing_item_id > 0:
+            item["item_id"] = int(resolved_existing_item_id)
+
     if _role_base(session.get("role") or "") == "Executive":
         blocked = []
         seen = set()
-        for item in items:
+        for item in (items or []):
             item_id = _safe_int(item.get("item_id"))
             name = str(item.get("item_name") or "").strip()
             if item_id or not name:
@@ -54103,7 +58817,7 @@ def _ensure_item_masters_for_po(unit: str, items: list, now_str: str):
         return [], []
 
     pending_new_items = []
-    for item in (items or []):
+    for item in unresolved_items:
         item_id = _safe_int(item.get("item_id"))
         name = str(item.get("item_name") or "").strip()
         if item_id or not name:
@@ -54111,12 +58825,6 @@ def _ensure_item_masters_for_po(unit: str, items: list, now_str: str):
         pending_new_items.append(item)
     if not pending_new_items:
         return [], []
-
-    meta = _load_item_master_lists(unit)
-    defaults = meta.get("defaults", {})
-    lookups = meta.get("lookups", {})
-    allow_zero_rate_mrp = _unit_allows_zero_rate_mrp(unit)
-    default_store_name = _default_store_name_for_unit(unit)
 
     missing_errors = []
     for item in pending_new_items:
@@ -54154,6 +58862,33 @@ def _ensure_item_masters_for_po(unit: str, items: list, now_str: str):
     user_token = str(session.get("user_id") or session.get("user") or session.get("username") or "1")
     created = []
     create_errors = []
+
+    def _resolve_saved_item_id(item_name: str, candidate_item_id: int) -> int:
+        resolved_item_id = _safe_int(candidate_item_id)
+        if resolved_item_id > 0:
+            detail_df = data_fetch.fetch_item_master_detail(unit, resolved_item_id)
+            if detail_df is not None and not detail_df.empty:
+                detail_df = _clean_df_columns(detail_df)
+                saved_name = str(detail_df.iloc[0].get("Name") or "").strip()
+                if _norm_key(saved_name) == _norm_key(item_name):
+                    return resolved_item_id
+        try:
+            data_fetch.invalidate_item_master_query_cache(unit)
+        except Exception:
+            pass
+        _invalidate_item_name_cache(unit)
+
+        detail_by_name_df = data_fetch.fetch_item_master_detail_by_exact_name(unit, item_name)
+        if detail_by_name_df is not None and not detail_by_name_df.empty:
+            detail_by_name_df = _clean_df_columns(detail_by_name_df)
+            saved_row = detail_by_name_df.iloc[0]
+            saved_name = str(saved_row.get("Name") or "").strip()
+            saved_item_id = _safe_int(saved_row.get("ID") or saved_row.get("Id"))
+            if saved_item_id > 0 and _norm_key(saved_name) == _norm_key(item_name):
+                return saved_item_id
+
+        return _safe_int(_item_name_map_for_unit(unit).get(_norm_key(item_name)))
+
     for item in pending_new_items:
         item_id = _safe_int(item.get("item_id"))
         name = str(item.get("item_name") or "").strip()
@@ -54205,10 +58940,12 @@ def _ensure_item_masters_for_po(unit: str, items: list, now_str: str):
         if result.get("error"):
             create_errors.append(f"Item '{name}': {result['error']}")
             continue
-        new_id = result.get("item_id")
-        if new_id:
-            item["item_id"] = int(new_id)
-            created.append({"id": int(new_id), "name": name})
+        resolved_item_id = _resolve_saved_item_id(name, _safe_int(result.get("item_id")))
+        if resolved_item_id <= 0:
+            create_errors.append(f"Item '{name}': item master save could not be verified.")
+            continue
+        item["item_id"] = int(resolved_item_id)
+        created.append({"id": int(resolved_item_id), "name": name})
     return created, create_errors
 
 
@@ -55112,6 +59849,29 @@ def _warm_current_occupancy_exports():
         print(f"Export warm failed: {e}")
         return
 
+FEEDBACK_COMPLAINT_WORKER_ENABLED = bool(getattr(config, "ENABLE_FEEDBACK_COMPLAINT_ESCALATION_WORKER", True))
+
+
+def _feedback_complaint_escalation_daemon():
+    poll_seconds = int(getattr(config, "FEEDBACK_COMPLAINT_ESCALATION_POLL_SECONDS", 900) or 900)
+    poll_seconds = max(300, poll_seconds)
+    dashboard_url = str(getattr(config, "HID_PUBLIC_BASE_URL", "") or "").rstrip("/")
+    if dashboard_url:
+        dashboard_url = dashboard_url + "/feedback-complaint"
+    while True:
+        try:
+            result = run_feedback_escalation_job(
+                send_graph_mail_with_attachment=_send_graph_mail_with_attachment,
+                dashboard_url=dashboard_url,
+                actor="scheduler",
+            )
+            if result.get("status") not in {"success", "skipped"}:
+                print(f"Feedback complaint escalation worker: {result}")
+        except Exception as exc:
+            print(f"Feedback complaint escalation worker error: {exc}")
+        time.sleep(poll_seconds)
+
+
 _bg_started = False
 _bg_lock = Lock()
 
@@ -55138,6 +59898,9 @@ def _ensure_bg_started():
         # start scheduled fund-position history mail thread (00:10 IST)
         if FUND_POSITION_SCHEDULE_ENABLED:
             Thread(target=_fund_position_scheduled_mail_daemon, daemon=True).start()
+        # start feedback/complaint SLA escalation checker (15 minute default)
+        if FEEDBACK_COMPLAINT_WORKER_ENABLED:
+            Thread(target=_feedback_complaint_escalation_daemon, daemon=True).start()
         # warm export caches in background (non-blocking)
         try:
             EXPORT_EXECUTOR.submit(_warm_current_occupancy_exports)
@@ -55780,7 +60543,7 @@ def _build_volume_pdf_buffer(from_date: str, to_date: str, unit: str, chart_data
     from xml.sax.saxutils import escape as xml_escape
 
     unit = (unit or "__ALL__").strip().upper() or "__ALL__"
-    cache_key = ("v4_pdf_table_wrap", from_date, to_date, unit, ",".join(sorted(allowed_units or [])))
+    cache_key = ("v6_pdf_no_census", from_date, to_date, unit, ",".join(sorted(allowed_units or [])))
     cached = _export_cache_get_bytes("volume_pdf", cache_key)
     if cached:
         return io.BytesIO(cached)
@@ -55795,6 +60558,7 @@ def _build_volume_pdf_buffer(from_date: str, to_date: str, unit: str, chart_data
     # Fetch the data
     details_df = _get_or_fetch_volume_details(units_to_use, from_date, to_date)
     discharge_kpi = data_fetch.get_volume_discharge_kpi(units_to_use, from_date, to_date)
+    ipd_census_df = None
 
     # === BUILD EXCEL-STYLE SUMMARIES ===
     df = details_df.copy()
@@ -56130,6 +60894,76 @@ def _build_volume_pdf_buffer(from_date: str, to_date: str, unit: str, chart_data
 
         story.append(Spacer(1, 15))
 
+    census_dept_style = ParagraphStyle(
+        'VolumeCensusDept',
+        parent=styles['Heading4'],
+        fontSize=11,
+        textColor=colors.HexColor('#1e3a8a'),
+        spaceBefore=6,
+        spaceAfter=4,
+        fontName='Helvetica-Bold',
+    )
+
+    def _format_census_dt(value):
+        try:
+            if value is None or pd.isna(value):
+                return ""
+            ts = pd.Timestamp(value)
+            if getattr(ts, "tzinfo", None) is not None:
+                ts = ts.tz_convert(LOCAL_TZ)
+            return ts.strftime("%d-%b-%Y %I:%M %p").lstrip("0")
+        except Exception:
+            return ""
+
+    def create_ipd_census_section(census_df: pd.DataFrame, report_date_text: str):
+        if census_df is None or census_df.empty:
+            return
+
+        story.append(Paragraph("8. Daily IPD Patient Census", section_style))
+        subtitle = f"As on {report_date_text}"
+        if from_date and to_date and str(from_date).strip() != str(to_date).strip():
+            subtitle += f" (derived from export To Date: {to_date})"
+        story.append(Paragraph(subtitle, meta_style))
+
+        for unit_name, unit_df in census_df.groupby("Unit", dropna=False, sort=False):
+            story.append(Paragraph(f"Unit: {xml_escape(str(unit_name or 'UNKNOWN'))}", unit_style))
+            for dept_name, dept_df in unit_df.groupby("Department", dropna=False, sort=False):
+                story.append(
+                    Paragraph(
+                        f"Department: {xml_escape(str(dept_name or 'Unknown Department'))} | Patients: {len(dept_df):,}",
+                        census_dept_style,
+                    )
+                )
+                for doctor_name, doctor_df in dept_df.groupby("Doctor", dropna=False, sort=False):
+                    status_counts = (
+                        doctor_df["Patient Status"]
+                        .value_counts()
+                        .reindex(["Occupied", "New Admission", "Discharge"], fill_value=0)
+                    )
+                    table_df = doctor_df[
+                        [
+                            "Patient Status",
+                            "Reg No",
+                            "Patient Name",
+                            "Ward Name",
+                            "Condition",
+                            "Patient Type",
+                            "Admission Date",
+                            "Discharge Date",
+                        ]
+                    ].copy()
+                    table_df["Admission Date"] = table_df["Admission Date"].apply(_format_census_dt)
+                    table_df["Discharge Date"] = table_df["Discharge Date"].apply(_format_census_dt)
+                    create_summary_table(
+                        table_df,
+                        (
+                            f"Doctor: {doctor_name} | "
+                            f"Occupied: {int(status_counts.get('Occupied', 0)):,} | "
+                            f"New Admission: {int(status_counts.get('New Admission', 0)):,} | "
+                            f"Discharge: {int(status_counts.get('Discharge', 0)):,}"
+                        ),
+                    )
+
     # === ADD ALL 6 SUMMARY SECTIONS ===
 
     # 1. Visit-wise
@@ -56219,6 +61053,10 @@ def _build_volume_pdf_buffer(from_date: str, to_date: str, unit: str, chart_data
         create_summary_table(discharge_overall_df, "7. IPD Discharge KPI Summary")
         create_summary_table(discharge_units_df, "7.1 Unit-wise Discharge KPI")
         create_summary_table(discharge_ward_type_df, "7.2 Ward - Discharge Type Breakdown", max_rows=45)
+
+    if ipd_census_df is not None and not ipd_census_df.empty:
+        story.append(PageBreak())
+        create_ipd_census_section(ipd_census_df, to_date or from_date)
 
     story.append(PageBreak())
 
@@ -57123,6 +61961,305 @@ def export_department_excel():
         mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
     )
 
+def _corp_bill_summary_float(value, default=0.0):
+    if value is None:
+        return float(default)
+    try:
+        if isinstance(value, bool):
+            return float(int(value))
+        if isinstance(value, Decimal):
+            return float(value)
+        if isinstance(value, (int, float, np.integer, np.floating)):
+            if isinstance(value, float) and (math.isnan(value) or math.isinf(value)):
+                return float(default)
+            return float(value)
+        text = str(value).strip()
+        if not text or text.lower() in {"none", "nan", "nat", "null"}:
+            return float(default)
+        text = re.sub(r"[^0-9.\-]", "", text.replace(",", ""))
+        if not text or text in {"-", ".", "-."}:
+            return float(default)
+        return float(text)
+    except Exception:
+        return float(default)
+
+
+def _corp_bill_summary_datetime(value):
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+    if isinstance(value, datetime):
+        return value.replace(tzinfo=None) if value.tzinfo else value
+    if isinstance(value, date):
+        return datetime.combine(value, datetime.min.time())
+    text = str(value).strip()
+    if not text or text.lower() in {"none", "nan", "nat", "null"}:
+        return None
+    normalized = text.replace("T", " ")
+    if normalized.endswith("Z"):
+        normalized = normalized[:-1] + "+00:00"
+    try:
+        parsed = datetime.fromisoformat(normalized)
+        return parsed.replace(tzinfo=None) if parsed.tzinfo else parsed
+    except Exception:
+        pass
+    for candidate in (text, text[:19], text[:10]):
+        for fmt in ("%Y-%m-%d %H:%M:%S", "%Y-%m-%d", "%d-%b-%Y", "%d-%b-%y", "%d-%m-%Y", "%d/%m/%Y"):
+            try:
+                return datetime.strptime(candidate, fmt)
+            except Exception:
+                continue
+    return None
+
+
+def _corp_bill_summary_status_key(value):
+    text = str(value or "").strip().lower()
+    if text == "final submitted":
+        return "final"
+    if text == "submission pending":
+        return "pending"
+    if text == "not worked" or not text:
+        return "notworked"
+    return "other"
+
+
+def _build_corporate_bill_summary_xlsx_fast(
+    *,
+    rows: list,
+    fetch_meta: dict,
+    unit: str,
+    from_label: str,
+    to_label: str,
+    visit_type: int,
+    status_filter: str,
+    patient_subtype: str,
+    search_query: str,
+    exported_by: str,
+    exported_at: str,
+) -> bytes:
+    import xlsxwriter
+
+    preferred_columns = [
+        "CBill_ID",
+        "Visit_ID",
+        "PatientID",
+        "Registration_No",
+        "BillNo",
+        "CAmount",
+        "DueAmount",
+        "Old_Bill_Amt",
+        "Old_Bill_Date",
+        "Status",
+        "BillDate",
+        "CBill_Date",
+        "Submit_Date",
+        "VisitDate",
+        "DischargeDate",
+        "PatientName",
+        "TypeOfVisit",
+        "PatientType",
+        "PatientSubType",
+        "DocInCharge",
+        "Dept",
+    ]
+    seen_cols = set(preferred_columns)
+    extra_cols = []
+    for rec in rows[:50]:
+        if not isinstance(rec, dict):
+            continue
+        for col in rec.keys():
+            if col not in seen_cols:
+                seen_cols.add(col)
+                extra_cols.append(col)
+    columns = preferred_columns + extra_cols
+
+    money_cols = {"CAmount", "DueAmount", "Old_Bill_Amt"}
+    date_cols = {"BillDate", "CBill_Date", "Submit_Date", "VisitDate", "DischargeDate", "Old_Bill_Date"}
+    int_cols = {"CBill_ID", "Visit_ID", "PatientID"}
+    total_rows = int(len(rows))
+    total_c_amount = 0.0
+    total_due_amount = 0.0
+    total_old_bill_amount = 0.0
+    fallback_counts = {"final_submitted": 0, "submission_pending": 0, "not_worked": 0, "other_status": 0}
+    widths = [len(str(col)) for col in columns]
+
+    for row_idx, rec in enumerate(rows):
+        rec = rec if isinstance(rec, dict) else {}
+        total_c_amount += _corp_bill_summary_float(rec.get("CAmount"))
+        total_due_amount += _corp_bill_summary_float(rec.get("DueAmount"))
+        total_old_bill_amount += _corp_bill_summary_float(rec.get("Old_Bill_Amt"))
+
+        status_key = _corp_bill_summary_status_key(rec.get("Status"))
+        if status_key == "final":
+            fallback_counts["final_submitted"] += 1
+        else:
+            fallback_counts["other_status"] += 1
+        if status_key == "pending":
+            fallback_counts["submission_pending"] += 1
+        elif status_key == "notworked":
+            fallback_counts["not_worked"] += 1
+
+        if row_idx < 300:
+            for col_idx, col in enumerate(columns):
+                value = rec.get(col)
+                if value is None:
+                    continue
+                widths[col_idx] = max(widths[col_idx], min(34, len(str(value))))
+
+    status_counts_meta = fetch_meta.get("status_counts") if isinstance(fetch_meta.get("status_counts"), dict) else {}
+    scoped_total_rows = int(_corp_recon_parse_int(fetch_meta.get("scoped_total_rows"), total_rows, 0, None))
+    final_count = int(_corp_recon_parse_int(status_counts_meta.get("final_submitted"), fallback_counts["final_submitted"], 0, None))
+    submission_pending_count = int(_corp_recon_parse_int(status_counts_meta.get("submission_pending"), fallback_counts["submission_pending"], 0, None))
+    not_worked_count = int(_corp_recon_parse_int(status_counts_meta.get("not_worked"), fallback_counts["not_worked"], 0, None))
+    nonfinal_count = int(_corp_recon_parse_int(status_counts_meta.get("other_status"), max(0, scoped_total_rows - final_count), 0, None))
+    sf_label = _corp_bill_status_filter_label(status_filter)
+    date_scope_label = str(fetch_meta.get("date_scope_label") or "Bill Date").strip() or "Bill Date"
+
+    output = io.BytesIO()
+    wb = xlsxwriter.Workbook(output, {"constant_memory": True, "strings_to_urls": False, "nan_inf_to_errors": True})
+    wb.set_properties({
+        "title": f"Corporate Bill Summary - {unit}",
+        "author": str(exported_by),
+        "comments": "Generated from Corporate Management module",
+        "company": "Revenue Intelligence Dashboard",
+    })
+
+    currency_num_fmt = "[$\u20B9-4009] #,##,##0.00"
+    title_fmt = wb.add_format({"bold": True, "font_size": 14, "font_color": "#FFFFFF", "bg_color": "#0F4C81", "align": "left", "valign": "vcenter"})
+    subtitle_fmt = wb.add_format({"italic": True, "font_color": "#33597d", "font_size": 10})
+    meta_label_fmt = wb.add_format({"bold": True, "font_color": "#1F4F7A", "bg_color": "#EAF2FB", "border": 1, "align": "left", "valign": "vcenter"})
+    meta_value_fmt = wb.add_format({"font_color": "#102A43", "border": 1, "align": "left", "valign": "vcenter"})
+    meta_value_int_fmt = wb.add_format({"font_color": "#102A43", "border": 1, "align": "right", "valign": "vcenter", "num_format": "#,##0"})
+    meta_value_money_fmt = wb.add_format({"font_color": "#102A43", "border": 1, "align": "right", "valign": "vcenter", "num_format": currency_num_fmt})
+    table_header_fmt = wb.add_format({"bold": True, "font_color": "#FFFFFF", "bg_color": "#1F5B8F", "border": 1, "align": "center", "valign": "vcenter", "text_wrap": True})
+    txt_col_fmt = wb.add_format({"font_color": "#13283F", "align": "left", "valign": "vcenter"})
+    txt_cell_fmt = wb.add_format({"border": 1, "font_color": "#13283F", "align": "left", "valign": "vcenter"})
+    date_col_fmt = wb.add_format({"font_color": "#13283F", "align": "center", "num_format": "dd-mmm-yyyy hh:mm:ss"})
+    date_cell_fmt = wb.add_format({"border": 1, "font_color": "#13283F", "align": "center", "num_format": "dd-mmm-yyyy hh:mm:ss"})
+    int_col_fmt = wb.add_format({"font_color": "#13283F", "align": "right", "num_format": "0"})
+    int_cell_fmt = wb.add_format({"border": 1, "font_color": "#13283F", "align": "right", "num_format": "0"})
+    money_col_fmt = wb.add_format({"font_color": "#0F2238", "align": "right", "num_format": currency_num_fmt})
+    money_cell_fmt = wb.add_format({"border": 1, "font_color": "#0F2238", "align": "right", "num_format": currency_num_fmt, "bg_color": "#F5FAFF"})
+    status_final_fmt = wb.add_format({"border": 1, "align": "center", "bold": True, "font_color": "#166534", "bg_color": "#ECFDF3"})
+    status_pending_fmt = wb.add_format({"border": 1, "align": "center", "bold": True, "font_color": "#92400E", "bg_color": "#FEF3C7"})
+    status_notworked_fmt = wb.add_format({"border": 1, "align": "center", "bold": True, "font_color": "#9A3412", "bg_color": "#FFEDD5"})
+
+    summary_ws = wb.add_worksheet("Summary")
+    summary_ws.hide_gridlines(2)
+    summary_ws.merge_range(0, 0, 0, 8, f"Corporate Bill Summary - {unit}", title_fmt)
+    summary_ws.write(1, 0, "Filtered export generated from Corporate section", subtitle_fmt)
+    meta_rows = [
+        ("Unit", unit, "text"),
+        ("Date From", from_label, "text"),
+        ("Date To", to_label, "text"),
+        ("Date Scope", date_scope_label, "text"),
+        ("Visit Type", str(visit_type), "text"),
+        ("Patient SubType", patient_subtype or "All", "text"),
+        ("Status Filter", sf_label, "text"),
+        ("Search Query", search_query or "(none)", "text"),
+        ("Rows in Export", total_rows, "int"),
+        ("Rows in Current Scope", scoped_total_rows, "int"),
+        ("Final Submitted in Scope", final_count, "int"),
+        ("Submission Pending in Scope", submission_pending_count, "int"),
+        ("Not Worked in Scope", not_worked_count, "int"),
+        ("Other Status in Scope", nonfinal_count, "int"),
+        ("Total CAmount", total_c_amount, "money"),
+        ("Total DueAmount", total_due_amount, "money"),
+        ("Total Old Bill Amount", total_old_bill_amount, "money"),
+        ("Exported By", str(exported_by), "text"),
+        ("Exported At", exported_at, "text"),
+    ]
+    for offset, (label, value, value_kind) in enumerate(meta_rows, start=3):
+        summary_ws.write(offset, 0, label, meta_label_fmt)
+        if value_kind == "money":
+            summary_ws.merge_range(offset, 1, offset, 4, float(value), meta_value_money_fmt)
+        elif value_kind == "int":
+            summary_ws.merge_range(offset, 1, offset, 4, int(value), meta_value_int_fmt)
+        else:
+            summary_ws.merge_range(offset, 1, offset, 4, str(value), meta_value_fmt)
+    summary_ws.set_column(0, 0, 24)
+    summary_ws.set_column(1, 4, 22)
+    summary_ws.set_footer(f"&LExported By: {str(exported_by).replace('&', 'and')}&CPage &P of &N&RExported At: {str(exported_at).replace('&', 'and')}")
+
+    data_ws = wb.add_worksheet("Corporate Summary")
+    data_ws.hide_gridlines(2)
+    last_col_idx = max(0, len(columns) - 1)
+    data_ws.merge_range(0, 0, 0, max(1, last_col_idx), f"Corporate Bill Summary - {unit}", title_fmt)
+    data_ws.merge_range(1, 0, 1, max(1, last_col_idx), f"Date Range: {from_label} to {to_label} | Date Scope: {date_scope_label} | Status: {sf_label} | Rows: {total_rows}", subtitle_fmt)
+    data_ws.freeze_panes(3, 0)
+    data_ws.autofilter(2, 0, max(2, total_rows + 2), last_col_idx)
+
+    for col_idx, col_name in enumerate(columns):
+        width = max(10, min(34, widths[col_idx] + 2))
+        if col_name in money_cols:
+            data_ws.set_column(col_idx, col_idx, max(width, 15), money_col_fmt)
+        elif col_name in date_cols:
+            data_ws.set_column(col_idx, col_idx, max(width, 20), date_col_fmt)
+        elif col_name in int_cols:
+            data_ws.set_column(col_idx, col_idx, max(width, 12), int_col_fmt)
+        else:
+            data_ws.set_column(col_idx, col_idx, width, txt_col_fmt)
+        data_ws.write(2, col_idx, col_name, table_header_fmt)
+
+    for row_idx, rec in enumerate(rows, start=3):
+        rec = rec if isinstance(rec, dict) else {}
+        for col_idx, col_name in enumerate(columns):
+            value = rec.get(col_name)
+            if value is None:
+                continue
+            if col_name in money_cols:
+                data_ws.write_number(row_idx, col_idx, _corp_bill_summary_float(value))
+            elif col_name in int_cols:
+                text = str(value).strip()
+                if text:
+                    data_ws.write_number(row_idx, col_idx, int(_corp_bill_summary_float(value)))
+            elif col_name in date_cols:
+                dt_value = _corp_bill_summary_datetime(value)
+                if dt_value is not None:
+                    data_ws.write_datetime(row_idx, col_idx, dt_value)
+            else:
+                if isinstance(value, bool):
+                    data_ws.write_boolean(row_idx, col_idx, value)
+                elif isinstance(value, Decimal):
+                    data_ws.write_number(row_idx, col_idx, float(value))
+                elif isinstance(value, (int, float, np.integer, np.floating)):
+                    num_val = float(value)
+                    if math.isfinite(num_val):
+                        data_ws.write_number(row_idx, col_idx, num_val)
+                elif isinstance(value, (datetime, date)):
+                    dt_value = _corp_bill_summary_datetime(value)
+                    if dt_value is not None:
+                        data_ws.write_datetime(row_idx, col_idx, dt_value)
+                else:
+                    data_ws.write_string(row_idx, col_idx, str(value)[:32767])
+
+    if total_rows > 0:
+        first_data_row = 3
+        last_data_row = first_data_row + total_rows - 1
+        data_ws.conditional_format(first_data_row, 0, last_data_row, last_col_idx, {"type": "formula", "criteria": "=TRUE", "format": txt_cell_fmt})
+        for col_idx, col_name in enumerate(columns):
+            if col_name in money_cols:
+                data_ws.conditional_format(first_data_row, col_idx, last_data_row, col_idx, {"type": "no_blanks", "format": money_cell_fmt})
+            elif col_name in date_cols:
+                data_ws.conditional_format(first_data_row, col_idx, last_data_row, col_idx, {"type": "no_blanks", "format": date_cell_fmt})
+            elif col_name in int_cols:
+                data_ws.conditional_format(first_data_row, col_idx, last_data_row, col_idx, {"type": "no_blanks", "format": int_cell_fmt})
+        if "Status" in columns:
+            status_col = columns.index("Status")
+            data_ws.conditional_format(first_data_row, status_col, last_data_row, status_col, {"type": "text", "criteria": "containing", "value": "Final Submitted", "format": status_final_fmt})
+            data_ws.conditional_format(first_data_row, status_col, last_data_row, status_col, {"type": "text", "criteria": "containing", "value": "Submission Pending", "format": status_pending_fmt})
+            data_ws.conditional_format(first_data_row, status_col, last_data_row, status_col, {"type": "text", "criteria": "containing", "value": "Not Worked", "format": status_notworked_fmt})
+    data_ws.set_footer(f"&LExported By: {str(exported_by).replace('&', 'and')}&CPage &P of &N&RExported At: {str(exported_at).replace('&', 'and')}")
+
+    wb.close()
+    output.seek(0)
+    return output.getvalue()
+
+
 @app.route('/api/corporate/export_excel')
 @login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
 def api_corporate_export_excel():
@@ -57158,6 +62295,11 @@ def api_corporate_export_excel():
         if from_dt and to_dt and from_dt > to_dt:
             return "from_date cannot be after to_date", 400
 
+        sf_key = status_filter if status_filter in CORP_BILL_ALLOWED_STATUS_FILTERS else "all"
+        from_token = from_dt.isoformat() if from_dt else "all"
+        to_token = to_dt.isoformat() if to_dt else "all"
+        filename = f"{unit}_CorpSummary_{from_token}_{to_token}_{sf_key}.xlsx"
+
         fetch_result = data_fetch.fetch_corporate_bill_summary_rows_for_export(
             unit=unit,
             from_date=from_dt.isoformat() if from_dt else None,
@@ -57180,6 +62322,29 @@ def api_corporate_export_excel():
         rows = rows if isinstance(rows, list) else []
         if not rows:
             return "No data found matching filters", 404
+
+        fetch_meta = fetch_result.get("meta") if isinstance(fetch_result.get("meta"), dict) else {}
+        exported_by = session.get("username") or session.get("user") or "Unknown"
+        exported_at = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
+        xlsx_bytes = _build_corporate_bill_summary_xlsx_fast(
+            rows=rows,
+            fetch_meta=fetch_meta,
+            unit=unit,
+            from_label=from_dt.isoformat() if from_dt else "All",
+            to_label=to_dt.isoformat() if to_dt else "All",
+            visit_type=vt_int,
+            status_filter=sf_key,
+            patient_subtype=patient_subtype,
+            search_query=search_query,
+            exported_by=str(exported_by),
+            exported_at=exported_at,
+        )
+        return send_file(
+            io.BytesIO(xlsx_bytes),
+            as_attachment=True,
+            download_name=filename,
+            mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
+        )
 
         df = pd.DataFrame(rows)
         preferred_columns = [
@@ -57261,12 +62426,15 @@ def api_corporate_export_excel():
         exported_at = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
         from_label = from_dt.isoformat() if from_dt else "All"
         to_label = to_dt.isoformat() if to_dt else "All"
-        sf_key = status_filter if status_filter in CORP_BILL_ALLOWED_STATUS_FILTERS else "all"
         sf_label = _corp_bill_status_filter_label(sf_key)
         date_scope_label = str(fetch_meta.get("date_scope_label") or "Bill Date").strip() or "Bill Date"
 
         output = io.BytesIO()
-        with pd.ExcelWriter(output, engine="xlsxwriter") as writer:
+        with pd.ExcelWriter(
+            output,
+            engine="xlsxwriter",
+            engine_kwargs={"options": {"strings_to_urls": False}},
+        ) as writer:
             wb = writer.book
             wb.set_properties({
                 "title": f"Corporate Bill Summary - {unit}",
@@ -57424,7 +62592,7 @@ def api_corporate_export_excel():
             data_ws.merge_range(0, 0, 0, max(1, len(df.columns) - 1), f"Corporate Bill Summary - {unit}", title_fmt)
             data_ws.merge_range(1, 0, 1, max(1, len(df.columns) - 1), f"Date Range: {from_label} to {to_label} | Date Scope: {date_scope_label} | Status: {sf_label} | Rows: {total_rows}", subtitle_fmt)
 
-            write_df = df.copy()
+            write_df = df
             write_df.to_excel(writer, sheet_name="Corporate Summary", index=False, header=False, startrow=3)
             for idx, col_name in enumerate(write_df.columns):
                 data_ws.write(2, idx, col_name, table_header_fmt)
@@ -57500,11 +62668,9 @@ def api_corporate_export_excel():
             )
 
         output.seek(0)
-        from_token = from_dt.isoformat() if from_dt else "all"
-        to_token = to_dt.isoformat() if to_dt else "all"
-        filename = f"{unit}_CorpSummary_{from_token}_{to_token}_{sf_key}.xlsx"
+        xlsx_bytes = output.getvalue()
         return send_file(
-            output,
+            io.BytesIO(xlsx_bytes),
             as_attachment=True,
             download_name=filename,
             mimetype="application/vnd.openxmlformats-officedocument.spreadsheetml.sheet",
@@ -57798,6 +62964,7 @@ def _register_mod_reports_morning_route_module():
         ensure_morning_report_tables=_ensure_morning_report_tables,
         fetch_morning_report_snapshot=_fetch_morning_report_snapshot,
         apply_morning_staff_non_med_prefill=_apply_morning_staff_non_med_prefill,
+        attach_morning_auto_sections=_attach_morning_auto_sections,
         ensure_morning_death_summary_row=_ensure_morning_death_summary_row,
         build_morning_report_payload=_build_morning_report_payload,
         build_morning_report_excel=_build_morning_report_excel,
@@ -57881,6 +63048,37 @@ def _register_mis_pharmacy_department_issue_route_module():
     )
 
 
+def _register_pharmacy_sales_route_module():
+    register_pharmacy_sales_routes(
+        app,
+        login_required=login_required,
+        has_section_access=has_section_access,
+        allowed_units_for_session=_allowed_units_for_session,
+        clean_df_columns=_clean_df_columns,
+        sanitize_json_payload=_sanitize_json_payload,
+        safe_float=_safe_float,
+        safe_int=_safe_int,
+        audit_log_event=_audit_log_event,
+        local_tz=LOCAL_TZ,
+    )
+
+
+def _register_canteen_route_module():
+    register_canteen_routes(
+        app,
+        login_required=login_required,
+        allowed_units_for_session=_allowed_units_for_session,
+        has_section_access=has_section_access,
+        clean_df_columns=_clean_df_columns,
+        sanitize_json_payload=_sanitize_json_payload,
+        safe_float=_safe_float,
+        safe_int=_safe_int,
+        audit_log_event=_audit_log_event,
+        local_tz=LOCAL_TZ,
+        send_canteen_bulk_notification=_queue_canteen_bulk_order_notification,
+    )
+
+
 def _register_occupancy_route_module():
     register_occupancy_routes(
         app,
@@ -57913,6 +63111,48 @@ def _register_patient_journey_route_module():
         modification_units=_modification_units,
         sanitize_json_payload=_sanitize_json_payload,
         coerce_int=_coerce_int,
+    )
+
+
+def _register_asset_management_route_module():
+    app.register_blueprint(
+        create_asset_management_blueprint(
+            login_required=login_required,
+            allowed_units_for_session=_allowed_units_for_session,
+            excel_job_get=_excel_job_get,
+            excel_job_update=_excel_job_update,
+            export_cache_get_bytes=_export_cache_get_bytes,
+            export_cache_put_bytes=_export_cache_put_bytes,
+            export_executor=EXPORT_EXECUTOR,
+            audit_log_event=_audit_log_event,
+            local_tz=LOCAL_TZ,
+            get_login_db_connection=_get_login_db_connection,
+            push_user_notification=_push_user_notification,
+            send_graph_mail_with_attachment=_send_graph_mail_with_attachment,
+        )
+    )
+
+
+def _register_feedback_complaint_route_module():
+    app.register_blueprint(
+        create_feedback_complaint_blueprint(
+            login_required=login_required,
+            allowed_units_for_session=_allowed_units_for_session,
+            sanitize_json_payload=_sanitize_json_payload,
+            local_tz=LOCAL_TZ,
+            send_graph_mail_with_attachment=_send_graph_mail_with_attachment,
+        )
+    )
+
+
+def _register_govt_scheme_tracker_route_module():
+    app.register_blueprint(
+        create_govt_scheme_tracker_blueprint(
+            login_required=login_required,
+            analytics_allowed_units_for_session=_analytics_allowed_units_for_session,
+            route_section_map=ROUTE_SECTION_MAP,
+            local_tz=LOCAL_TZ,
+        )
     )
 
 
@@ -57952,9 +63192,12 @@ def _register_purchase_route_modules():
         ensure_purchase_unit_master_entry=_ensure_purchase_unit_master_entry,
         mirror_new_item_master_to_family=_mirror_new_item_master_to_family,
         item_master_descriptive_name_max=ITEM_MASTER_DESCRIPTIVE_NAME_MAX,
+        item_master_default_medicine_type_id=ITEM_MASTER_DEFAULTS["medicine_type_id"],
         local_tz=LOCAL_TZ,
         safe_float=_safe_float,
         audit_log_event=_audit_log_event,
+        invalidate_item_master_meta_cache=_invalidate_item_master_meta_cache,
+        invalidate_item_name_cache=_invalidate_item_name_cache,
     )
 
     register_purchase_pm_indent_routes(
@@ -58087,8 +63330,13 @@ _register_mis_laboratory_summary_route_module()
 _register_mis_radiology_summary_route_module()
 _register_mis_pharmacy_stock_ledger_route_module()
 _register_mis_pharmacy_department_issue_route_module()
+_register_pharmacy_sales_route_module()
+_register_canteen_route_module()
 _register_occupancy_route_module()
 _register_patient_journey_route_module()
+_register_asset_management_route_module()
+_register_feedback_complaint_route_module()
+_register_govt_scheme_tracker_route_module()
 _register_purchase_route_modules()
 # ============================================================
 # Launch App
@@ -58105,7 +63353,7 @@ if __name__ == '__main__':
 
     _ensure_bg_started()  # start background threads once
     # Run without Flask debug/reloader to mirror production; use a WSGI server (see wsgi.py) for deployment.
-    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False)
+    app.run(host='0.0.0.0', port=port, debug=False, use_reloader=False, threaded=True)
 
 
 

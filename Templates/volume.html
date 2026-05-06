@@ -621,6 +621,18 @@
     flex: 1;
   }
   #vt-modal-chart{ width:100%; height:100%; }
+  .btn#vt-census-export-pdf{
+    background: linear-gradient(135deg, #10b981, #059669);
+  }
+  .btn#vt-census-export-pdf:hover{
+    background: linear-gradient(135deg, #059669, #047857);
+    box-shadow: 0 4px 12px rgba(16, 185, 129, 0.3);
+  }
+  .btn:disabled{
+    opacity:.6;
+    cursor:not-allowed;
+    transform:none !important;
+  }
 
   /* ===== Top actions: bell + timer + fab (match dashboard) ===== */
   .top-actions{
@@ -776,9 +788,22 @@
       </label>
       <label style="font-size:14px; color:#475569;">From <input id="vt-from" type="date" class="vt-input"></label>
       <label style="font-size:14px; color:#475569;">To <input id="vt-to" type="date" class="vt-input"></label>
-      <button class="btn" id="vt-load">Load</button>
-      <button class="btn secondary" id="vt-export">Export Excel</button>
-      <button class="btn" id="vt-export-pdf" style="background:#10b981;">Export PDF</button>
+      <button class="btn" id="vt-load" type="button">Load</button>
+      <button class="btn secondary" id="vt-export" type="button">Export Excel</button>
+      <button class="btn" id="vt-export-pdf" type="button" style="background:#10b981;">Export PDF</button>
+    </div>
+  </div>
+
+  <div class="vt-card vt-head vt-census-card">
+    <div class="row">
+      <strong style="font-size:16px; color:#0f172a;">IPD Daily Census</strong>
+      <span class="muted">Occupied / New Admission / Discharge</span>
+    </div>
+    <div class="row">
+      <label style="font-size:14px; color:#475569;">Unit <select id="vt-census-unit" class="vt-input"></select></label>
+      <label style="font-size:14px; color:#475569;">Date <input id="vt-census-date" type="date" class="vt-input"></label>
+      <button class="btn secondary" id="vt-census-export-excel" type="button">Export Excel</button>
+      <button class="btn" id="vt-census-export-pdf" type="button">Export PDF</button>
     </div>
   </div>
 
@@ -1037,11 +1062,17 @@
   const unitSel= document.getElementById('vt-unit');
   const unitWrap = document.getElementById('unit-wrap');
   const LS_UNIT_KEY = 'vt_unit_choice';
+  const censusUnitSel = document.getElementById('vt-census-unit');
+  const censusDateEl = document.getElementById('vt-census-date');
+  const censusExcelBtn = document.getElementById('vt-census-export-excel');
+  const censusPdfBtn = document.getElementById('vt-census-export-pdf');
+  const LS_CENSUS_UNIT_KEY = 'vt_ipd_census_unit_choice';
 
   const today  = new Date();
   const iso = d => d.toISOString().slice(0,10);
   fromEl.value = iso(today);
   toEl.value   = iso(today);
+  if(censusDateEl) censusDateEl.value = toEl.value;
 
   const countEl = document.getElementById('vt-count');
   const toastEl = document.getElementById('vt-toast');
@@ -1765,7 +1796,7 @@
   }
 
   function setLoading(on){
-    const cards = document.querySelectorAll('.vt-card');
+    const cards = document.querySelectorAll('.vt-card:not(.vt-census-card)');
     cards.forEach(card=>{
       let o = card.querySelector('.loading');
       if(on){
@@ -1887,8 +1918,81 @@
     syncModalBodyLock();
   }
 
+  function syncCensusControls(){
+    const unitVal = censusUnitSel ? (censusUnitSel.value || '__ALL__') : '__ALL__';
+    const dateVal = censusDateEl ? (censusDateEl.value || toEl.value || iso(today)) : (toEl.value || iso(today));
+    if(censusDateEl) censusDateEl.value = dateVal;
+    localStorage.setItem(LS_CENSUS_UNIT_KEY, unitVal);
+  }
+
+  function censusExportUrl(kind){
+    syncCensusControls();
+    const reportDate = (censusDateEl && censusDateEl.value) || toEl.value;
+    const unitVal = (censusUnitSel && censusUnitSel.value) || '__ALL__';
+    if(!reportDate){
+      showToast('<strong>Date required</strong><br/><small>Select an IPD census date.</small>');
+      return '';
+    }
+    const endpoint = kind === 'pdf' ? '/api/volume_ipd_census_export_pdf' : '/api/volume_ipd_census_export';
+    let url = `${endpoint}?date=${encodeURIComponent(reportDate)}`;
+    if(unitVal && unitVal !== '__ALL__'){
+      url += `&unit=${encodeURIComponent(unitVal)}`;
+    }
+    return url;
+  }
+
+  function exportCensus(kind, btn){
+    const url = censusExportUrl(kind);
+    if(!url) return;
+    const originalText = btn ? btn.textContent : '';
+    if(btn){
+      btn.disabled = true;
+      btn.textContent = kind === 'pdf' ? 'Preparing PDF...' : 'Preparing Excel...';
+    }
+    if(kind === 'pdf'){
+      window.open(url, '_blank');
+    } else {
+      window.location.href = url;
+    }
+    showToast('<strong>IPD Census Export Started</strong><br/><small>Your download will begin shortly...</small>');
+    if(btn){
+      setTimeout(()=>{
+        btn.disabled = false;
+        btn.textContent = originalText;
+      }, 1800);
+    }
+  }
+
   // Units
+  function populateCensusUnits(units){
+    const upperUnits = (units || []).map(u=>String(u || '').toUpperCase()).filter(Boolean);
+    if(!censusUnitSel) return;
+    const prev = localStorage.getItem(LS_CENSUS_UNIT_KEY) || localStorage.getItem(LS_UNIT_KEY) || '__ALL__';
+    censusUnitSel.innerHTML = '';
+    if(upperUnits.length > 1){
+      const all = document.createElement('option');
+      all.value = '__ALL__';
+      all.textContent = 'All Units (combined)';
+      censusUnitSel.appendChild(all);
+    }
+    upperUnits.forEach((u)=>{
+      const opt = document.createElement('option');
+      opt.value = u;
+      opt.textContent = u;
+      censusUnitSel.appendChild(opt);
+    });
+    if(upperUnits.length === 1){
+      censusUnitSel.value = upperUnits[0];
+      censusUnitSel.disabled = true;
+    } else {
+      censusUnitSel.disabled = false;
+      censusUnitSel.value = (prev === '__ALL__' || upperUnits.includes(prev)) ? prev : '__ALL__';
+    }
+    syncCensusControls();
+  }
+
   function populateUnits(units){
+  populateCensusUnits(units);
   if(!units || units.length<=1){ unitWrap.style.display = 'none'; return; }
   unitWrap.style.display = '';
   const prev = localStorage.getItem(LS_UNIT_KEY) || '__ALL__';
@@ -3359,6 +3463,18 @@ function setCityPareto(dataArr, breakdownByCity){
       if(e.target && e.target.closest('[data-close-discharge]')) closeDischargeWardModal();
     });
   }
+  if(censusUnitSel){
+    censusUnitSel.addEventListener('change', syncCensusControls);
+  }
+  if(censusDateEl){
+    censusDateEl.addEventListener('change', syncCensusControls);
+  }
+  if(censusExcelBtn){
+    censusExcelBtn.addEventListener('click', ()=>exportCensus('excel', censusExcelBtn));
+  }
+  if(censusPdfBtn){
+    censusPdfBtn.addEventListener('click', ()=>exportCensus('pdf', censusPdfBtn));
+  }
   document.addEventListener('keydown', (e)=>{
     if(e.key !== 'Escape') return;
     if(dischargeModalEl && dischargeModalEl.classList.contains('open')){
@@ -3375,10 +3491,56 @@ function setCityPareto(dataArr, breakdownByCity){
       if(modalChart) modalChart.resize();
     }
   });
-  document.getElementById('vt-export').addEventListener('click', ()=>{
+  document.getElementById('vt-export').addEventListener('click', async ()=>{
     const f = fromEl.value, t = toEl.value;
     const unitQ = currentUnitParam();
-    window.location.href = `/api/volume_export?from=${f}&to=${t}${unitQ}`;
+    const btn = document.getElementById('vt-export');
+    const originalText = btn.textContent;
+    btn.disabled = true;
+    btn.textContent = 'Preparing Excel...';
+    try{
+      const res = await fetch(`/api/volume_export?from=${f}&to=${t}${unitQ}`, { cache: 'no-store' });
+      if(!res.ok){
+        let message = 'Export failed';
+        try{
+          const js = await res.json();
+          if(js && js.message) message = js.message;
+        }catch(_err){
+          try{
+            const text = await res.text();
+            if(text) message = text;
+          }catch(_err2){}
+        }
+        throw new Error(message);
+      }
+
+      const blob = await res.blob();
+      const contentDisposition = res.headers.get('Content-Disposition') || '';
+      let fileName = `Volume_Tracker_${f}_to_${t}.xlsx`;
+      const utfMatch = contentDisposition.match(/filename\*=UTF-8''([^;]+)/i);
+      const plainMatch = contentDisposition.match(/filename=\"?([^\";]+)\"?/i);
+      if(utfMatch && utfMatch[1]){
+        fileName = decodeURIComponent(utfMatch[1]);
+      }else if(plainMatch && plainMatch[1]){
+        fileName = plainMatch[1];
+      }
+
+      const blobUrl = window.URL.createObjectURL(blob);
+      const link = document.createElement('a');
+      link.href = blobUrl;
+      link.download = fileName;
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      window.URL.revokeObjectURL(blobUrl);
+      showToast('<strong>Excel Export Started</strong><br/><small>Your download will begin shortly...</small>');
+    }catch(err){
+      console.error('Excel export error:', err);
+      showToast('<strong>Export Failed</strong><br/><small>' + escapeHtml(err && err.message ? err.message : 'Unable to export Excel.') + '</small>');
+    }finally{
+      btn.textContent = originalText;
+      btn.disabled = false;
+    }
   });
   if(hcvDoctorExportBtn){
     hcvDoctorExportBtn.addEventListener('click', ()=>{

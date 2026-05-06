@@ -1,0 +1,170 @@
+{% extends "asset_management/_base.html" %}
+
+{% block page_actions %}
+  <button type="button" class="asset-btn primary" id="reportsExportExcel">Export Excel</button>
+  <button type="button" class="asset-btn secondary" id="reportsExportPdf">Export PDF</button>
+{% endblock %}
+
+{% block asset_page %}
+  <section class="asset-card">
+    <div class="asset-toolbar">
+      <h3 style="margin:0;">Export Filters</h3>
+      <button type="submit" class="asset-btn secondary" form="reportFilterForm">Refresh Preview</button>
+    </div>
+    <form id="reportFilterForm" method="get">
+      <div class="asset-filter-grid">
+        <div class="asset-field">
+          <label>Search</label>
+          <input class="asset-input" name="search" value="{{ filters.search }}" placeholder="Asset code, equipment, holder">
+        </div>
+        <div class="asset-field">
+          <label>Machine Type</label>
+          <select class="asset-select" name="machine_type">
+            <option value="">All machine types</option>
+            {% for item in lookups.machine_types %}
+              <option value="{{ item.id }}" {% if filters.machine_type == item.id|string %}selected{% endif %}>{{ item.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="asset-field">
+          <label>Equipment</label>
+          <select class="asset-select" name="equ_id">
+            <option value="">All equipment</option>
+            {% for item in lookups.equipment %}
+              <option value="{{ item.id }}" {% if filters.equ_id == item.id|string %}selected{% endif %}>{{ item.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="asset-field">
+          <label>Location</label>
+          <select class="asset-select" name="location_code">
+            <option value="">All locations</option>
+            {% for item in lookups.locations %}
+              <option value="{{ item.code }}" {% if filters.location_code == item.code %}selected{% endif %}>{{ item.code }} - {{ item.name }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="asset-field">
+          <label>Status</label>
+          <select class="asset-select" name="status_code">
+            <option value="">All statuses</option>
+            {% for item in lookups.status_options %}
+              <option value="{{ item.value }}" {% if filters.status_code == item.value|string %}selected{% endif %}>{{ item.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="asset-field">
+          <label>Warranty</label>
+          <select class="asset-select" name="warranty_bucket">
+            {% for item in lookups.warranty_bucket_options %}
+              <option value="{{ item.value }}" {% if filters.warranty_bucket == item.value %}selected{% endif %}>{{ item.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+        <div class="asset-field">
+          <label>Coverage Priority</label>
+          <select class="asset-select" name="coverage_alert">
+            {% for item in lookups.coverage_alert_options %}
+              <option value="{{ item.value }}" {% if filters.coverage_alert == item.value %}selected{% endif %}>{{ item.label }}</option>
+            {% endfor %}
+          </select>
+        </div>
+      </div>
+    </form>
+  </section>
+
+  <div class="asset-grid three" style="margin-top:16px;">
+    <div class="asset-kpi">
+      <div class="asset-kpi__label">Total Assets</div>
+      <div class="asset-kpi__value">{{ summary.total_assets or 0 }}</div>
+      <div class="asset-kpi__sub">Rows that will match the export</div>
+    </div>
+    <div class="asset-kpi">
+      <div class="asset-kpi__label">In Use / In Store</div>
+      <div class="asset-kpi__value">{{ summary.in_use_count or 0 }} / {{ summary.in_store_count or 0 }}</div>
+      <div class="asset-kpi__sub">Operational distribution in the export set</div>
+    </div>
+    <div class="asset-kpi">
+      <div class="asset-kpi__label">Repair / Expiring</div>
+      <div class="asset-kpi__value">{{ summary.repair_count or 0 }} / {{ summary.expiring_30_count or 0 }}</div>
+      <div class="asset-kpi__sub">Assets needing service or warranty follow-up</div>
+    </div>
+  </div>
+
+  <div class="asset-grid two" style="margin-top:16px;">
+    <section class="asset-card">
+      <h3>Status Summary</h3>
+      <div class="asset-list">
+        {% for item in summary.status_counts %}
+          <div class="asset-list-item">
+            <div class="asset-list-item__meta">
+              <strong>{{ item.status_label }}</strong>
+              <span>{{ item.count }}</span>
+            </div>
+            <p>Included in the current report scope.</p>
+          </div>
+        {% endfor %}
+      </div>
+    </section>
+    <section class="asset-card">
+      <h3>Location Summary</h3>
+      <div class="asset-list">
+        {% for item in summary.location_counts %}
+          <div class="asset-list-item">
+            <div class="asset-list-item__meta">
+              <strong>{{ item.location_code }}</strong>
+              <span>{{ item.count }}</span>
+            </div>
+            <p>{{ item.location_name }}</p>
+          </div>
+        {% else %}
+          <div class="asset-empty">No location distribution is available for the current filters.</div>
+        {% endfor %}
+      </div>
+    </section>
+  </div>
+
+  <section class="asset-card" style="margin-top:16px;">
+    <div class="asset-toolbar">
+      <h3 style="margin:0;">Preview</h3>
+      <span class="asset-chip">{{ preview_rows|length }} preview row(s)</span>
+    </div>
+    <div class="asset-table-wrap">
+      <table class="asset-table">
+        <thead>
+          <tr>
+            <th>Asset Code</th>
+            <th>Equipment</th>
+            <th>Manufacturer</th>
+            <th>Location</th>
+            <th>Value</th>
+            <th>Coverage</th>
+            <th>Current Holder</th>
+            <th>Status</th>
+          </tr>
+        </thead>
+        <tbody>
+          {% for row in preview_rows %}
+            <tr>
+              <td>{{ row.asset_code }}</td>
+              <td>{{ row.equipment_name }}</td>
+              <td>{{ row.manufacturer_name }}</td>
+              <td>{{ row.location_name }}</td>
+              <td>{{ row.asset_value_display or "Not available" }}</td>
+              <td>{{ row.coverage_status_label or "Pending Coverage Update" }}</td>
+              <td>{{ row.current_holder_label }}</td>
+              <td><span class="asset-status asset-status-{{ row.asset_status_code }}">{{ row.asset_status_label }}</span></td>
+            </tr>
+          {% else %}
+            <tr><td colspan="8"><div class="asset-empty">No rows matched the report filters.</div></td></tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+  </section>
+
+  <script>
+    document.getElementById('reportsExportExcel').addEventListener('click', () => assetQueueExport('xlsx', assetCollectFilterPayload('reportFilterForm')));
+    document.getElementById('reportsExportPdf').addEventListener('click', () => assetQueueExport('pdf', assetCollectFilterPayload('reportFilterForm')));
+  </script>
+{% endblock %}

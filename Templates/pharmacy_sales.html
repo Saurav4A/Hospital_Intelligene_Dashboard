@@ -1,0 +1,2782 @@
+{% extends "layout.html" %}
+
+{% block page_header %}{% endblock %}
+
+{% block content %}
+<style>
+  .ps-page { width: min(1400px, calc(100vw - 32px)); margin: 14px auto 30px; color: #0f172a; font-family: "Segoe UI", system-ui, -apple-system, sans-serif; }
+  .ps-topbar { display: flex; justify-content: space-between; align-items: center; gap: 12px; margin-bottom: 12px; }
+  .ps-nav { display: flex; gap: 10px; flex-wrap: wrap; }
+  .ps-link { text-decoration: none; color: #0f172a; background: rgba(255,255,255,0.88); border: 1px solid #dbe4f0; border-radius: 999px; padding: 9px 14px; font-size: 13px; font-weight: 700; }
+  .ps-link-btn { font: inherit; cursor: pointer; }
+  .ps-badge { padding: 8px 12px; border-radius: 999px; background: #eff6ff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 12px; font-weight: 800; }
+  .ps-hero { background: linear-gradient(135deg, #0f172a, #1d4ed8 58%, #0284c7); color: #fff; border-radius: 8px; padding: 18px 22px; box-shadow: 0 18px 42px rgba(15, 23, 42, 0.16); display: grid; gap: 12px; }
+  .ps-hero h1 { margin: 0; font-size: clamp(24px, 2.2vw, 32px); line-height: 1.08; font-weight: 800; }
+  .ps-chip-row { display: flex; flex-wrap: wrap; gap: 10px; margin-top: 0; }
+  .ps-chip { display: inline-flex; align-items: center; gap: 8px; min-height: 36px; padding: 8px 12px; border-radius: 999px; background: rgba(255,255,255,0.12); border: 1px solid rgba(255,255,255,0.16); font-size: 12px; font-weight: 700; }
+  .ps-layout { display: grid; grid-template-columns: minmax(0, 1fr) minmax(290px, 320px); gap: 18px; margin-top: 18px; align-items: start; }
+  .ps-stack { display: grid; gap: 16px; }
+  .ps-panel { background: rgba(255,255,255,0.93); border: 1px solid #dbe4f0; border-radius: 8px; box-shadow: 0 16px 36px rgba(15, 23, 42, 0.08); overflow: hidden; }
+  .ps-head { padding: 16px 18px 0; display: grid; gap: 4px; }
+  .ps-head h2 { margin: 0 0 4px; font-size: 15px; }
+  .ps-head p { margin: 0; color: #64748b; font-size: 12px; }
+  .ps-step-tag { display: inline-flex; align-items: center; width: fit-content; min-height: 24px; padding: 0 10px; border-radius: 999px; background: #e0ecff; color: #1d4ed8; border: 1px solid #bfdbfe; font-size: 10px; font-weight: 900; text-transform: uppercase; letter-spacing: 0.35px; }
+  .ps-body { padding: 16px 18px 18px; }
+  .ps-banner { display: none; margin-bottom: 12px; padding: 12px 14px; border-radius: 8px; font-size: 12px; font-weight: 700; }
+  .ps-banner.show { display: block; }
+  .ps-banner.success { background: #ecfdf5; color: #166534; border: 1px solid #86efac; }
+  .ps-banner.error { background: #fef2f2; color: #991b1b; border: 1px solid #fecaca; }
+  .ps-grid { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 14px; }
+  .ps-field { grid-column: span 4; }
+  .ps-field.span-6 { grid-column: span 6; }
+  .ps-field.span-8 { grid-column: span 8; }
+  .ps-field.span-12 { grid-column: span 12; }
+  .ps-field label { display: block; margin-bottom: 6px; font-size: 11px; font-weight: 800; color: #334155; text-transform: uppercase; letter-spacing: 0.22px; }
+  .ps-field input, .ps-field textarea, .ps-field select { width: 100%; min-height: 48px; border: 1px solid #cbd5e1; border-radius: 8px; background: #fff; padding: 11px 14px; font: inherit; font-size: 16px; line-height: 1.25; color: #0f172a; }
+  .ps-field select { appearance: none; background-image: url("data:image/svg+xml,%3Csvg xmlns='http://www.w3.org/2000/svg' width='14' height='14' viewBox='0 0 14 14' fill='none'%3E%3Cpath d='M3.5 5.25L7 8.75L10.5 5.25' stroke='%23475569' stroke-width='1.6' stroke-linecap='round' stroke-linejoin='round'/%3E%3C/svg%3E"); background-repeat: no-repeat; background-position: right 14px center; background-size: 14px 14px; padding-right: 42px; text-overflow: ellipsis; white-space: nowrap; overflow: hidden; }
+  .ps-field textarea { min-height: 90px; resize: vertical; }
+  .ps-field input:focus, .ps-field textarea:focus, .ps-field select:focus { outline: none; border-color: #60a5fa; box-shadow: 0 0 0 4px rgba(96, 165, 250, 0.14); }
+  .ps-field input:disabled, .ps-field textarea:disabled, .ps-field select:disabled { background: #f8fafc; color: #64748b; cursor: not-allowed; }
+  .ps-field input::placeholder, .ps-field textarea::placeholder { color: #94a3b8; font-size: 15px; opacity: 1; }
+  .ps-help { margin-top: 5px; color: #64748b; font-size: 11px; }
+  .ps-btn:focus-visible, .ps-field input:focus-visible, .ps-field textarea:focus-visible, .ps-field select:focus-visible, .ps-icon-btn:focus-visible, .ps-result:focus-visible { outline: 3px solid rgba(37, 99, 235, 0.22); outline-offset: 2px; }
+  .ps-search-meta { display: flex; flex-wrap: wrap; justify-content: space-between; align-items: flex-start; gap: 8px 14px; margin-top: 5px; }
+  .ps-status { min-height: 16px; max-width: 240px; margin-left: auto; font-size: 11px; color: #64748b; display: inline-flex; align-items: center; justify-content: flex-end; gap: 8px; text-align: right; }
+  .ps-status.loading { color: #1d4ed8; font-weight: 700; }
+  .ps-spinner { width: 12px; height: 12px; border-radius: 999px; border: 2px solid #bfdbfe; border-top-color: #2563eb; flex: 0 0 auto; animation: ps-spin .8s linear infinite; }
+  .ps-segment { display: inline-flex; gap: 6px; padding: 4px; border-radius: 8px; background: #eff6ff; border: 1px solid #bfdbfe; }
+  .ps-segment button { min-width: 116px; min-height: 40px; border: none; border-radius: 6px; background: transparent; color: #1e40af; font-size: 12px; font-weight: 800; cursor: pointer; }
+  .ps-segment button.active { background: linear-gradient(135deg, #1d4ed8, #2563eb); color: #fff; box-shadow: 0 10px 18px rgba(37, 99, 235, 0.24); }
+  .ps-results { margin-top: 12px; border: 1px solid #dbe4f0; border-radius: 8px; background: #fff; max-height: 240px; overflow: auto; scroll-behavior: smooth; }
+  .ps-results.loading { opacity: 0.92; }
+  .ps-result { padding: 12px 14px; border-bottom: 1px solid #eef2f7; cursor: pointer; }
+  .ps-result:last-child { border-bottom: none; }
+  .ps-result:hover, .ps-result.active { background: #f8fbff; }
+  .ps-result.keyboard-active { background: #eef5ff; box-shadow: inset 3px 0 0 #2563eb; }
+  .ps-result-title { font-size: 13px; font-weight: 800; color: #0f172a; overflow-wrap: anywhere; }
+  .ps-result-meta { margin-top: 4px; display: flex; flex-wrap: wrap; gap: 10px; color: #64748b; font-size: 11px; }
+  .ps-result-meta span { min-width: 0; overflow-wrap: anywhere; }
+  .ps-selected { padding: 14px; border-radius: 8px; background: linear-gradient(180deg, #f8fbff, #f1f7ff); border: 1px solid #d6e5fb; display: grid; gap: 8px; box-shadow: inset 0 1px 0 rgba(255,255,255,0.55); }
+  .ps-selected-grid { display: grid; grid-template-columns: repeat(3, minmax(0, 1fr)); gap: 12px 18px; }
+  .ps-selected small { display: block; color: #64748b; font-size: 11px; text-transform: uppercase; font-weight: 700; }
+  .ps-selected strong { display: block; margin-top: 2px; font-size: 14px; overflow-wrap: anywhere; }
+  .ps-inline { display: flex; gap: 14px; align-items: flex-start; flex-wrap: wrap; }
+  .ps-inline .ps-field { flex: 1 1 180px; margin: 0; }
+  .ps-bucket-wrap { flex: 0 0 258px; min-width: 220px; }
+  .ps-search-wrap { flex: 1 1 540px; min-width: 0; }
+  .ps-btn { display: inline-flex; align-items: center; justify-content: center; gap: 8px; min-height: 44px; border: none; border-radius: 8px; padding: 10px 14px; font-size: 12px; font-weight: 800; cursor: pointer; transition: transform .16s ease, opacity .16s ease; }
+  .ps-btn:hover { transform: translateY(-1px); }
+  .ps-btn:disabled { opacity: 0.58; cursor: not-allowed; transform: none; }
+  .ps-btn.primary { color: #fff; background: linear-gradient(135deg, #166534, #16a34a); box-shadow: 0 12px 22px rgba(22, 101, 52, 0.22); }
+  .ps-btn.secondary { color: #0f172a; background: #eff6ff; border: 1px solid #bfdbfe; }
+  .ps-btn.ghost { color: #991b1b; background: #fef2f2; border: 1px solid #fecaca; }
+  .ps-summary { position: sticky; top: 16px; display: grid; gap: 12px; }
+  .ps-kpi { padding: 14px; border-radius: 8px; background: #f8fafc; border: 1px solid #e2e8f0; }
+  .ps-kpi small { display: block; color: #64748b; font-size: 11px; text-transform: uppercase; font-weight: 800; }
+  .ps-kpi strong { display: block; margin-top: 6px; font-size: 24px; letter-spacing: 0; }
+  .ps-kpi-row { display: grid; gap: 8px; }
+  .ps-kpi-line { display: flex; justify-content: space-between; gap: 12px; font-size: 13px; font-weight: 700; }
+  .ps-kpi-line.muted { color: #64748b; }
+  .ps-finance-card { background: linear-gradient(180deg, #ffffff, #f8fbff); }
+  .ps-receipt-card { background: linear-gradient(180deg, #fffef6, #fffaf0); border-color: #f4e2b8; }
+  .ps-amount-hero { font-variant-numeric: tabular-nums; }
+  .ps-amount-pill { display: inline-flex; align-items: center; justify-content: center; min-width: 88px; padding: 3px 10px; border-radius: 999px; font-variant-numeric: tabular-nums; }
+  .ps-amount-gross { background: #dbeafe; color: #1d4ed8; }
+  .ps-amount-discount { background: #ffe4e6; color: #be123c; }
+  .ps-amount-due { background: #dcfce7; color: #166534; }
+  .ps-amount-receipt { background: #fef3c7; color: #b45309; }
+  .ps-line-table { width: 100%; border-collapse: collapse; table-layout: fixed; min-width: 0; }
+  .ps-line-wrap { overflow-x: auto; overflow-y: hidden; border: 1px solid #dbe4f0; border-radius: 8px; }
+  .ps-line-table th, .ps-line-table td { padding: 11px 10px; border-bottom: 1px solid #e8eef6; font-size: 12px; text-align: left; vertical-align: middle; }
+  .ps-line-table th { background: #f8fafc; color: #334155; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+  .ps-line-table td.num, .ps-line-table th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .ps-line-table td:last-child, .ps-line-table th:last-child { text-align: center; }
+  .ps-line-table tr:last-child td { border-bottom: none; }
+  .ps-empty { padding: 28px 14px; text-align: center; color: #94a3b8; font-size: 13px; }
+  .ps-line-input { width: 100%; min-height: 40px; border: 1px solid #cbd5e1; border-radius: 8px; padding: 8px 10px; text-align: right; background: #fff; }
+  .ps-line-input:disabled { background: #f8fafc; color: #64748b; cursor: not-allowed; }
+  .ps-qty-input { width: 88px; }
+  .ps-mrp-input { width: 96px; }
+  .ps-qty-cell { display: flex; justify-content: flex-end; }
+  .ps-line-main { display: block; font-size: 11.5px; font-weight: 700; line-height: 1.4; color: #0f172a; white-space: normal; word-break: normal; overflow-wrap: break-word; }
+  .ps-line-sub { display: block; line-height: 1.35; color: #334155; white-space: normal; word-break: normal; overflow-wrap: break-word; }
+  .ps-batch-meta { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 10px; margin-top: 12px; }
+  .ps-medicine-grid { grid-template-columns: minmax(0, 1.55fr) minmax(240px, 1fr) minmax(120px, 0.4fr) minmax(140px, 0.5fr); align-items: end; }
+  .ps-medicine-grid .ps-field { grid-column: auto; }
+  .ps-subpanel { margin-top: 12px; padding: 14px; border-radius: 8px; border: 1px solid #d6e5fb; background: #f8fbff; display: grid; gap: 12px; }
+  .ps-subpanel[hidden] { display: none !important; }
+  .ps-mode-help { margin-top: 6px; color: #64748b; font-size: 11px; }
+  .ps-batch-meta .ps-kpi { padding: 10px 12px; }
+  .ps-icon-btn { width: 38px; min-width: 38px; min-height: 38px; border: none; border-radius: 8px; background: #fef2f2; color: #991b1b; cursor: pointer; display: inline-flex; align-items: center; justify-content: center; font-size: 0; line-height: 1; margin-inline: auto; }
+  .ps-icon-btn::before { content: "\00d7"; font-size: 18px; line-height: 1; }
+  .ps-inline-actions { display: flex; gap: 10px; align-items: end; flex-wrap: wrap; margin-top: 14px; }
+  .ps-modal-backdrop { position: fixed; inset: 0; display: none; align-items: center; justify-content: center; padding: 16px; background: rgba(15, 23, 42, 0.46); z-index: 1200; }
+  .ps-modal-backdrop.show { display: flex; }
+  .ps-modal { width: min(1240px, calc(100vw - 32px)); max-height: calc(100vh - 32px); background: rgba(255,255,255,0.98); border: 1px solid #dbe4f0; border-radius: 10px; box-shadow: 0 28px 64px rgba(15, 23, 42, 0.28); display: grid; grid-template-rows: auto 1fr; overflow: hidden; }
+  .ps-modal.ps-modal-compact { width: min(860px, calc(100vw - 32px)); }
+  .ps-modal-header { display: flex; justify-content: space-between; align-items: flex-start; gap: 14px; padding: 18px 20px; border-bottom: 1px solid #dbe4f0; background: linear-gradient(180deg, #f8fbff, #eef5ff); }
+  .ps-modal-header h3 { margin: 0; font-size: 21px; line-height: 1.15; }
+  .ps-modal-header p { margin: 4px 0 0; color: #64748b; font-size: 12px; }
+  .ps-modal-close { width: 42px; min-width: 42px; min-height: 42px; border: 1px solid #cbd5e1; border-radius: 999px; background: #fff; cursor: pointer; color: #0f172a; font-size: 0; position: relative; }
+  .ps-modal-close::before { content: "\00d7"; font-size: 22px; line-height: 1; position: absolute; inset: 0; display: flex; align-items: center; justify-content: center; }
+  .ps-modal-body { padding: 18px 20px 20px; display: grid; gap: 16px; overflow: auto; }
+  .ps-tabbar { display: inline-flex; gap: 6px; padding: 4px; border-radius: 8px; background: #eff6ff; border: 1px solid #bfdbfe; width: fit-content; }
+  .ps-tabbar button { min-width: 142px; min-height: 40px; border: none; border-radius: 6px; background: transparent; color: #1e40af; font-size: 12px; font-weight: 800; cursor: pointer; }
+  .ps-tabbar button.active { background: linear-gradient(135deg, #1d4ed8, #2563eb); color: #fff; box-shadow: 0 10px 18px rgba(37, 99, 235, 0.24); }
+  .ps-tab-panel[hidden] { display: none !important; }
+  .ps-report-stack { display: grid; gap: 16px; }
+  .ps-report-toolbar { display: grid; grid-template-columns: repeat(12, minmax(0, 1fr)); gap: 12px; align-items: end; }
+  .ps-report-toolbar .ps-field { grid-column: span 3; }
+  .ps-report-toolbar .ps-field.span-6 { grid-column: span 6; }
+  .ps-report-toolbar .ps-field.span-2 { grid-column: span 2; }
+  .ps-report-toolbar .ps-field.span-4 { grid-column: span 4; }
+  .ps-report-status { min-height: 18px; color: #64748b; font-size: 12px; display: inline-flex; align-items: center; gap: 8px; }
+  .ps-report-summary { display: grid; grid-template-columns: repeat(4, minmax(0, 1fr)); gap: 12px; }
+  .ps-report-table-wrap { border: 1px solid #dbe4f0; border-radius: 8px; overflow: auto; background: #fff; max-height: 44vh; }
+  .ps-report-table { width: 100%; border-collapse: collapse; min-width: 920px; }
+  .ps-report-table th, .ps-report-table td { padding: 10px 12px; border-bottom: 1px solid #e8eef6; font-size: 12px; text-align: left; vertical-align: top; }
+  .ps-report-table th { position: sticky; top: 0; z-index: 1; background: #f8fafc; color: #334155; font-size: 11px; font-weight: 800; text-transform: uppercase; }
+  .ps-report-table td.num, .ps-report-table th.num { text-align: right; white-space: nowrap; font-variant-numeric: tabular-nums; }
+  .ps-report-table tr:last-child td { border-bottom: none; }
+  .ps-report-empty { padding: 28px 14px; text-align: center; color: #94a3b8; font-size: 13px; }
+  .ps-report-section { display: grid; gap: 10px; }
+  .ps-report-section h4 { margin: 0; font-size: 13px; color: #0f172a; }
+  .ps-identity { display: grid; gap: 2px; }
+  .ps-identity strong { font-size: 12px; color: #0f172a; }
+  .ps-identity span { font-size: 11px; color: #64748b; }
+  .ps-inline-print { min-height: 36px; padding-inline: 12px; }
+  .ps-report-grid-note { color: #64748b; font-size: 11px; }
+  .ps-body-lock { overflow: hidden; }
+  @media (max-width: 1320px) {
+    .ps-selected-grid { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ps-batch-meta { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 1180px) {
+    .ps-layout { grid-template-columns: 1fr; }
+    .ps-summary { position: static; }
+    .ps-line-table { min-width: 860px; table-layout: auto; }
+  }
+  @media (max-width: 980px) {
+    .ps-inline { flex-direction: column; }
+    .ps-bucket-wrap, .ps-search-wrap { width: 100%; flex: 1 1 auto; }
+    .ps-status { margin-left: 0; max-width: none; justify-content: flex-start; text-align: left; }
+    .ps-medicine-grid { grid-template-columns: 1fr; }
+    .ps-report-toolbar { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+    .ps-report-toolbar .ps-field,
+    .ps-report-toolbar .ps-field.span-6,
+    .ps-report-toolbar .ps-field.span-4,
+    .ps-report-toolbar .ps-field.span-3,
+    .ps-report-toolbar .ps-field.span-2 { grid-column: auto; }
+    .ps-report-summary { grid-template-columns: repeat(2, minmax(0, 1fr)); }
+  }
+  @media (max-width: 760px) {
+    .ps-page { width: min(100vw, calc(100vw - 16px)); margin: 8px auto 20px; }
+    .ps-grid, .ps-batch-meta, .ps-selected-grid, .ps-medicine-grid { grid-template-columns: 1fr; }
+    .ps-field, .ps-field.span-6, .ps-field.span-8, .ps-field.span-12 { grid-column: span 12; }
+    .ps-segment { width: 100%; }
+    .ps-segment button { flex: 1 1 0; min-width: 0; }
+    .ps-modal { width: min(100vw, calc(100vw - 12px)); max-height: calc(100vh - 12px); }
+    .ps-modal-header, .ps-modal-body { padding-inline: 14px; }
+    .ps-tabbar { width: 100%; }
+    .ps-tabbar button { flex: 1 1 0; min-width: 0; }
+    .ps-report-summary { grid-template-columns: 1fr; }
+  }
+  @keyframes ps-spin { to { transform: rotate(360deg); } }
+</style>
+
+<div class="ps-page" id="pharmacySalePage" data-unit="{{ unit }}" data-store-id="{{ store_id }}" data-today="{{ today_iso }}" data-can-edit-mrp="{{ 1 if can_edit_mrp else 0 }}">
+  <div class="ps-topbar">
+    <div class="ps-nav">
+      <a class="ps-link" href="{{ url_for('dashboard') }}">Dashboard</a>
+      <button type="button" class="ps-link ps-link-btn" id="openReportsBtn">Reports</button>
+    </div>
+    <div class="ps-badge">Sharpsight Only</div>
+  </div>
+
+  <section class="ps-hero">
+    <h1>Pharmacy Sales/Consumptions</h1>
+    <div class="ps-chip-row">
+      <div class="ps-chip">Unit: {{ unit }}</div>
+      <div class="ps-chip">Store: {{ store_name }} ({{ store_code }})</div>
+      <div class="ps-chip">Prepared By: {{ prepared_by or 'Current User' }}</div>
+    </div>
+  </section>
+
+  <div class="ps-layout">
+    <div class="ps-stack">
+      <section class="ps-panel">
+        <div class="ps-head">
+          <div class="ps-step-tag">Step 1</div>
+          <h2>Patient Selection</h2>
+          <p>Use a linked visit for routine billing, or switch to Self Walk-In for pharmacy-only OPD customers.</p>
+        </div>
+        <div class="ps-body">
+          <div id="saleBanner" class="ps-banner"></div>
+          <div class="ps-inline">
+            <div class="ps-bucket-wrap">
+              <label style="display:block; margin-bottom:6px; font-size:11px; font-weight:800; color:#334155; text-transform:uppercase;">Visit Bucket</label>
+              <div class="ps-segment" id="visitBucketSegment">
+                <button type="button" class="active" data-bucket="OPD">OPD / DPV</button>
+                <button type="button" data-bucket="IPD">IPD</button>
+              </div>
+            </div>
+            <div class="ps-field ps-search-wrap">
+              <label>Patient Route</label>
+              <div class="ps-segment" id="patientModeSegment">
+                <button type="button" class="active" data-mode="visit">Linked Visit</button>
+                <button type="button" data-mode="walkin">Self Walk-In</button>
+              </div>
+              <div id="patientModeHelp" class="ps-mode-help">Linked Visit keeps billing tied to an OPD/IPD visit. Self Walk-In is available only inside OPD / DPV.</div>
+            </div>
+          </div>
+          <div id="visitSearchPanel">
+            <div class="ps-field ps-search-wrap" style="margin-top:12px;">
+              <label for="patientSearch">Search Visit</label>
+              <input id="patientSearch" type="text" placeholder="Search SharpSight UHID, reg no, patient, visit, or admission">
+              <div class="ps-search-meta">
+                <div class="ps-help">Search results stay limited to the selected OPD/IPD bucket.</div>
+                <div id="patientSearchStatus" class="ps-status" aria-live="polite"></div>
+              </div>
+            </div>
+            <div class="ps-results" id="patientResults" role="listbox" aria-label="Patient search results"></div>
+          </div>
+          <div id="walkinPanel" class="ps-subpanel" hidden>
+            <div class="ps-grid">
+              <div class="ps-field span-6">
+                <label for="walkinPatientName">Patient Name</label>
+                <input id="walkinPatientName" type="text" placeholder="Enter the customer name">
+              </div>
+              <div class="ps-field span-6">
+                <label for="walkinDoctor">Prescribed By</label>
+                <input id="walkinDoctor" type="text" list="walkinDoctorOptions" placeholder="Type or pick a doctor name">
+                <datalist id="walkinDoctorOptions"></datalist>
+                <div id="walkinDoctorStatus" class="ps-help">Doctor suggestions are loaded from `employee_mst`; manual entry is also allowed.</div>
+              </div>
+            </div>
+          </div>
+          <div id="selectedPatient" class="ps-selected" style="display:none; margin-top:12px;">
+            <div class="ps-selected-grid">
+              <div><small>Patient</small><strong id="selectedPatientName">-</strong></div>
+              <div><small>Registration No.</small><strong id="selectedRegNo">-</strong></div>
+              <div><small>SharpSight UHID</small><strong id="selectedSharpSightUhid">-</strong></div>
+              <div><small>Visit / Admission</small><strong id="selectedVisitNo">-</strong></div>
+              <div><small>Visit Type</small><strong id="selectedVisitType">-</strong></div>
+              <div><small>Visit Date</small><strong id="selectedVisitDate">-</strong></div>
+              <div><small>Consultant</small><strong id="selectedConsultant">-</strong></div>
+              <div><small>Fulfilment</small><strong id="selectedTransactionMode">-</strong></div>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="ps-panel">
+        <div class="ps-head">
+          <div class="ps-step-tag">Step 2</div>
+          <h2>Add Medicines</h2>
+          <p>Search, pick batch, adjust billing MRP if needed, then add the line.</p>
+        </div>
+        <div class="ps-body">
+          <div class="ps-grid ps-medicine-grid">
+            <div class="ps-field">
+              <label for="itemSearch">Item Name</label>
+              <input id="itemSearch" type="text" placeholder="Search medicine name or code">
+              <div id="itemResults" class="ps-results" style="display:none; max-height:220px;" role="listbox" aria-label="Item search results"></div>
+            </div>
+            <div class="ps-field">
+              <label for="batchSelect">Batch</label>
+              <select id="batchSelect" disabled>
+                <option value="">Choose batch</option>
+              </select>
+            </div>
+            <div class="ps-field">
+              <label for="lineQty">Quantity</label>
+              <input id="lineQty" type="number" min="0.01" step="0.01" value="1">
+            </div>
+            <div class="ps-field">
+              <label for="lineMrp">Billing MRP</label>
+              <input id="lineMrp" type="number" min="0" step="0.01" value="0.00" inputmode="decimal" enterkeyhint="next">
+            </div>
+          </div>
+          <div class="ps-help">Arrow keys move through patient and item matches. Enter selects. Enter moves across batch, MRP, and quantity, then adds the line.</div>
+
+          <div class="ps-batch-meta" id="batchMeta">
+            <div class="ps-kpi"><small>Stock Qty</small><strong id="metaStockQty">0.00</strong></div>
+            <div class="ps-kpi"><small>Expiry</small><strong id="metaExpiry">-</strong></div>
+            <div class="ps-kpi"><small>Batch MRP</small><strong id="metaMrp">0.00</strong></div>
+            <div class="ps-kpi"><small>Rate</small><strong id="metaRate">0.00</strong></div>
+          </div>
+
+          <div class="ps-inline-actions">
+            <button type="button" class="ps-btn secondary" id="addLineBtn">Add Item</button>
+            <button type="button" class="ps-btn ghost" id="clearLinesBtn">Clear Lines</button>
+          </div>
+
+          <div class="ps-line-wrap" style="margin-top:14px;">
+            <table class="ps-line-table">
+              <colgroup>
+                <col style="width:48px;">
+                <col style="width:32%;">
+                <col style="width:140px;">
+                <col style="width:112px;">
+                <col style="width:90px;">
+                <col style="width:104px;">
+                <col style="width:104px;">
+                <col style="width:112px;">
+                <col style="width:58px;">
+              </colgroup>
+              <thead>
+                <tr>
+                  <th style="width:34px;">#</th>
+                  <th>Item</th>
+                  <th>Batch</th>
+                  <th>Expiry</th>
+                  <th class="num">Stock</th>
+                  <th class="num">Qty</th>
+                  <th class="num">MRP</th>
+                  <th class="num">Amount</th>
+                  <th style="width:54px;">&nbsp;</th>
+                </tr>
+              </thead>
+              <tbody id="lineItemsBody">
+                <tr><td colspan="9" class="ps-empty">No medicines added yet.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+    </div>
+
+    <aside class="ps-summary">
+      <section class="ps-panel">
+        <div class="ps-head">
+          <div class="ps-step-tag">Step 3</div>
+          <h2>Bill Controls</h2>
+          <p>Review totals, capture payment in the same flow, then save and print.</p>
+        </div>
+        <div class="ps-body">
+          <div class="ps-grid">
+            <div class="ps-field span-12">
+              <label for="saleDate">Sale Date</label>
+              <input id="saleDate" type="date" value="{{ today_iso }}">
+            </div>
+            <div class="ps-field span-12">
+              <label for="discountAmount">Discount Amount</label>
+              <input id="discountAmount" type="number" min="0" step="0.01" value="0">
+            </div>
+            <div class="ps-field span-12">
+              <label for="saleRemarks">Remarks</label>
+              <textarea id="saleRemarks" placeholder="Add remark if needed"></textarea>
+            </div>
+          </div>
+
+          <div class="ps-kpi ps-finance-card" style="margin-top:14px;">
+            <small>Net Due</small>
+            <strong id="netAmountDisplay" class="ps-amount-hero ps-amount-due">0.00</strong>
+            <div class="ps-kpi-row" style="margin-top:10px;">
+              <div class="ps-kpi-line muted"><span>Gross</span><span id="grossAmountDisplay" class="ps-amount-pill ps-amount-gross">0.00</span></div>
+              <div class="ps-kpi-line muted"><span>Discount</span><span id="discountAmountDisplay" class="ps-amount-pill ps-amount-discount">0.00</span></div>
+              <div class="ps-kpi-line"><span>Rounded Due</span><span id="dueAmountDisplay" class="ps-amount-pill ps-amount-due">0.00</span></div>
+            </div>
+          </div>
+
+          <div class="ps-inline-actions" style="margin-top:14px;">
+            <button type="button" class="ps-btn primary" id="savePrintBtn">Save &amp; Print</button>
+            <button type="button" class="ps-btn secondary" id="receivePaymentBtn" disabled>Receive Payment</button>
+            <button type="button" class="ps-btn secondary" id="resetFormBtn">Reset</button>
+          </div>
+          <div id="receiptDeskMeta" class="ps-help" style="margin-top:8px;">Use the quick receipt desk for OPD / self walk-in billing when payment is being collected in the same save flow.</div>
+
+          <div id="inlineReceiptPanel" class="ps-kpi ps-receipt-card" style="margin-top:12px; display:none;">
+            <small>Quick Receipt Desk</small>
+            <div class="ps-kpi-row" style="margin-top:10px;">
+              <div class="ps-kpi-line muted"><span>Bill</span><span id="inlineReceiptBillNo">-</span></div>
+              <div class="ps-kpi-line"><span>Pending Due</span><span id="inlineReceiptDue" class="ps-amount-pill ps-amount-receipt">0.00</span></div>
+            </div>
+            <div class="ps-grid" style="margin-top:10px;">
+              <div class="ps-field span-12">
+                <label for="inlineReceiptDate">Receipt Date</label>
+                <input id="inlineReceiptDate" type="date">
+              </div>
+              <div class="ps-field span-12">
+                <label for="inlineReceiptAmount">Amount To Receive</label>
+                <input id="inlineReceiptAmount" type="number" min="0" step="0.01" value="0.00">
+              </div>
+              <div class="ps-field span-12">
+                <label for="inlineReceiptPaymentMode">Payment Mode</label>
+                <select id="inlineReceiptPaymentMode">
+                  <option value="">Select payment mode</option>
+                </select>
+              </div>
+              <div class="ps-field span-12">
+                <label for="inlineReceiptNote">Receipt Note</label>
+                <textarea id="inlineReceiptNote" placeholder="Optional cash / online / reference note"></textarea>
+              </div>
+            </div>
+            <div id="inlineReceiptStatus" class="ps-help" style="margin-top:8px;">No receipt is staged by default. Leave amount at 0.00 to save the bill in due, or enter a receipt amount only when payment is being collected now.</div>
+            <div class="ps-inline-actions" style="margin-top:10px;">
+              <button type="button" class="ps-btn primary" id="inlineSaveReceiptBtn">Will Save With Bill</button>
+              <button type="button" class="ps-btn secondary" id="inlineOpenReceiptModalBtn">History</button>
+            </div>
+          </div>
+        </div>
+      </section>
+    </aside>
+  </div>
+</div>
+
+<div class="ps-modal-backdrop" id="reportsModal" aria-hidden="true">
+  <div class="ps-modal" role="dialog" aria-modal="true" aria-labelledby="reportsModalTitle">
+    <div class="ps-modal-header">
+      <div>
+        <h3 id="reportsModalTitle">Pharmacy Reports</h3>
+        <p>Review saved sale bills and admitted-IPD issues, or print the current register view for a selected date range.</p>
+      </div>
+      <button type="button" class="ps-modal-close" id="closeReportsBtn" aria-label="Close reports"></button>
+    </div>
+    <div class="ps-modal-body">
+      <div class="ps-tabbar" id="reportsTabBar">
+        <button type="button" class="active" data-report-tab="bills">Existing Bills</button>
+        <button type="button" data-report-tab="register">Sale Register</button>
+        <button type="button" data-report-tab="issues">Existing Issues</button>
+        <button type="button" data-report-tab="issue-register">Issue Register</button>
+      </div>
+
+      <section class="ps-tab-panel" id="reportsBillsPanel">
+        <div class="ps-report-stack">
+          <div class="ps-report-toolbar">
+            <div class="ps-field span-3">
+              <label for="reportBillsFrom">From Date</label>
+              <input id="reportBillsFrom" type="date">
+            </div>
+            <div class="ps-field span-3">
+              <label for="reportBillsTo">To Date</label>
+              <input id="reportBillsTo" type="date">
+            </div>
+            <div class="ps-field span-6">
+              <label for="reportBillsSearch">Find Bill</label>
+              <input id="reportBillsSearch" type="text" placeholder="Search bill no, reg no, UHID, patient, visit, or user">
+            </div>
+          </div>
+          <div class="ps-search-meta">
+            <div class="ps-report-grid-note">Use the list below to reopen and print previously saved pharmacy bills.</div>
+            <div class="ps-inline-actions" style="margin-top:0;">
+              <div id="reportBillsStatus" class="ps-report-status" aria-live="polite"></div>
+              <button type="button" class="ps-btn secondary" id="printBillsReportBtn">Print List</button>
+              <button type="button" class="ps-btn secondary" id="refreshBillsReportBtn">Load Bills</button>
+            </div>
+          </div>
+          <div class="ps-report-table-wrap">
+            <table class="ps-report-table">
+              <thead>
+                <tr>
+                  <th>Bill Date</th>
+                  <th>Bill No.</th>
+                  <th>Patient</th>
+                  <th>Reg / UHID</th>
+                  <th>Visit</th>
+                  <th class="num">Received</th>
+                  <th class="num">Due</th>
+                  <th>Generated By</th>
+                  <th>&nbsp;</th>
+                </tr>
+              </thead>
+              <tbody id="reportBillsBody">
+                <tr><td colspan="9" class="ps-report-empty">Open reports to load existing bills.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="ps-tab-panel" id="reportsRegisterPanel" hidden>
+        <div class="ps-report-stack">
+          <div class="ps-report-toolbar">
+            <div class="ps-field span-3">
+              <label for="reportRegisterFrom">From Date</label>
+              <input id="reportRegisterFrom" type="date">
+            </div>
+            <div class="ps-field span-3">
+              <label for="reportRegisterTo">To Date</label>
+              <input id="reportRegisterTo" type="date">
+            </div>
+            <div class="ps-field span-6">
+              <label for="reportRegisterSearch">Optional Filter</label>
+              <input id="reportRegisterSearch" type="text" placeholder="Optional: narrow by bill, patient, reg no, UHID, visit, or user">
+            </div>
+          </div>
+          <div class="ps-search-meta">
+            <div class="ps-report-grid-note">Sale register shows bill-wise activity with daily totals for the selected date range.</div>
+            <div class="ps-inline-actions" style="margin-top:0;">
+              <div id="reportRegisterStatus" class="ps-report-status" aria-live="polite"></div>
+              <button type="button" class="ps-btn secondary" id="printRegisterReportBtn">Print Register</button>
+              <button type="button" class="ps-btn secondary" id="refreshRegisterReportBtn">Load Register</button>
+            </div>
+          </div>
+
+          <div class="ps-report-summary">
+            <div class="ps-kpi"><small>Bills</small><strong id="registerBillCount">0</strong></div>
+            <div class="ps-kpi"><small>Total Qty</small><strong id="registerQtyTotal">0.00</strong></div>
+            <div class="ps-kpi"><small>Gross</small><strong id="registerGrossTotal">0.00</strong></div>
+            <div class="ps-kpi"><small>Net</small><strong id="registerNetTotal">0.00</strong></div>
+          </div>
+
+          <div class="ps-report-section">
+            <h4>Daily Summary</h4>
+            <div class="ps-report-table-wrap" style="max-height:220px;">
+              <table class="ps-report-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th class="num">Bills</th>
+                    <th class="num">Lines</th>
+                    <th class="num">Qty</th>
+                    <th class="num">Gross</th>
+                    <th class="num">Discount</th>
+                    <th class="num">Net</th>
+                  </tr>
+                </thead>
+                <tbody id="reportRegisterDailyBody">
+                  <tr><td colspan="7" class="ps-report-empty">Load the sale register to view daily totals.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="ps-report-section">
+            <h4>Bill-wise Register</h4>
+            <div class="ps-report-table-wrap">
+              <table class="ps-report-table">
+                <thead>
+                  <tr>
+                    <th>Sale Date</th>
+                    <th>Bill No.</th>
+                    <th>Patient</th>
+                    <th>Reg / UHID</th>
+                    <th>Visit</th>
+                    <th class="num">Lines</th>
+                    <th class="num">Qty</th>
+                    <th class="num">Gross</th>
+                    <th class="num">Discount</th>
+                    <th class="num">Net</th>
+                    <th>Generated By</th>
+                    <th>&nbsp;</th>
+                  </tr>
+                </thead>
+                <tbody id="reportRegisterBody">
+                  <tr><td colspan="12" class="ps-report-empty">Load the sale register to view bill-wise sales.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+
+      <section class="ps-tab-panel" id="reportsIssuesPanel" hidden>
+        <div class="ps-report-stack">
+          <div class="ps-report-toolbar">
+            <div class="ps-field span-3">
+              <label for="reportIssuesFrom">From Date</label>
+              <input id="reportIssuesFrom" type="date">
+            </div>
+            <div class="ps-field span-3">
+              <label for="reportIssuesTo">To Date</label>
+              <input id="reportIssuesTo" type="date">
+            </div>
+            <div class="ps-field span-6">
+              <label for="reportIssuesSearch">Find Issue</label>
+              <input id="reportIssuesSearch" type="text" placeholder="Search issue no, reg no, UHID, patient, visit, or user">
+            </div>
+          </div>
+          <div class="ps-search-meta">
+            <div class="ps-report-grid-note">Use the list below to reopen and print previously saved admitted-IPD consumption issues.</div>
+            <div class="ps-inline-actions" style="margin-top:0;">
+              <div id="reportIssuesStatus" class="ps-report-status" aria-live="polite"></div>
+              <button type="button" class="ps-btn secondary" id="printIssuesReportBtn">Print List</button>
+              <button type="button" class="ps-btn secondary" id="refreshIssuesReportBtn">Load Issues</button>
+            </div>
+          </div>
+          <div class="ps-report-table-wrap">
+            <table class="ps-report-table">
+              <thead>
+                <tr>
+                  <th>Issue Date</th>
+                  <th>Issue No.</th>
+                  <th>Patient</th>
+                  <th>Reg / UHID</th>
+                  <th>Visit</th>
+                  <th class="num">Net</th>
+                  <th>Generated By</th>
+                  <th>&nbsp;</th>
+                </tr>
+              </thead>
+              <tbody id="reportIssuesBody">
+                <tr><td colspan="8" class="ps-report-empty">Open reports to load existing issues.</td></tr>
+              </tbody>
+            </table>
+          </div>
+        </div>
+      </section>
+
+      <section class="ps-tab-panel" id="reportsIssueRegisterPanel" hidden>
+        <div class="ps-report-stack">
+          <div class="ps-report-toolbar">
+            <div class="ps-field span-3">
+              <label for="reportIssueRegisterFrom">From Date</label>
+              <input id="reportIssueRegisterFrom" type="date">
+            </div>
+            <div class="ps-field span-3">
+              <label for="reportIssueRegisterTo">To Date</label>
+              <input id="reportIssueRegisterTo" type="date">
+            </div>
+            <div class="ps-field span-6">
+              <label for="reportIssueRegisterSearch">Optional Filter</label>
+              <input id="reportIssueRegisterSearch" type="text" placeholder="Optional: narrow by issue, patient, reg no, UHID, visit, or user">
+            </div>
+          </div>
+          <div class="ps-search-meta">
+            <div class="ps-report-grid-note">Issue register shows admitted-IPD consumption activity with daily totals for the selected date range.</div>
+            <div class="ps-inline-actions" style="margin-top:0;">
+              <div id="reportIssueRegisterStatus" class="ps-report-status" aria-live="polite"></div>
+              <button type="button" class="ps-btn secondary" id="printIssueRegisterReportBtn">Print Register</button>
+              <button type="button" class="ps-btn secondary" id="refreshIssueRegisterReportBtn">Load Register</button>
+            </div>
+          </div>
+
+          <div class="ps-report-summary">
+            <div class="ps-kpi"><small>Issues</small><strong id="issueRegisterCount">0</strong></div>
+            <div class="ps-kpi"><small>Total Qty</small><strong id="issueRegisterQtyTotal">0.00</strong></div>
+            <div class="ps-kpi"><small>Gross</small><strong id="issueRegisterGrossTotal">0.00</strong></div>
+            <div class="ps-kpi"><small>Net</small><strong id="issueRegisterNetTotal">0.00</strong></div>
+          </div>
+
+          <div class="ps-report-section">
+            <h4>Daily Summary</h4>
+            <div class="ps-report-table-wrap" style="max-height:220px;">
+              <table class="ps-report-table">
+                <thead>
+                  <tr>
+                    <th>Date</th>
+                    <th class="num">Issues</th>
+                    <th class="num">Lines</th>
+                    <th class="num">Qty</th>
+                    <th class="num">Gross</th>
+                    <th class="num">Discount</th>
+                    <th class="num">Net</th>
+                  </tr>
+                </thead>
+                <tbody id="reportIssueRegisterDailyBody">
+                  <tr><td colspan="7" class="ps-report-empty">Load the issue register to view daily totals.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+
+          <div class="ps-report-section">
+            <h4>Issue-wise Register</h4>
+            <div class="ps-report-table-wrap">
+              <table class="ps-report-table">
+                <thead>
+                  <tr>
+                    <th>Issue Date</th>
+                    <th>Issue No.</th>
+                    <th>Patient</th>
+                    <th>Reg / UHID</th>
+                    <th>Visit</th>
+                    <th class="num">Lines</th>
+                    <th class="num">Qty</th>
+                    <th class="num">Gross</th>
+                    <th class="num">Discount</th>
+                    <th class="num">Net</th>
+                    <th>Generated By</th>
+                    <th>&nbsp;</th>
+                  </tr>
+                </thead>
+                <tbody id="reportIssueRegisterBody">
+                  <tr><td colspan="12" class="ps-report-empty">Load the issue register to view issue-wise activity.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </div>
+      </section>
+    </div>
+  </div>
+</div>
+
+<div class="ps-modal-backdrop" id="dueModal" aria-hidden="true">
+  <div class="ps-modal ps-modal-compact" role="dialog" aria-modal="true" aria-labelledby="dueModalTitle">
+    <div class="ps-modal-header">
+      <div>
+        <h3 id="dueModalTitle">Receipt / Due Collection</h3>
+        <p>Receive full or partial payment for OPD / self walk-in pharmacy bills, then keep collecting the pending due later from the same bill.</p>
+      </div>
+      <button type="button" class="ps-modal-close" id="closeDueModalBtn" aria-label="Close receipt modal"></button>
+    </div>
+    <div class="ps-modal-body">
+      <div id="dueModalBanner" class="ps-banner"></div>
+      <div id="dueBillSummary" class="ps-selected" style="display:grid;">
+        <div class="ps-selected-grid">
+          <div><small>Bill No.</small><strong id="dueBillNo">-</strong></div>
+          <div><small>Patient</small><strong id="duePatientName">-</strong></div>
+          <div><small>Reg / UHID</small><strong id="dueIdentity">-</strong></div>
+          <div><small>Visit</small><strong id="dueVisitLabel">-</strong></div>
+          <div><small>Received</small><strong id="dueReceivedAmount">0.00</strong></div>
+          <div><small>Pending Due</small><strong id="duePendingAmount">0.00</strong></div>
+        </div>
+      </div>
+
+      <div class="ps-grid">
+        <div class="ps-field span-6">
+          <label for="receiptDate">Receipt Date</label>
+          <input id="receiptDate" type="date">
+        </div>
+        <div class="ps-field span-6">
+          <label for="receiptAmount">Amount To Receive</label>
+          <input id="receiptAmount" type="number" min="0.01" step="0.01" value="0">
+        </div>
+        <div class="ps-field span-6">
+          <label for="receiptPaymentMode">Payment Mode</label>
+          <select id="receiptPaymentMode">
+            <option value="">Select payment mode</option>
+          </select>
+        </div>
+        <div class="ps-field span-6">
+          <label for="receiptNote">Receipt Note</label>
+          <textarea id="receiptNote" placeholder="Optional cash / online / reference note"></textarea>
+        </div>
+      </div>
+
+      <div class="ps-search-meta">
+        <div id="dueModalStatus" class="ps-report-status" aria-live="polite"></div>
+        <div class="ps-inline-actions" style="margin-top:0;">
+          <button type="button" class="ps-btn secondary" id="dueModalPrintBillBtn">Print Bill</button>
+          <button type="button" class="ps-btn primary" id="saveReceiptBtn">Save Receipt</button>
+        </div>
+      </div>
+
+      <div class="ps-report-section">
+        <h4>Receipt History</h4>
+        <div class="ps-report-table-wrap" style="max-height:240px;">
+          <table class="ps-report-table">
+            <thead>
+              <tr>
+                <th>Receipt Date</th>
+                <th>Receipt No.</th>
+                <th>Payment Mode</th>
+                <th class="num">Amount</th>
+                <th>Received By</th>
+                <th>Note</th>
+              </tr>
+            </thead>
+            <tbody id="receiptHistoryBody">
+              <tr><td colspan="6" class="ps-report-empty">Select a bill to load its receipt history.</td></tr>
+            </tbody>
+          </table>
+        </div>
+      </div>
+    </div>
+  </div>
+</div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+(() => {
+  const state = {
+    unit: document.getElementById('pharmacySalePage')?.dataset.unit || '',
+    storeId: Number(document.getElementById('pharmacySalePage')?.dataset.storeId || 55),
+    canEditMrp: document.getElementById('pharmacySalePage')?.dataset.canEditMrp === '1',
+    visitBucket: 'OPD',
+    patientMode: 'visit',
+    patientSearchLoading: false,
+    patientSearchHint: '',
+    patientActiveIndex: -1,
+    selectedVisit: null,
+    itemResults: [],
+    itemActiveIndex: -1,
+    patientResults: [],
+    selectedItem: null,
+    selectedBatch: null,
+    batchOptions: [],
+    lines: [],
+    paymentModes: [],
+    currentReceiptBill: null,
+    receiptBillContext: null,
+    reports: {
+      activeTab: 'bills',
+      billsLoading: false,
+      billsLoaded: false,
+      billsRows: [],
+      issuesLoading: false,
+      issuesLoaded: false,
+      issuesRows: [],
+      registerLoading: false,
+      registerLoaded: false,
+      registerRows: [],
+      registerDailyRows: [],
+      registerSummary: null,
+      issueRegisterLoading: false,
+      issueRegisterLoaded: false,
+      issueRegisterRows: [],
+      issueRegisterDailyRows: [],
+      issueRegisterSummary: null,
+    },
+  };
+  let lineSeq = 1;
+  let patientTimer = null;
+  let itemTimer = null;
+  let reportBillsTimer = null;
+  let reportIssuesTimer = null;
+  let reportRegisterTimer = null;
+  let reportIssueRegisterTimer = null;
+  let patientAbortController = null;
+  let walkinDoctorTimer = null;
+
+  const els = {
+    page: document.getElementById('pharmacySalePage'),
+    banner: document.getElementById('saleBanner'),
+    openReportsBtn: document.getElementById('openReportsBtn'),
+    bucketButtons: Array.from(document.querySelectorAll('#visitBucketSegment button')),
+    patientModeButtons: Array.from(document.querySelectorAll('#patientModeSegment button')),
+    patientModeHelp: document.getElementById('patientModeHelp'),
+    patientSearch: document.getElementById('patientSearch'),
+    visitSearchPanel: document.getElementById('visitSearchPanel'),
+    walkinPanel: document.getElementById('walkinPanel'),
+    walkinPatientName: document.getElementById('walkinPatientName'),
+    walkinDoctor: document.getElementById('walkinDoctor'),
+    walkinDoctorOptions: document.getElementById('walkinDoctorOptions'),
+    walkinDoctorStatus: document.getElementById('walkinDoctorStatus'),
+    patientResults: document.getElementById('patientResults'),
+    selectedPatient: document.getElementById('selectedPatient'),
+    selectedPatientName: document.getElementById('selectedPatientName'),
+    selectedRegNo: document.getElementById('selectedRegNo'),
+    selectedSharpSightUhid: document.getElementById('selectedSharpSightUhid'),
+    patientSearchStatus: document.getElementById('patientSearchStatus'),
+    selectedVisitNo: document.getElementById('selectedVisitNo'),
+    selectedVisitType: document.getElementById('selectedVisitType'),
+    selectedVisitDate: document.getElementById('selectedVisitDate'),
+    selectedConsultant: document.getElementById('selectedConsultant'),
+    selectedTransactionMode: document.getElementById('selectedTransactionMode'),
+    itemSearch: document.getElementById('itemSearch'),
+    itemResults: document.getElementById('itemResults'),
+    batchSelect: document.getElementById('batchSelect'),
+    lineQty: document.getElementById('lineQty'),
+    lineMrp: document.getElementById('lineMrp'),
+    addLineBtn: document.getElementById('addLineBtn'),
+    clearLinesBtn: document.getElementById('clearLinesBtn'),
+    lineItemsBody: document.getElementById('lineItemsBody'),
+    discountAmount: document.getElementById('discountAmount'),
+    discountAmountDisplay: document.getElementById('discountAmountDisplay'),
+    grossAmountDisplay: document.getElementById('grossAmountDisplay'),
+    dueAmountDisplay: document.getElementById('dueAmountDisplay'),
+    netAmountDisplay: document.getElementById('netAmountDisplay'),
+    saleDate: document.getElementById('saleDate'),
+    saleRemarks: document.getElementById('saleRemarks'),
+    savePrintBtn: document.getElementById('savePrintBtn'),
+    receivePaymentBtn: document.getElementById('receivePaymentBtn'),
+    receiptDeskMeta: document.getElementById('receiptDeskMeta'),
+    inlineReceiptPanel: document.getElementById('inlineReceiptPanel'),
+    inlineReceiptBillNo: document.getElementById('inlineReceiptBillNo'),
+    inlineReceiptDue: document.getElementById('inlineReceiptDue'),
+    inlineReceiptDate: document.getElementById('inlineReceiptDate'),
+    inlineReceiptAmount: document.getElementById('inlineReceiptAmount'),
+    inlineReceiptPaymentMode: document.getElementById('inlineReceiptPaymentMode'),
+    inlineReceiptNote: document.getElementById('inlineReceiptNote'),
+    inlineReceiptStatus: document.getElementById('inlineReceiptStatus'),
+    inlineSaveReceiptBtn: document.getElementById('inlineSaveReceiptBtn'),
+    inlineOpenReceiptModalBtn: document.getElementById('inlineOpenReceiptModalBtn'),
+    resetFormBtn: document.getElementById('resetFormBtn'),
+    metaStockQty: document.getElementById('metaStockQty'),
+    metaExpiry: document.getElementById('metaExpiry'),
+    metaMrp: document.getElementById('metaMrp'),
+    metaRate: document.getElementById('metaRate'),
+    dueModal: document.getElementById('dueModal'),
+    closeDueModalBtn: document.getElementById('closeDueModalBtn'),
+    dueModalBanner: document.getElementById('dueModalBanner'),
+    dueBillNo: document.getElementById('dueBillNo'),
+    duePatientName: document.getElementById('duePatientName'),
+    dueIdentity: document.getElementById('dueIdentity'),
+    dueVisitLabel: document.getElementById('dueVisitLabel'),
+    dueReceivedAmount: document.getElementById('dueReceivedAmount'),
+    duePendingAmount: document.getElementById('duePendingAmount'),
+    receiptDate: document.getElementById('receiptDate'),
+    receiptAmount: document.getElementById('receiptAmount'),
+    receiptPaymentMode: document.getElementById('receiptPaymentMode'),
+    receiptNote: document.getElementById('receiptNote'),
+    dueModalStatus: document.getElementById('dueModalStatus'),
+    dueModalPrintBillBtn: document.getElementById('dueModalPrintBillBtn'),
+    saveReceiptBtn: document.getElementById('saveReceiptBtn'),
+    receiptHistoryBody: document.getElementById('receiptHistoryBody'),
+    reportsModal: document.getElementById('reportsModal'),
+    closeReportsBtn: document.getElementById('closeReportsBtn'),
+    reportTabButtons: Array.from(document.querySelectorAll('#reportsTabBar button[data-report-tab]')),
+    reportsBillsPanel: document.getElementById('reportsBillsPanel'),
+    reportsRegisterPanel: document.getElementById('reportsRegisterPanel'),
+    reportsIssuesPanel: document.getElementById('reportsIssuesPanel'),
+    reportsIssueRegisterPanel: document.getElementById('reportsIssueRegisterPanel'),
+    reportBillsFrom: document.getElementById('reportBillsFrom'),
+    reportBillsTo: document.getElementById('reportBillsTo'),
+    reportBillsSearch: document.getElementById('reportBillsSearch'),
+    reportBillsStatus: document.getElementById('reportBillsStatus'),
+    reportBillsBody: document.getElementById('reportBillsBody'),
+    printBillsReportBtn: document.getElementById('printBillsReportBtn'),
+    refreshBillsReportBtn: document.getElementById('refreshBillsReportBtn'),
+    reportRegisterFrom: document.getElementById('reportRegisterFrom'),
+    reportRegisterTo: document.getElementById('reportRegisterTo'),
+    reportRegisterSearch: document.getElementById('reportRegisterSearch'),
+    reportRegisterStatus: document.getElementById('reportRegisterStatus'),
+    printRegisterReportBtn: document.getElementById('printRegisterReportBtn'),
+    refreshRegisterReportBtn: document.getElementById('refreshRegisterReportBtn'),
+    registerBillCount: document.getElementById('registerBillCount'),
+    registerQtyTotal: document.getElementById('registerQtyTotal'),
+    registerGrossTotal: document.getElementById('registerGrossTotal'),
+    registerNetTotal: document.getElementById('registerNetTotal'),
+    reportRegisterDailyBody: document.getElementById('reportRegisterDailyBody'),
+    reportRegisterBody: document.getElementById('reportRegisterBody'),
+    reportIssuesFrom: document.getElementById('reportIssuesFrom'),
+    reportIssuesTo: document.getElementById('reportIssuesTo'),
+    reportIssuesSearch: document.getElementById('reportIssuesSearch'),
+    reportIssuesStatus: document.getElementById('reportIssuesStatus'),
+    reportIssuesBody: document.getElementById('reportIssuesBody'),
+    printIssuesReportBtn: document.getElementById('printIssuesReportBtn'),
+    refreshIssuesReportBtn: document.getElementById('refreshIssuesReportBtn'),
+    reportIssueRegisterFrom: document.getElementById('reportIssueRegisterFrom'),
+    reportIssueRegisterTo: document.getElementById('reportIssueRegisterTo'),
+    reportIssueRegisterSearch: document.getElementById('reportIssueRegisterSearch'),
+    reportIssueRegisterStatus: document.getElementById('reportIssueRegisterStatus'),
+    printIssueRegisterReportBtn: document.getElementById('printIssueRegisterReportBtn'),
+    refreshIssueRegisterReportBtn: document.getElementById('refreshIssueRegisterReportBtn'),
+    issueRegisterCount: document.getElementById('issueRegisterCount'),
+    issueRegisterQtyTotal: document.getElementById('issueRegisterQtyTotal'),
+    issueRegisterGrossTotal: document.getElementById('issueRegisterGrossTotal'),
+    issueRegisterNetTotal: document.getElementById('issueRegisterNetTotal'),
+    reportIssueRegisterDailyBody: document.getElementById('reportIssueRegisterDailyBody'),
+    reportIssueRegisterBody: document.getElementById('reportIssueRegisterBody'),
+  };
+  let patientRequestSeq = 0;
+  const todayIso = els.page?.dataset.today || els.saleDate?.value || new Date().toISOString().slice(0, 10);
+
+  const money = (value) => Number(value || 0).toFixed(2);
+  const safeQty = (value) => {
+    const num = Number(value);
+    return Number.isFinite(num) ? Math.max(0, num) : 0;
+  };
+  const roundHalfUp = (value) => Math.round(Number(value || 0));
+  const bucketLabel = () => state.visitBucket === 'IPD' ? 'IPD' : 'OPD / DPV';
+  const isWalkinMode = () => state.visitBucket === 'OPD' && state.patientMode === 'walkin';
+  const normalizePatientSearchInput = (value) => String(value || '')
+    .replace(/[\u2010\u2011\u2012\u2013\u2014\u2212\uFE58\uFE63\uFF0D]/g, '-')
+    .replace(/\u00A0/g, ' ')
+    .replace(/[\u200B\u200C\u200D\u2060]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim();
+  const compactSearch = (value) => normalizePatientSearchInput(value).replace(/[-/\s]/g, '').trim();
+  const escapeHtml = (value) => String(value ?? '')
+    .replace(/&/g, '&amp;')
+    .replace(/</g, '&lt;')
+    .replace(/>/g, '&gt;')
+    .replace(/"/g, '&quot;')
+    .replace(/'/g, '&#39;');
+  const batchOptionLabel = (row) => {
+    if (!row) return 'Choose batch';
+    const batchName = row.batch_name || '-';
+    const expiry = row.expiry_date || '-';
+    return `${batchName} | ${expiry}`;
+  };
+  const receiptActionLabel = (bill) => {
+    if (!bill?.bill_id) return 'Receive Payment';
+    const billNo = bill.bill_no || `Bill ${bill.bill_id}`;
+    const due = Number(bill.due_amount || 0);
+    if (due > 0) return `Receive Payment (${billNo})`;
+    return `View Receipts (${billNo})`;
+  };
+  const draftReceiptAllowed = () => {
+    if (isWalkinMode()) return true;
+    const visit = state.selectedVisit || null;
+    if (!visit?.visit_id) return false;
+    const visitType = String(visit.type_of_visit || '').trim().toUpperCase();
+    const transactionMode = String(visit.transaction_mode || 'sale').trim().toLowerCase();
+    return transactionMode === 'sale' && (visitType === 'OPD' || visitType === 'DPV');
+  };
+  const draftReceiptDueAmount = () => safeQty(els.dueAmountDisplay?.textContent || 0);
+
+  function currentInlineReceiptContext() {
+    const activeSaved = state.receiptBillContext?.bill_id ? state.receiptBillContext : null;
+    if (activeSaved?.bill_id && activeSaved.receipt_allowed) {
+      return { ...activeSaved, is_draft: false };
+    }
+    const currentSaved = state.currentReceiptBill;
+    const dueAmount = draftReceiptDueAmount();
+    if (!draftReceiptAllowed() || dueAmount <= 0) {
+      if (currentSaved?.bill_id && currentSaved.receipt_allowed) {
+        return { ...currentSaved, is_draft: false };
+      }
+      return null;
+    }
+    const draftContext = {
+      bill_id: 0,
+      bill_no: '',
+      due_amount: dueAmount,
+      receipt_allowed: true,
+      is_draft: true,
+      tmp_patient_id: isWalkinMode() ? 1 : 0,
+      patient_name: isWalkinMode() ? (els.walkinPatientName?.value || '').trim() : (state.selectedVisit?.patient_name || ''),
+      identity_label: isWalkinMode()
+        ? 'Self Walk-In'
+        : [state.selectedVisit?.registration_no || '', state.selectedVisit?.sharpsight_uhid ? `UHID ${state.selectedVisit.sharpsight_uhid}` : ''].filter(Boolean).join(' | '),
+      visit_label: isWalkinMode()
+        ? 'Self Walk-In'
+        : (state.selectedVisit?.admission_no || state.selectedVisit?.visit_no || ''),
+    };
+    if (state.lines.length || safeQty(els.discountAmount?.value) > 0 || isWalkinMode() || state.selectedVisit?.visit_id) {
+      return draftContext;
+    }
+    if (currentSaved?.bill_id && currentSaved.receipt_allowed) {
+      return { ...currentSaved, is_draft: false };
+    }
+    return draftContext;
+  }
+
+  function updateReceiptDeskMeta(context = currentInlineReceiptContext()) {
+    if (!els.receiptDeskMeta) return;
+    if (context?.bill_id && context.receipt_allowed) {
+      els.receiptDeskMeta.textContent = Number(context.due_amount || 0) > 0
+        ? `Pending due on ${context.bill_no || `bill ${context.bill_id}`}: ${money(context.due_amount)}.`
+        : `${context.bill_no || `Bill ${context.bill_id}`} is fully received. Use History for receipt review.`;
+      return;
+    }
+    if (context?.is_draft) {
+      const dueAmount = Number(context.due_amount || 0);
+      els.receiptDeskMeta.textContent = dueAmount > 0
+        ? `Receipt is optional here. Leave amount at 0.00 to save the bill fully in due, or enter any full / partial amount to post the first receipt together.`
+        : 'Quick receipt desk becomes available once an eligible OPD / self walk-in bill has a payable amount.';
+      return;
+    }
+    els.receiptDeskMeta.textContent = 'Use the quick receipt desk for OPD / self walk-in billing when payment is being collected in the same save flow.';
+  }
+
+  function applyMrpPermission() {
+    if (!els.lineMrp) return;
+    const allowed = !!state.canEditMrp;
+    els.lineMrp.disabled = !allowed;
+    els.lineMrp.readOnly = !allowed;
+    els.lineMrp.title = allowed
+      ? 'Billing MRP can be adjusted for this line.'
+      : 'MRP editing is allowed only when the Pharmacy Sales - MRP Edit right is granted.';
+    if (!allowed) syncLineMrp(true);
+  }
+
+  function setPatientActiveIndex(index, { scroll = true } = {}) {
+    if (!state.patientResults.length) {
+      state.patientActiveIndex = -1;
+      renderPatients();
+      return;
+    }
+    state.patientActiveIndex = Math.max(0, Math.min(index, state.patientResults.length - 1));
+    renderPatients();
+    if (scroll) {
+      requestAnimationFrame(() => {
+        els.patientResults?.querySelector(`.ps-result[data-result-index="${state.patientActiveIndex}"]`)?.scrollIntoView({ block: 'nearest' });
+      });
+    }
+  }
+
+  function setItemActiveIndex(index, { scroll = true } = {}) {
+    if (!state.itemResults.length) {
+      state.itemActiveIndex = -1;
+      renderItemResults();
+      return;
+    }
+    state.itemActiveIndex = Math.max(0, Math.min(index, state.itemResults.length - 1));
+    renderItemResults();
+    if (scroll) {
+      requestAnimationFrame(() => {
+        els.itemResults?.querySelector(`.ps-result[data-result-index="${state.itemActiveIndex}"]`)?.scrollIntoView({ block: 'nearest' });
+      });
+    }
+  }
+
+  function selectPatientRow(row) {
+    if (!row?.visit_id) return;
+    state.selectedVisit = row;
+    state.patientActiveIndex = state.patientResults.findIndex((item) => Number(item.visit_id) === Number(row.visit_id));
+    renderPatients();
+    renderSelectedPatient();
+    clearBanner();
+    els.itemSearch?.focus();
+  }
+
+  async function selectItemRow(row) {
+    if (!row?.item_id) return;
+    state.selectedItem = row;
+    state.itemActiveIndex = state.itemResults.findIndex((item) => Number(item.item_id) === Number(row.item_id));
+    els.itemSearch.value = row.item_name || row.display_name || '';
+    els.itemSearch.title = row.display_name || row.item_name || '';
+    els.itemResults.style.display = 'none';
+    clearBanner();
+    await fetchBatches(Number(row.item_id));
+    els.batchSelect?.focus();
+  }
+
+  function syncLineMrp(force = false) {
+    if (!els.lineMrp) return;
+    const batchMrp = Number(state.selectedBatch?.mrp || 0);
+    const currentValue = safeQty(els.lineMrp.value);
+    if (!state.canEditMrp || force || currentValue <= 0) {
+      els.lineMrp.value = money(batchMrp);
+    }
+  }
+
+  function shouldDeferPatientSearch(query, force = false) {
+    if (force) return false;
+    const raw = normalizePatientSearchInput(query);
+    if (!raw) return false;
+    const compact = compactSearch(raw);
+    if (!compact) return true;
+    const hasLetter = /[a-z]/i.test(raw);
+    if (hasLetter) return compact.length < 3;
+    return compact.length < 6;
+  }
+
+  function patientSearchHintFor(query) {
+    const raw = normalizePatientSearchInput(query);
+    if (!raw) return '';
+    const hasLetter = /[a-z]/i.test(raw);
+    return hasLetter
+      ? 'Type at least 3 characters to search by patient name.'
+      : 'Type at least 6 digits for partial number search, or press Enter to force search now.';
+  }
+
+  function showBanner(message, type = 'error') {
+    els.banner.textContent = message || '';
+    els.banner.className = `ps-banner show ${type}`;
+  }
+
+  function clearBanner() {
+    els.banner.textContent = '';
+    els.banner.className = 'ps-banner';
+  }
+
+  function setReportStatus(element, message = '', loading = false) {
+    if (!element) return;
+    if (!message) {
+      element.textContent = '';
+      return;
+    }
+    element.innerHTML = loading
+      ? '<span class="ps-spinner" aria-hidden="true"></span><span></span>'
+      : '<span></span>';
+    const label = element.querySelector('span:last-child');
+    if (label) label.textContent = message;
+  }
+
+  function setModalBanner(element, message = '', type = 'error') {
+    if (!element) return;
+    if (!message) {
+      element.textContent = '';
+      element.className = 'ps-banner';
+      return;
+    }
+    element.textContent = message;
+    element.className = `ps-banner show ${type}`;
+  }
+
+  async function fetchJson(url, options = {}) {
+    const headers = new Headers(options.headers || {});
+    if (!headers.has('Accept')) headers.set('Accept', 'application/json');
+    if (!headers.has('X-Requested-With')) headers.set('X-Requested-With', 'XMLHttpRequest');
+    if (!headers.has('X-Session-Activity')) headers.set('X-Session-Activity', 'true');
+    const response = await fetch(url, {
+      credentials: 'same-origin',
+      ...options,
+      headers,
+    });
+    const contentType = String(response.headers.get('content-type') || '').toLowerCase();
+    if (contentType.includes('application/json')) {
+      const data = await response.json();
+      if (response.status === 401 && data?.session_expired) {
+        window.location.assign('/login');
+        throw new Error(data.message || 'Session expired. Please sign in again.');
+      }
+      return { response, data };
+    }
+    const text = await response.text();
+    if (response.status === 401 || /<title>\s*login/i.test(text) || /<!doctype html/i.test(text)) {
+      window.location.assign('/login');
+      throw new Error('Session expired. Please sign in again.');
+    }
+    throw new Error('Unexpected server response. Please refresh and try again.');
+  }
+
+  function populatePaymentModes() {
+    const options = ['<option value="">Select payment mode</option>'].concat(
+      (state.paymentModes || []).map((row) => `<option value="${row.payment_mode_id}">${escapeHtml(row.payment_mode_name || '')}</option>`)
+    );
+    [els.receiptPaymentMode, els.inlineReceiptPaymentMode].forEach((select) => {
+      if (!select) return;
+      select.innerHTML = options.join('');
+    });
+  }
+
+  function setCurrentReceiptBill(bill) {
+    state.currentReceiptBill = bill?.bill_id ? {
+      bill_id: Number(bill.bill_id || 0),
+      bill_no: bill.bill_no || '',
+      patient_name: bill.patient_name || '',
+      identity_label: bill.identity_label || '',
+      visit_label: bill.visit_label || '',
+      tmp_patient_id: Number(bill.tmp_patient_id || 0),
+      received_amount: Number(bill.received_amount || 0),
+      due_amount: Number(bill.due_amount || 0),
+      print_url: bill.print_url || (bill.bill_id ? `/api/pharmacy/sales/${bill.bill_id}/print` : ''),
+      receipt_allowed: !!bill.receipt_allowed,
+    } : null;
+    if (!els.receivePaymentBtn || !els.receiptDeskMeta) return;
+    const current = state.currentReceiptBill;
+    const canOpenSavedReceiptDesk = !!current?.bill_id && !!current.receipt_allowed;
+    els.receivePaymentBtn.style.display = canOpenSavedReceiptDesk ? '' : 'none';
+    els.receivePaymentBtn.disabled = !canOpenSavedReceiptDesk;
+    els.receivePaymentBtn.textContent = receiptActionLabel(current);
+    updateReceiptDeskMeta();
+    renderInlineReceiptPanel();
+  }
+
+  function renderInlineReceiptPanel() {
+    if (!els.inlineReceiptPanel) return;
+    const context = currentInlineReceiptContext();
+    const billId = Number(context?.bill_id || 0);
+    const dueAmount = Number(context?.due_amount || 0);
+    const isDraft = !!context?.is_draft && !billId;
+    const currentAmount = safeQty(els.inlineReceiptAmount?.value);
+    const showPanel = !!context;
+    els.inlineReceiptPanel.style.display = showPanel ? 'block' : 'none';
+    updateReceiptDeskMeta(context);
+    if (!showPanel) return;
+    if (els.inlineReceiptBillNo) els.inlineReceiptBillNo.textContent = billId ? (context?.bill_no || '-') : 'Will generate on save';
+    if (els.inlineReceiptDue) els.inlineReceiptDue.textContent = money(dueAmount);
+    if (els.inlineReceiptDate && !els.inlineReceiptDate.value) {
+      els.inlineReceiptDate.value = todayIso;
+    }
+    if (els.inlineReceiptAmount) {
+      if (currentAmount > dueAmount) {
+        els.inlineReceiptAmount.value = dueAmount > 0 ? money(dueAmount) : '0.00';
+      } else if (!Number.isFinite(Number(els.inlineReceiptAmount.value)) || els.inlineReceiptAmount.value === '') {
+        els.inlineReceiptAmount.value = '0.00';
+      }
+      els.inlineReceiptAmount.disabled = dueAmount <= 0;
+    }
+    const stagedAmount = Math.min(safeQty(els.inlineReceiptAmount?.value), dueAmount);
+    const wantsReceiptNow = stagedAmount > 0;
+    if (els.inlineReceiptPaymentMode) {
+      if (isDraft && !wantsReceiptNow) {
+        els.inlineReceiptPaymentMode.value = '';
+      } else if (!els.inlineReceiptPaymentMode.value && state.paymentModes.length === 1) {
+        els.inlineReceiptPaymentMode.value = String(state.paymentModes[0].payment_mode_id);
+      }
+      els.inlineReceiptPaymentMode.disabled = isDraft ? (dueAmount <= 0 || !wantsReceiptNow) : (dueAmount <= 0);
+    }
+    if (els.inlineReceiptNote) {
+      if (isDraft && !wantsReceiptNow) {
+        els.inlineReceiptNote.value = '';
+      }
+      els.inlineReceiptNote.disabled = isDraft ? (dueAmount <= 0 || !wantsReceiptNow) : (dueAmount <= 0);
+    }
+    if (els.inlineSaveReceiptBtn) {
+      els.inlineSaveReceiptBtn.style.display = isDraft ? 'none' : '';
+      els.inlineSaveReceiptBtn.disabled = isDraft || dueAmount <= 0;
+      els.inlineSaveReceiptBtn.textContent = 'Save Receipt';
+    }
+    if (els.inlineOpenReceiptModalBtn) {
+      els.inlineOpenReceiptModalBtn.style.display = isDraft ? 'none' : '';
+      els.inlineOpenReceiptModalBtn.disabled = !billId;
+    }
+    if (els.inlineReceiptStatus) {
+      if (isDraft) {
+        els.inlineReceiptStatus.textContent = stagedAmount > 0
+          ? `Receipt of ${money(stagedAmount)} will be posted together with the bill when you click Save & Print.`
+          : 'No receipt is staged. Save & Print will create the bill with the amount pending in due.';
+      } else {
+        els.inlineReceiptStatus.textContent = dueAmount > 0
+          ? `Ready to receive ${money(dueAmount)} against ${context?.bill_no || `bill ${billId}`}.`
+          : `${context?.bill_no || `Bill ${billId}`} is fully received. Use History to review receipts.`;
+      }
+    }
+  }
+
+  function renderPatientMode() {
+    const walkinAllowed = state.visitBucket === 'OPD';
+    if (!walkinAllowed && state.patientMode === 'walkin') state.patientMode = 'visit';
+    els.patientModeButtons.forEach((btn) => {
+      btn.disabled = btn.dataset.mode === 'walkin' && !walkinAllowed;
+      btn.classList.toggle('active', btn.dataset.mode === state.patientMode);
+    });
+    if (els.patientModeHelp) {
+      els.patientModeHelp.textContent = walkinAllowed
+        ? 'Linked Visit keeps billing attached to a visit. Self Walk-In creates a TMPPatient-based OPD sale.'
+        : 'Self Walk-In is available only in OPD / DPV. IPD always stays linked to the patient visit.';
+    }
+    if (els.visitSearchPanel) els.visitSearchPanel.style.display = isWalkinMode() ? 'none' : '';
+    if (els.walkinPanel) els.walkinPanel.hidden = !isWalkinMode();
+    renderInlineReceiptPanel();
+  }
+
+  function reportRangeStart(daysBack = 0) {
+    const base = new Date(`${todayIso}T00:00:00`);
+    base.setDate(base.getDate() - Math.max(0, daysBack));
+    return base.toISOString().slice(0, 10);
+  }
+
+  function ensureReportDefaults() {
+    if (els.reportBillsFrom && !els.reportBillsFrom.value) els.reportBillsFrom.value = reportRangeStart(6);
+    if (els.reportBillsTo && !els.reportBillsTo.value) els.reportBillsTo.value = todayIso;
+    if (els.reportRegisterFrom && !els.reportRegisterFrom.value) els.reportRegisterFrom.value = todayIso;
+    if (els.reportRegisterTo && !els.reportRegisterTo.value) els.reportRegisterTo.value = todayIso;
+    if (els.reportIssuesFrom && !els.reportIssuesFrom.value) els.reportIssuesFrom.value = reportRangeStart(6);
+    if (els.reportIssuesTo && !els.reportIssuesTo.value) els.reportIssuesTo.value = todayIso;
+    if (els.reportIssueRegisterFrom && !els.reportIssueRegisterFrom.value) els.reportIssueRegisterFrom.value = todayIso;
+    if (els.reportIssueRegisterTo && !els.reportIssueRegisterTo.value) els.reportIssueRegisterTo.value = todayIso;
+  }
+
+  function setReportsModalOpen(open) {
+    if (!els.reportsModal) return;
+    els.reportsModal.classList.toggle('show', !!open);
+    els.reportsModal.setAttribute('aria-hidden', open ? 'false' : 'true');
+    document.body.classList.toggle('ps-body-lock', !!open || !!els.dueModal?.classList.contains('show'));
+  }
+
+  function setReportsTab(tab) {
+    const allowedTabs = new Set(['bills', 'register', 'issues', 'issue-register']);
+    state.reports.activeTab = allowedTabs.has(tab) ? tab : 'bills';
+    els.reportTabButtons.forEach((btn) => btn.classList.toggle('active', btn.dataset.reportTab === state.reports.activeTab));
+    if (els.reportsBillsPanel) els.reportsBillsPanel.hidden = state.reports.activeTab !== 'bills';
+    if (els.reportsRegisterPanel) els.reportsRegisterPanel.hidden = state.reports.activeTab !== 'register';
+    if (els.reportsIssuesPanel) els.reportsIssuesPanel.hidden = state.reports.activeTab !== 'issues';
+    if (els.reportsIssueRegisterPanel) els.reportsIssueRegisterPanel.hidden = state.reports.activeTab !== 'issue-register';
+    if (state.reports.activeTab === 'bills' && !state.reports.billsLoaded) {
+      fetchBillsReport().catch((err) => {
+        setReportStatus(els.reportBillsStatus, '', false);
+        showBanner(err.message);
+      });
+    }
+    if (state.reports.activeTab === 'register' && !state.reports.registerLoaded) {
+      fetchRegisterReport().catch((err) => {
+        setReportStatus(els.reportRegisterStatus, '', false);
+        showBanner(err.message);
+      });
+    }
+    if (state.reports.activeTab === 'issues' && !state.reports.issuesLoaded) {
+      fetchIssuesReport().catch((err) => {
+        setReportStatus(els.reportIssuesStatus, '', false);
+        showBanner(err.message);
+      });
+    }
+    if (state.reports.activeTab === 'issue-register' && !state.reports.issueRegisterLoaded) {
+      fetchIssueRegisterReport().catch((err) => {
+        setReportStatus(els.reportIssueRegisterStatus, '', false);
+        showBanner(err.message);
+      });
+    }
+  }
+
+  function formatIdentityHtml(row) {
+    if (Number(row.tmp_patient_id || 0) > 0) {
+      return `
+        <div class="ps-identity">
+          <strong>Self Walk-In</strong>
+          <span>${escapeHtml(row.prescribed_by ? `Prescribed By: ${row.prescribed_by}` : 'TMPPatient sale')}</span>
+        </div>
+      `;
+    }
+    const regNo = escapeHtml(row.registration_no || '-');
+    const uhid = escapeHtml(row.sharpsight_uhid || '');
+    return `
+      <div class="ps-identity">
+        <strong>${regNo}</strong>
+        <span>${uhid ? `SharpSight UHID: ${uhid}` : 'SharpSight UHID: -'}</span>
+      </div>
+    `;
+  }
+
+  function formatVisitHtml(row) {
+    if (Number(row.tmp_patient_id || 0) > 0) {
+      return `
+        <div class="ps-identity">
+          <strong>Self Walk-In</strong>
+          <span>OPD Sale</span>
+        </div>
+      `;
+    }
+    const visitText = escapeHtml(row.visit_label || row.admission_no || row.visit_no || '-');
+    const visitType = escapeHtml(row.type_of_visit || '-');
+    return `
+      <div class="ps-identity">
+        <strong>${visitText}</strong>
+        <span>${visitType}</span>
+      </div>
+    `;
+  }
+
+  function renderBillsReport() {
+    if (!els.reportBillsBody) return;
+    if (state.reports.billsLoading) {
+      els.reportBillsBody.innerHTML = '<tr><td colspan="9" class="ps-report-empty">Loading existing pharmacy bills...</td></tr>';
+      return;
+    }
+    const rows = state.reports.billsRows || [];
+    if (!rows.length) {
+      els.reportBillsBody.innerHTML = '<tr><td colspan="9" class="ps-report-empty">No pharmacy bills matched this range or search.</td></tr>';
+      return;
+    }
+    els.reportBillsBody.innerHTML = rows.map((row) => `
+      <tr>
+        <td>${escapeHtml(row.bill_date || '-')}</td>
+        <td><strong>${escapeHtml(row.bill_no || '-')}</strong></td>
+        <td>${escapeHtml(row.patient_name || '-')}</td>
+        <td>${formatIdentityHtml(row)}</td>
+        <td>${formatVisitHtml(row)}</td>
+        <td class="num">${money(row.received_amount || 0)}</td>
+        <td class="num">${money(row.due_amount || 0)}</td>
+        <td>${escapeHtml(row.generated_by || '-')}</td>
+        <td>
+          <div class="ps-inline-actions" style="margin-top:0; justify-content:flex-end;">
+            <button type="button" class="ps-btn secondary ps-inline-print" data-print-url="${escapeHtml(row.print_url || '')}">Print</button>
+            ${row.receipt_allowed ? `<button type="button" class="ps-btn secondary ps-inline-print" data-receive-bill-id="${row.bill_id}">${Number(row.due_amount || 0) > 0 ? 'Receive' : 'Receipts'}</button>` : ''}
+          </div>
+        </td>
+      </tr>
+    `).join('');
+  }
+
+  function renderRegisterReport() {
+    const summary = state.reports.registerSummary || {};
+    if (els.registerBillCount) els.registerBillCount.textContent = String(summary.bill_count || 0);
+    if (els.registerQtyTotal) els.registerQtyTotal.textContent = money(summary.total_qty || 0);
+    if (els.registerGrossTotal) els.registerGrossTotal.textContent = money(summary.gross_amount || 0);
+    if (els.registerNetTotal) els.registerNetTotal.textContent = money(summary.net_amount || 0);
+
+    if (els.reportRegisterDailyBody) {
+      if (state.reports.registerLoading) {
+        els.reportRegisterDailyBody.innerHTML = '<tr><td colspan="7" class="ps-report-empty">Loading daily register totals...</td></tr>';
+      } else if (!(state.reports.registerDailyRows || []).length) {
+        els.reportRegisterDailyBody.innerHTML = '<tr><td colspan="7" class="ps-report-empty">No sale register totals found for this date range.</td></tr>';
+      } else {
+        els.reportRegisterDailyBody.innerHTML = state.reports.registerDailyRows.map((row) => `
+          <tr>
+            <td>${escapeHtml(row.sale_date || '-')}</td>
+            <td class="num">${row.bill_count || 0}</td>
+            <td class="num">${row.line_count || 0}</td>
+            <td class="num">${money(row.total_qty || 0)}</td>
+            <td class="num">${money(row.gross_amount || 0)}</td>
+            <td class="num">${money(row.discount_amount || 0)}</td>
+            <td class="num">${money(row.net_amount || 0)}</td>
+          </tr>
+        `).join('');
+      }
+    }
+
+    if (!els.reportRegisterBody) return;
+    if (state.reports.registerLoading) {
+      els.reportRegisterBody.innerHTML = '<tr><td colspan="12" class="ps-report-empty">Loading bill-wise sale register...</td></tr>';
+      return;
+    }
+    const rows = state.reports.registerRows || [];
+    if (!rows.length) {
+      els.reportRegisterBody.innerHTML = '<tr><td colspan="12" class="ps-report-empty">No sale register rows matched this date range.</td></tr>';
+      return;
+    }
+    els.reportRegisterBody.innerHTML = rows.map((row) => `
+      <tr>
+        <td>${escapeHtml(row.sale_date || '-')}</td>
+        <td><strong>${escapeHtml(row.bill_no || '-')}</strong></td>
+        <td>${escapeHtml(row.patient_name || '-')}</td>
+        <td>${formatIdentityHtml(row)}</td>
+        <td>${formatVisitHtml(row)}</td>
+        <td class="num">${row.line_count || 0}</td>
+        <td class="num">${money(row.total_qty || 0)}</td>
+        <td class="num">${money(row.gross_amount || 0)}</td>
+        <td class="num">${money(row.discount_amount || 0)}</td>
+        <td class="num">${money(row.net_amount || 0)}</td>
+        <td>${escapeHtml(row.generated_by || '-')}</td>
+        <td><button type="button" class="ps-btn secondary ps-inline-print" data-print-url="${escapeHtml(row.print_url || `/api/pharmacy/sales/${row.bill_id}/print`)}">Print</button></td>
+      </tr>
+    `).join('');
+  }
+
+  async function fetchBillsReport() {
+    ensureReportDefaults();
+    state.reports.billsLoading = true;
+    renderBillsReport();
+    setReportStatus(els.reportBillsStatus, 'Loading existing bills...', true);
+    const url = new URL('/api/pharmacy/sales/reports/bills', window.location.origin);
+    url.searchParams.set('from_date', els.reportBillsFrom?.value || todayIso);
+    url.searchParams.set('to_date', els.reportBillsTo?.value || todayIso);
+    if ((els.reportBillsSearch?.value || '').trim()) url.searchParams.set('q', els.reportBillsSearch.value.trim());
+    url.searchParams.set('limit', '300');
+    try {
+      const { response: res, data } = await fetchJson(url);
+      if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to fetch existing bills.');
+      state.reports.billsRows = data.items || [];
+      state.reports.billsLoaded = true;
+      renderBillsReport();
+      setReportStatus(els.reportBillsStatus, `${state.reports.billsRows.length} bill${state.reports.billsRows.length === 1 ? '' : 's'} loaded.`, false);
+    } catch (err) {
+      setReportStatus(els.reportBillsStatus, '', false);
+      throw err;
+    } finally {
+      state.reports.billsLoading = false;
+      renderBillsReport();
+    }
+  }
+
+  async function fetchRegisterReport() {
+    ensureReportDefaults();
+    state.reports.registerLoading = true;
+    renderRegisterReport();
+    setReportStatus(els.reportRegisterStatus, 'Loading sale register...', true);
+    const url = new URL('/api/pharmacy/sales/reports/register', window.location.origin);
+    url.searchParams.set('from_date', els.reportRegisterFrom?.value || todayIso);
+    url.searchParams.set('to_date', els.reportRegisterTo?.value || todayIso);
+    if ((els.reportRegisterSearch?.value || '').trim()) url.searchParams.set('q', els.reportRegisterSearch.value.trim());
+    url.searchParams.set('limit', '2000');
+    try {
+      const { response: res, data } = await fetchJson(url);
+      if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to fetch sale register.');
+      state.reports.registerRows = data.items || [];
+      state.reports.registerDailyRows = data.daily_summary || [];
+      state.reports.registerSummary = data.summary || {};
+      state.reports.registerLoaded = true;
+      renderRegisterReport();
+      setReportStatus(els.reportRegisterStatus, `${state.reports.registerRows.length} register row${state.reports.registerRows.length === 1 ? '' : 's'} loaded.`, false);
+    } catch (err) {
+      setReportStatus(els.reportRegisterStatus, '', false);
+      throw err;
+    } finally {
+      state.reports.registerLoading = false;
+      renderRegisterReport();
+    }
+  }
+
+  function renderIssuesReport() {
+    if (!els.reportIssuesBody) return;
+    if (state.reports.issuesLoading) {
+      els.reportIssuesBody.innerHTML = '<tr><td colspan="8" class="ps-report-empty">Loading existing consumption issues...</td></tr>';
+      return;
+    }
+    const rows = state.reports.issuesRows || [];
+    if (!rows.length) {
+      els.reportIssuesBody.innerHTML = '<tr><td colspan="8" class="ps-report-empty">No consumption issues matched this range or search.</td></tr>';
+      return;
+    }
+    els.reportIssuesBody.innerHTML = rows.map((row) => `
+      <tr>
+        <td>${escapeHtml(row.issue_date || '-')}</td>
+        <td><strong>${escapeHtml(row.issue_no || '-')}</strong></td>
+        <td>${escapeHtml(row.patient_name || '-')}</td>
+        <td>${formatIdentityHtml(row)}</td>
+        <td>${formatVisitHtml(row)}</td>
+        <td class="num">${money(row.net_amount)}</td>
+        <td>${escapeHtml(row.generated_by || '-')}</td>
+        <td><button type="button" class="ps-btn secondary ps-inline-print" data-print-url="${escapeHtml(row.print_url || '')}">Print</button></td>
+      </tr>
+    `).join('');
+  }
+
+  function renderIssueRegisterReport() {
+    const summary = state.reports.issueRegisterSummary || {};
+    if (els.issueRegisterCount) els.issueRegisterCount.textContent = String(summary.bill_count || 0);
+    if (els.issueRegisterQtyTotal) els.issueRegisterQtyTotal.textContent = money(summary.total_qty || 0);
+    if (els.issueRegisterGrossTotal) els.issueRegisterGrossTotal.textContent = money(summary.gross_amount || 0);
+    if (els.issueRegisterNetTotal) els.issueRegisterNetTotal.textContent = money(summary.net_amount || 0);
+
+    if (els.reportIssueRegisterDailyBody) {
+      if (state.reports.issueRegisterLoading) {
+        els.reportIssueRegisterDailyBody.innerHTML = '<tr><td colspan="7" class="ps-report-empty">Loading daily issue totals...</td></tr>';
+      } else if (!(state.reports.issueRegisterDailyRows || []).length) {
+        els.reportIssueRegisterDailyBody.innerHTML = '<tr><td colspan="7" class="ps-report-empty">No issue register totals found for this date range.</td></tr>';
+      } else {
+        els.reportIssueRegisterDailyBody.innerHTML = state.reports.issueRegisterDailyRows.map((row) => `
+          <tr>
+            <td>${escapeHtml(row.sale_date || '-')}</td>
+            <td class="num">${row.bill_count || 0}</td>
+            <td class="num">${row.line_count || 0}</td>
+            <td class="num">${money(row.total_qty || 0)}</td>
+            <td class="num">${money(row.gross_amount || 0)}</td>
+            <td class="num">${money(row.discount_amount || 0)}</td>
+            <td class="num">${money(row.net_amount || 0)}</td>
+          </tr>
+        `).join('');
+      }
+    }
+
+    if (!els.reportIssueRegisterBody) return;
+    if (state.reports.issueRegisterLoading) {
+      els.reportIssueRegisterBody.innerHTML = '<tr><td colspan="12" class="ps-report-empty">Loading issue-wise register...</td></tr>';
+      return;
+    }
+    const rows = state.reports.issueRegisterRows || [];
+    if (!rows.length) {
+      els.reportIssueRegisterBody.innerHTML = '<tr><td colspan="12" class="ps-report-empty">No issue register rows matched this date range.</td></tr>';
+      return;
+    }
+    els.reportIssueRegisterBody.innerHTML = rows.map((row) => `
+      <tr>
+        <td>${escapeHtml(row.sale_date || '-')}</td>
+        <td><strong>${escapeHtml(row.issue_no || '-')}</strong></td>
+        <td>${escapeHtml(row.patient_name || '-')}</td>
+        <td>${formatIdentityHtml(row)}</td>
+        <td>${formatVisitHtml(row)}</td>
+        <td class="num">${row.line_count || 0}</td>
+        <td class="num">${money(row.total_qty || 0)}</td>
+        <td class="num">${money(row.gross_amount || 0)}</td>
+        <td class="num">${money(row.discount_amount || 0)}</td>
+        <td class="num">${money(row.net_amount || 0)}</td>
+        <td>${escapeHtml(row.generated_by || '-')}</td>
+        <td><button type="button" class="ps-btn secondary ps-inline-print" data-print-url="${escapeHtml(row.print_url || '')}">Print</button></td>
+      </tr>
+    `).join('');
+  }
+
+  async function fetchIssuesReport() {
+    ensureReportDefaults();
+    state.reports.issuesLoading = true;
+    renderIssuesReport();
+    setReportStatus(els.reportIssuesStatus, 'Loading existing issues...', true);
+    const url = new URL('/api/pharmacy/sales/reports/issues', window.location.origin);
+    url.searchParams.set('from_date', els.reportIssuesFrom?.value || todayIso);
+    url.searchParams.set('to_date', els.reportIssuesTo?.value || todayIso);
+    if ((els.reportIssuesSearch?.value || '').trim()) url.searchParams.set('q', els.reportIssuesSearch.value.trim());
+    url.searchParams.set('limit', '300');
+    try {
+      const { response: res, data } = await fetchJson(url);
+      if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to fetch existing issues.');
+      state.reports.issuesRows = data.items || [];
+      state.reports.issuesLoaded = true;
+      renderIssuesReport();
+      setReportStatus(els.reportIssuesStatus, `${state.reports.issuesRows.length} issue${state.reports.issuesRows.length === 1 ? '' : 's'} loaded.`, false);
+    } catch (err) {
+      setReportStatus(els.reportIssuesStatus, '', false);
+      throw err;
+    } finally {
+      state.reports.issuesLoading = false;
+      renderIssuesReport();
+    }
+  }
+
+  async function fetchIssueRegisterReport() {
+    ensureReportDefaults();
+    state.reports.issueRegisterLoading = true;
+    renderIssueRegisterReport();
+    setReportStatus(els.reportIssueRegisterStatus, 'Loading issue register...', true);
+    const url = new URL('/api/pharmacy/sales/reports/issue-register', window.location.origin);
+    url.searchParams.set('from_date', els.reportIssueRegisterFrom?.value || todayIso);
+    url.searchParams.set('to_date', els.reportIssueRegisterTo?.value || todayIso);
+    if ((els.reportIssueRegisterSearch?.value || '').trim()) url.searchParams.set('q', els.reportIssueRegisterSearch.value.trim());
+    url.searchParams.set('limit', '2000');
+    try {
+      const { response: res, data } = await fetchJson(url);
+      if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to fetch issue register.');
+      state.reports.issueRegisterRows = (data.items || []).map((row) => ({
+        ...row,
+        print_url: row.print_url || `/api/pharmacy/sales/issues/${row.issue_id}/print`,
+      }));
+      state.reports.issueRegisterDailyRows = data.daily_summary || [];
+      state.reports.issueRegisterSummary = data.summary || {};
+      state.reports.issueRegisterLoaded = true;
+      renderIssueRegisterReport();
+      setReportStatus(els.reportIssueRegisterStatus, `${state.reports.issueRegisterRows.length} register row${state.reports.issueRegisterRows.length === 1 ? '' : 's'} loaded.`, false);
+    } catch (err) {
+      setReportStatus(els.reportIssueRegisterStatus, '', false);
+      throw err;
+    } finally {
+      state.reports.issueRegisterLoading = false;
+      renderIssueRegisterReport();
+    }
+  }
+
+  function openReportPrint(path, params = {}) {
+    const url = new URL(path, window.location.origin);
+    Object.entries(params).forEach(([key, value]) => {
+      if (value === null || value === undefined) return;
+      const text = String(value).trim();
+      if (!text) return;
+      url.searchParams.set(key, text);
+    });
+    window.open(url.toString(), '_blank', 'noopener');
+  }
+
+  function renderReceiptHistory(rows = [], loading = false) {
+    if (!els.receiptHistoryBody) return;
+    if (loading) {
+      els.receiptHistoryBody.innerHTML = '<tr><td colspan="6" class="ps-report-empty">Loading receipt history...</td></tr>';
+      return;
+    }
+    if (!rows.length) {
+      els.receiptHistoryBody.innerHTML = '<tr><td colspan="6" class="ps-report-empty">No receipts recorded for this bill yet.</td></tr>';
+      return;
+    }
+    els.receiptHistoryBody.innerHTML = rows.map((row) => `
+      <tr>
+        <td>${escapeHtml(row.receipt_date || '-')}</td>
+        <td><strong>${escapeHtml(row.receipt_no || '-')}</strong></td>
+        <td>${escapeHtml(row.payment_mode_name || '-')}</td>
+        <td class="num">${money(row.amount || 0)}</td>
+        <td>${escapeHtml(row.received_by || '-')}</td>
+        <td>${escapeHtml(row.receipt_note || '-')}</td>
+      </tr>
+    `).join('');
+  }
+
+  function setDueModalOpen(open) {
+    if (!els.dueModal) return;
+    els.dueModal.classList.toggle('show', !!open);
+    els.dueModal.setAttribute('aria-hidden', open ? 'false' : 'true');
+    document.body.classList.toggle('ps-body-lock', !!open || !!els.reportsModal?.classList.contains('show'));
+  }
+
+  function applyReceiptContext(context) {
+    if (!context?.bill_id) return;
+    const normalized = {
+      ...context,
+      bill_id: Number(context.bill_id || 0),
+      gross_amount: Number(context.gross_amount || 0),
+      discount_amount: Number(context.discount_amount || 0),
+      net_amount: Number(context.net_amount || 0),
+      due_amount: Number(context.due_amount || 0),
+      received_amount: Number(context.received_amount || 0),
+      receipt_count: Number(context.receipt_count || 0),
+      tmp_patient_id: Number(context.tmp_patient_id || 0),
+      receipt_allowed: !!context.receipt_allowed,
+      print_url: context.print_url || `/api/pharmacy/sales/${Number(context.bill_id || 0)}/print`,
+    };
+    state.receiptBillContext = normalized;
+    setCurrentReceiptBill(normalized);
+    const mergeBill = (row) => Number(row.bill_id || 0) === normalized.bill_id
+      ? {
+          ...row,
+          due_amount: normalized.due_amount,
+          received_amount: normalized.received_amount,
+          receipt_count: normalized.receipt_count,
+          last_receipt_date: normalized.last_receipt_date || row.last_receipt_date,
+          receipt_allowed: normalized.receipt_allowed,
+          print_url: normalized.print_url,
+        }
+      : row;
+    if (state.reports.billsRows?.length) {
+      state.reports.billsRows = state.reports.billsRows.map(mergeBill);
+      renderBillsReport();
+    }
+    if (state.reports.registerRows?.length) {
+      state.reports.registerRows = state.reports.registerRows.map(mergeBill);
+      renderRegisterReport();
+    }
+  }
+
+  function renderDueModal({ loading = false } = {}) {
+    const bill = state.receiptBillContext || state.currentReceiptBill || null;
+    const billId = Number(bill?.bill_id || 0);
+    const dueAmount = Number(bill?.due_amount || 0);
+    const receivedAmount = Number(bill?.received_amount || 0);
+    if (els.dueBillNo) els.dueBillNo.textContent = bill?.bill_no || '-';
+    if (els.duePatientName) els.duePatientName.textContent = bill?.patient_name || '-';
+    if (els.dueIdentity) els.dueIdentity.textContent = bill?.identity_label || (Number(bill?.tmp_patient_id || 0) > 0 ? 'Self Walk-In' : '-');
+    if (els.dueVisitLabel) els.dueVisitLabel.textContent = bill?.visit_label || (Number(bill?.tmp_patient_id || 0) > 0 ? 'Self Walk-In' : '-');
+    if (els.dueReceivedAmount) els.dueReceivedAmount.textContent = money(receivedAmount);
+    if (els.duePendingAmount) els.duePendingAmount.textContent = money(dueAmount);
+    if (els.dueModalPrintBillBtn) els.dueModalPrintBillBtn.disabled = !billId;
+    if (loading) {
+      setReportStatus(els.dueModalStatus, 'Loading receipt desk...', true);
+      renderReceiptHistory([], true);
+      if (els.saveReceiptBtn) els.saveReceiptBtn.disabled = true;
+      return;
+    }
+    setReportStatus(els.dueModalStatus, dueAmount > 0 ? `Pending due: ${money(dueAmount)}` : 'This bill is fully received.', false);
+    renderReceiptHistory(bill?.receipts || [], false);
+    if (els.receiptDate && !els.receiptDate.value) els.receiptDate.value = todayIso;
+    if (els.receiptAmount) {
+      const currentValue = safeQty(els.receiptAmount.value);
+      if (!currentValue || currentValue > dueAmount) {
+        els.receiptAmount.value = dueAmount > 0 ? money(dueAmount) : '0.00';
+      }
+      els.receiptAmount.disabled = !billId || dueAmount <= 0;
+    }
+    if (els.receiptPaymentMode) {
+      if (!els.receiptPaymentMode.value && state.paymentModes.length === 1) {
+        els.receiptPaymentMode.value = String(state.paymentModes[0].payment_mode_id);
+      }
+      els.receiptPaymentMode.disabled = !billId || dueAmount <= 0;
+    }
+    if (els.receiptNote) els.receiptNote.disabled = !billId || dueAmount <= 0;
+    if (els.saveReceiptBtn) els.saveReceiptBtn.disabled = !billId || dueAmount <= 0;
+  }
+
+  async function openDueModalForBill(bill) {
+    const billId = Number(bill?.bill_id || 0);
+    if (!billId) {
+      showBanner('Select a valid pharmacy bill before opening receipts.');
+      return;
+    }
+    if (els.reportsModal?.classList.contains('show')) setReportsModalOpen(false);
+    setDueModalOpen(true);
+    setModalBanner(els.dueModalBanner, '', 'success');
+    state.receiptBillContext = {
+      bill_id: billId,
+      bill_no: bill.bill_no || '',
+      patient_name: bill.patient_name || '',
+      identity_label: bill.identity_label || '',
+      visit_label: bill.visit_label || '',
+      due_amount: Number(bill.due_amount || 0),
+      received_amount: Number(bill.received_amount || 0),
+      tmp_patient_id: Number(bill.tmp_patient_id || 0),
+      receipt_allowed: bill.receipt_allowed !== false,
+      receipts: [],
+      print_url: bill.print_url || `/api/pharmacy/sales/${billId}/print`,
+    };
+    renderDueModal({ loading: true });
+    try {
+      const { response: res, data } = await fetchJson(`/api/pharmacy/sales/${billId}/receipts`);
+      if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to load receipt desk.');
+      applyReceiptContext(data.bill || {});
+      renderDueModal({ loading: false });
+    } catch (err) {
+      renderDueModal({ loading: false });
+      setModalBanner(els.dueModalBanner, err.message || 'Failed to load receipt desk.');
+      throw err;
+    }
+  }
+
+  async function saveReceipt() {
+    const bill = state.receiptBillContext;
+    const billId = Number(bill?.bill_id || 0);
+    if (!billId) {
+      setModalBanner(els.dueModalBanner, 'Open a bill first before saving a receipt.');
+      return;
+    }
+    const amount = safeQty(els.receiptAmount?.value);
+    if (amount <= 0) {
+      setModalBanner(els.dueModalBanner, 'Enter a valid receipt amount greater than zero.');
+      return;
+    }
+    if (amount > Number(bill.due_amount || 0)) {
+      setModalBanner(els.dueModalBanner, `Amount cannot exceed pending due of ${money(bill.due_amount || 0)}.`);
+      return;
+    }
+    const paymentModeId = Number(els.receiptPaymentMode?.value || 0);
+    if (!paymentModeId) {
+      setModalBanner(els.dueModalBanner, 'Select a payment mode before saving the receipt.');
+      return;
+    }
+    if (els.saveReceiptBtn) els.saveReceiptBtn.disabled = true;
+    setModalBanner(els.dueModalBanner, '', 'success');
+    setReportStatus(els.dueModalStatus, 'Saving receipt...', true);
+    try {
+      const { response: res, data } = await fetchJson(`/api/pharmacy/sales/${billId}/receipts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount,
+          payment_mode_id: paymentModeId,
+          receipt_date: els.receiptDate?.value || todayIso,
+          note: els.receiptNote?.value?.trim() || '',
+        }),
+      });
+      if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to save receipt.');
+      applyReceiptContext(data.bill || {});
+      renderDueModal({ loading: false });
+      if (els.receiptNote) els.receiptNote.value = '';
+      if (els.receiptPaymentMode) els.receiptPaymentMode.value = '';
+      setModalBanner(els.dueModalBanner, `Receipt ${data.receipt_no || ''} saved successfully.`, 'success');
+      showBanner(`Receipt ${data.receipt_no || ''} saved for ${data.bill_no || `bill ${billId}`}.`, 'success');
+    } catch (err) {
+      setModalBanner(els.dueModalBanner, err.message || 'Failed to save receipt.');
+      setReportStatus(els.dueModalStatus, '', false);
+    } finally {
+      renderDueModal({ loading: false });
+    }
+  }
+
+  async function saveInlineReceipt() {
+    const bill = state.receiptBillContext?.bill_id ? state.receiptBillContext : state.currentReceiptBill;
+    const billId = Number(bill?.bill_id || 0);
+    if (!billId) {
+      showBanner('Save or load a bill before receiving payment.');
+      return;
+    }
+    const amount = safeQty(els.inlineReceiptAmount?.value);
+    if (amount <= 0) {
+      showBanner('Enter a valid receipt amount greater than zero.');
+      return;
+    }
+    if (amount > Number(bill.due_amount || 0)) {
+      showBanner(`Amount cannot exceed pending due of ${money(bill.due_amount || 0)}.`);
+      return;
+    }
+    const paymentModeId = Number(els.inlineReceiptPaymentMode?.value || 0);
+    if (!paymentModeId) {
+      showBanner('Select a payment mode before saving the receipt.');
+      return;
+    }
+    if (els.inlineSaveReceiptBtn) els.inlineSaveReceiptBtn.disabled = true;
+    if (els.inlineReceiptStatus) els.inlineReceiptStatus.textContent = 'Saving receipt...';
+    try {
+      const { response: res, data } = await fetchJson(`/api/pharmacy/sales/${billId}/receipts`, {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          amount,
+          payment_mode_id: paymentModeId,
+          receipt_date: els.inlineReceiptDate?.value || todayIso,
+          note: els.inlineReceiptNote?.value?.trim() || '',
+        }),
+      });
+      if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to save receipt.');
+      applyReceiptContext(data.bill || {});
+      if (state.receiptBillContext?.bill_id) {
+        renderDueModal({ loading: false });
+      }
+      if (els.inlineReceiptNote) els.inlineReceiptNote.value = '';
+      if (els.inlineReceiptPaymentMode) els.inlineReceiptPaymentMode.value = '';
+      showBanner(`Receipt ${data.receipt_no || ''} saved for ${data.bill_no || `bill ${billId}`}.`, 'success');
+      renderInlineReceiptPanel();
+    } catch (err) {
+      showBanner(err.message || 'Failed to save receipt.');
+      if (els.inlineReceiptStatus) els.inlineReceiptStatus.textContent = err.message || 'Failed to save receipt.';
+    } finally {
+      renderInlineReceiptPanel();
+    }
+  }
+
+  function setPatientSearchStatus(message = '', loading = false) {
+    if (!els.patientSearchStatus) return;
+    if (!message) {
+      els.patientSearchStatus.textContent = '';
+      els.patientSearchStatus.className = 'ps-status';
+      return;
+    }
+    els.patientSearchStatus.className = loading ? 'ps-status loading' : 'ps-status';
+    els.patientSearchStatus.innerHTML = loading
+      ? '<span class="ps-spinner" aria-hidden="true"></span><span></span>'
+      : '<span></span>';
+    const label = els.patientSearchStatus.querySelector('span:last-child');
+    if (label) label.textContent = message;
+  }
+
+  function renderSelectedPatient() {
+    if (isWalkinMode()) {
+      const patientName = (els.walkinPatientName?.value || '').trim();
+      const doctorName = (els.walkinDoctor?.value || '').trim();
+      if (!patientName && !doctorName) {
+        els.selectedPatient.style.display = 'none';
+        if (els.savePrintBtn) els.savePrintBtn.textContent = 'Save & Print';
+        renderInlineReceiptPanel();
+        return;
+      }
+      els.selectedPatient.style.display = 'grid';
+      els.selectedPatientName.textContent = patientName || '-';
+      els.selectedRegNo.textContent = 'TMPPatient / Self Walk-In';
+      els.selectedSharpSightUhid.textContent = '-';
+      els.selectedVisitNo.textContent = 'No linked visit';
+      els.selectedVisitType.textContent = 'OPD';
+      els.selectedVisitDate.textContent = els.saleDate?.value || todayIso;
+      els.selectedConsultant.textContent = doctorName || '-';
+      if (els.selectedTransactionMode) els.selectedTransactionMode.textContent = 'Sale';
+      if (els.savePrintBtn) els.savePrintBtn.textContent = 'Save & Print';
+      renderInlineReceiptPanel();
+      return;
+    }
+
+    const row = state.selectedVisit;
+    if (!row) {
+      els.selectedPatient.style.display = 'none';
+      if (els.selectedTransactionMode) els.selectedTransactionMode.textContent = '-';
+      if (els.savePrintBtn) els.savePrintBtn.textContent = 'Save & Print';
+      renderInlineReceiptPanel();
+      return;
+    }
+    els.selectedPatient.style.display = 'grid';
+    els.selectedPatientName.textContent = row.patient_name || '-';
+    els.selectedRegNo.textContent = row.registration_no || '-';
+    els.selectedSharpSightUhid.textContent = row.sharpsight_uhid || '-';
+    els.selectedVisitNo.textContent = row.admission_no || row.visit_no || '-';
+    els.selectedVisitType.textContent = row.type_of_visit || '-';
+    els.selectedVisitDate.textContent = row.visit_date || '-';
+    els.selectedConsultant.textContent = row.consultant_name || '-';
+    if (els.selectedTransactionMode) {
+      const status = row.admission_status ? `${row.admission_status} - ` : '';
+      els.selectedTransactionMode.textContent = row.transaction_mode === 'issue' ? `${status}Issue / Consumption` : `${status}Sale`;
+    }
+    if (els.savePrintBtn) {
+      els.savePrintBtn.textContent = row.transaction_mode === 'issue' ? 'Save Issue & Print' : 'Save & Print';
+    }
+    renderInlineReceiptPanel();
+  }
+
+  function renderPatients() {
+    if (state.patientSearchLoading) {
+      els.patientResults.classList.add('loading');
+      els.patientResults.innerHTML = '<div class="ps-empty"><span class="ps-spinner" aria-hidden="true" style="margin-right:8px; vertical-align:middle;"></span>Searching visit-backed patients...</div>';
+      return;
+    }
+    els.patientResults.classList.remove('loading');
+    if (!state.patientResults.length) {
+      const currentQuery = (els.patientSearch?.value || '').trim();
+      const emptyMessage = state.patientSearchHint
+        || (currentQuery
+          ? `No visit-backed patients matched this search in ${bucketLabel()}.`
+          : `No visit-backed patients found for ${bucketLabel()}.`);
+      els.patientResults.innerHTML = `<div class="ps-empty">${emptyMessage}</div>`;
+      return;
+    }
+    els.patientResults.innerHTML = state.patientResults.map((row, index) => `
+      <div class="ps-result ${(state.selectedVisit && state.selectedVisit.visit_id === row.visit_id) ? 'active' : ''} ${state.patientActiveIndex === index ? 'keyboard-active' : ''}" data-visit-id="${row.visit_id}" data-result-index="${index}" role="option" tabindex="0" aria-selected="${state.patientActiveIndex === index ? 'true' : 'false'}">
+        <div class="ps-result-title">${row.patient_name || '-'}</div>
+        <div class="ps-result-meta">
+          <span>Reg: ${row.registration_no || '-'}</span>
+          <span>UHID: ${row.sharpsight_uhid || '-'}</span>
+          <span>Visit: ${row.visit_no || row.admission_no || '-'}</span>
+          <span>${row.type_of_visit || '-'}</span>
+          ${row.admission_status ? `<span>${escapeHtml(row.admission_status)}</span>` : ''}
+          ${row.transaction_mode === 'issue' ? '<span>Issue</span>' : ''}
+          <span>${row.visit_date || '-'}</span>
+          <span>${row.consultant_name || '-'}</span>
+        </div>
+      </div>
+    `).join('');
+  }
+
+  async function fetchPatients(query = '', { force = false } = {}) {
+    if (isWalkinMode()) {
+      state.patientSearchLoading = false;
+      state.patientResults = [];
+      state.patientSearchHint = '';
+      state.patientActiveIndex = -1;
+      renderPatients();
+      setPatientSearchStatus('', false);
+      return;
+    }
+    const trimmedQuery = normalizePatientSearchInput(query);
+    if (els.patientSearch && els.patientSearch.value !== trimmedQuery) {
+      els.patientSearch.value = trimmedQuery;
+    }
+    if (shouldDeferPatientSearch(trimmedQuery, force)) {
+      patientRequestSeq += 1;
+      if (patientAbortController) {
+          patientAbortController.abort();
+          patientAbortController = null;
+      }
+      state.patientSearchLoading = false;
+      state.patientResults = [];
+      state.patientActiveIndex = -1;
+      state.patientSearchHint = patientSearchHintFor(trimmedQuery);
+      renderPatients();
+      setPatientSearchStatus(state.patientSearchHint, false);
+      return;
+    }
+
+    state.patientSearchHint = '';
+    if (patientAbortController) patientAbortController.abort();
+    patientAbortController = new AbortController();
+    const requestSeq = ++patientRequestSeq;
+    state.patientSearchLoading = true;
+    renderPatients();
+    setPatientSearchStatus(`Searching ${bucketLabel()}...`, true);
+    const url = new URL('/api/pharmacy/sales/patients', window.location.origin);
+    url.searchParams.set('bucket', state.visitBucket);
+    if (trimmedQuery) url.searchParams.set('q', trimmedQuery);
+    try {
+      const { response: res, data } = await fetchJson(url, { signal: patientAbortController.signal });
+      if (requestSeq !== patientRequestSeq) return;
+      if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to fetch patients.');
+      state.patientResults = data.items || [];
+      state.patientActiveIndex = state.patientResults.length
+        ? Math.max(0, state.patientResults.findIndex((row) => Number(row.visit_id || 0) === Number(state.selectedVisit?.visit_id || 0)))
+        : -1;
+      state.patientSearchLoading = false;
+      patientAbortController = null;
+      renderPatients();
+      setPatientSearchStatus(
+        state.patientResults.length
+          ? `${state.patientResults.length} result${state.patientResults.length === 1 ? '' : 's'} in ${bucketLabel()}.`
+          : `No matches found in ${bucketLabel()}.`,
+        false
+      );
+    } catch (err) {
+      if (err?.name === 'AbortError') return;
+      if (requestSeq !== patientRequestSeq) return;
+      state.patientSearchLoading = false;
+      patientAbortController = null;
+      renderPatients();
+      setPatientSearchStatus('', false);
+      throw err;
+    }
+  }
+
+  function setBucket(bucket) {
+    state.visitBucket = bucket === 'IPD' ? 'IPD' : 'OPD';
+    state.selectedVisit = null;
+    state.patientActiveIndex = -1;
+    renderPatientMode();
+    renderSelectedPatient();
+    els.bucketButtons.forEach((btn) => btn.classList.toggle('active', btn.dataset.bucket === state.visitBucket));
+    if (isWalkinMode()) {
+      renderPatients();
+      setPatientSearchStatus('', false);
+      return;
+    }
+    fetchPatients(els.patientSearch.value.trim()).catch((err) => showBanner(err.message));
+  }
+
+  function setPatientMode(mode) {
+    if (mode === 'walkin' && state.visitBucket !== 'OPD') {
+      showBanner('Self walk-in billing is available only in OPD / DPV.');
+      return;
+    }
+    state.patientMode = mode === 'walkin' ? 'walkin' : 'visit';
+    state.selectedVisit = null;
+    state.patientActiveIndex = -1;
+    renderPatientMode();
+    renderSelectedPatient();
+    clearBanner();
+    if (!isWalkinMode()) {
+      fetchPatients(els.patientSearch.value.trim()).catch((err) => showBanner(err.message));
+    }
+  }
+
+  async function fetchWalkinDoctors(query = '') {
+    const url = new URL('/api/pharmacy/sales/doctors', window.location.origin);
+    const trimmed = String(query || '').trim();
+    if (trimmed) url.searchParams.set('q', trimmed);
+    url.searchParams.set('limit', '18');
+    const { response: res, data } = await fetchJson(url);
+    if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to fetch doctor suggestions.');
+    const rows = data.items || [];
+    if (els.walkinDoctorOptions) {
+      els.walkinDoctorOptions.innerHTML = rows.map((row) => `<option value="${escapeHtml(row.doctor_name || '')}"></option>`).join('');
+    }
+    if (els.walkinDoctorStatus) {
+      els.walkinDoctorStatus.textContent = rows.length
+        ? `${rows.length} doctor suggestion${rows.length === 1 ? '' : 's'} available. Manual entry is also allowed.`
+        : 'No doctor suggestion matched. Manual entry is also allowed.';
+    }
+  }
+
+  function updateBatchMeta(syncMrp = false) {
+    const batch = state.selectedBatch;
+    els.metaStockQty.textContent = batch ? money(batch.stock_qty) : '0.00';
+    els.metaExpiry.textContent = batch?.expiry_date || '-';
+    els.metaMrp.textContent = batch ? money(batch.mrp) : '0.00';
+    els.metaRate.textContent = batch ? money(batch.rate) : '0.00';
+    syncLineMrp(syncMrp);
+  }
+
+  function renderBatches() {
+    const options = ['<option value="">Choose batch</option>'].concat(
+      state.batchOptions.map((row) => `<option value="${row.batch_id}">${escapeHtml(batchOptionLabel(row))}</option>`)
+    );
+    els.batchSelect.innerHTML = options.join('');
+    els.batchSelect.disabled = !state.batchOptions.length;
+    if (state.batchOptions.length) {
+      const first = state.batchOptions[0];
+      els.batchSelect.value = String(first.batch_id);
+      state.selectedBatch = first;
+    } else {
+      state.selectedBatch = null;
+    }
+    els.batchSelect.title = state.selectedBatch ? `${batchOptionLabel(state.selectedBatch)} | Stock ${money(state.selectedBatch.stock_qty)}` : '';
+    updateBatchMeta(true);
+  }
+
+  async function fetchBatches(itemId) {
+    const { response: res, data } = await fetchJson(`/api/pharmacy/sales/items/${itemId}/batches`);
+    if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to fetch batches.');
+    state.batchOptions = data.items || [];
+    renderBatches();
+  }
+
+  function renderItemResults() {
+    if (!state.itemResults.length) {
+      els.itemResults.innerHTML = '<div class="ps-empty">No in-stock items found.</div>';
+      els.itemResults.style.display = 'block';
+      return;
+    }
+    els.itemResults.innerHTML = state.itemResults.map((row, index) => `
+      <div class="ps-result ${state.itemActiveIndex === index ? 'keyboard-active' : ''}" data-item-id="${row.item_id}" data-result-index="${index}" role="option" tabindex="0" aria-selected="${state.itemActiveIndex === index ? 'true' : 'false'}">
+        <div class="ps-result-title">${row.display_name || row.item_name || '-'}</div>
+        <div class="ps-result-meta">
+          <span>Stock ${money(row.stock_qty)}</span>
+          <span>Sales Price ${money(row.sales_price)}</span>
+        </div>
+      </div>
+    `).join('');
+    els.itemResults.style.display = 'block';
+  }
+
+  async function fetchItems(query) {
+    if (!query) {
+      state.itemResults = [];
+      state.itemActiveIndex = -1;
+      els.itemResults.style.display = 'none';
+      return;
+    }
+    const url = new URL('/api/pharmacy/sales/items', window.location.origin);
+    url.searchParams.set('q', query);
+    const { response: res, data } = await fetchJson(url);
+    if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to fetch items.');
+    state.itemResults = data.items || [];
+    state.itemActiveIndex = state.itemResults.length ? 0 : -1;
+    renderItemResults();
+  }
+
+  function recalcTotals() {
+    const gross = state.lines.reduce((sum, row) => sum + (safeQty(row.qty) * Number(row.mrp || 0)), 0);
+    let discount = safeQty(els.discountAmount.value);
+    if (discount > gross) {
+      discount = gross;
+      els.discountAmount.value = money(discount);
+    }
+    const due = roundHalfUp(Math.max(gross - discount, 0));
+    els.grossAmountDisplay.textContent = money(gross);
+    els.discountAmountDisplay.textContent = money(discount);
+    els.dueAmountDisplay.textContent = money(due);
+    els.netAmountDisplay.textContent = money(due);
+    renderInlineReceiptPanel();
+  }
+
+  function addCurrentLine() {
+    clearBanner();
+    if (!state.selectedItem?.item_id) return showBanner('Select an item first.');
+    if (!state.selectedBatch?.batch_id) return showBanner('Select a batch first.');
+    const qty = safeQty(els.lineQty.value);
+    const mrp = state.canEditMrp ? safeQty(els.lineMrp?.value) : Number(state.selectedBatch?.mrp || 0);
+    if (qty <= 0) return showBanner('Enter a valid quantity.');
+    if (qty > Number(state.selectedBatch.stock_qty || 0)) return showBanner('Quantity exceeds available stock for the selected batch.');
+    const existing = state.lines.find((row) => row.item_id === state.selectedItem.item_id && row.batch_id === state.selectedBatch.batch_id);
+    if (existing) {
+      const nextQty = safeQty(existing.qty) + qty;
+      if (nextQty > Number(existing.stock_qty || 0)) return showBanner('Combined quantity exceeds available stock for that batch.');
+      existing.qty = nextQty;
+      existing.mrp = mrp;
+    } else {
+      state.lines.push({
+        id: lineSeq++,
+        item_id: state.selectedItem.item_id,
+        item_name: state.selectedItem.item_name || state.selectedItem.display_name || '-',
+        batch_id: state.selectedBatch.batch_id,
+        batch_name: state.selectedBatch.batch_name || '-',
+        expiry_date: state.selectedBatch.expiry_date || '',
+        stock_qty: Number(state.selectedBatch.stock_qty || 0),
+        mrp,
+        batch_mrp: Number(state.selectedBatch.mrp || 0),
+        rate: Number(state.selectedBatch.rate || 0),
+        qty,
+      });
+    }
+    renderLines();
+    resetItemPicker();
+    els.itemSearch?.focus();
+  }
+
+  function renderLines() {
+    if (!state.lines.length) {
+      els.lineItemsBody.innerHTML = '<tr><td colspan="9" class="ps-empty">No medicines added yet.</td></tr>';
+      recalcTotals();
+      return;
+    }
+    els.lineItemsBody.innerHTML = state.lines.map((row, index) => `
+      <tr data-line-id="${row.id}">
+        <td>${index + 1}</td>
+        <td><span class="ps-line-main" title="${escapeHtml(row.item_name)}">${escapeHtml(row.item_name)}</span></td>
+        <td><span class="ps-line-sub" title="${escapeHtml(row.batch_name)}">${escapeHtml(row.batch_name)}</span></td>
+        <td>${row.expiry_date || '-'}</td>
+        <td class="num">${money(row.stock_qty)}</td>
+        <td class="num"><div class="ps-qty-cell"><input class="ps-line-input ps-qty-input" data-input-kind="qty" type="number" min="0.01" step="0.01" value="${money(row.qty)}"></div></td>
+        <td class="num"><div class="ps-qty-cell"><input class="ps-line-input ps-mrp-input" data-input-kind="mrp" type="number" min="0" step="0.01" value="${money(row.mrp)}" title="${state.canEditMrp ? `Batch MRP ${money(row.batch_mrp || row.mrp)}` : 'MRP edit requires Pharmacy Sales - MRP Edit right.'}" ${state.canEditMrp ? '' : 'disabled'}></div></td>
+        <td class="num"><span class="ps-amount-pill ps-amount-gross">${money(safeQty(row.qty) * Number(row.mrp || 0))}</span></td>
+        <td><button type="button" class="ps-icon-btn" title="Remove item">×</button></td>
+      </tr>
+    `).join('');
+    recalcTotals();
+  }
+
+  function resetItemPicker() {
+    state.selectedItem = null;
+    state.selectedBatch = null;
+    state.batchOptions = [];
+    state.itemResults = [];
+    state.itemActiveIndex = -1;
+    els.itemSearch.value = '';
+    els.itemSearch.title = '';
+    els.itemResults.innerHTML = '';
+    els.itemResults.style.display = 'none';
+    renderBatches();
+    els.batchSelect.title = '';
+    els.lineQty.value = '1';
+    if (els.lineMrp) els.lineMrp.value = '0.00';
+  }
+
+  function resetAll(preserveBanner = false) {
+    if (!preserveBanner) clearBanner();
+    state.selectedVisit = null;
+    state.receiptBillContext = null;
+    state.lines = [];
+    state.patientActiveIndex = -1;
+    state.itemActiveIndex = -1;
+    els.patientSearch.value = '';
+    els.discountAmount.value = '0';
+    els.saleRemarks.value = '';
+    if (els.walkinPatientName) els.walkinPatientName.value = '';
+    if (els.walkinDoctor) els.walkinDoctor.value = '';
+    if (els.walkinDoctorOptions) els.walkinDoctorOptions.innerHTML = '';
+    if (els.walkinDoctorStatus) els.walkinDoctorStatus.textContent = 'Doctor suggestions are loaded from employee_mst; manual entry is also allowed.';
+    if (els.inlineReceiptDate) els.inlineReceiptDate.value = todayIso;
+    if (els.inlineReceiptAmount) els.inlineReceiptAmount.value = '0.00';
+    if (els.inlineReceiptPaymentMode) els.inlineReceiptPaymentMode.value = '';
+    if (els.inlineReceiptNote) els.inlineReceiptNote.value = '';
+    if (els.inlineReceiptStatus) els.inlineReceiptStatus.textContent = 'No receipt is staged by default. Leave amount at 0.00 to save the bill in due, or enter a receipt amount only when payment is being collected now.';
+    setCurrentReceiptBill(null);
+    renderSelectedPatient();
+    renderLines();
+    resetItemPicker();
+    if (isWalkinMode()) {
+      state.patientSearchLoading = false;
+      state.patientResults = [];
+      state.patientSearchHint = '';
+      renderPatients();
+      setPatientSearchStatus('', false);
+    } else {
+      fetchPatients('').catch((err) => showBanner(err.message));
+    }
+  }
+
+  async function saveSale() {
+    clearBanner();
+    const walkinMode = isWalkinMode();
+    const inlineReceiptContext = currentInlineReceiptContext();
+    const stagedReceiptAmount = inlineReceiptContext?.is_draft ? safeQty(els.inlineReceiptAmount?.value) : 0;
+    const stagedPaymentModeId = inlineReceiptContext?.is_draft ? Number(els.inlineReceiptPaymentMode?.value || 0) : 0;
+    if (!walkinMode && !state.selectedVisit?.visit_id) {
+      showBanner('Select a visit-backed patient before saving.');
+      return;
+    }
+    if (walkinMode && !(els.walkinPatientName?.value || '').trim()) {
+      showBanner('Enter the self walk-in patient name before saving.');
+      return;
+    }
+    if (walkinMode && !(els.walkinDoctor?.value || '').trim()) {
+      showBanner('Enter the prescribed-by doctor name before saving.');
+      return;
+    }
+    if (!state.lines.length) {
+      showBanner('Add at least one medicine before saving.');
+      return;
+    }
+    if (inlineReceiptContext?.is_draft && stagedReceiptAmount > Number(inlineReceiptContext.due_amount || 0)) {
+      showBanner(`Receipt amount cannot exceed payable amount of ${money(inlineReceiptContext.due_amount || 0)}.`);
+      return;
+    }
+    if (inlineReceiptContext?.is_draft && stagedReceiptAmount > 0 && !stagedPaymentModeId) {
+      showBanner('Select a payment mode before saving the bill with a receipt.');
+      return;
+    }
+    els.savePrintBtn.disabled = true;
+    try {
+      const payload = {
+        visit_id: walkinMode ? 0 : state.selectedVisit.visit_id,
+        visit_bucket: state.visitBucket,
+        patient_mode: walkinMode ? 'walkin' : 'visit',
+        walkin_patient_name: walkinMode ? (els.walkinPatientName?.value || '').trim() : '',
+        walkin_doctor_name: walkinMode ? (els.walkinDoctor?.value || '').trim() : '',
+        sale_date: els.saleDate.value,
+        discount_amount: safeQty(els.discountAmount.value),
+        remarks: els.saleRemarks.value.trim(),
+        receipt_amount: stagedReceiptAmount,
+        receipt_payment_mode_id: stagedPaymentModeId,
+        receipt_date: els.inlineReceiptDate?.value || todayIso,
+        receipt_note: inlineReceiptContext?.is_draft ? (els.inlineReceiptNote?.value || '').trim() : '',
+        items: state.lines.map((row) => ({ item_id: row.item_id, batch_id: row.batch_id, qty: safeQty(row.qty), mrp: safeQty(row.mrp) })),
+      };
+      const { response: res, data } = await fetchJson('/api/pharmacy/sales', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(payload),
+      });
+      if (!res.ok || data.status !== 'success') throw new Error(data.message || 'Failed to save pharmacy sale.');
+      showBanner(data.success_message || `Sale saved successfully. Bill No. ${data.bill_no || data.bill_id}`, 'success');
+      state.reports.billsLoaded = false;
+      state.reports.registerLoaded = false;
+      state.reports.issuesLoaded = false;
+      state.reports.issueRegisterLoaded = false;
+      if (data.print_url) window.open(data.print_url, '_blank', 'noopener');
+      resetAll(true);
+      if (data.transaction_kind === 'sale' && Number(data.bill_id || 0) > 0) {
+        setCurrentReceiptBill({
+          bill_id: Number(data.bill_id || 0),
+          bill_no: data.bill_no || '',
+          received_amount: Number(data.received_amount || 0),
+          due_amount: Number(data.due_amount || 0),
+          receipt_allowed: !!data.receipt_allowed,
+          print_url: data.print_url || `/api/pharmacy/sales/${Number(data.bill_id || 0)}/print`,
+        });
+      }
+    } catch (err) {
+      showBanner(err.message || 'Failed to save pharmacy sale.');
+    } finally {
+      els.savePrintBtn.disabled = false;
+    }
+  }
+
+  els.bucketButtons.forEach((btn) => btn.addEventListener('click', () => setBucket(btn.dataset.bucket)));
+  els.patientModeButtons.forEach((btn) => btn.addEventListener('click', () => setPatientMode(btn.dataset.mode)));
+  els.patientSearch.addEventListener('input', () => {
+    const normalized = normalizePatientSearchInput(els.patientSearch.value);
+    if (els.patientSearch.value !== normalized) {
+      els.patientSearch.value = normalized;
+    }
+    clearTimeout(patientTimer);
+    patientTimer = setTimeout(() => fetchPatients(els.patientSearch.value.trim()).catch((err) => showBanner(err.message)), 360);
+  });
+  els.patientSearch.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown' && state.patientResults.length) {
+      event.preventDefault();
+      setPatientActiveIndex(state.patientActiveIndex >= 0 ? state.patientActiveIndex + 1 : 0);
+      return;
+    }
+    if (event.key === 'ArrowUp' && state.patientResults.length) {
+      event.preventDefault();
+      setPatientActiveIndex(state.patientActiveIndex > 0 ? state.patientActiveIndex - 1 : 0);
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (state.patientResults.length && state.patientActiveIndex >= 0) {
+        selectPatientRow(state.patientResults[state.patientActiveIndex]);
+        return;
+      }
+      clearTimeout(patientTimer);
+      fetchPatients(els.patientSearch.value.trim(), { force: true }).catch((err) => showBanner(err.message));
+      return;
+    }
+    if (event.key === 'Escape') {
+      state.patientActiveIndex = -1;
+      renderPatients();
+    }
+  });
+  els.patientSearch.addEventListener('focus', () => { if (!els.patientSearch.value.trim()) fetchPatients('').catch(() => {}); });
+  els.patientResults.addEventListener('click', (event) => {
+    const row = event.target.closest('.ps-result[data-visit-id]');
+    if (!row) return;
+    const visitId = Number(row.dataset.visitId || 0);
+    selectPatientRow(state.patientResults.find((item) => Number(item.visit_id) === visitId) || null);
+  });
+  els.patientResults.addEventListener('keydown', (event) => {
+    const rowEl = event.target.closest('.ps-result[data-visit-id]');
+    if (!rowEl) return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    const visitId = Number(rowEl.dataset.visitId || 0);
+    selectPatientRow(state.patientResults.find((item) => Number(item.visit_id) === visitId) || null);
+  });
+  els.walkinPatientName?.addEventListener('input', () => {
+    clearBanner();
+    renderSelectedPatient();
+  });
+  els.walkinDoctor?.addEventListener('focus', () => {
+    clearTimeout(walkinDoctorTimer);
+    walkinDoctorTimer = setTimeout(() => fetchWalkinDoctors(els.walkinDoctor?.value || '').catch(() => {}), 60);
+  });
+  els.walkinDoctor?.addEventListener('input', () => {
+    clearBanner();
+    renderSelectedPatient();
+    clearTimeout(walkinDoctorTimer);
+    walkinDoctorTimer = setTimeout(() => fetchWalkinDoctors(els.walkinDoctor?.value || '').catch(() => {}), 220);
+  });
+
+  els.itemSearch.addEventListener('input', () => {
+    clearTimeout(itemTimer);
+    itemTimer = setTimeout(() => fetchItems(els.itemSearch.value.trim()).catch((err) => showBanner(err.message)), 180);
+  });
+  els.itemSearch.addEventListener('keydown', (event) => {
+    if (event.key === 'ArrowDown' && state.itemResults.length) {
+      event.preventDefault();
+      setItemActiveIndex(state.itemActiveIndex >= 0 ? state.itemActiveIndex + 1 : 0);
+      return;
+    }
+    if (event.key === 'ArrowUp' && state.itemResults.length) {
+      event.preventDefault();
+      setItemActiveIndex(state.itemActiveIndex > 0 ? state.itemActiveIndex - 1 : 0);
+      return;
+    }
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (state.itemResults.length && state.itemActiveIndex >= 0) {
+        selectItemRow(state.itemResults[state.itemActiveIndex]).catch((err) => showBanner(err.message));
+      }
+      return;
+    }
+    if (event.key === 'Escape') {
+      els.itemResults.style.display = 'none';
+      state.itemActiveIndex = -1;
+    }
+  });
+  els.itemResults.addEventListener('click', async (event) => {
+    const row = event.target.closest('.ps-result[data-item-id]');
+    if (!row) return;
+    const itemId = Number(row.dataset.itemId || 0);
+    try {
+      await selectItemRow(state.itemResults.find((item) => Number(item.item_id) === itemId) || null);
+    } catch (err) {
+      showBanner(err.message);
+    }
+  });
+  els.itemResults.addEventListener('keydown', async (event) => {
+    const rowEl = event.target.closest('.ps-result[data-item-id]');
+    if (!rowEl) return;
+    if (event.key !== 'Enter' && event.key !== ' ') return;
+    event.preventDefault();
+    const itemId = Number(rowEl.dataset.itemId || 0);
+    try {
+      await selectItemRow(state.itemResults.find((item) => Number(item.item_id) === itemId) || null);
+    } catch (err) {
+      showBanner(err.message);
+    }
+  });
+
+  els.batchSelect.addEventListener('change', () => {
+    const batchId = Number(els.batchSelect.value || 0);
+    state.selectedBatch = state.batchOptions.find((item) => Number(item.batch_id) === batchId) || null;
+    els.batchSelect.title = state.selectedBatch ? `${batchOptionLabel(state.selectedBatch)} | Stock ${money(state.selectedBatch.stock_qty)}` : '';
+    updateBatchMeta(true);
+  });
+  els.batchSelect.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      if (state.canEditMrp) {
+        els.lineMrp?.focus();
+        els.lineMrp?.select?.();
+      } else {
+        els.lineQty?.focus();
+        els.lineQty?.select?.();
+      }
+    }
+  });
+
+  els.addLineBtn.addEventListener('click', addCurrentLine);
+
+  els.clearLinesBtn.addEventListener('click', () => {
+    state.lines = [];
+    renderLines();
+    clearBanner();
+  });
+
+  els.lineItemsBody.addEventListener('input', (event) => {
+    const input = event.target.closest('.ps-line-input');
+    if (!input) return;
+    const rowEl = input.closest('tr[data-line-id]');
+    const row = state.lines.find((line) => String(line.id) === rowEl?.dataset.lineId);
+    if (!row) return;
+    const inputKind = input.dataset.inputKind || 'qty';
+    let value = safeQty(input.value);
+    if (inputKind === 'qty') {
+      if (value > Number(row.stock_qty || 0)) value = Number(row.stock_qty || 0);
+      if (value <= 0) value = 0.01;
+      row.qty = value;
+    } else {
+      if (!state.canEditMrp) {
+        input.value = money(row.batch_mrp || row.mrp || 0);
+        return;
+      }
+      if (value < 0) value = 0;
+      row.mrp = value;
+    }
+    const amountEl = rowEl?.querySelector('td:nth-child(8) .ps-amount-pill');
+    if (amountEl) amountEl.textContent = money(safeQty(row.qty) * Number(row.mrp || 0));
+    recalcTotals();
+  });
+  els.lineItemsBody.addEventListener('change', (event) => {
+    const input = event.target.closest('.ps-line-input');
+    if (!input) return;
+    input.value = money(input.value);
+  });
+  els.lineQty?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      addCurrentLine();
+    }
+  });
+  els.lineMrp?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      els.lineQty?.focus();
+      els.lineQty?.select?.();
+    }
+  });
+
+  els.lineItemsBody.addEventListener('click', (event) => {
+    const btn = event.target.closest('.ps-icon-btn');
+    if (!btn) return;
+    const rowEl = btn.closest('tr[data-line-id]');
+    state.lines = state.lines.filter((line) => String(line.id) !== rowEl?.dataset.lineId);
+    renderLines();
+  });
+
+  els.discountAmount.addEventListener('input', recalcTotals);
+  els.saleDate?.addEventListener('change', renderSelectedPatient);
+  els.inlineReceiptAmount?.addEventListener('input', () => {
+    clearBanner();
+    renderInlineReceiptPanel();
+  });
+  els.inlineReceiptPaymentMode?.addEventListener('change', () => {
+    clearBanner();
+    renderInlineReceiptPanel();
+  });
+  els.inlineReceiptDate?.addEventListener('change', () => {
+    clearBanner();
+    renderInlineReceiptPanel();
+  });
+  els.inlineReceiptNote?.addEventListener('input', clearBanner);
+  els.savePrintBtn.addEventListener('click', saveSale);
+  els.resetFormBtn.addEventListener('click', resetAll);
+  els.inlineSaveReceiptBtn?.addEventListener('click', saveInlineReceipt);
+  els.inlineOpenReceiptModalBtn?.addEventListener('click', () => openDueModalForBill(state.receiptBillContext?.bill_id ? state.receiptBillContext : state.currentReceiptBill).catch((err) => showBanner(err.message)));
+  els.receivePaymentBtn?.addEventListener('click', () => openDueModalForBill(state.currentReceiptBill).catch((err) => showBanner(err.message)));
+  els.closeDueModalBtn?.addEventListener('click', () => setDueModalOpen(false));
+  els.dueModalPrintBillBtn?.addEventListener('click', () => {
+    const url = state.receiptBillContext?.print_url || state.currentReceiptBill?.print_url;
+    if (url) window.open(url, '_blank', 'noopener');
+  });
+  els.saveReceiptBtn?.addEventListener('click', saveReceipt);
+  els.openReportsBtn?.addEventListener('click', () => {
+    ensureReportDefaults();
+    setReportsModalOpen(true);
+    setReportsTab(state.reports.activeTab || 'bills');
+  });
+  els.closeReportsBtn?.addEventListener('click', () => setReportsModalOpen(false));
+  els.reportTabButtons.forEach((btn) => btn.addEventListener('click', () => setReportsTab(btn.dataset.reportTab)));
+  els.refreshBillsReportBtn?.addEventListener('click', () => fetchBillsReport().catch((err) => { setReportStatus(els.reportBillsStatus, '', false); showBanner(err.message); }));
+  els.refreshRegisterReportBtn?.addEventListener('click', () => fetchRegisterReport().catch((err) => { setReportStatus(els.reportRegisterStatus, '', false); showBanner(err.message); }));
+  els.refreshIssuesReportBtn?.addEventListener('click', () => fetchIssuesReport().catch((err) => { setReportStatus(els.reportIssuesStatus, '', false); showBanner(err.message); }));
+  els.refreshIssueRegisterReportBtn?.addEventListener('click', () => fetchIssueRegisterReport().catch((err) => { setReportStatus(els.reportIssueRegisterStatus, '', false); showBanner(err.message); }));
+  els.printBillsReportBtn?.addEventListener('click', () => openReportPrint('/api/pharmacy/sales/reports/bills/print', {
+    from_date: els.reportBillsFrom?.value || '',
+    to_date: els.reportBillsTo?.value || '',
+    q: els.reportBillsSearch?.value || '',
+  }));
+  els.printRegisterReportBtn?.addEventListener('click', () => openReportPrint('/api/pharmacy/sales/reports/register/print', {
+    from_date: els.reportRegisterFrom?.value || '',
+    to_date: els.reportRegisterTo?.value || '',
+    q: els.reportRegisterSearch?.value || '',
+  }));
+  els.printIssuesReportBtn?.addEventListener('click', () => openReportPrint('/api/pharmacy/sales/reports/issues/print', {
+    from_date: els.reportIssuesFrom?.value || '',
+    to_date: els.reportIssuesTo?.value || '',
+    q: els.reportIssuesSearch?.value || '',
+  }));
+  els.printIssueRegisterReportBtn?.addEventListener('click', () => openReportPrint('/api/pharmacy/sales/reports/issue-register/print', {
+    from_date: els.reportIssueRegisterFrom?.value || '',
+    to_date: els.reportIssueRegisterTo?.value || '',
+    q: els.reportIssueRegisterSearch?.value || '',
+  }));
+  els.reportBillsSearch?.addEventListener('input', () => {
+    clearTimeout(reportBillsTimer);
+    reportBillsTimer = setTimeout(() => fetchBillsReport().catch((err) => { setReportStatus(els.reportBillsStatus, '', false); showBanner(err.message); }), 280);
+  });
+  els.reportBillsSearch?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    clearTimeout(reportBillsTimer);
+    fetchBillsReport().catch((err) => { setReportStatus(els.reportBillsStatus, '', false); showBanner(err.message); });
+  });
+  els.reportRegisterSearch?.addEventListener('input', () => {
+    clearTimeout(reportRegisterTimer);
+    reportRegisterTimer = setTimeout(() => fetchRegisterReport().catch((err) => { setReportStatus(els.reportRegisterStatus, '', false); showBanner(err.message); }), 320);
+  });
+  els.reportIssuesSearch?.addEventListener('input', () => {
+    clearTimeout(reportIssuesTimer);
+    reportIssuesTimer = setTimeout(() => fetchIssuesReport().catch((err) => { setReportStatus(els.reportIssuesStatus, '', false); showBanner(err.message); }), 280);
+  });
+  els.reportIssuesSearch?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    clearTimeout(reportIssuesTimer);
+    fetchIssuesReport().catch((err) => { setReportStatus(els.reportIssuesStatus, '', false); showBanner(err.message); });
+  });
+  els.reportIssueRegisterSearch?.addEventListener('input', () => {
+    clearTimeout(reportIssueRegisterTimer);
+    reportIssueRegisterTimer = setTimeout(() => fetchIssueRegisterReport().catch((err) => { setReportStatus(els.reportIssueRegisterStatus, '', false); showBanner(err.message); }), 320);
+  });
+  els.reportIssueRegisterSearch?.addEventListener('keydown', (event) => {
+    if (event.key !== 'Enter') return;
+    event.preventDefault();
+    clearTimeout(reportIssueRegisterTimer);
+    fetchIssueRegisterReport().catch((err) => { setReportStatus(els.reportIssueRegisterStatus, '', false); showBanner(err.message); });
+  });
+  [els.reportBillsFrom, els.reportBillsTo].forEach((input) => input?.addEventListener('change', () => fetchBillsReport().catch((err) => { setReportStatus(els.reportBillsStatus, '', false); showBanner(err.message); })));
+  [els.reportRegisterFrom, els.reportRegisterTo].forEach((input) => input?.addEventListener('change', () => fetchRegisterReport().catch((err) => { setReportStatus(els.reportRegisterStatus, '', false); showBanner(err.message); })));
+  [els.reportIssuesFrom, els.reportIssuesTo].forEach((input) => input?.addEventListener('change', () => fetchIssuesReport().catch((err) => { setReportStatus(els.reportIssuesStatus, '', false); showBanner(err.message); })));
+  [els.reportIssueRegisterFrom, els.reportIssueRegisterTo].forEach((input) => input?.addEventListener('change', () => fetchIssueRegisterReport().catch((err) => { setReportStatus(els.reportIssueRegisterStatus, '', false); showBanner(err.message); })));
+  els.reportBillsBody?.addEventListener('click', (event) => {
+    const receiveBtn = event.target.closest('button[data-receive-bill-id]');
+    if (receiveBtn?.dataset.receiveBillId) {
+      const billId = Number(receiveBtn.dataset.receiveBillId || 0);
+      const bill = state.reports.billsRows.find((row) => Number(row.bill_id || 0) === billId);
+      openDueModalForBill(bill || { bill_id: billId }).catch((err) => showBanner(err.message));
+      return;
+    }
+    const btn = event.target.closest('button[data-print-url]');
+    if (!btn?.dataset.printUrl) return;
+    window.open(btn.dataset.printUrl, '_blank', 'noopener');
+  });
+  els.reportRegisterBody?.addEventListener('click', (event) => {
+    const btn = event.target.closest('button[data-print-url]');
+    if (!btn?.dataset.printUrl) return;
+    window.open(btn.dataset.printUrl, '_blank', 'noopener');
+  });
+  els.reportIssuesBody?.addEventListener('click', (event) => {
+    const btn = event.target.closest('button[data-print-url]');
+    if (!btn?.dataset.printUrl) return;
+    window.open(btn.dataset.printUrl, '_blank', 'noopener');
+  });
+  els.reportIssueRegisterBody?.addEventListener('click', (event) => {
+    const btn = event.target.closest('button[data-print-url]');
+    if (!btn?.dataset.printUrl) return;
+    window.open(btn.dataset.printUrl, '_blank', 'noopener');
+  });
+  document.addEventListener('click', (event) => {
+    if (!event.target.closest('.ps-field') || !event.target.closest('#itemSearch')) {
+      if (!event.target.closest('#itemResults')) els.itemResults.style.display = 'none';
+    }
+    if (event.target === els.reportsModal) setReportsModalOpen(false);
+    if (event.target === els.dueModal) setDueModalOpen(false);
+  });
+  document.addEventListener('keydown', (event) => {
+    if (event.key !== 'Escape') return;
+    if (els.dueModal?.classList.contains('show')) {
+      setDueModalOpen(false);
+      return;
+    }
+    if (els.reportsModal?.classList.contains('show')) {
+      setReportsModalOpen(false);
+    }
+  });
+
+  applyMrpPermission();
+
+  fetchJson('/api/pharmacy/sales/init')
+    .then(({ data }) => {
+      if (data.status !== 'success') throw new Error(data.message || 'Failed to initialize page.');
+      state.paymentModes = data.payment_modes || [];
+      if (data.permissions && Object.prototype.hasOwnProperty.call(data.permissions, 'can_edit_mrp')) {
+        state.canEditMrp = !!data.permissions.can_edit_mrp;
+      }
+      populatePaymentModes();
+      applyMrpPermission();
+      renderPatientMode();
+      renderSelectedPatient();
+      setCurrentReceiptBill(null);
+      if (els.receiptDate && !els.receiptDate.value) els.receiptDate.value = data.today || todayIso;
+      ensureReportDefaults();
+      return fetchPatients('');
+    })
+    .catch((err) => showBanner(err.message || 'Failed to initialize page.'));
+})();
+</script>
+{% endblock %}

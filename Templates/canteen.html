@@ -1,0 +1,4664 @@
+<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>HID Canteen</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1">
+    <link rel="icon" href="{{ url_for('static', filename='logo/asarfi.png') }}">
+    <style>
+      :root {
+        --bg: #eef4f9;
+        --surface: rgba(255, 255, 255, 0.92);
+        --surface-strong: #ffffff;
+        --ink: #11233a;
+        --muted: #57708a;
+        --line: rgba(17, 35, 58, 0.12);
+        --primary: #0f5b78;
+        --primary-strong: #0b4158;
+        --accent: #eb8a2f;
+        --accent-soft: #fff1e4;
+        --ok: #1d9b6c;
+        --danger: #d84a4a;
+        --shadow: 0 26px 60px rgba(12, 33, 54, 0.14);
+        --radius: 24px;
+        --radius-sm: 14px;
+        --mono: "Consolas", "Courier New", monospace;
+        --sans: "Aptos", "Bahnschrift", "Segoe UI", sans-serif;
+      }
+
+      * {
+        box-sizing: border-box;
+      }
+
+      html,
+      body {
+        min-height: 100%;
+      }
+
+      body {
+        margin: 0;
+        font-family: var(--sans);
+        color: var(--ink);
+        background:
+          radial-gradient(circle at top left, rgba(15, 91, 120, 0.20), transparent 30%),
+          radial-gradient(circle at top right, rgba(235, 138, 47, 0.18), transparent 28%),
+          linear-gradient(180deg, #f6fbff 0%, #eef4f9 100%);
+      }
+
+      .page-shell {
+        width: min(1600px, calc(100vw - 28px));
+        margin: 10px auto 24px;
+      }
+
+      .hero {
+        position: sticky;
+        top: 8px;
+        z-index: 30;
+        display: grid;
+        gap: 8px;
+        padding: 12px 16px;
+        border: 1px solid rgba(255, 255, 255, 0.38);
+        border-radius: 22px;
+        background:
+          linear-gradient(135deg, rgba(11, 65, 88, 0.96), rgba(15, 91, 120, 0.94)),
+          radial-gradient(circle at top right, rgba(255, 255, 255, 0.18), transparent 24%);
+        color: #f7fbff;
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+      }
+
+      .hero-top {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .hero-copy {
+        display: grid;
+        gap: 4px;
+      }
+
+      .hero-copy h1 {
+        margin: 0;
+        font-size: clamp(22px, 3vw, 32px);
+        line-height: 1.08;
+        letter-spacing: 0.02em;
+      }
+
+      .hero-copy p {
+        display: none;
+      }
+
+      .hero-actions {
+        display: flex;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: wrap;
+        justify-content: flex-end;
+      }
+
+      .back-link,
+      .hero-action-button,
+      .hero-chip,
+      .hero-actions select {
+        border-radius: 999px;
+        border: 1px solid rgba(255, 255, 255, 0.18);
+        background: rgba(255, 255, 255, 0.12);
+        color: #ffffff;
+        text-decoration: none;
+        min-height: 36px;
+        font-size: 14px;
+      }
+
+      .back-link,
+      .hero-action-button,
+      .hero-chip {
+        display: inline-flex;
+        align-items: center;
+        gap: 8px;
+        padding: 0 12px;
+        font-weight: 700;
+      }
+
+      .hero-action-button {
+        cursor: pointer;
+      }
+
+      .logout-link {
+        background: rgba(255, 255, 255, 0.92);
+        border-color: rgba(255, 255, 255, 0.72);
+        color: #0f4f63;
+      }
+
+      .logout-link:hover {
+        background: #ffffff;
+        color: #0b3c4a;
+      }
+
+      .hero-actions select {
+        min-width: 120px;
+        padding: 0 12px;
+        font-weight: 700;
+        cursor: pointer;
+      }
+
+      .hero-actions option {
+        color: #0f172a;
+      }
+
+      .hero-meta {
+        display: none;
+      }
+
+      .meta-card {
+        padding: 14px 16px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+      }
+
+      .meta-card .label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 12px;
+        letter-spacing: 0.09em;
+        text-transform: uppercase;
+        color: rgba(247, 251, 255, 0.62);
+      }
+
+      .meta-card .value {
+        font-size: 18px;
+        font-weight: 800;
+      }
+
+      .hint-bar {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 6px;
+      }
+
+      .hint {
+        padding: 5px 9px;
+        border-radius: 999px;
+        background: rgba(255, 255, 255, 0.12);
+        border: 1px solid rgba(255, 255, 255, 0.12);
+        font-size: 11px;
+        color: rgba(247, 251, 255, 0.88);
+        line-height: 1.1;
+      }
+
+      .hint kbd {
+        padding: 1px 6px;
+        border-radius: 7px;
+        border: 1px solid rgba(255, 255, 255, 0.26);
+        background: rgba(255, 255, 255, 0.18);
+        font-family: var(--mono);
+        font-size: 11px;
+      }
+
+      .tabs {
+        display: grid;
+        grid-template-columns: repeat(5, minmax(0, 1fr));
+        gap: 10px;
+        margin-top: 10px;
+      }
+
+      .tab-button {
+        min-height: 48px;
+        border: 1px solid transparent;
+        border-radius: 16px;
+        background: rgba(255, 255, 255, 0.76);
+        color: var(--muted);
+        font: inherit;
+        font-weight: 800;
+        cursor: pointer;
+        transition: 0.18s ease;
+      }
+
+      .tab-button:hover,
+      .tab-button.active {
+        transform: translateY(-1px);
+        background: var(--surface-strong);
+        color: var(--primary-strong);
+        border-color: rgba(15, 91, 120, 0.18);
+        box-shadow: 0 16px 28px rgba(15, 91, 120, 0.12);
+      }
+
+      .content {
+        margin-top: 12px;
+        display: grid;
+        gap: 18px;
+      }
+
+      .panel {
+        border-radius: var(--radius);
+        background: var(--surface);
+        border: 1px solid rgba(255, 255, 255, 0.6);
+        box-shadow: var(--shadow);
+        backdrop-filter: blur(18px);
+      }
+
+      .hidden {
+        display: none !important;
+      }
+
+      .panel.hidden {
+        display: none;
+      }
+
+      .panel-head {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 14px 18px 0;
+      }
+
+      .panel-head h2,
+      .panel-head h3 {
+        margin: 0;
+      }
+
+      .panel-copy {
+        display: none;
+      }
+
+      .panel-body {
+        padding: 16px 18px 18px;
+      }
+
+      .sale-layout {
+        display: grid;
+        grid-template-columns: minmax(0, 1.9fr) minmax(320px, 0.85fr);
+        gap: 18px;
+      }
+
+      .form-grid {
+        display: grid;
+        grid-template-columns: repeat(12, minmax(0, 1fr));
+        gap: 12px;
+      }
+
+      .field {
+        display: grid;
+        gap: 7px;
+      }
+
+      .field.span-12 {
+        grid-column: span 12;
+      }
+
+      .field.span-8 {
+        grid-column: span 8;
+      }
+
+      .field.span-6 {
+        grid-column: span 6;
+      }
+
+      .field.span-4 {
+        grid-column: span 4;
+      }
+
+      .field.span-3 {
+        grid-column: span 3;
+      }
+
+      .field label {
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.04em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      input,
+      select,
+      textarea,
+      button {
+        font: inherit;
+      }
+
+      input,
+      select,
+      textarea {
+        width: 100%;
+        min-height: 46px;
+        padding: 11px 14px;
+        border-radius: 14px;
+        border: 1px solid var(--line);
+        background: rgba(255, 255, 255, 0.96);
+        color: var(--ink);
+        outline: none;
+        transition: border-color 0.14s ease, box-shadow 0.14s ease;
+      }
+
+      textarea {
+        min-height: 96px;
+        resize: vertical;
+      }
+
+      input:focus,
+      select:focus,
+      textarea:focus,
+      button:focus-visible {
+        border-color: rgba(15, 91, 120, 0.58);
+        box-shadow: 0 0 0 4px rgba(15, 91, 120, 0.12);
+      }
+
+      input,
+      select,
+      textarea,
+      button,
+      .table-shell {
+        scroll-margin: 160px 24px 120px;
+      }
+
+      .segmented {
+        display: inline-grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 8px;
+        padding: 6px;
+        border-radius: 18px;
+        background: #dfeaf2;
+      }
+
+      .segmented button {
+        min-height: 42px;
+        padding: 0 14px;
+        border: none;
+        border-radius: 14px;
+        background: transparent;
+        color: var(--muted);
+        font-weight: 800;
+        cursor: pointer;
+      }
+
+      .segmented button.active {
+        background: #ffffff;
+        color: var(--primary-strong);
+        box-shadow: 0 10px 18px rgba(17, 35, 58, 0.08);
+      }
+
+      .action-row {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .btn {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        gap: 8px;
+        min-height: 46px;
+        padding: 0 18px;
+        border: 1px solid transparent;
+        border-radius: 14px;
+        font-weight: 800;
+        cursor: pointer;
+        transition: transform 0.14s ease, box-shadow 0.14s ease, border-color 0.14s ease;
+      }
+
+      .btn:hover {
+        transform: translateY(-1px);
+      }
+
+      .btn-primary {
+        background: linear-gradient(135deg, var(--primary), #16749b);
+        color: #ffffff;
+        box-shadow: 0 16px 28px rgba(15, 91, 120, 0.18);
+      }
+
+      .btn-accent {
+        background: linear-gradient(135deg, #eb8a2f, #c96b14);
+        color: #ffffff;
+        box-shadow: 0 16px 28px rgba(201, 107, 20, 0.18);
+      }
+
+      .btn-muted {
+        background: #ffffff;
+        border-color: var(--line);
+        color: var(--ink);
+      }
+
+      .btn-danger {
+        background: #fff2f1;
+        border-color: rgba(216, 74, 74, 0.18);
+        color: var(--danger);
+      }
+
+      .table-action-btn {
+        min-height: 36px;
+        padding: 0 14px;
+        border-radius: 12px;
+        font-size: 14px;
+        font-weight: 800;
+      }
+
+      .status-strip,
+      .summary-strip {
+        display: grid;
+        grid-template-columns: repeat(4, minmax(0, 1fr));
+        gap: 10px;
+      }
+
+      .mini-card {
+        padding: 14px 16px;
+        border-radius: 18px;
+        background: #f8fbfd;
+        border: 1px solid rgba(17, 35, 58, 0.08);
+      }
+
+      .mini-card .label {
+        display: block;
+        margin-bottom: 4px;
+        font-size: 12px;
+        font-weight: 800;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      .mini-card .value {
+        font-size: 22px;
+        font-weight: 800;
+      }
+
+      .lookup {
+        position: relative;
+      }
+
+      .lookup-panel {
+        position: absolute;
+        top: calc(100% + 6px);
+        left: 0;
+        right: 0;
+        z-index: 20;
+        display: none;
+        max-height: 260px;
+        overflow: auto;
+        padding: 8px;
+        border-radius: 18px;
+        background: rgba(255, 255, 255, 0.98);
+        border: 1px solid rgba(17, 35, 58, 0.10);
+        box-shadow: 0 24px 40px rgba(17, 35, 58, 0.16);
+      }
+
+      .lookup-panel.open {
+        display: block;
+      }
+
+      .lookup-item {
+        width: 100%;
+        display: grid;
+        gap: 3px;
+        padding: 12px 14px;
+        border: none;
+        border-radius: 14px;
+        background: transparent;
+        text-align: left;
+        cursor: pointer;
+      }
+
+      .lookup-main {
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 10px;
+      }
+
+      .lookup-category {
+        flex: 0 0 auto;
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-width: 68px;
+        min-height: 26px;
+        padding: 4px 10px;
+        border-radius: 999px;
+        background: #e8f4fb;
+        border: 1px solid rgba(15, 91, 120, 0.25);
+        color: #06435b;
+        font-size: 11px;
+        font-weight: 800;
+        line-height: 1;
+        white-space: nowrap;
+      }
+
+      .lookup-item:hover,
+      .lookup-item.active {
+        background: #d6e6f4;
+        box-shadow: inset 0 0 0 1px rgba(15, 91, 120, 0.18);
+      }
+
+      .lookup-item strong {
+        font-size: 14px;
+      }
+
+      .lookup-item span {
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .entity-card {
+        min-height: 94px;
+        padding: 14px 16px;
+        border-radius: 18px;
+        background: linear-gradient(135deg, #f7fbfd, #edf5fa);
+        border: 1px solid rgba(15, 91, 120, 0.12);
+      }
+
+      .entity-card.empty {
+        display: grid;
+        place-items: center;
+        color: var(--muted);
+        font-size: 14px;
+      }
+
+      .entity-card h4 {
+        margin: 0 0 6px;
+      }
+
+      .entity-meta {
+        display: flex;
+        gap: 8px;
+        flex-wrap: wrap;
+        color: var(--muted);
+        font-size: 12px;
+      }
+
+      .table-shell {
+        overflow: auto;
+        border-radius: 18px;
+        border: 1px solid rgba(17, 35, 58, 0.08);
+        background: #ffffff;
+      }
+
+      table {
+        width: 100%;
+        border-collapse: collapse;
+      }
+
+      th,
+      td {
+        padding: 12px 12px;
+        border-bottom: 1px solid rgba(17, 35, 58, 0.06);
+        text-align: left;
+        vertical-align: top;
+      }
+
+      th {
+        position: sticky;
+        top: 0;
+        z-index: 2;
+        background: #f4f8fb;
+        font-size: 12px;
+        letter-spacing: 0.05em;
+        text-transform: uppercase;
+        color: var(--muted);
+      }
+
+      td.numeric,
+      th.numeric {
+        text-align: right;
+      }
+
+      .line-input {
+        min-height: 38px;
+        padding: 8px 10px;
+        border-radius: 10px;
+      }
+
+      .sale-grid {
+        width: max(100%, 1040px);
+        table-layout: auto;
+      }
+
+      .sale-grid td {
+        vertical-align: middle;
+      }
+
+      .sale-grid tbody tr:hover {
+        background: #fbfdff;
+      }
+
+      .sale-grid .row-index {
+        width: 64px;
+        text-align: center;
+        font-weight: 800;
+        font-size: 17px;
+        color: var(--ink);
+        white-space: nowrap;
+      }
+
+      .sale-grid .item-cell {
+        min-width: 320px;
+        width: 34%;
+      }
+
+      .sale-grid .item-title {
+        display: block;
+        font-size: 17px;
+        font-weight: 800;
+        line-height: 1.22;
+        color: #213550;
+        word-break: normal;
+        overflow-wrap: anywhere;
+      }
+
+      .sale-grid .code-cell {
+        width: 150px;
+        white-space: nowrap;
+      }
+
+      .sale-grid .code-chip {
+        display: inline-flex;
+        align-items: center;
+        justify-content: center;
+        min-height: 34px;
+        padding: 0 12px;
+        border-radius: 999px;
+        background: #f4f8fb;
+        border: 1px solid rgba(17, 35, 58, 0.08);
+        color: #35506d;
+        font-family: var(--mono);
+        font-size: 14px;
+        font-weight: 700;
+        letter-spacing: 0.03em;
+      }
+
+      .sale-grid .qty-cell,
+      .sale-grid .rate-cell {
+        width: 170px;
+      }
+
+      .sale-grid .amount-cell {
+        width: 160px;
+      }
+
+      .sale-grid .action-cell {
+        width: 144px;
+        text-align: center;
+      }
+
+      .sale-grid .numeric-input {
+        width: 100%;
+        min-width: 0;
+        text-align: right;
+        font-weight: 700;
+        font-variant-numeric: tabular-nums;
+      }
+
+      .sale-grid .amount-value {
+        display: inline-flex;
+        width: 100%;
+        justify-content: flex-end;
+        font-size: 18px;
+        font-weight: 800;
+        font-variant-numeric: tabular-nums;
+        color: #213550;
+      }
+
+      .sale-grid .btn-remove {
+        min-width: 110px;
+        min-height: 42px;
+        padding: 0 16px;
+        margin: 0 auto;
+      }
+
+      .summary-card {
+        display: grid;
+        gap: 14px;
+        padding: 18px;
+      }
+
+      .summary-card h3 {
+        margin: 0;
+      }
+
+      .summary-stack {
+        display: grid;
+        gap: 12px;
+      }
+
+      .summary-line {
+        display: flex;
+        justify-content: space-between;
+        gap: 14px;
+        font-weight: 800;
+      }
+
+      .summary-line .label {
+        color: var(--muted);
+      }
+
+      .summary-line.total {
+        padding-top: 12px;
+        border-top: 1px dashed rgba(17, 35, 58, 0.16);
+        font-size: 20px;
+      }
+
+      .summary-line.wallet-highlight {
+        align-items: center;
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: linear-gradient(135deg, rgba(15, 91, 120, 0.12), rgba(15, 91, 120, 0.05));
+        border: 1px solid rgba(15, 91, 120, 0.16);
+      }
+
+      .summary-line.wallet-highlight .label {
+        color: var(--primary-strong);
+      }
+
+      .summary-line.wallet-highlight #summaryWalletBalance {
+        font-size: 22px;
+        color: var(--primary-strong);
+      }
+
+      .summary-line.posting-highlight {
+        align-items: center;
+        padding: 12px 14px;
+        border-radius: 14px;
+        background: rgba(17, 35, 58, 0.04);
+        border: 1px solid rgba(17, 35, 58, 0.08);
+      }
+
+      .summary-line.posting-highlight .label {
+        color: #35506d;
+      }
+
+      .summary-line.posting-highlight #summaryPostingDisplay {
+        font-size: 20px;
+        color: var(--ink);
+      }
+
+      .summary-note {
+        margin-top: -4px;
+        font-size: 13px;
+        line-height: 1.45;
+        color: #4f6b88;
+      }
+
+      .support-text {
+        display: none;
+      }
+
+      #customerLookupActions,
+      #stewardLookupActions {
+        display: none !important;
+      }
+
+      .hero-actions .unit-select {
+        min-width: 88px;
+        max-width: 140px;
+      }
+
+      .hero-actions .date-chip {
+        font-family: var(--mono);
+        letter-spacing: 0.02em;
+      }
+
+      .grid-2 {
+        display: grid;
+        grid-template-columns: repeat(2, minmax(0, 1fr));
+        gap: 18px;
+      }
+
+      .list-tools {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+        justify-content: space-between;
+      }
+
+      .customer-master-table {
+        width: max(100%, 980px);
+        table-layout: fixed;
+      }
+
+      .customer-master-table td {
+        vertical-align: middle;
+      }
+
+      .customer-master-table .customer-name {
+        display: block;
+        font-size: 15px;
+        font-weight: 800;
+        color: #213550;
+        line-height: 1.25;
+      }
+
+      .customer-master-table .customer-wallet {
+        display: inline-flex;
+        align-items: center;
+        justify-content: flex-end;
+        min-width: 84px;
+        font-weight: 800;
+        color: #0f5b78;
+        font-variant-numeric: tabular-nums;
+        white-space: nowrap;
+      }
+
+      .customer-actions-cell {
+        width: 184px;
+      }
+
+      .customer-actions {
+        display: flex;
+        justify-content: flex-end;
+        align-items: center;
+        gap: 8px;
+        flex-wrap: nowrap;
+      }
+
+      .customer-table-btn {
+        min-height: 36px;
+        min-width: 78px;
+        padding: 0 12px;
+        border-radius: 12px;
+        font-size: 13px;
+        font-weight: 800;
+        white-space: nowrap;
+      }
+
+      .customer-table-btn.topup-btn {
+        background: #eef7fd;
+        border-color: rgba(15, 91, 120, 0.16);
+        color: #0f5b78;
+      }
+
+      .inline-tools {
+        display: flex;
+        flex-wrap: wrap;
+        gap: 10px;
+        align-items: center;
+      }
+
+      .pill {
+        display: inline-flex;
+        align-items: center;
+        min-height: 36px;
+        padding: 0 12px;
+        border-radius: 999px;
+        background: #edf6fb;
+        color: var(--primary-strong);
+        font-size: 12px;
+        font-weight: 800;
+      }
+
+      .checkbox-cell {
+        width: 44px;
+        text-align: center;
+      }
+
+      .empty-state {
+        padding: 28px 20px;
+        text-align: center;
+        color: var(--muted);
+      }
+
+      .toast {
+        position: fixed;
+        right: 18px;
+        bottom: 18px;
+        z-index: 60;
+        display: block;
+        min-width: 280px;
+        max-width: 420px;
+        padding: 14px 16px;
+        border-radius: 16px;
+        color: #ffffff;
+        opacity: 0;
+        visibility: hidden;
+        pointer-events: none;
+        transform: translate3d(24px, 20px, 0);
+        transition: opacity 0.18s ease, transform 0.22s ease, visibility 0.18s ease;
+        box-shadow: 0 24px 40px rgba(17, 35, 58, 0.22);
+      }
+
+      .toast.show {
+        opacity: 1;
+        visibility: visible;
+        transform: translate3d(0, 0, 0);
+      }
+
+      .toast.success {
+        background: linear-gradient(135deg, #16744e, #1d9b6c);
+      }
+
+      .toast.error {
+        background: linear-gradient(135deg, #9e2d2d, #d84a4a);
+      }
+
+      .toast.info {
+        background: linear-gradient(135deg, #0f5b78, #16749b);
+      }
+
+      .modal {
+        position: fixed;
+        inset: 0;
+        z-index: 70;
+        display: none;
+        align-items: center;
+        justify-content: center;
+        padding: 20px;
+        background: rgba(5, 18, 31, 0.62);
+        backdrop-filter: blur(8px);
+      }
+
+      .modal.open {
+        display: flex;
+      }
+
+      .modal-card {
+        width: min(980px, 100%);
+        max-height: calc(100vh - 40px);
+        overflow: auto;
+        border-radius: 28px;
+        background: #ffffff;
+        box-shadow: 0 36px 70px rgba(4, 17, 28, 0.28);
+      }
+
+      .modal-head {
+        position: sticky;
+        top: 0;
+        z-index: 4;
+        display: flex;
+        align-items: center;
+        justify-content: space-between;
+        gap: 12px;
+        padding: 18px 20px;
+        border-bottom: 1px solid rgba(17, 35, 58, 0.08);
+        background: rgba(255, 255, 255, 0.94);
+        backdrop-filter: blur(10px);
+      }
+
+      .modal-body {
+        padding: 20px;
+      }
+
+      .security-modal {
+        width: min(460px, 100%);
+      }
+
+      .security-form {
+        display: grid;
+        gap: 14px;
+      }
+
+      .security-form .action-row {
+        justify-content: flex-end;
+      }
+
+      .print-preview {
+        width: 100%;
+        max-width: 420px;
+        margin: 0 auto;
+        padding: 18px 18px 12px;
+        border-radius: 18px;
+        border: 1px solid rgba(17, 35, 58, 0.10);
+        background: #ffffff;
+        font-family: var(--mono);
+        color: #111111;
+      }
+
+      .print-preview h3,
+      .print-preview p {
+        margin: 0;
+      }
+
+      .print-preview .print-header {
+        text-align: center;
+        display: grid;
+        gap: 3px;
+      }
+
+      .print-preview .print-sub {
+        font-size: 12px;
+      }
+
+      .print-preview .print-meta,
+      .print-preview .print-totals {
+        display: grid;
+        gap: 4px;
+        margin-top: 12px;
+        font-size: 12px;
+      }
+
+      .print-preview .print-row {
+        display: flex;
+        justify-content: space-between;
+        gap: 12px;
+      }
+
+      .print-preview table {
+        margin-top: 12px;
+      }
+
+      .print-preview th,
+      .print-preview td {
+        padding: 6px 4px;
+        font-size: 12px;
+        border-bottom: 1px dashed rgba(0, 0, 0, 0.16);
+      }
+
+      .print-preview th {
+        position: static;
+        background: transparent;
+        color: #000000;
+      }
+
+      .print-preview .copy-tag {
+        margin-top: 10px;
+        text-align: center;
+        font-size: 11px;
+        letter-spacing: 0.10em;
+      }
+
+      .print-preview .footer-note {
+        margin-top: 12px;
+        text-align: center;
+        font-size: 11px;
+      }
+
+      #printHost {
+        display: none;
+      }
+
+      .muted {
+        color: var(--muted);
+      }
+
+      @media (max-width: 1180px) {
+        .sale-layout,
+        .grid-2,
+        .hero-meta {
+          grid-template-columns: 1fr;
+        }
+      }
+
+      @media (max-width: 920px) {
+        .tabs,
+        .status-strip,
+        .summary-strip {
+          grid-template-columns: 1fr 1fr;
+        }
+
+        .hero-top {
+          flex-direction: column;
+        }
+
+        .hero-actions {
+          justify-content: flex-start;
+        }
+
+        .form-grid {
+          grid-template-columns: repeat(6, minmax(0, 1fr));
+        }
+      }
+
+      @media (max-width: 640px) {
+        .page-shell {
+          width: min(100vw - 14px, 100%);
+          margin: 8px auto 18px;
+        }
+
+        .hero,
+        .panel-body {
+          padding-left: 14px;
+          padding-right: 14px;
+        }
+
+        .panel-head {
+          padding-left: 14px;
+          padding-right: 14px;
+        }
+
+        .hero-actions {
+          justify-content: flex-start;
+        }
+
+        .tabs,
+        .status-strip,
+        .summary-strip {
+          grid-template-columns: 1fr;
+        }
+
+        .form-grid {
+          grid-template-columns: 1fr;
+        }
+
+        .field.span-12,
+        .field.span-8,
+        .field.span-6,
+        .field.span-4,
+        .field.span-3 {
+          grid-column: span 1;
+        }
+      }
+
+      @media print {
+        @page {
+          size: 80mm 297mm;
+          margin: 0;
+        }
+
+        html,
+        body {
+          width: 80mm;
+          min-width: 80mm;
+          margin: 0 !important;
+          padding: 0 !important;
+          background: #ffffff !important;
+        }
+
+        body {
+          color: #000000;
+          -webkit-print-color-adjust: exact;
+          print-color-adjust: exact;
+        }
+
+        body > * {
+          display: none !important;
+        }
+
+        #printHost {
+          display: block !important;
+          width: 80mm;
+          min-height: 0;
+          padding: 0;
+          margin: 0;
+          background: #ffffff;
+        }
+
+        #printHost .print-preview {
+          width: 80mm;
+          max-width: none;
+          min-height: 0;
+          margin: 0;
+          padding: 3mm 3mm 2mm;
+          border: none;
+          border-radius: 0;
+          box-shadow: none;
+          font-size: 9.5pt;
+          font-weight: 600;
+          line-height: 1.15;
+          color: #000000;
+          page-break-after: always;
+          break-after: page;
+        }
+
+        #printHost .print-preview:last-child {
+          page-break-after: auto;
+          break-after: auto;
+        }
+
+        #printHost .print-preview h3 {
+          font-size: 12pt;
+          font-weight: 900;
+          line-height: 1.15;
+          color: #000000;
+          letter-spacing: 0.02em;
+          -webkit-text-stroke: 0.12px #000000;
+          text-shadow: 0.12px 0 0 #000000, -0.12px 0 0 #000000;
+        }
+
+        #printHost .print-preview .print-header {
+          padding-bottom: 1.2mm;
+          border-bottom: 0.5mm solid #000000;
+        }
+
+        #printHost .print-preview .print-sub {
+          font-size: 8.5pt;
+          font-weight: 800;
+          line-height: 1.2;
+          color: #000000;
+          -webkit-text-stroke: 0.08px #000000;
+          text-shadow: 0.08px 0 0 #000000;
+        }
+
+        #printHost .print-preview .print-meta,
+        #printHost .print-preview .print-totals {
+          gap: 0.8mm;
+          margin-top: 2mm;
+          font-size: 8.5pt;
+        }
+
+        #printHost .print-preview .print-meta {
+          padding-bottom: 1.2mm;
+          border-bottom: 0.4mm solid #000000;
+        }
+
+        #printHost .print-preview .print-totals {
+          padding-top: 1.2mm;
+          border-top: 0.5mm solid #000000;
+        }
+
+        #printHost .print-preview .print-row {
+          gap: 2mm;
+          align-items: flex-start;
+        }
+
+        #printHost .print-preview .print-row span,
+        #printHost .print-preview .print-row strong {
+          color: #000000;
+          font-weight: 700;
+        }
+
+        #printHost .print-preview .print-row strong {
+          text-align: right;
+          word-break: break-word;
+        }
+
+        #printHost .print-preview table {
+          width: 100%;
+          margin-top: 2mm;
+          border-top: 0.5mm solid #000000;
+          border-bottom: 0.5mm solid #000000;
+          table-layout: fixed;
+        }
+
+        #printHost .print-preview th,
+        #printHost .print-preview td {
+          padding: 0.8mm 0.7mm;
+          font-size: 8pt;
+          font-weight: 700;
+          line-height: 1.1;
+          color: #000000;
+          border-bottom: 0.35mm solid #000000;
+          overflow-wrap: anywhere;
+        }
+
+        #printHost .print-preview thead th {
+          border-bottom: 0.5mm solid #000000;
+        }
+
+        #printHost .print-preview tbody tr:last-child td {
+          border-bottom: none;
+        }
+
+        #printHost .print-preview th:nth-child(1),
+        #printHost .print-preview td:nth-child(1) {
+          width: 49%;
+        }
+
+        #printHost .print-preview th:nth-child(2),
+        #printHost .print-preview td:nth-child(2) {
+          width: 15%;
+        }
+
+        #printHost .print-preview th:nth-child(3),
+        #printHost .print-preview td:nth-child(3) {
+          width: 17%;
+        }
+
+        #printHost .print-preview th:nth-child(4),
+        #printHost .print-preview td:nth-child(4) {
+          width: 19%;
+        }
+
+        #printHost .print-preview .copy-tag,
+        #printHost .print-preview .footer-note {
+          font-size: 7.5pt;
+          color: #000000;
+          font-weight: 700;
+        }
+      }
+    </style>
+  </head>
+  <body>
+    <div class="page-shell">
+      <header class="hero">
+        <div class="hero-top">
+          <div class="hero-copy">
+            <h1 id="brandTitle">Asarfi Hospital Canteen</h1>
+            <p id="brandSubtitle">Keyboard-first billing, receipts, reports, and ledger-ready customer management for legacy-compatible hospital canteen operations.</p>
+          </div>
+          <div class="hero-actions">
+            <span class="hero-chip date-chip" id="heroDateChip">{{ today_iso }}</span>
+            <span class="hero-chip" id="preparedByChip">{{ prepared_by or 'User' }}</span>
+            <select id="unitSelect" class="unit-select" aria-label="Canteen Unit" tabindex="-1">
+              {% for unit in allowed_units %}
+              <option value="{{ unit }}" {% if unit == default_unit %}selected{% endif %}>{{ unit }}</option>
+              {% endfor %}
+            </select>
+            <a class="back-link" href="{{ url_for('dashboard') }}" tabindex="-1">Dashboard</a>
+            <button class="hero-action-button" type="button" id="changePasswordBtn" tabindex="-1">Change Password</button>
+            <a class="back-link logout-link" href="{{ url_for('logout') }}" tabindex="-1">Logout</a>
+          </div>
+        </div>
+
+        <div class="hero-meta">
+          <div class="meta-card">
+            <span class="label">Current Unit</span>
+            <span class="value" id="brandUnit">{{ default_unit }}</span>
+          </div>
+          <div class="meta-card">
+            <span class="label">Counter Date</span>
+            <span class="value" id="heroDate">{{ today_iso }}</span>
+          </div>
+          <div class="meta-card">
+            <span class="label">Legacy Safe</span>
+            <span class="value">Billing_Mst + Receipt_Mst</span>
+          </div>
+          <div class="meta-card">
+            <span class="label">Ledger Strategy</span>
+            <span class="value">TMPPatient Canonical</span>
+          </div>
+        </div>
+
+        <div class="hint-bar">
+          <div class="hint"><kbd>Alt+1</kbd> Sale</div>
+          <div class="hint"><kbd>Alt+2</kbd> Receipt</div>
+          <div class="hint"><kbd>Alt+3</kbd> Reports</div>
+          {% if can_manage_menu %}
+          <div class="hint"><kbd>Alt+4</kbd> Menu</div>
+          {% endif %}
+          <div class="hint"><kbd>Alt+5</kbd> Customers</div>
+          <div class="hint"><kbd>F2</kbd> Customer Search</div>
+          <div class="hint"><kbd>F4</kbd> Item Search</div>
+          <div class="hint"><kbd>Enter</kbd> Pick</div>
+          <div class="hint"><kbd>Ctrl+S</kbd> Save Bill</div>
+          <div class="hint"><kbd>1 / 2 / 3</kbd> Print</div>
+        </div>
+      </header>
+
+      <nav class="tabs" aria-label="Canteen Sections">
+        <button class="tab-button active" data-tab="sale" tabindex="-1">Sale / Billing</button>
+        <button class="tab-button" data-tab="receipts" tabindex="-1">Receipt / Due</button>
+        <button class="tab-button" data-tab="reports" tabindex="-1">Reports</button>
+        {% if can_manage_menu %}
+        <button class="tab-button" data-tab="menu" tabindex="-1">Menu Master</button>
+        {% endif %}
+        <button class="tab-button" data-tab="customers" tabindex="-1">Customer Master</button>
+      </nav>
+
+      <main class="content">
+        <section class="panel" data-panel="sale">
+          <div class="panel-head">
+            <div>
+              <h2>Sale / Billing</h2>
+              <p class="panel-copy">Fast keyboard billing for walk-ins and permanent customers with legacy bill compatibility and ledger-clean customer selection underneath.</p>
+            </div>
+            <div class="inline-tools">
+              <span class="pill" id="saleStatusPill">Ready for counter billing</span>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="sale-layout">
+              <div class="panel" style="box-shadow:none;">
+                <div class="panel-body" data-enter-scope="sale">
+                  <div class="form-grid">
+                    <div class="field span-4">
+                      <label for="saleTypeSelect">Billing Category</label>
+                      <select id="saleTypeSelect" autofocus></select>
+                    </div>
+
+                    <div class="field span-4 hidden" id="saleCustomerKindWrap">
+                      <label for="saleCustomerKindSelect">Customer Type</label>
+                      <select id="saleCustomerKindSelect">
+                        <option value="patient">Patient</option>
+                        <option value="staff">Staff / Management</option>
+                      </select>
+                    </div>
+
+                    <div class="field span-4 hidden" id="saleBulkSubcategoryWrap">
+                      <label for="saleBulkSubcategorySelect">Order Type</label>
+                      <select id="saleBulkSubcategorySelect"></select>
+                    </div>
+
+                    <div class="field span-8" id="walkinFieldWrap">
+                      <label for="walkinName">Walk-In Name / Quick Label</label>
+                      <div class="lookup">
+                        <input id="walkinName" class="lookup-input" type="text" value="Cash Customer" placeholder="Customer, mobile, reg no, patient name, or visitor">
+                        <div id="walkinNamePanel" class="lookup-panel"></div>
+                      </div>
+                    </div>
+
+                    <div class="field span-12 hidden" id="selectedCustomerWrap">
+                      <label>Selected Customer / Wallet</label>
+                      <div class="entity-card empty" id="selectedCustomerCard">No customer master is linked to this bill yet.</div>
+                      <div class="action-row" style="margin-top:12px;">
+                        <button type="button" class="btn btn-muted" id="saleWalletTopupBtn" tabindex="-1">Top Up Wallet</button>
+                        <button type="button" class="btn btn-muted" id="clearSelectedCustomerBtn" tabindex="-1">Clear Customer</button>
+                      </div>
+                    </div>
+
+                    <div class="field span-12">
+                      <label for="itemLookup">Menu Item Search</label>
+                      <div class="lookup">
+                        <input id="itemLookup" class="lookup-input" type="text" placeholder="Search menu item by name or code, then press Enter to add">
+                        <div id="itemLookupPanel" class="lookup-panel"></div>
+                      </div>
+                    </div>
+                  </div>
+
+                  <div class="status-strip" style="margin-top:18px;">
+                    <div class="mini-card">
+                      <span class="label">Lines</span>
+                      <span class="value" id="saleLineCount">0</span>
+                    </div>
+                    <div class="mini-card">
+                      <span class="label">Gross</span>
+                      <span class="value" id="saleGrossDisplay">0.00</span>
+                    </div>
+                    <div class="mini-card">
+                      <span class="label">Net</span>
+                      <span class="value" id="saleNetDisplay">0.00</span>
+                    </div>
+                    <div class="mini-card">
+                      <span class="label">Due</span>
+                      <span class="value" id="saleDueDisplay">0.00</span>
+                    </div>
+                  </div>
+
+                  <div class="table-shell" style="margin-top:18px;">
+                    <table class="sale-grid">
+                      <thead>
+                        <tr>
+                          <th style="width:68px;">#</th>
+                          <th>Item</th>
+                          <th style="width:140px;">Code</th>
+                          <th class="numeric" style="width:150px;">Qty</th>
+                          <th class="numeric" style="width:160px;">Rate</th>
+                          <th class="numeric" style="width:150px;">Amount</th>
+                          <th style="width:120px; text-align:center;">Action</th>
+                        </tr>
+                      </thead>
+                      <tbody id="saleLinesBody">
+                        <tr><td colspan="7" class="empty-state">Add menu items to start billing.</td></tr>
+                      </tbody>
+                    </table>
+                  </div>
+                </div>
+              </div>
+
+              <aside class="panel summary-card">
+                <h3>Bill Summary</h3>
+                <p class="support-text">Counter bills default to full collection. Enter `0` to post on credit or settle through wallet when the selected customer balance is available.</p>
+
+                <div class="summary-stack">
+                  <div class="summary-line"><span class="label">Gross</span><span id="summaryGross">0.00</span></div>
+                  <div class="field">
+                    <label for="discountAmount">Discount</label>
+                    <input id="discountAmount" class="line-input" type="number" min="0" step="0.01" value="0">
+                  </div>
+                  <div class="summary-line"><span class="label">Net</span><span id="summaryNet">0.00</span></div>
+                  <div class="field">
+                    <label for="receivedAmount">Received</label>
+                    <input id="receivedAmount" class="line-input" type="number" min="0" step="0.01" value="0">
+                  </div>
+                  <div class="summary-line wallet-highlight hidden" id="summaryWalletBalanceWrap">
+                    <span class="label">Wallet Balance</span>
+                    <span id="summaryWalletBalance">0.00</span>
+                  </div>
+                  <div class="field hidden" id="zeroReceivedActionWrap">
+                    <label for="zeroReceivedActionSelect">Zero Received As</label>
+                    <select id="zeroReceivedActionSelect">
+                      <option value="wallet">Use Wallet</option>
+                      <option value="credit">Post on Credit</option>
+                    </select>
+                  </div>
+                  <div class="summary-line posting-highlight" id="summaryPostingWrap">
+                    <span class="label">Will Post As</span>
+                    <span id="summaryPostingDisplay">Cash</span>
+                  </div>
+                  <div class="summary-note" id="summaryPostingNote">Collected amount will post under Cash.</div>
+                  <div class="field" id="salePayModeWrap">
+                    <label for="salePayModeSelect">Pay Mode</label>
+                    <select id="salePayModeSelect"></select>
+                  </div>
+                  <div class="support-text" id="saleWalletHint">Select a customer master to view wallet balance and use wallet settlement.</div>
+                  <div class="field">
+                    <label for="receiptNote">Receipt Note</label>
+                    <input id="receiptNote" type="text" value="OK" placeholder="Short receipt note">
+                  </div>
+                  <div class="summary-line total"><span class="label">Due</span><span id="summaryDue">0.00</span></div>
+                </div>
+
+                <div class="action-row">
+                  <button type="button" class="btn btn-primary" id="saveBillBtn">Save Bill</button>
+                  <button type="button" class="btn btn-accent" id="openLastPrintBtn">Print Last</button>
+                  <button type="button" class="btn btn-muted" id="clearBillBtn">New Bill</button>
+                </div>
+
+                <div class="entity-card empty" id="lastBillCard">No bill has been saved in this session yet.</div>
+              </aside>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel hidden" data-panel="receipts">
+          <div class="panel-head">
+            <div>
+              <h2>Receipt / Due Collection</h2>
+              <p class="panel-copy">Bulk-select pending bills, type receipt amounts quickly, and post into `Receipt_Mst` with due reduction through the legacy adjustment procedure.</p>
+            </div>
+            <div class="inline-tools">
+              <button type="button" class="btn btn-muted" id="refreshDuesBtn">Refresh</button>
+              <button type="button" class="btn btn-muted" id="selectAllDuesBtn">Select Visible</button>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="form-grid">
+              <div class="field span-3">
+                <label for="dueFromDate">From Date</label>
+                <input id="dueFromDate" type="date">
+              </div>
+              <div class="field span-3">
+                <label for="dueToDate">To Date</label>
+                <input id="dueToDate" type="date">
+              </div>
+              <div class="field span-3">
+                <label for="dueTypeSelect">Customer Type</label>
+                <select id="dueTypeSelect"></select>
+              </div>
+              <div class="field span-3">
+                <label for="dueReceiptDate">Receipt Date</label>
+                <input id="dueReceiptDate" type="date">
+              </div>
+              <div class="field span-4">
+                <label for="dueSearch">Fast Search</label>
+                <input id="dueSearch" type="text" placeholder="Customer, bill no, code, department">
+              </div>
+              <div class="field span-4">
+                <label for="duePayModeSelect">Pay Mode</label>
+                <select id="duePayModeSelect"></select>
+              </div>
+              <div class="field span-4">
+                <label for="dueNote">Receipt Note</label>
+                <input id="dueNote" type="text" value="Due collection">
+              </div>
+            </div>
+
+            <div class="summary-strip" style="margin-top:18px;">
+              <div class="mini-card"><span class="label">Rows</span><span class="value" id="dueRowCount">0</span></div>
+              <div class="mini-card"><span class="label">Outstanding</span><span class="value" id="dueOutstandingDisplay">0.00</span></div>
+              <div class="mini-card"><span class="label">Selected Receipt</span><span class="value" id="dueSelectedAmountDisplay">0.00</span></div>
+              <div class="mini-card"><span class="label">Selected Bills</span><span class="value" id="dueSelectedCountDisplay">0</span></div>
+            </div>
+
+            <div class="table-shell" style="margin-top:18px;">
+              <table>
+                <thead>
+                  <tr>
+                    <th class="checkbox-cell">Pick</th>
+                    <th>Bill</th>
+                    <th>Customer</th>
+                    <th>Type</th>
+                    <th>Created By</th>
+                    <th>Bill Date</th>
+                    <th class="numeric">Net</th>
+                    <th class="numeric">Received</th>
+                    <th class="numeric">Due</th>
+                    <th style="width:150px;">Receipt Amount</th>
+                  </tr>
+                </thead>
+                <tbody id="dueRowsBody">
+                  <tr><td colspan="10" class="empty-state">Open the receipt tab to load outstanding bills.</td></tr>
+                </tbody>
+              </table>
+            </div>
+
+            <div class="action-row" style="margin-top:18px;">
+              <button type="button" class="btn btn-primary" id="saveReceiptsBtn">Post Receipt(s)</button>
+            </div>
+          </div>
+        </section>
+
+        <section class="panel hidden" data-panel="reports">
+          <div class="panel-head">
+            <div>
+              <h2>Reports</h2>
+              <p class="panel-copy">Legacy-required report views with cleaned search, better readability, and no change to the old bill / receipt generation logic underneath.</p>
+            </div>
+            <div class="inline-tools">
+              <button type="button" class="btn btn-muted" id="exportReportExcelBtn">Export Excel</button>
+              <button type="button" class="btn btn-muted" id="exportReportPdfBtn">Export PDF</button>
+              <button type="button" class="btn btn-muted" id="refreshReportsBtn">Load Report</button>
+            </div>
+          </div>
+          <div class="panel-body">
+            <div class="form-grid">
+              <div class="field span-3">
+                <label for="reportKindSelect">Report</label>
+                <select id="reportKindSelect"></select>
+              </div>
+              <div class="field span-3">
+                <label for="reportFromDate">From Date</label>
+                <input id="reportFromDate" type="date">
+              </div>
+              <div class="field span-3">
+                <label for="reportToDate">To Date</label>
+                <input id="reportToDate" type="date">
+              </div>
+              <div class="field span-3">
+                <label for="reportTypeSelect">Customer Type</label>
+                <select id="reportTypeSelect"></select>
+              </div>
+              <div class="field span-12">
+                <label for="reportSearch">Search</label>
+                <input id="reportSearch" type="text" placeholder="Menu, bill no, legacy label, created by, ledger, customer, code">
+              </div>
+            </div>
+
+            <div class="summary-strip" style="margin-top:18px;">
+              <div class="mini-card"><span class="label" id="reportMetric1Label">Rows</span><span class="value" id="reportRowCount">0</span></div>
+              <div class="mini-card"><span class="label" id="reportMetric2Label">Net</span><span class="value" id="reportNetDisplay">0.00</span></div>
+              <div class="mini-card"><span class="label" id="reportMetric3Label">Received</span><span class="value" id="reportReceivedDisplay">0.00</span></div>
+              <div class="mini-card"><span class="label" id="reportMetric4Label">Due</span><span class="value" id="reportDueDisplay">0.00</span></div>
+              <div class="mini-card hidden" id="reportMetric5Card"><span class="label" id="reportMetric5Label">Wallet Top-up</span><span class="value" id="reportMetric5Display">0.00</span></div>
+            </div>
+
+            <div class="table-shell" style="margin-top:18px;">
+              <table>
+                <thead id="reportTableHead"></thead>
+                <tbody id="reportTableBody">
+                  <tr><td class="empty-state">Choose a report and load data.</td></tr>
+                </tbody>
+              </table>
+            </div>
+          </div>
+        </section>
+
+        {% if can_manage_menu %}
+        <section class="panel hidden" data-panel="menu">
+          <div class="panel-head">
+            <div>
+              <h2>Menu Master</h2>
+              <p class="panel-copy">Use the same `tblmenumaster` fields the legacy software expects, with clearer rates and faster edit flow.</p>
+            </div>
+            <div class="inline-tools">
+              <button type="button" class="btn btn-muted" id="refreshMenuBtn">Refresh List</button>
+            </div>
+          </div>
+          <div class="panel-body grid-2">
+            <div class="panel" style="box-shadow:none;">
+              <div class="panel-body" data-enter-scope="menu">
+                <div class="form-grid">
+                  <div class="field span-4">
+                    <label for="menuCode">Menu Code</label>
+                    <input id="menuCode" type="text">
+                  </div>
+                  <div class="field span-8">
+                    <label for="menuItemName">Item Name</label>
+                    <input id="menuItemName" type="text" placeholder="Tea, Lunch Plate, Soup, Parcel Combo">
+                  </div>
+                  <div class="field span-4">
+                    <label for="menuRate">Rate</label>
+                    <input id="menuRate" type="number" min="0" step="0.01">
+                  </div>
+                  <div class="field span-8">
+                    <label for="menuRoomServiceRate">Room Service Rate</label>
+                    <input id="menuRoomServiceRate" type="number" min="0" step="0.01">
+                  </div>
+                </div>
+                <div class="action-row" style="margin-top:18px;">
+                  <button type="button" class="btn btn-primary" id="saveMenuBtn">Save Menu Item</button>
+                  <button type="button" class="btn btn-muted" id="newMenuBtn">New Menu Item</button>
+                </div>
+                <div class="entity-card empty" id="menuFormStatus">Create a fresh menu item or pick one from the list to edit.</div>
+              </div>
+            </div>
+
+            <div class="panel" style="box-shadow:none;">
+              <div class="panel-body">
+                <div class="list-tools">
+                  <div class="field" style="flex:1; min-width:220px;">
+                    <label for="menuSearch">Search Menu</label>
+                    <input id="menuSearch" type="text" placeholder="Code or item name">
+                  </div>
+                  <div class="pill" id="menuCountPill">0 items</div>
+                </div>
+                <div class="table-shell" style="margin-top:18px;">
+                  <table>
+                    <thead>
+                      <tr>
+                        <th>Code</th>
+                        <th>Item</th>
+                        <th class="numeric">Rate</th>
+                        <th class="numeric">Room</th>
+                        <th>Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="menuRowsBody">
+                      <tr><td colspan="5" class="empty-state">Menu list will load here.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+        {% endif %}
+
+        <section class="panel hidden" data-panel="customers">
+          <div class="panel-head">
+            <div>
+              <h2>Customer Master / Permanent Registration</h2>
+              <p class="panel-copy">Maintain permanent customer identity on `TMPPatient` and keep ledger metadata in the safe HID overlay table for future patient, ward, steward, and dietician workflows.</p>
+            </div>
+            <div class="inline-tools">
+              <button type="button" class="btn btn-muted" id="refreshCustomersBtn">Refresh List</button>
+            </div>
+          </div>
+          <div class="panel-body grid-2">
+            <div class="panel" style="box-shadow:none;">
+              <div class="panel-body" data-enter-scope="customer">
+                <div class="form-grid">
+                  <div class="field span-4">
+                    <label for="customerTypeSelect">Customer Type</label>
+                    <select id="customerTypeSelect"></select>
+                  </div>
+                  <div class="field span-4">
+                    <label for="customerCode">Code</label>
+                    <input id="customerCode" type="text">
+                  </div>
+                  <div class="field span-4">
+                    <label for="customerActiveSelect">Status</label>
+                    <select id="customerActiveSelect">
+                      <option value="1">Active</option>
+                      <option value="0">Inactive</option>
+                    </select>
+                  </div>
+                  <div class="field span-12">
+                    <label for="customerName">Customer Name</label>
+                    <input id="customerName" type="text" placeholder="Staff, doctor, department, ward, steward, or other permanent customer">
+                  </div>
+                  <div class="field span-6">
+                    <label for="customerMobile1">Primary Mobile</label>
+                    <input id="customerMobile1" type="text">
+                  </div>
+                  <div class="field span-6">
+                    <label for="customerMobile2">Secondary Mobile</label>
+                    <input id="customerMobile2" type="text">
+                  </div>
+                  <div class="field span-6">
+                    <label for="customerLedgerCode">Ledger Code</label>
+                    <input id="customerLedgerCode" type="text">
+                  </div>
+                  <div class="field span-6">
+                    <label for="customerLedgerName">Ledger Name</label>
+                    <input id="customerLedgerName" type="text">
+                  </div>
+                  <div class="field span-6">
+                    <label for="customerDepartmentName">Department / Ward</label>
+                    <input id="customerDepartmentName" type="text">
+                  </div>
+                  <div class="field span-6">
+                    <label for="customerCardReference">Card / Ref</label>
+                    <input id="customerCardReference" type="text">
+                  </div>
+                  <div class="field span-6">
+                    <label for="customerWorkflowContext">Workflow Context</label>
+                    <input id="customerWorkflowContext" type="text" placeholder="staff, ward, doctor, steward, dietician">
+                  </div>
+                  <div class="field span-6">
+                    <label for="customerReferenceLabel">Reference Label</label>
+                    <input id="customerReferenceLabel" type="text">
+                  </div>
+                  <div class="field span-12">
+                    <label for="customerNotes">Notes</label>
+                    <textarea id="customerNotes" placeholder="Optional metadata for future ordering workflow"></textarea>
+                  </div>
+                  <div class="field span-4">
+                    <label for="customerWalletBalance">Wallet Balance</label>
+                    <input id="customerWalletBalance" type="text" value="0.00" readonly>
+                  </div>
+                </div>
+                <div class="action-row" style="margin-top:18px;">
+                  <button type="button" class="btn btn-primary" id="saveCustomerBtn">Save Customer</button>
+                  <button type="button" class="btn btn-muted" id="customerWalletTopupBtn">Top Up Wallet</button>
+                  <button type="button" class="btn btn-muted" id="newCustomerBtn">New Customer</button>
+                </div>
+                <div class="entity-card empty" id="customerFormStatus">Use this form for permanent customers only. Walk-ins remain quick on the billing tab.</div>
+              </div>
+            </div>
+
+            <div class="panel" style="box-shadow:none;">
+              <div class="panel-body">
+                <div class="list-tools">
+                  <div class="field" style="flex:1; min-width:220px;">
+                    <label for="customerSearchMaster">Search Customer</label>
+                    <input id="customerSearchMaster" type="text" placeholder="Name, code, mobile, ledger, department">
+                  </div>
+                  <div class="pill" id="customerCountPill">0 customers</div>
+                </div>
+                <div class="table-shell" style="margin-top:18px;">
+                  <table class="customer-master-table">
+                    <thead>
+                      <tr>
+                        <th>Name</th>
+                        <th>Type</th>
+                        <th>Code</th>
+                        <th>Department</th>
+                        <th>Mobile</th>
+                        <th class="numeric" style="width:110px;">Wallet</th>
+                        <th style="width:184px; text-align:right;">Action</th>
+                      </tr>
+                    </thead>
+                    <tbody id="customerRowsBody">
+                      <tr><td colspan="7" class="empty-state">Customer list will load here.</td></tr>
+                    </tbody>
+                  </table>
+                </div>
+              </div>
+            </div>
+          </div>
+        </section>
+      </main>
+    </div>
+
+    <div class="toast" id="toast"></div>
+
+    <div class="modal" id="passwordModal" aria-hidden="true">
+      <div class="modal-card security-modal">
+        <div class="modal-head">
+          <div>
+            <h3>Change Password</h3>
+            <div class="muted">Update the password for {{ prepared_by or 'this login' }}.</div>
+          </div>
+          <button class="btn btn-muted" type="button" id="closePasswordModalBtn">Close</button>
+        </div>
+        <div class="modal-body">
+          <form class="security-form" method="post" action="{{ url_for('settings_change_password') }}">
+            <input type="hidden" name="next" value="{{ url_for('canteen_dashboard') }}">
+            <div class="field">
+              <label>Current Password</label>
+              <input type="password" name="current_password" autocomplete="current-password" required>
+            </div>
+            <div class="field">
+              <label>New Password</label>
+              <input type="password" name="new_password" autocomplete="new-password" required>
+            </div>
+            <div class="action-row">
+              <button class="btn btn-muted" type="button" id="cancelPasswordBtn">Cancel</button>
+              <button class="btn btn-primary" type="submit">Update Password</button>
+            </div>
+          </form>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="printModal" aria-hidden="true">
+      <div class="modal-card">
+        <div class="modal-head">
+          <div>
+            <h3 style="margin:0;">Bill Print Preview</h3>
+            <p class="muted" style="margin:4px 0 0;">In-page HID print flow for SNBC / label-friendly billing. Use keyboard `1`, `2`, `3`, or `Esc`.</p>
+          </div>
+          <div class="inline-tools">
+            <button type="button" class="btn btn-accent" data-print-copies="1">1 Copy</button>
+            <button type="button" class="btn btn-accent" data-print-copies="2">2 Copies</button>
+            <button type="button" class="btn btn-accent" data-print-copies="3">3 Copies</button>
+            <button type="button" class="btn btn-muted" id="closePrintModalBtn">Close</button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div id="printPreviewWrap" class="print-preview">
+            <div class="empty-state">Save or reopen a bill to preview it here.</div>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="reportPaymentModeModal" aria-hidden="true">
+      <div class="modal-card" style="max-width:560px;">
+        <div class="modal-head">
+          <div>
+            <h3 style="margin:0;">Request Payment Mode Change</h3>
+            <p class="muted" id="reportPaymentModeSummary" style="margin:4px 0 0;">Select the replacement payment mode for this collected receipt.</p>
+          </div>
+          <div class="inline-tools">
+            <button type="button" class="btn btn-muted" id="closeReportPaymentModeModalBtn">Close</button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="field span-6">
+              <label for="reportCurrentPaymentMode">Current Payment Mode</label>
+              <input id="reportCurrentPaymentMode" type="text" readonly>
+            </div>
+            <div class="field span-6">
+              <label for="reportRequestedPaymentModeSelect">Requested Payment Mode</label>
+              <select id="reportRequestedPaymentModeSelect"></select>
+            </div>
+            <div class="field span-12">
+              <label for="reportPaymentModeReason">Reason</label>
+              <textarea id="reportPaymentModeReason" placeholder="Why should Accounts change this receipt payment mode?"></textarea>
+            </div>
+          </div>
+          <div class="action-row" style="margin-top:18px;">
+            <button type="button" class="btn btn-primary" id="submitReportPaymentModeRequestBtn">Send Request</button>
+            <button type="button" class="btn btn-muted" id="cancelReportPaymentModeRequestBtn">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div class="modal" id="walletTopupModal" aria-hidden="true">
+      <div class="modal-card" style="max-width:620px;">
+        <div class="modal-head">
+          <div>
+            <h3 style="margin:0;">Customer Wallet Top-up</h3>
+            <p class="muted" style="margin:4px 0 0;">Top up wallet balance for the selected permanent customer.</p>
+          </div>
+          <div class="inline-tools">
+            <button type="button" class="btn btn-muted" id="closeWalletTopupModalBtn">Close</button>
+          </div>
+        </div>
+        <div class="modal-body">
+          <div class="form-grid">
+            <div class="field span-8">
+              <label for="walletTopupCustomerName">Customer</label>
+              <input id="walletTopupCustomerName" type="text" readonly>
+            </div>
+            <div class="field span-4">
+              <label for="walletTopupCurrentBalance">Current Balance</label>
+              <input id="walletTopupCurrentBalance" type="text" readonly>
+            </div>
+            <div class="field span-4">
+              <label for="walletTopupAmount">Top-up Amount</label>
+              <input id="walletTopupAmount" type="number" min="0.01" step="0.01" placeholder="0.00">
+            </div>
+            <div class="field span-4">
+              <label for="walletTopupPayModeSelect">Payment Mode</label>
+              <select id="walletTopupPayModeSelect"></select>
+            </div>
+            <div class="field span-4">
+              <label for="walletTopupBalanceAfter">Balance After</label>
+              <input id="walletTopupBalanceAfter" type="text" readonly>
+            </div>
+            <div class="field span-12">
+              <label for="walletTopupRemarks">Remarks</label>
+              <textarea id="walletTopupRemarks" placeholder="Counter note, UPI reference, or reason"></textarea>
+            </div>
+          </div>
+          <div class="action-row" style="margin-top:18px;">
+            <button type="button" class="btn btn-primary" id="submitWalletTopupBtn">Save Top-up</button>
+            <button type="button" class="btn btn-muted" id="cancelWalletTopupBtn">Cancel</button>
+          </div>
+        </div>
+      </div>
+    </div>
+
+    <div id="printHost"></div>
+
+    <script id="canteenBootstrapData" type="application/json">{{ {
+        "allowed_units": allowed_units,
+        "default_unit": default_unit,
+        "prepared_by": prepared_by,
+        "today_iso": today_iso,
+        "brandings": brandings,
+        "initial_init": initial_init,
+        "rights": {
+          "can_manage_menu": can_manage_menu,
+          "can_process_cancellations": can_process_cancellations,
+          "can_edit_sale_rate": can_edit_sale_rate
+        },
+      } | tojson }}</script>
+
+    <script>
+      const BOOTSTRAP = JSON.parse(document.getElementById("canteenBootstrapData")?.textContent || "{}");
+
+      const state = {
+        init: BOOTSTRAP.initial_init || null,
+        initCache: BOOTSTRAP.initial_init?.unit ? { [BOOTSTRAP.initial_init.unit]: BOOTSTRAP.initial_init } : {},
+        unit: BOOTSTRAP.default_unit,
+        activeTab: "sale",
+        loadedTabs: new Set(),
+        rights: BOOTSTRAP.rights || {},
+        sale: {
+          customer: null,
+          selectedMobile: "",
+          steward: null,
+          items: [],
+          receivedManual: false,
+          saving: false,
+          savePromise: null,
+          lastBill: null,
+          printBill: null,
+        },
+        dues: {
+          rows: [],
+        },
+        report: {
+          rows: [],
+          columns: [],
+          paymentModeRow: null,
+        },
+        menu: {
+          currentId: 0,
+          rows: [],
+        },
+        customerMaster: {
+          currentId: 0,
+          rows: [],
+          walletTopupCustomer: null,
+        },
+      };
+
+      const DEFAULT_WALKIN_NAME = "Cash Customer";
+      const el = {};
+      let reportRefreshToken = 0;
+
+      function billingTypeRows() {
+        const rows = state.init?.billing_categories || state.init?.billing_types;
+        if (Array.isArray(rows) && rows.length) {
+          return rows;
+        }
+        return [
+          { category_key: "general", category_name: "General Billing", type_id: 1, pricing_type_id: 1, wallet_allowed: true },
+          { category_key: "room_service", category_name: "Room Service Billing", type_id: 6, pricing_type_id: 6, wallet_allowed: true },
+          { category_key: "bulk", category_name: "Bulk / Institutional Orders", type_id: 1, pricing_type_id: 1, wallet_allowed: false },
+        ];
+      }
+
+      function canManageMenu() {
+        return Boolean(state.rights?.can_manage_menu);
+      }
+
+      function canEditSaleRate() {
+        return Boolean(state.rights?.can_edit_sale_rate);
+      }
+
+      function availableTabs() {
+        return ["sale", "receipts", "reports", ...(canManageMenu() ? ["menu"] : []), "customers"];
+      }
+
+      function ensureInView(node) {
+        if (!node || typeof node.scrollIntoView !== "function") {
+          return;
+        }
+        window.requestAnimationFrame(() => {
+          node.scrollIntoView({ block: "nearest", inline: "nearest" });
+        });
+      }
+
+      function $(id) {
+        return document.getElementById(id);
+      }
+
+      function focusElement(node) {
+        if (!node || typeof node.focus !== "function") {
+          return;
+        }
+        try {
+          node.focus({ preventScroll: true });
+        } catch (error) {
+          node.focus();
+        }
+        ensureInView(node);
+      }
+
+      function focusPreviousSaleFieldBeforeQuickLabel() {
+        const candidates = [
+          $("saleBulkSubcategorySelect"),
+          $("saleCustomerKindSelect"),
+          $("saleTypeSelect"),
+        ];
+        const target = candidates.find((node) => node && node.offsetParent !== null && !node.disabled);
+        focusElement(target || $("saleTypeSelect"));
+      }
+
+      function syncSaleActionState() {
+        const saving = Boolean(state.sale?.saving);
+        const saveBtn = $("saveBillBtn");
+        const newBillBtn = $("clearBillBtn");
+        if (saveBtn) {
+          saveBtn.disabled = saving;
+          saveBtn.textContent = saving ? "Saving..." : "Save Bill";
+        }
+        if (newBillBtn) {
+          newBillBtn.disabled = saving;
+        }
+      }
+
+      function focusSaleStart({ force = false, delay = 0 } = {}) {
+        window.setTimeout(() => {
+          const target = $("saleTypeSelect");
+          if (!target || state.activeTab !== "sale" || target.offsetParent === null) {
+            return;
+          }
+          const active = document.activeElement;
+          const pageIdle = !active || active === document.body || active === document.documentElement;
+          const chromeFocused = Boolean(active?.closest?.(".hero, .tabs"));
+          if (force || pageIdle || chromeFocused) {
+            focusElement(target);
+          }
+        }, delay);
+      }
+
+      function money(value) {
+        const num = Number(value || 0);
+        return Number.isFinite(num) ? num.toFixed(2) : "0.00";
+      }
+
+      const INR_FORMATTER = (() => {
+        try {
+          return new Intl.NumberFormat("en-IN", {
+            style: "currency",
+            currency: "INR",
+            minimumFractionDigits: 2,
+            maximumFractionDigits: 2,
+          });
+        } catch (error) {
+          return null;
+        }
+      })();
+
+      function moneyInr(value) {
+        const num = Number(value || 0);
+        if (!Number.isFinite(num)) {
+          return "\u20B9 0.00";
+        }
+        if (INR_FORMATTER) {
+          return INR_FORMATTER.format(num);
+        }
+        return `\u20B9 ${money(num)}`;
+      }
+
+      function asNumber(value) {
+        const num = Number(value);
+        return Number.isFinite(num) ? num : 0;
+      }
+
+      function escapeHtml(value) {
+        return String(value ?? "")
+          .replace(/&/g, "&amp;")
+          .replace(/</g, "&lt;")
+          .replace(/>/g, "&gt;")
+          .replace(/\"/g, "&quot;")
+          .replace(/'/g, "&#39;");
+      }
+
+      function debounce(fn, wait = 180) {
+        let timer = null;
+        return (...args) => {
+          window.clearTimeout(timer);
+          timer = window.setTimeout(() => fn(...args), wait);
+        };
+      }
+
+      async function api(url, options = {}) {
+        const response = await fetch(url, {
+          headers: {
+            "Accept": "application/json",
+            ...(options.body ? { "Content-Type": "application/json" } : {}),
+            "X-Session-Activity": "active",
+            ...(options.headers || {}),
+          },
+          credentials: "same-origin",
+          ...options,
+        });
+        const payload = await response.json().catch(() => ({}));
+        if (!response.ok || payload.status === "error") {
+          throw new Error(payload.message || "Request failed.");
+        }
+        return payload;
+      }
+
+      function notify(message, kind = "success", options = {}) {
+        const sticky = Boolean(options && options.sticky);
+        const duration = Number(options && options.duration);
+        const toast = $("toast");
+        toast.textContent = message;
+        toast.className = `toast show ${kind}`;
+        window.clearTimeout(notify._timer);
+        if (!sticky) {
+          notify._timer = window.setTimeout(() => {
+            toast.className = "toast";
+          }, Number.isFinite(duration) && duration > 0 ? duration : 3400);
+        }
+      }
+
+      function filenameFromHeaders(headers, fallback) {
+        const raw = headers?.get?.("Content-Disposition") || "";
+        const match = raw.match(/filename\*=UTF-8''([^;]+)|filename="?([^";]+)"?/i);
+        if (!match) {
+          return fallback;
+        }
+        const filename = match[1] || match[2] || fallback;
+        try {
+          return decodeURIComponent(filename);
+        } catch (error) {
+          return filename || fallback;
+        }
+      }
+
+      function triggerDownload(blob, filename) {
+        const url = URL.createObjectURL(blob);
+        const anchor = document.createElement("a");
+        anchor.href = url;
+        anchor.download = filename;
+        document.body.appendChild(anchor);
+        anchor.click();
+        anchor.remove();
+        window.setTimeout(() => URL.revokeObjectURL(url), 2000);
+      }
+
+      function currentReportParams() {
+        const params = new URLSearchParams({
+          unit: state.unit,
+          report_key: $("reportKindSelect").value || "bill_register",
+          from_date: $("reportFromDate").value || "",
+          to_date: $("reportToDate").value || "",
+          type_id: $("reportTypeSelect").value || "0",
+          q: $("reportSearch").value || "",
+        });
+        return params;
+      }
+
+      async function exportCurrentReport(format) {
+        const reportLabel = $("reportKindSelect").selectedOptions[0]?.textContent?.trim() || "Report";
+        const formatLabel = format === "pdf" ? "PDF" : "Excel";
+        const exportPath = format === "pdf" ? "export_pdf" : "export_excel";
+        const button = format === "pdf" ? $("exportReportPdfBtn") : $("exportReportExcelBtn");
+        const originalLabel = button?.textContent || formatLabel;
+        if (button) {
+          button.disabled = true;
+          button.textContent = `Preparing ${formatLabel}...`;
+        }
+        notify(`Preparing ${reportLabel} ${formatLabel}...`, "info", { sticky: true });
+        try {
+          const response = await fetch(`/api/canteen/reports/${exportPath}?${currentReportParams().toString()}`, {
+            method: "GET",
+            headers: {
+              "X-Session-Activity": "active",
+            },
+            credentials: "same-origin",
+          });
+          if (!response.ok) {
+            const contentType = response.headers.get("Content-Type") || "";
+            let message = `Failed to export ${reportLabel}.`;
+            if (contentType.includes("application/json")) {
+              const payload = await response.json().catch(() => ({}));
+              message = payload?.message || message;
+            } else {
+              const text = await response.text().catch(() => "");
+              message = text || message;
+            }
+            throw new Error(message);
+          }
+          const blob = await response.blob();
+          const fallback = `Canteen_${reportLabel.replace(/[^A-Za-z0-9]+/g, "_")}.${format === "pdf" ? "pdf" : "xlsx"}`;
+          const filename = filenameFromHeaders(response.headers, fallback);
+          triggerDownload(blob, filename);
+          notify(`${reportLabel} ${formatLabel} ready.`, "success");
+        } catch (error) {
+          notify(error?.message || `Failed to export ${reportLabel}.`, "error");
+        } finally {
+          if (button) {
+            button.disabled = false;
+            button.textContent = originalLabel;
+          }
+        }
+      }
+
+      function setActiveTab(tabName) {
+        if (!availableTabs().includes(tabName)) {
+          tabName = "sale";
+        }
+        state.activeTab = tabName;
+        document.querySelectorAll(".tab-button").forEach((button) => {
+          button.classList.toggle("active", button.dataset.tab === tabName);
+        });
+        document.querySelectorAll("[data-panel]").forEach((panel) => {
+          panel.classList.toggle("hidden", panel.dataset.panel !== tabName);
+        });
+        if (!state.loadedTabs.has(tabName)) {
+          state.loadedTabs.add(tabName);
+          if (tabName === "receipts") {
+            refreshDueRows().catch((error) => {
+              notify(error.message || "Failed to load due rows.", "error");
+            });
+          } else if (tabName === "reports") {
+            refreshReport().catch((error) => {
+              notify(error.message || "Failed to load report.", "error");
+            });
+          } else if (tabName === "menu" && canManageMenu()) {
+            refreshMenuList().catch((error) => {
+              notify(error.message || "Failed to refresh menu list.", "error");
+            });
+          } else if (tabName === "customers") {
+            refreshCustomerList().catch((error) => {
+              notify(error.message || "Failed to refresh customer list.", "error");
+            });
+          }
+        }
+      }
+
+      function fillSelect(select, items, valueKey, labelFn, selectedValue = "") {
+        const current = String(selectedValue ?? "");
+        select.innerHTML = items.map((item) => {
+          const value = String(item[valueKey] ?? "");
+          const label = labelFn(item);
+          const selected = value === current ? " selected" : "";
+          return `<option value="${escapeHtml(value)}"${selected}>${escapeHtml(label)}</option>`;
+        }).join("");
+      }
+
+      function typeById(typeId) {
+        return billingTypeRows().find((row) => Number(row.type_id) === Number(typeId))
+          || (state.init?.types || []).find((row) => Number(row.type_id) === Number(typeId))
+          || null;
+      }
+
+      function typeByKey(categoryKey) {
+        const key = String(categoryKey || "").trim().toLowerCase();
+        return billingTypeRows().find((row) => String(row.category_key || "").trim().toLowerCase() === key) || null;
+      }
+
+      function defaultPayModeId() {
+        return String((state.init?.pay_modes || [])[0]?.pay_mode_id || "");
+      }
+
+      function payModeById(payModeId) {
+        return (state.init?.pay_modes || []).find((row) => String(row.pay_mode_id ?? "") === String(payModeId ?? "")) || null;
+      }
+
+      function defaultCashTypeId() {
+        const rows = billingTypeRows();
+        const cash = rows.find((row) => String(row.category_key || row.type_name || "").toLowerCase().includes("general") || String(row.type_name || "").toLowerCase().includes("cash"));
+        if (cash) {
+          return String(cash.category_key || cash.type_id);
+        }
+        return String(rows[0]?.category_key || rows[0]?.type_id || "");
+      }
+
+      function defaultCustomerTypeId() {
+        const rows = state.init?.customer_master_types || state.init?.types || [];
+        const cash = rows.find((row) => String(row.type_name || "").toLowerCase().includes("cash"));
+        if (cash) {
+          return String(cash.type_id || 1);
+        }
+        return "1";
+      }
+
+      function defaultCreditTypeId() {
+        const rows = billingTypeRows();
+        const credit = rows.find((row) => String(row.type_name || "").toLowerCase().includes("credit"));
+        if (credit) {
+          return String(credit.type_id);
+        }
+        return "";
+      }
+
+      function selectedSaleType() {
+        const select = $("saleTypeSelect");
+        const row = typeByKey(select?.value) || typeById(select?.value);
+        if (row) {
+          return row;
+        }
+        return {
+          category_key: String(select?.value || "general"),
+          category_name: select?.selectedOptions?.[0]?.textContent || "General Billing",
+          type_id: 1,
+          pricing_type_id: 1,
+        };
+      }
+
+      function selectedSaleTypeKey(type = selectedSaleType()) {
+        const explicitKey = String(type?.category_key || type?.type_key || "").trim().toLowerCase();
+        if (explicitKey) {
+          return explicitKey;
+        }
+        const typeId = Number(type?.type_id || 0);
+        const typeName = String(type?.type_name || "").trim().toLowerCase();
+        if (typeId === 13 || typeName.includes("delivery")) {
+          return "room_service_delivery";
+        }
+        if (typeId === 6 || typeName.includes("room")) {
+          return "room_service_patient";
+        }
+        if (typeId === 14 || typeName.includes("prepaid")) {
+          return "prepaid";
+        }
+        if (typeId === 3 || typeName.includes("credit")) {
+          return "credit";
+        }
+        return "cash";
+      }
+
+      function selectedBillingCategoryKey() {
+        const key = selectedSaleTypeKey();
+        if (key === "room_service" || key === "room_service_patient" || key === "room_service_delivery") {
+          return "room_service";
+        }
+        if (key === "bulk") {
+          return "bulk";
+        }
+        return "general";
+      }
+
+      function selectedSaleCustomerKind() {
+        return String($("saleCustomerKindSelect")?.value || "patient").trim().toLowerCase() === "staff" ? "staff" : "patient";
+      }
+
+      function selectedBulkSubcategory() {
+        return String($("saleBulkSubcategorySelect")?.value || "").trim();
+      }
+
+      function pricingTypeForCurrentSale() {
+        const categoryKey = selectedBillingCategoryKey();
+        if (categoryKey === "room_service") {
+          const typeId = selectedSaleCustomerKind() === "staff" ? 13 : 6;
+          return typeById(typeId) || {
+            type_id: typeId,
+            type_name: typeId === 13 ? "Room Service-Delivery" : "Room Service-Patient",
+            type_key: typeId === 13 ? "room_service_delivery" : "room_service_patient",
+          };
+        }
+        return typeById(1) || { type_id: 1, type_name: "Cash", type_key: "cash" };
+      }
+
+      function saleTypeAllowsDue(type = selectedSaleType()) {
+        const key = selectedSaleTypeKey(type);
+        return key === "credit" || key === "room_service_patient" || key === "room_service_delivery" || Number(type?.credit_tag || 0) > 0;
+      }
+
+      function saleBaseSummary() {
+        const gross = state.sale.items.reduce((sum, item) => sum + asNumber(item.amount), 0);
+        let discount = asNumber($("discountAmount").value);
+        if (discount < 0) {
+          discount = 0;
+        }
+        if (discount > gross) {
+          discount = gross;
+          $("discountAmount").value = gross.toFixed(2);
+        }
+        const net = Math.max(0, gross - discount);
+        return { gross, discount, net };
+      }
+
+      function isRoomServiceType(type = selectedSaleType()) {
+        return selectedBillingCategoryKey() === "room_service";
+      }
+
+      function isCashType(type = selectedSaleType()) {
+        return selectedSaleTypeKey(type) === "cash";
+      }
+
+      function effectiveSaleRateForItem(item, type = selectedSaleType()) {
+        const baseRate = asNumber(item?.base_rate ?? item?.rate);
+        const roomRate = asNumber(item?.room_service_rate);
+        if (isRoomServiceType(type)) {
+          return roomRate > 0 || baseRate <= 0 ? roomRate : baseRate;
+        }
+        return baseRate;
+      }
+
+      function repriceSaleItems() {
+        if (!state.sale.items.length) {
+          return;
+        }
+        const type = selectedSaleType();
+        state.sale.items = state.sale.items.map((row) => {
+          const nextRate = effectiveSaleRateForItem(row, type);
+          const qty = asNumber(row.qty);
+          return {
+            ...row,
+            rate: nextRate,
+            amount: qty * nextRate,
+          };
+        });
+        renderSaleLines();
+      }
+
+      function clearSaleCustomer({ resetLabel = false } = {}) {
+        state.sale.customer = null;
+        state.sale.selectedMobile = "";
+        if (resetLabel) {
+          $("walkinName").value = DEFAULT_WALKIN_NAME;
+        }
+        renderSelectedCustomer();
+      }
+
+      function syncModeForSelectedType() {
+        const categoryKey = selectedBillingCategoryKey();
+        $("saleCustomerKindWrap")?.classList.toggle("hidden", categoryKey !== "room_service");
+        $("saleBulkSubcategoryWrap")?.classList.toggle("hidden", categoryKey !== "bulk");
+        if (categoryKey === "bulk") {
+          $("zeroReceivedActionSelect").value = "credit";
+        }
+      }
+
+      function selectedSaleWalletBalance() {
+        return asNumber(state.sale.customer?.wallet_balance || 0);
+      }
+
+      function selectedZeroReceivedAction() {
+        return String($("zeroReceivedActionSelect")?.value || "wallet").trim().toLowerCase() || "wallet";
+      }
+
+      function currentSaleWalletContext(net = saleBaseSummary().net) {
+        const customer = state.sale.customer;
+        const walletAllowed = selectedBillingCategoryKey() !== "bulk";
+        const rawReceived = String($("receivedAmount").value || "").trim();
+        const zeroRequested = rawReceived !== "" && asNumber(rawReceived) <= 0.005;
+        const walletBalance = selectedSaleWalletBalance();
+        const walletRequested = selectedZeroReceivedAction() === "wallet";
+        const walletEligible = walletAllowed && Boolean(customer) && zeroRequested && net > 0.005 && walletBalance + 0.005 >= net;
+        const walletInsufficient = walletAllowed && Boolean(customer) && walletRequested && zeroRequested && net > 0.005 && walletBalance + 0.005 < net;
+        return {
+          customer,
+          walletBalance,
+          zeroRequested,
+          walletRequested,
+          walletEligible,
+          walletInsufficient,
+        };
+      }
+
+      function applyBranding(unit) {
+        const branding = (state.init?.brandings || BOOTSTRAP.brandings || {})[unit] || {};
+        $("brandTitle").textContent = branding.print_title || `${unit} Canteen`;
+        $("brandSubtitle").textContent = `${branding.display_name || unit} billing with HID canteen workflow, unit-aware print identity, and legacy report-safe posting.`;
+        $("brandUnit").textContent = unit;
+      }
+
+      function syncCommonSelects() {
+        const billingTypes = billingTypeRows();
+        const types = state.init?.types || [];
+        const customerMasterTypes = Array.isArray(state.init?.customer_master_types) && state.init.customer_master_types.length
+          ? state.init.customer_master_types
+          : types;
+        const payModes = state.init?.pay_modes || [];
+
+        fillSelect($("saleTypeSelect"), billingTypes, "category_key", (item) => item.category_name || item.type_name || `Type ${item.type_id}`, $("saleTypeSelect").value || defaultCashTypeId());
+        fillSelect($("saleBulkSubcategorySelect"), state.init?.bulk_subcategories || [], "id", (item) => item.label || item.id, $("saleBulkSubcategorySelect").value || "party");
+        fillSelect($("dueTypeSelect"), [{ type_id: 0, type_name: "All Types" }, ...types], "type_id", (item) => item.type_name || "All Types", $("dueTypeSelect").value || "0");
+        fillSelect($("reportTypeSelect"), [{ type_id: 0, type_name: "All Types" }, ...types], "type_id", (item) => item.type_name || "All Types", $("reportTypeSelect").value || "0");
+        fillSelect($("customerTypeSelect"), customerMasterTypes, "type_id", (item) => item.type_name || `Type ${item.type_id}`, $("customerTypeSelect").value || defaultCustomerTypeId());
+        fillSelect($("salePayModeSelect"), payModes, "pay_mode_id", (item) => item.pay_mode_name || `Mode ${item.pay_mode_id}`, $("salePayModeSelect").value || defaultPayModeId());
+        fillSelect($("duePayModeSelect"), payModes, "pay_mode_id", (item) => item.pay_mode_name || `Mode ${item.pay_mode_id}`, $("duePayModeSelect").value || defaultPayModeId());
+        fillSelect($("reportKindSelect"), state.init?.report_kinds || [], "id", (item) => item.label || item.id, $("reportKindSelect").value || "bill_register");
+        syncModeForSelectedType();
+      }
+
+      function renderSelectedCustomer() {
+        const wrap = $("selectedCustomerWrap");
+        const card = $("selectedCustomerCard");
+        const customer = state.sale.customer;
+        if (!customer) {
+          wrap.classList.add("hidden");
+          card.className = "entity-card empty";
+          card.textContent = "No customer master is linked to this bill yet.";
+          $("saleWalletTopupBtn").disabled = true;
+          $("clearSelectedCustomerBtn").disabled = true;
+          return;
+        }
+        wrap.classList.remove("hidden");
+        card.className = "entity-card";
+        card.innerHTML = `
+          <h4>${escapeHtml(customer.display_name || customer.name || "-")}</h4>
+          <div class="entity-meta">
+            <span>${escapeHtml(customer.customer_type_name || customer.billing_type_name || customer.type_name || "-")}</span>
+            <span>${escapeHtml(customer.code || "No code")}</span>
+            <span>${escapeHtml(customer.department_name || "No department")}</span>
+            <span>${escapeHtml(customer.mobile1 || customer.mobile2 || "No mobile")}</span>
+            <span>${escapeHtml(customer.ledger_code || "No ledger code")}</span>
+            <span>Wallet ${money(customer.wallet_balance || 0)}</span>
+          </div>
+        `;
+        $("saleWalletTopupBtn").disabled = false;
+        $("clearSelectedCustomerBtn").disabled = false;
+      }
+
+      function renderSelectedSteward() {
+        return;
+      }
+
+      function summaryFromSale() {
+        const { gross, discount, net } = saleBaseSummary();
+        const saleType = selectedSaleType();
+        const saleTypeKey = selectedSaleTypeKey(saleType);
+        const roomService = isRoomServiceType(saleType);
+        const bulkOrder = selectedBillingCategoryKey() === "bulk";
+        const receivedInput = $("receivedAmount");
+        const rawReceived = String(receivedInput?.value || "").trim();
+        const preserveReceivedInput = document.activeElement === receivedInput && state.sale.receivedManual;
+        const wallet = currentSaleWalletContext(net);
+        const zeroReceivedAction = wallet.walletEligible ? selectedZeroReceivedAction() : "credit";
+        let received = asNumber(rawReceived);
+        let due = 0;
+
+        const writeReceivedValue = (value) => {
+          if (!receivedInput || preserveReceivedInput) {
+            return;
+          }
+          receivedInput.value = value;
+        };
+
+        if (!roomService && !bulkOrder && !state.sale.receivedManual) {
+          received = net;
+          writeReceivedValue(net.toFixed(2));
+          due = 0;
+        } else if (!bulkOrder && wallet.walletEligible && zeroReceivedAction === "wallet") {
+          received = 0;
+          writeReceivedValue("0.00");
+          due = 0;
+        } else if (!bulkOrder && wallet.walletEligible && zeroReceivedAction === "credit") {
+          received = 0;
+          writeReceivedValue("0.00");
+          due = net;
+        } else if (wallet.walletInsufficient) {
+          received = 0;
+          writeReceivedValue("0.00");
+          due = net;
+        } else if (roomService || bulkOrder) {
+          received = Math.max(0, Math.min(received, net));
+          if (!rawReceived) {
+            received = 0;
+          }
+          writeReceivedValue(received.toFixed(2));
+          due = Math.max(0, net - received);
+        } else if (!state.sale.receivedManual && (rawReceived === "" || received <= 0.005)) {
+          received = net;
+          writeReceivedValue(net.toFixed(2));
+          due = 0;
+        } else if (received <= 0.005) {
+          received = 0;
+          writeReceivedValue("0.00");
+          due = net;
+        } else {
+          received = Math.max(0, Math.min(received, net));
+          writeReceivedValue(received.toFixed(2));
+          due = Math.max(0, net - received);
+        }
+        return {
+          saleTypeKey,
+          roomService,
+          bulkOrder,
+          gross,
+          discount,
+          net,
+          received,
+          due,
+          zeroReceivedAction,
+          walletEligible: wallet.walletEligible,
+          walletInsufficient: wallet.walletInsufficient,
+          walletBalance: wallet.walletBalance,
+          walletSelected: Boolean(wallet.customer),
+        };
+      }
+
+      function syncSaleWalletHint(summary = summaryFromSale()) {
+        const hint = $("saleWalletHint");
+        if (!hint) {
+          return;
+        }
+        if (summary.roomService) {
+          const label = selectedSaleCustomerKind() === "staff" ? "Room Service - Staff" : "Room Service - Patient";
+          if (summary.walletEligible && summary.zeroReceivedAction === "wallet") {
+            hint.textContent = `Room service rates apply. Wallet balance ${money(summary.walletBalance)} will settle this bill on save.`;
+            return;
+          }
+          if (summary.walletEligible && summary.zeroReceivedAction === "credit") {
+            hint.textContent = `Room service rates apply. This bill will post on Credit by cashier choice.`;
+            return;
+          }
+          if (summary.received > 0.005 && summary.due > 0.005) {
+            hint.textContent = `${label} rates apply. Collected amount posts under Cash and the balance remains due.`;
+            return;
+          }
+          if (summary.due > 0.005) {
+            hint.textContent = `${label} rates apply. No amount collected, so this posts under Credit.`;
+            return;
+          }
+          hint.textContent = `${label} rates apply. Collected amount posts under Cash.`;
+          return;
+        }
+        if (summary.bulkOrder) {
+          if (summary.received > 0.005) {
+            hint.textContent = "Bulk order will use counter rates and post under Cash. Wallet is not available for bulk orders.";
+            return;
+          }
+          hint.textContent = "Bulk order will use counter rates and post under Credit. Wallet is not available for bulk orders.";
+          return;
+        }
+        if (summary.walletEligible && summary.zeroReceivedAction === "wallet") {
+          hint.textContent = `Wallet balance ${money(summary.walletBalance)} is sufficient. This bill will settle through wallet on save.`;
+          return;
+        }
+        if (summary.walletEligible && summary.zeroReceivedAction === "credit") {
+          hint.textContent = `Wallet balance ${money(summary.walletBalance)} is available, but this bill is set to post on Credit instead.`;
+          return;
+        }
+        if (summary.walletInsufficient) {
+          hint.textContent = "Insufficient wallet balance. Please collect cash/online payment or top up wallet.";
+          return;
+        }
+        if (summary.received <= 0.005 && summary.due > 0.005) {
+          hint.textContent = "No amount collected. This bill will post under Credit.";
+          return;
+        }
+        if (summary.walletSelected) {
+          hint.textContent = `Selected customer wallet balance: ${money(summary.walletBalance)}. Enter 0 in Received to settle through wallet.`;
+          return;
+        }
+        hint.textContent = "Select any saved customer or patient, collect payment for Cash posting, or enter 0 to post on Credit / Wallet.";
+      }
+
+      function syncSaleSummary() {
+        const summary = summaryFromSale();
+        const walletWrap = $("summaryWalletBalanceWrap");
+        if (walletWrap) {
+          walletWrap.classList.toggle("hidden", !summary.walletSelected);
+        }
+        $("summaryWalletBalance").textContent = money(summary.walletBalance);
+        const zeroActionWrap = $("zeroReceivedActionWrap");
+        const showZeroActionChoice = summary.walletEligible && !summary.bulkOrder;
+        zeroActionWrap?.classList.toggle("hidden", !showZeroActionChoice);
+        if (showZeroActionChoice && !selectedZeroReceivedAction()) {
+          $("zeroReceivedActionSelect").value = "wallet";
+        }
+        const selectedTypeLabel = selectedSaleType()?.category_name || selectedSaleType()?.type_name || "General Billing";
+        let postingLabel = "Cash";
+        let postingNote = "Collected amount will post under Cash.";
+        if (summary.walletEligible && summary.zeroReceivedAction === "wallet") {
+          postingLabel = "Prepaid (Wallet)";
+          postingNote = `Wallet balance ${money(summary.walletBalance)} will be used for ${money(summary.net)} on save.`;
+        } else if (summary.walletEligible && summary.zeroReceivedAction === "credit") {
+          postingLabel = "Credit";
+          postingNote = `Wallet balance ${money(summary.walletBalance)} is available, but this bill will post on Credit by cashier choice.`;
+        } else if (summary.walletInsufficient) {
+          postingLabel = "Credit";
+          postingNote = "Wallet balance is insufficient. Collect cash/online payment or top up wallet to avoid posting on Credit.";
+        } else if (summary.received <= 0.005 && summary.due > 0.005) {
+          postingLabel = "Credit";
+          postingNote = summary.roomService
+            ? "Room service rates apply. No amount collected, so this bill will post under Credit."
+            : summary.bulkOrder
+              ? "Bulk order uses counter rates. No amount collected, so this bill will post under Credit."
+              : "No amount collected. This bill will post under Credit.";
+        } else if (summary.due > 0.005) {
+          postingLabel = "Cash";
+          postingNote = `${money(summary.received)} will be collected now and ${money(summary.due)} will remain due under Cash.`;
+        } else if (summary.roomService) {
+          postingNote = "Room service rates apply. Collected amount will post under Cash.";
+        } else if (summary.bulkOrder) {
+          postingNote = "Bulk order uses counter rates. Wallet is not available for this category.";
+        }
+        $("summaryPostingDisplay").textContent = postingLabel;
+        $("summaryPostingNote").textContent = postingNote;
+        $("salePayModeWrap")?.classList.toggle("hidden", (summary.walletEligible && summary.zeroReceivedAction === "wallet") || (summary.received <= 0.005 && summary.due > 0.005));
+        $("saleLineCount").textContent = String(state.sale.items.length);
+        $("saleGrossDisplay").textContent = moneyInr(summary.gross);
+        $("saleNetDisplay").textContent = moneyInr(summary.net);
+        $("saleDueDisplay").textContent = moneyInr(summary.due);
+        $("summaryGross").textContent = money(summary.gross);
+        $("summaryNet").textContent = money(summary.net);
+        $("summaryDue").textContent = money(summary.due);
+        syncSaleWalletHint(summary);
+      }
+
+      function renderSaleLines() {
+        const body = $("saleLinesBody");
+        if (!state.sale.items.length) {
+          body.innerHTML = `<tr><td colspan="7" class="empty-state">Add menu items to start billing.</td></tr>`;
+          syncSaleSummary();
+          return;
+        }
+        const canEditRate = canEditSaleRate();
+        body.innerHTML = state.sale.items.map((item, index) => `
+          <tr>
+            <td class="row-index">${index + 1}</td>
+            <td class="item-cell"><span class="item-title">${escapeHtml(item.item_name || "-")}</span></td>
+            <td class="code-cell"><span class="code-chip">${escapeHtml(item.code || "-")}</span></td>
+            <td class="numeric qty-cell"><input class="line-input numeric-input" data-line-index="${index}" data-line-field="qty" type="number" min="0.01" step="0.01" value="${escapeHtml(Number(item.qty || 0).toFixed(2))}"></td>
+            <td class="numeric rate-cell">${
+              canEditRate
+                ? `<input class="line-input numeric-input" data-line-index="${index}" data-line-field="rate" type="number" min="0" step="0.01" tabindex="-1" value="${escapeHtml(Number(item.rate || 0).toFixed(2))}">`
+                : `<span class="amount-value">${money(item.rate)}</span>`
+            }</td>
+            <td class="numeric amount-cell"><span class="amount-value">${money(item.amount)}</span></td>
+            <td class="action-cell"><button type="button" class="btn btn-danger btn-remove" data-remove-line="${index}">Remove</button></td>
+          </tr>
+        `).join("");
+        syncSaleSummary();
+      }
+
+      function resetSaleForm() {
+        state.sale.customer = null;
+        state.sale.selectedMobile = "";
+        state.sale.steward = null;
+        state.sale.items = [];
+        state.sale.receivedManual = false;
+        $("saleTypeSelect").value = defaultCashTypeId();
+        $("saleCustomerKindSelect").value = "patient";
+        if ($("saleBulkSubcategorySelect").options.length) {
+          $("saleBulkSubcategorySelect").value = "party";
+        }
+        $("salePayModeSelect").value = defaultPayModeId();
+        $("zeroReceivedActionSelect").value = "wallet";
+        $("walkinName").value = DEFAULT_WALKIN_NAME;
+        lookupHandles.quickCustomer?.close?.();
+        $("itemLookup").value = "";
+        $("discountAmount").value = "0";
+        $("receivedAmount").value = "0";
+        $("receiptNote").value = "OK";
+        renderSelectedCustomer();
+        syncModeForSelectedType();
+        renderSaleLines();
+        focusSaleStart({ force: true });
+      }
+
+      function renderLastBillCard() {
+        const card = $("lastBillCard");
+        const bill = state.sale.lastBill;
+        if (!bill) {
+          card.className = "entity-card empty";
+          card.textContent = "No bill has been saved in this session yet.";
+          return;
+        }
+        card.className = "entity-card";
+        card.innerHTML = `
+          <h4>${escapeHtml(bill.bill_no || `Bill ${bill.bill_id || ""}`)}</h4>
+          <div class="entity-meta">
+            <span>${escapeHtml(bill.registration_no || DEFAULT_WALKIN_NAME)}</span>
+            <span>Net ${money(bill.net_amount)}</span>
+            <span>Received ${money(bill.received_amount)}</span>
+            <span>Due ${money(bill.due_amount)}</span>
+            ${bill.receipt_no ? `<span>${escapeHtml(bill.receipt_no)}</span>` : ""}
+          </div>
+        `;
+      }
+
+      function hydrateMenuForm(row = null) {
+        if (!$("menuCode")) {
+          return;
+        }
+        state.menu.currentId = row ? Number(row.menu_id || 0) : 0;
+        $("menuCode").value = row?.code || state.init?.defaults?.menu_code || "";
+        $("menuItemName").value = row?.item_name || "";
+        $("menuRate").value = row ? money(row.rate) : "";
+        $("menuRoomServiceRate").value = row ? money(row.room_service_rate) : "";
+        $("menuFormStatus").className = row ? "entity-card" : "entity-card empty";
+        $("menuFormStatus").innerHTML = row ? `
+          <h4>${escapeHtml(row.item_name || "-")}</h4>
+          <div class="entity-meta">
+            <span>${escapeHtml(row.code || "-")}</span>
+            <span>Base ${money(row.rate)}</span>
+            <span>Room ${money(row.room_service_rate)}</span>
+          </div>
+        ` : "Create a fresh menu item or pick one from the list to edit.";
+      }
+
+      function hydrateCustomerForm(row = null) {
+        state.customerMaster.currentId = row ? Number(row.tmp_patient_id || 0) : 0;
+        $("customerTypeSelect").value = row ? String(row.customer_type_id || row.billing_type_id || row.patient_type || defaultCustomerTypeId()) : defaultCustomerTypeId();
+        $("customerCode").value = row?.code || "";
+        $("customerName").value = row?.name || "";
+        $("customerMobile1").value = row?.mobile1 || "";
+        $("customerMobile2").value = row?.mobile2 || "";
+        $("customerLedgerCode").value = row?.ledger_code || "";
+        $("customerLedgerName").value = row?.ledger_name || "";
+        $("customerDepartmentName").value = row?.department_name || "";
+        $("customerCardReference").value = row?.card_reference || "";
+        $("customerWorkflowContext").value = row?.workflow_context || "";
+        $("customerReferenceLabel").value = row?.reference_label || "";
+        $("customerNotes").value = row?.notes || "";
+        $("customerWalletBalance").value = money(row?.wallet_balance || 0);
+        $("customerActiveSelect").value = row && row.is_active === false ? "0" : "1";
+        $("customerFormStatus").className = row ? "entity-card" : "entity-card empty";
+        $("customerFormStatus").innerHTML = row ? `
+          <h4>${escapeHtml(row.display_name || row.name || "-")}</h4>
+          <div class="entity-meta">
+            <span>${escapeHtml(row.customer_type_name || row.billing_type_name || row.type_name || "-")}</span>
+            <span>${escapeHtml(row.code || "No code")}</span>
+            <span>${escapeHtml(row.department_name || "No department")}</span>
+            <span>${escapeHtml(row.mobile1 || row.mobile2 || "No mobile")}</span>
+            <span>${escapeHtml(row.ledger_code || "No ledger")}</span>
+            <span>Wallet ${money(row.wallet_balance || 0)}</span>
+          </div>
+        ` : "Use this form for permanent customers only. Walk-ins remain quick on the billing tab.";
+        $("customerWalletTopupBtn").disabled = !row;
+      }
+
+      async function loadInit(unit = state.unit, { force = false } = {}) {
+        let payload = null;
+        if (
+          !force &&
+          state.initCache?.[unit] &&
+          Array.isArray(state.initCache[unit].types) &&
+          Array.isArray(state.initCache[unit].pay_modes)
+        ) {
+          payload = state.initCache[unit];
+        } else {
+          payload = await api(`/api/canteen/init?unit=${encodeURIComponent(unit)}`);
+          state.initCache[unit] = payload;
+        }
+        state.init = payload;
+        state.rights = payload.rights || state.rights || {};
+        state.unit = payload.unit;
+        $("unitSelect").value = payload.unit;
+        $("heroDate").textContent = payload.today;
+        $("heroDateChip").textContent = payload.today;
+        applyBranding(payload.unit);
+        syncCommonSelects();
+        $("dueFromDate").value = payload.defaults.due_from_date;
+        $("dueToDate").value = payload.defaults.due_to_date;
+        $("dueReceiptDate").value = payload.defaults.receipt_date;
+        $("reportFromDate").value = payload.defaults.report_from_date;
+        $("reportToDate").value = payload.defaults.report_to_date;
+        if ($("menuCode") && payload.defaults.menu_code) {
+          $("menuCode").value = payload.defaults.menu_code;
+        }
+        $("saleStatusPill").textContent = `${payload.unit} ready - ${payload.branding.display_name || payload.unit}`;
+        if (!$("saleTypeSelect").value) {
+          $("saleTypeSelect").value = defaultCashTypeId();
+        }
+        syncModeForSelectedType();
+        if (!$("customerTypeSelect").value) {
+          $("customerTypeSelect").value = defaultCustomerTypeId();
+        }
+        if (!$("salePayModeSelect").value) {
+          $("salePayModeSelect").value = defaultPayModeId();
+        }
+        if (!$("duePayModeSelect").value) {
+          $("duePayModeSelect").value = defaultPayModeId();
+        }
+        resetSaleForm();
+        syncModeForSelectedType();
+        state.loadedTabs = new Set(["sale"]);
+        focusSaleStart({ force: true });
+      }
+
+      function makeLookup({ inputId, panelId, fetchItems, onSelect, minChars = 1, openOnFocus = false }) {
+        const input = $(inputId);
+        const panel = $(panelId);
+        let items = [];
+        let activeIndex = -1;
+        let requestToken = 0;
+
+        function closePanel() {
+          panel.classList.remove("open");
+          panel.innerHTML = "";
+          activeIndex = -1;
+        }
+
+        function choose(index = activeIndex >= 0 ? activeIndex : 0) {
+          const chosen = items[index];
+          if (!chosen) {
+            return false;
+          }
+          onSelect(chosen);
+          closePanel();
+          return true;
+        }
+
+        function renderPanel() {
+          if (!items.length) {
+            closePanel();
+            return;
+          }
+          panel.innerHTML = items.map((item, index) => `
+            <button type="button" class="lookup-item${index === activeIndex ? " active" : ""}" data-index="${index}">
+              <div class="lookup-main">
+                <strong>${escapeHtml(item.display_name || item.item_name || item.name || item.bill_no || "-")}</strong>
+                ${item.category_label ? `<span class="lookup-category">${escapeHtml(item.category_label)}</span>` : ""}
+              </div>
+              <span>${escapeHtml(item.identity_hint || item.code || item.type_name || item.customer_label || "")}</span>
+            </button>
+          `).join("");
+          panel.classList.add("open");
+          panel.querySelector(".lookup-item.active")?.scrollIntoView({ block: "nearest" });
+        }
+
+        async function search(force = false) {
+          const q = input.value.trim();
+          if (!force && q.length < minChars) {
+            items = [];
+            closePanel();
+            return [];
+          }
+          const token = ++requestToken;
+          try {
+            const fetchedItems = await fetchItems(q);
+            if (token !== requestToken) {
+              return items;
+            }
+            items = Array.isArray(fetchedItems) ? fetchedItems : [];
+            activeIndex = items.length ? 0 : -1;
+            renderPanel();
+            return items;
+          } catch (error) {
+            items = [];
+            closePanel();
+            notify(error.message || "Search failed.", "error");
+            return [];
+          }
+        }
+
+        input.addEventListener("input", debounce(() => {
+          activeIndex = -1;
+          search(false);
+        }, 120));
+        input.addEventListener("focus", () => {
+          const q = input.value.trim();
+          if (openOnFocus) {
+            search(true);
+            return;
+          }
+          if (q.length >= minChars) {
+            search(false);
+          } else {
+            closePanel();
+          }
+        });
+        input.addEventListener("keydown", async (event) => {
+          if (event.key === "Tab") {
+            closePanel();
+            if (event.shiftKey && inputId === "walkinName") {
+              event.preventDefault();
+              focusPreviousSaleFieldBeforeQuickLabel();
+            }
+            return;
+          }
+          if (event.key === "ArrowDown") {
+            event.preventDefault();
+            if (!items.length || !panel.classList.contains("open")) {
+              await search(true);
+            }
+            if (items.length) {
+              activeIndex = activeIndex < 0 ? 0 : Math.min(activeIndex + 1, items.length - 1);
+              renderPanel();
+            }
+          } else if (event.key === "ArrowUp") {
+            event.preventDefault();
+            if (!items.length || !panel.classList.contains("open")) {
+              await search(true);
+            }
+            if (items.length) {
+              activeIndex = activeIndex <= 0 ? 0 : activeIndex - 1;
+              renderPanel();
+            }
+          } else if (event.key === "Enter") {
+            event.preventDefault();
+            if (!items.length || !panel.classList.contains("open")) {
+              await search(true);
+            }
+            if (!choose()) {
+              notify("No matching option found.", "error");
+            }
+          } else if (event.key === "Escape") {
+            closePanel();
+          }
+        });
+        panel.addEventListener("mousedown", (event) => {
+          const button = event.target.closest(".lookup-item");
+          if (!button) {
+            return;
+          }
+          event.preventDefault();
+          choose(Number(button.dataset.index || 0));
+        });
+        return {
+          search: () => search(true),
+          close: closePanel,
+          clear: () => {
+            input.value = "";
+            items = [];
+            closePanel();
+          },
+        };
+      }
+
+      const lookupHandles = {};
+
+      function installLookups() {
+        lookupHandles.quickCustomer = makeLookup({
+          inputId: "walkinName",
+          panelId: "walkinNamePanel",
+          openOnFocus: false,
+          minChars: 3,
+          fetchItems: async (q) => {
+            const payload = await api(`/api/canteen/customer-lookup?unit=${encodeURIComponent(state.unit)}&q=${encodeURIComponent(q)}&limit=20`);
+            return payload.items || [];
+          },
+          onSelect: (item) => {
+            if (String(item.lookup_kind || "").toLowerCase() === "customer") {
+              state.sale.customer = item;
+              state.sale.selectedMobile = item.mobile1 || item.mobile2 || "";
+              $("walkinName").value = item.display_name || item.name || item.code || "";
+              renderSelectedCustomer();
+              repriceSaleItems();
+              syncSaleSummary();
+            } else {
+              clearSaleCustomer({ resetLabel: false });
+              state.sale.selectedMobile = item.mobile || "";
+              $("walkinName").value = item.quick_label || item.display_name || item.patient_name || "";
+            }
+            $("itemLookup").focus();
+          },
+        });
+
+        lookupHandles.item = makeLookup({
+          inputId: "itemLookup",
+          panelId: "itemLookupPanel",
+          openOnFocus: false,
+          fetchItems: async (q) => {
+            const type = pricingTypeForCurrentSale();
+            const payload = await api(`/api/canteen/menu?unit=${encodeURIComponent(state.unit)}&q=${encodeURIComponent(q)}&type_id=${encodeURIComponent(type?.type_id || 0)}&type_name=${encodeURIComponent(type?.type_name || "")}&limit=25`);
+            return (payload.items || []).map((item) => ({
+              ...item,
+              display_name: `${item.item_name || ""}${item.code ? ` (${item.code})` : ""}`,
+              identity_hint: `Rate ${money(item.effective_rate)} | Room ${money(item.room_service_rate)}`,
+            }));
+          },
+          onSelect: (item) => {
+            const effectiveRate = effectiveSaleRateForItem({
+              base_rate: Number(item.rate || 0),
+              room_service_rate: Number(item.room_service_rate || 0),
+              rate: Number(item.effective_rate || item.rate || 0),
+            });
+            const existing = state.sale.items.find((row) => Number(row.menu_id) === Number(item.menu_id) && Number(row.rate) === Number(effectiveRate));
+            if (existing) {
+              existing.qty = Number(existing.qty || 0) + 1;
+              existing.amount = Number(existing.qty) * Number(existing.rate);
+            } else {
+              state.sale.items.push({
+                menu_id: item.menu_id,
+                code: item.code,
+                item_name: item.item_name,
+                base_rate: Number(item.rate || 0),
+                room_service_rate: Number(item.room_service_rate || 0),
+                qty: 1,
+                rate: Number(effectiveRate || 0),
+                amount: Number(effectiveRate || 0),
+              });
+            }
+            $("itemLookup").value = "";
+            renderSaleLines();
+            $("itemLookup").focus();
+          },
+        });
+      }
+
+      async function refreshMenuList() {
+        if (!canManageMenu() || !$("menuRowsBody")) {
+          return;
+        }
+        const payload = await api(`/api/canteen/menu?unit=${encodeURIComponent(state.unit)}&q=${encodeURIComponent($("menuSearch").value || "")}&limit=250`);
+        state.menu.rows = payload.items || [];
+        if ($("menuCode") && (!state.menu.currentId || !$("menuCode").value.trim())) {
+          $("menuCode").value = payload.next_code || $("menuCode").value;
+        }
+        $("menuCountPill").textContent = `${state.menu.rows.length} items`;
+        const body = $("menuRowsBody");
+        if (!state.menu.rows.length) {
+          body.innerHTML = `<tr><td colspan="5" class="empty-state">No menu items matched the current search.</td></tr>`;
+          return;
+        }
+        body.innerHTML = state.menu.rows.map((row) => `
+          <tr>
+            <td>${escapeHtml(row.code || "-")}</td>
+            <td><strong>${escapeHtml(row.item_name || "-")}</strong></td>
+            <td class="numeric">${money(row.rate)}</td>
+            <td class="numeric">${money(row.room_service_rate)}</td>
+            <td><button type="button" class="btn btn-muted" data-menu-edit="${row.menu_id}">Edit</button></td>
+          </tr>
+        `).join("");
+      }
+
+      async function refreshCustomerList() {
+        const payload = await api(`/api/canteen/customers?unit=${encodeURIComponent(state.unit)}&q=${encodeURIComponent($("customerSearchMaster").value || "")}&limit=250&include_stewards=1`);
+        state.customerMaster.rows = payload.items || [];
+        $("customerCountPill").textContent = `${state.customerMaster.rows.length} customers`;
+        const body = $("customerRowsBody");
+        if (!state.customerMaster.rows.length) {
+          body.innerHTML = `<tr><td colspan="7" class="empty-state">No customers matched the current search.</td></tr>`;
+          return;
+        }
+        body.innerHTML = state.customerMaster.rows.map((row) => `
+          <tr>
+            <td><span class="customer-name">${escapeHtml(row.display_name || row.name || "-")}</span></td>
+            <td>${escapeHtml(row.customer_type_name || row.billing_type_name || row.type_name || "-")}</td>
+            <td>${escapeHtml(row.code || "-")}</td>
+            <td>${escapeHtml(row.department_name || "-")}</td>
+            <td>${escapeHtml(row.mobile1 || row.mobile2 || "-")}</td>
+            <td class="numeric"><span class="customer-wallet">${money(row.wallet_balance || 0)}</span></td>
+            <td class="customer-actions-cell">
+              <div class="customer-actions">
+                <button type="button" class="btn btn-muted customer-table-btn" data-customer-edit="${row.tmp_patient_id}">Edit</button>
+                <button type="button" class="btn customer-table-btn topup-btn" data-customer-wallet="${row.tmp_patient_id}">Top Up</button>
+              </div>
+            </td>
+          </tr>
+        `).join("");
+      }
+
+      function reportSummaryConfig(reportKey) {
+        if (reportKey === "wallet_summary") {
+          return {
+            metric1Label: "Opening",
+            metric2Label: "Top-up",
+            metric3Label: "Consumed",
+            metric4Label: "Closing",
+            metric1Value: "opening_balance",
+            metric2Value: "topup_amount",
+            metric3Value: "consumption_amount",
+            metric4Value: "closing_balance",
+          };
+        }
+        if (reportKey === "wallet_ledger") {
+          return {
+            metric1Label: "Rows",
+            metric2Label: "Top-up",
+            metric3Label: "Consumed",
+            metric4Label: "Txns",
+            metric1Value: "row_count",
+            metric2Value: "topup_amount",
+            metric3Value: "consumption_amount",
+            metric4Value: "row_count",
+          };
+        }
+        if (reportKey === "collections") {
+          return {
+            metric1Label: "Rows",
+            metric2Label: "Net",
+            metric3Label: "Received",
+            metric4Label: "Due",
+            metric5Label: "Wallet Top-up",
+            metric1Value: "row_count",
+            metric2Value: "net_amount",
+            metric3Value: "received_amount",
+            metric4Value: "due_amount",
+            metric5Value: "wallet_topup_amount",
+          };
+        }
+        return {
+          metric1Label: "Rows",
+          metric2Label: "Net",
+          metric3Label: "Received",
+          metric4Label: "Due",
+          metric1Value: "row_count",
+          metric2Value: "net_amount",
+          metric3Value: "received_amount",
+          metric4Value: "due_amount",
+        };
+      }
+
+      function syncReportSummary(summary = {}) {
+        const config = reportSummaryConfig($("reportKindSelect").value || "bill_register");
+        const renderSummaryValue = (key) => key === "row_count" ? String(summary[key] || state.report.rows.length || 0) : moneyInr(summary[key] || 0);
+        $("reportMetric1Label").textContent = config.metric1Label;
+        $("reportMetric2Label").textContent = config.metric2Label;
+        $("reportMetric3Label").textContent = config.metric3Label;
+        $("reportMetric4Label").textContent = config.metric4Label;
+        $("reportRowCount").textContent = renderSummaryValue(config.metric1Value);
+        $("reportNetDisplay").textContent = renderSummaryValue(config.metric2Value);
+        $("reportReceivedDisplay").textContent = renderSummaryValue(config.metric3Value);
+        $("reportDueDisplay").textContent = renderSummaryValue(config.metric4Value);
+        const metric5Card = $("reportMetric5Card");
+        const hasMetric5 = Boolean(config.metric5Value);
+        metric5Card?.classList.toggle("hidden", !hasMetric5);
+        if (hasMetric5) {
+          $("reportMetric5Label").textContent = config.metric5Label || "Metric";
+          $("reportMetric5Display").textContent = renderSummaryValue(config.metric5Value);
+        }
+      }
+
+      function syncWalletTopupPreview() {
+        const opening = asNumber($("walletTopupCurrentBalance").value);
+        const topup = Math.max(0, asNumber($("walletTopupAmount").value));
+        $("walletTopupBalanceAfter").value = money(opening + topup);
+      }
+
+      function topupCustomerContext() {
+        return state.customerMaster.walletTopupCustomer || state.sale.customer || null;
+      }
+
+      function openWalletTopupModal(customer = topupCustomerContext()) {
+        if (!customer || !Number(customer.tmp_patient_id || 0)) {
+          notify("Select a customer first to top up wallet.", "error");
+          return;
+        }
+        state.customerMaster.walletTopupCustomer = customer;
+        $("walletTopupCustomerName").value = customer.display_name || customer.name || customer.code || "";
+        $("walletTopupCurrentBalance").value = money(customer.wallet_balance || 0);
+        fillSelect($("walletTopupPayModeSelect"), state.init?.pay_modes || [], "pay_mode_id", (item) => item.pay_mode_name || `Mode ${item.pay_mode_id}`, defaultPayModeId());
+        $("walletTopupAmount").value = "";
+        $("walletTopupRemarks").value = "";
+        $("walletTopupBalanceAfter").value = money(customer.wallet_balance || 0);
+        $("walletTopupModal").classList.add("open");
+        $("walletTopupModal").setAttribute("aria-hidden", "false");
+        window.setTimeout(() => focusElement($("walletTopupAmount")), 0);
+      }
+
+      function closeWalletTopupModal() {
+        state.customerMaster.walletTopupCustomer = null;
+        $("walletTopupModal").classList.remove("open");
+        $("walletTopupModal").setAttribute("aria-hidden", "true");
+      }
+
+      function syncCustomerRecordAcrossUi(customer) {
+        if (!customer || !Number(customer.tmp_patient_id || 0)) {
+          return;
+        }
+        state.customerMaster.rows = state.customerMaster.rows.map((row) => Number(row.tmp_patient_id || 0) === Number(customer.tmp_patient_id || 0) ? { ...row, ...customer } : row);
+        if (state.customerMaster.currentId && Number(state.customerMaster.currentId) === Number(customer.tmp_patient_id || 0)) {
+          hydrateCustomerForm(customer);
+        }
+        if (state.sale.customer && Number(state.sale.customer.tmp_patient_id || 0) === Number(customer.tmp_patient_id || 0)) {
+          state.sale.customer = { ...state.sale.customer, ...customer };
+          renderSelectedCustomer();
+          syncSaleSummary();
+        }
+      }
+
+      async function submitWalletTopup() {
+        const customer = state.customerMaster.walletTopupCustomer;
+        if (!customer || !Number(customer.tmp_patient_id || 0)) {
+          notify("Wallet top-up customer context is missing.", "error");
+          return;
+        }
+        const amount = Math.max(0, asNumber($("walletTopupAmount").value));
+        if (amount <= 0) {
+          notify("Enter a top-up amount greater than zero.", "error");
+          focusElement($("walletTopupAmount"));
+          return;
+        }
+        const result = await api(`/api/canteen/customers/${encodeURIComponent(customer.tmp_patient_id)}/wallet/topup`, {
+          method: "POST",
+          body: JSON.stringify({
+            unit: state.unit,
+            amount,
+            payment_mode_id: Number($("walletTopupPayModeSelect").value || 0),
+            remarks: $("walletTopupRemarks").value.trim(),
+          }),
+        });
+        if (result.customer) {
+          syncCustomerRecordAcrossUi(result.customer);
+        }
+        notify(result.message || "Wallet top-up saved successfully.");
+        closeWalletTopupModal();
+        state.loadedTabs.delete("customers");
+        state.loadedTabs.delete("reports");
+        if (state.activeTab === "customers") {
+          await refreshCustomerList();
+        }
+      }
+
+      async function refreshDueRows() {
+        notify("Loading due list...", "info", { sticky: true });
+        const payload = await api(
+          `/api/canteen/dues?unit=${encodeURIComponent(state.unit)}&from_date=${encodeURIComponent($("dueFromDate").value || "")}&to_date=${encodeURIComponent($("dueToDate").value || "")}&type_id=${encodeURIComponent($("dueTypeSelect").value || 0)}&q=${encodeURIComponent($("dueSearch").value || "")}&limit=800`
+        );
+        state.dues.rows = (payload.items || []).map((row) => ({ ...row, picked: false, receipt_amount: row.due_amount || 0 }));
+        renderDueRows();
+        notify(`Due list loaded: ${state.dues.rows.length} row(s).`);
+      }
+
+      function selectedDueRows() {
+        return state.dues.rows.filter((row) => row.picked && asNumber(row.receipt_amount) > 0);
+      }
+
+      function syncDueSummary() {
+        $("dueRowCount").textContent = String(state.dues.rows.length);
+        $("dueOutstandingDisplay").textContent = moneyInr(state.dues.rows.reduce((sum, row) => sum + asNumber(row.due_amount), 0));
+        $("dueSelectedCountDisplay").textContent = String(selectedDueRows().length);
+        $("dueSelectedAmountDisplay").textContent = moneyInr(selectedDueRows().reduce((sum, row) => sum + asNumber(row.receipt_amount), 0));
+      }
+
+      function renderDueRows() {
+        const body = $("dueRowsBody");
+        if (!state.dues.rows.length) {
+          body.innerHTML = `<tr><td colspan="10" class="empty-state">No due rows matched the current filter.</td></tr>`;
+          syncDueSummary();
+          return;
+        }
+        body.innerHTML = state.dues.rows.map((row, index) => `
+          <tr>
+            <td class="checkbox-cell"><input type="checkbox" data-due-pick="${index}" ${row.picked ? "checked" : ""}></td>
+            <td><strong>${escapeHtml(row.bill_no || "-")}</strong><div class="muted">${escapeHtml(row.registration_no || "")}</div></td>
+            <td><strong>${escapeHtml(row.customer_label || "-")}</strong><div class="muted">${escapeHtml(row.ledger_code || row.customer_code || "")}</div></td>
+            <td>${escapeHtml(row.type_name || "-")}</td>
+            <td>${escapeHtml(row.created_by || "-")}</td>
+            <td>${escapeHtml(row.bill_date || "-")}</td>
+            <td class="numeric">${money(row.net_amount)}</td>
+            <td class="numeric">${money(row.received_amount)}</td>
+            <td class="numeric">${money(row.due_amount)}</td>
+            <td><input class="line-input" data-due-amount="${index}" type="number" min="0" step="0.01" value="${escapeHtml(money(row.receipt_amount))}"></td>
+          </tr>
+        `).join("");
+        syncDueSummary();
+      }
+
+      async function refreshReport({ quiet = false } = {}) {
+        const token = ++reportRefreshToken;
+        const reportLabel = $("reportKindSelect").selectedOptions[0]?.textContent?.trim() || "Report";
+        if (!quiet) {
+          notify(`Loading ${reportLabel}...`, "info", { sticky: true });
+        }
+        const payload = await api(
+          `/api/canteen/reports?${currentReportParams().toString()}&limit=1500`
+        );
+        if (token !== reportRefreshToken) {
+          return;
+        }
+        state.report.rows = payload.items || [];
+        state.report.columns = payload.columns || [];
+        renderReportTable(payload.summary || {});
+        if (!quiet) {
+          notify(`${reportLabel} loaded: ${state.report.rows.length} row(s).`);
+        }
+      }
+
+      async function requestBillCancellation(billId) {
+        const row = state.report.rows.find((item) => Number(item.bill_id || 0) === Number(billId));
+        if (!row) {
+          notify("Select a bill from Bill Register first.", "error");
+          return;
+        }
+        const label = row.bill_no || `Bill ${billId}`;
+        const reason = window.prompt(`Reason for cancelling ${label}?`, "");
+        if (reason === null) {
+          return;
+        }
+        const result = await api("/api/canteen/cancellation-request", {
+          method: "POST",
+          body: JSON.stringify({
+            unit: state.unit,
+            bill_id: Number(billId || 0),
+            reason: String(reason || "").trim(),
+          }),
+        });
+        notify(result.message || "Cancellation request sent to accounts approval.");
+        await refreshReport();
+      }
+
+      async function recallBillCancellation(requestId, billId) {
+        if (!requestId) {
+          notify("Pending cancellation request id was not found.", "error");
+          return;
+        }
+        const ok = window.confirm("Recall this pending cancellation request?");
+        if (!ok) {
+          return;
+        }
+        const result = await api(`/api/canteen/cancellation-request/${encodeURIComponent(requestId)}/recall`, {
+          method: "POST",
+          body: JSON.stringify({
+            unit: state.unit,
+            bill_id: Number(billId || 0),
+          }),
+        });
+        notify(result.message || "Cancellation request recalled.");
+        await refreshReport();
+      }
+
+      async function requestReceiptCancellation(receiptId) {
+        const row = state.report.rows.find((item) => Number(item.receipt_id || 0) === Number(receiptId || 0));
+        if (!row) {
+          notify("Select a receipt from Collections first.", "error");
+          return;
+        }
+        const label = [row.receipt_no || "", row.bill_no || ""].filter(Boolean).join(" / ") || `Receipt ${receiptId}`;
+        const reason = window.prompt(`Reason for cancelling ${label}?`, "");
+        if (reason === null) {
+          return;
+        }
+        const result = await api("/api/canteen/receipt-cancellation-request", {
+          method: "POST",
+          body: JSON.stringify({
+            unit: state.unit,
+            receipt_id: Number(receiptId || 0),
+            reason: String(reason || "").trim(),
+          }),
+        });
+        notify(result.message || "Receipt cancellation request sent to accounts approval.");
+        await refreshReport();
+      }
+
+      async function recallReceiptCancellationRequest(requestId, receiptId) {
+        if (!requestId) {
+          notify("Pending receipt cancellation request id was not found.", "error");
+          return;
+        }
+        const ok = window.confirm("Recall this pending receipt cancellation request?");
+        if (!ok) {
+          return;
+        }
+        const result = await api(`/api/canteen/receipt-cancellation-request/${encodeURIComponent(requestId)}/recall`, {
+          method: "POST",
+          body: JSON.stringify({
+            unit: state.unit,
+            receipt_id: Number(receiptId || 0),
+          }),
+        });
+        notify(result.message || "Receipt cancellation request recalled.");
+        await refreshReport();
+      }
+
+      async function requestWalletTopupCancellation(walletTxnId) {
+        const row = state.report.rows.find((item) => Number(item.wallet_txn_id || 0) === Number(walletTxnId || 0));
+        if (!row) {
+          notify("Select a wallet top-up row from Collections first.", "error");
+          return;
+        }
+        const label = row.receipt_no || `Wallet Top-up ${walletTxnId}`;
+        const reason = window.prompt(`Reason for cancelling ${label}?`, "");
+        if (reason === null) {
+          return;
+        }
+        const result = await api("/api/canteen/wallet-topup-cancellation-request", {
+          method: "POST",
+          body: JSON.stringify({
+            unit: state.unit,
+            wallet_txn_id: Number(walletTxnId || 0),
+            reason: String(reason || "").trim(),
+          }),
+        });
+        notify(result.message || "Wallet top-up cancellation request sent to accounts approval.");
+        await refreshReport();
+      }
+
+      async function recallWalletTopupCancellationRequest(requestId, walletTxnId) {
+        if (!requestId) {
+          notify("Pending wallet top-up cancellation request id was not found.", "error");
+          return;
+        }
+        const ok = window.confirm("Recall this pending wallet top-up cancellation request?");
+        if (!ok) {
+          return;
+        }
+        const result = await api(`/api/canteen/wallet-topup-cancellation-request/${encodeURIComponent(requestId)}/recall`, {
+          method: "POST",
+          body: JSON.stringify({
+            unit: state.unit,
+            wallet_txn_id: Number(walletTxnId || 0),
+          }),
+        });
+        notify(result.message || "Wallet top-up cancellation request recalled.");
+        await refreshReport();
+      }
+
+      function openReportPaymentModeModal(row) {
+        const receiptId = Number(row?.receipt_id || 0);
+        const walletTxnId = Number(row?.wallet_txn_id || 0);
+        if (!row || (!receiptId && !walletTxnId)) {
+          notify("Select a valid collection row first.", "error");
+          return;
+        }
+        const payModes = (state.init?.pay_modes || []).filter((item) => String(item.pay_mode_id ?? "") !== String(row.payment_mode_id ?? ""));
+        if (!payModes.length) {
+          notify("No alternate payment mode is available for this unit.", "error");
+          return;
+        }
+        state.report.paymentModeRow = row;
+        const labelBits = [row.receipt_no || "", row.bill_no || ""].filter(Boolean);
+        const targetLabel = walletTxnId > 0 ? "wallet top-up payment mode correction" : "payment mode correction";
+        $("reportPaymentModeSummary").textContent = labelBits.length
+          ? `Send ${labelBits.join(" / ")} to Accounts for ${targetLabel}.`
+          : `Send this row to Accounts for ${targetLabel}.`;
+        $("reportCurrentPaymentMode").value = row.payment_mode || "Unknown";
+        fillSelect(
+          $("reportRequestedPaymentModeSelect"),
+          [{ pay_mode_id: "", pay_mode_name: "Select payment mode" }, ...payModes],
+          "pay_mode_id",
+          (item) => item.pay_mode_name || `Mode ${item.pay_mode_id}`,
+          ""
+        );
+        $("reportPaymentModeReason").value = "";
+        $("reportPaymentModeModal").classList.add("open");
+        $("reportPaymentModeModal").setAttribute("aria-hidden", "false");
+        window.setTimeout(() => focusElement($("reportRequestedPaymentModeSelect")), 0);
+      }
+
+      function closeReportPaymentModeModal() {
+        state.report.paymentModeRow = null;
+        $("reportPaymentModeModal").classList.remove("open");
+        $("reportPaymentModeModal").setAttribute("aria-hidden", "true");
+      }
+
+      async function submitReportPaymentModeRequest() {
+        const row = state.report.paymentModeRow;
+        const receiptId = Number(row?.receipt_id || 0);
+        const walletTxnId = Number(row?.wallet_txn_id || 0);
+        if (!row || (!receiptId && !walletTxnId)) {
+          notify("Row context for payment mode change is missing.", "error");
+          return;
+        }
+        const requestedModeId = Number($("reportRequestedPaymentModeSelect").value || 0);
+        const reason = $("reportPaymentModeReason").value.trim();
+        if (!requestedModeId) {
+          notify("Select the requested payment mode first.", "error");
+          focusElement($("reportRequestedPaymentModeSelect"));
+          return;
+        }
+        if (!reason) {
+          notify("Enter a short reason for Accounts approval.", "error");
+          focusElement($("reportPaymentModeReason"));
+          return;
+        }
+        const result = await api(
+          walletTxnId > 0 ? "/api/canteen/wallet-topup-payment-mode-change-request" : "/api/canteen/payment-mode-change-request",
+          {
+            method: "POST",
+            body: JSON.stringify(
+              walletTxnId > 0
+                ? {
+                    unit: state.unit,
+                    wallet_txn_id: walletTxnId,
+                    requested_payment_mode_id: requestedModeId,
+                    reason,
+                  }
+                : {
+                    unit: state.unit,
+                    receipt_id: receiptId,
+                    requested_payment_mode_id: requestedModeId,
+                    reason,
+                  }
+            ),
+          }
+        );
+        notify(result.message || (walletTxnId > 0 ? "Wallet top-up payment mode change request sent to accounts approval." : "Payment mode change request sent to accounts approval."));
+        closeReportPaymentModeModal();
+        await refreshReport();
+      }
+
+      async function recallPaymentModeChangeRequest(requestId, receiptId, walletTxnId = 0) {
+        if (!requestId) {
+          notify("Pending payment mode request id was not found.", "error");
+          return;
+        }
+        const ok = window.confirm("Recall this pending payment mode change request?");
+        if (!ok) {
+          return;
+        }
+        const isWallet = Number(walletTxnId || 0) > 0;
+        const result = await api(
+          isWallet
+            ? `/api/canteen/wallet-topup-payment-mode-change-request/${encodeURIComponent(requestId)}/recall`
+            : `/api/canteen/payment-mode-change-request/${encodeURIComponent(requestId)}/recall`,
+          {
+            method: "POST",
+            body: JSON.stringify(
+              isWallet
+                ? {
+                    unit: state.unit,
+                    wallet_txn_id: Number(walletTxnId || 0),
+                  }
+                : {
+                    unit: state.unit,
+                    receipt_id: Number(receiptId || 0),
+                  }
+            ),
+          }
+        );
+        notify(result.message || (isWallet ? "Wallet top-up payment mode change request recalled." : "Payment mode change request recalled."));
+        await refreshReport();
+      }
+
+      function renderReportTable(summary = {}) {
+        syncReportSummary(summary);
+
+        const head = $("reportTableHead");
+        const body = $("reportTableBody");
+        const reportKey = $("reportKindSelect").value || "";
+        const isBillRegister = reportKey === "bill_register";
+        const isCollections = reportKey === "collections";
+        const columns = Array.isArray(state.report.columns) ? [...state.report.columns] : [];
+        if (isCollections && !columns.some((column) => column.key === "payment_mode")) {
+          const receivedIndex = columns.findIndex((column) => column.key === "received_amount" || column.key === "amount");
+          const insertAt = receivedIndex >= 0 ? receivedIndex : columns.length;
+          columns.splice(insertAt, 0, { key: "payment_mode", label: "Payment Mode" });
+        }
+        if (!columns.length || !state.report.rows.length) {
+          head.innerHTML = "";
+          body.innerHTML = `<tr><td class="empty-state">No report rows matched the current filter.</td></tr>`;
+          return;
+        }
+        const canReprint = state.report.rows.some((row) => Number(row.bill_id || 0) > 0);
+        head.innerHTML = `<tr>${
+          columns.map((column) => `<th class="${column.align === "right" ? "numeric" : ""}">${escapeHtml(column.label || column.key)}</th>`).join("")
+        }${canReprint ? `<th style="text-align:center; width:116px;">Print</th>` : ""}${isBillRegister ? `<th style="text-align:center; width:180px;">Cancellation</th>` : ""}${isCollections ? `<th style="text-align:center; width:180px;">Cancellation</th><th style="text-align:center; width:200px;">Payment Mode Change</th>` : ""}</tr>`;
+        body.innerHTML = state.report.rows.map((row) => `
+          <tr>
+            ${columns.map((column) => {
+              const value = row[column.key];
+              const align = column.align === "right" ? "numeric" : "";
+              if (typeof value === "number") {
+                return `<td class="${align}">${column.format === "count" ? escapeHtml(String(Math.round(value))) : money(value)}</td>`;
+              }
+              return `<td class="${align}">${escapeHtml(value ?? "-")}</td>`;
+            }).join("")}
+            ${canReprint ? `
+              <td style="text-align:center;">
+                ${Number(row.bill_id || 0) > 0
+                  ? `<button type="button" class="btn btn-muted table-action-btn" data-report-print="${Number(row.bill_id || 0)}">Reprint</button>`
+                  : `<span class="muted">-</span>`}
+              </td>
+            ` : ""}
+            ${isBillRegister ? `
+              <td style="text-align:center;">
+                ${Number(row.bill_id || 0) > 0
+                  ? (String(row.cancellation_status || "").toUpperCase() === "PENDING"
+                    ? `<button type="button" class="btn btn-muted table-action-btn" data-report-cancel-recall="${Number(row.cancellation_request_id || 0)}" data-report-cancel-bill="${Number(row.bill_id || 0)}">Recall</button><div class="muted">Pending approval</div>`
+                    : `<button type="button" class="btn btn-danger table-action-btn" data-report-cancel="${Number(row.bill_id || 0)}">Request Cancel</button>`)
+                  : `<span class="muted">-</span>`}
+              </td>
+            ` : ""}
+            ${isCollections ? `
+              <td style="text-align:center;">
+                ${Number(row.wallet_txn_id || 0) > 0
+                  ? (String(row.wallet_cancellation_status || "").toUpperCase() === "PENDING"
+                    ? `<button type="button" class="btn btn-muted table-action-btn" data-report-wallet-cancel-recall="${Number(row.wallet_cancellation_request_id || 0)}" data-report-wallet-cancel-wallet="${Number(row.wallet_txn_id || 0)}">Recall</button><div class="muted">Pending approval</div>`
+                    : `<button type="button" class="btn btn-danger table-action-btn" data-report-wallet-cancel="${Number(row.wallet_txn_id || 0)}">Request Cancel</button>`)
+                  : Number(row.receipt_id || 0) > 0
+                  ? (String(row.receipt_cancellation_status || "").toUpperCase() === "PENDING"
+                    ? `<button type="button" class="btn btn-muted table-action-btn" data-report-receipt-cancel-recall="${Number(row.receipt_cancellation_request_id || 0)}" data-report-receipt-cancel-receipt="${Number(row.receipt_id || 0)}">Recall</button><div class="muted">Pending approval</div>`
+                    : `<button type="button" class="btn btn-danger table-action-btn" data-report-receipt-cancel="${Number(row.receipt_id || 0)}">Request Cancel</button>`)
+                  : `<span class="muted">-</span>`}
+              </td>
+              <td style="text-align:center;">
+                ${Number(row.wallet_txn_id || 0) > 0
+                  ? (String(row.payment_mode_request_status || "").toUpperCase() === "PENDING"
+                    ? `<button type="button" class="btn btn-muted table-action-btn" data-report-wallet-payment-recall="${Number(row.payment_mode_request_id || 0)}" data-report-wallet-payment-wallet="${Number(row.wallet_txn_id || 0)}">Recall</button><div class="muted">${escapeHtml(row.payment_mode_requested_mode ? `Pending to ${row.payment_mode_requested_mode}` : "Pending approval")}</div>`
+                    : `<button type="button" class="btn btn-muted table-action-btn" data-report-wallet-payment-change="${Number(row.wallet_txn_id || 0)}">Request Change</button>`)
+                  : Number(row.receipt_id || 0) > 0
+                  ? (String(row.payment_mode_request_status || "").toUpperCase() === "PENDING"
+                    ? `<button type="button" class="btn btn-muted table-action-btn" data-report-payment-recall="${Number(row.payment_mode_request_id || 0)}" data-report-payment-receipt="${Number(row.receipt_id || 0)}">Recall</button><div class="muted">${escapeHtml(row.payment_mode_requested_mode ? `Pending to ${row.payment_mode_requested_mode}` : "Pending approval")}</div>`
+                    : `<button type="button" class="btn btn-muted table-action-btn" data-report-payment-change="${Number(row.receipt_id || 0)}">Request Change</button>`)
+                  : `<span class="muted">-</span>`}
+              </td>
+            ` : ""}
+          </tr>
+        `).join("");
+      }
+
+      function currentSalePayload(summary = summaryFromSale()) {
+        const pricingType = pricingTypeForCurrentSale();
+        return {
+          unit: state.unit,
+          customer_mode: state.sale.customer ? "registered" : "walkin",
+          billing_category: selectedBillingCategoryKey(),
+          customer_kind: selectedBillingCategoryKey() === "room_service" ? selectedSaleCustomerKind() : "",
+          bulk_subcategory: selectedBillingCategoryKey() === "bulk" ? selectedBulkSubcategory() : "",
+          type_id: Number(pricingType?.type_id || 1),
+          customer_tmp_patient_id: Number(state.sale.customer?.tmp_patient_id || 0),
+          selected_mobile: state.sale.selectedMobile || state.sale.customer?.mobile1 || state.sale.customer?.mobile2 || "",
+          walkin_name: $("walkinName").value.trim(),
+          sale_date: BOOTSTRAP.today_iso,
+          steward_tmp_patient_id: Number(state.sale.steward?.tmp_patient_id || 0),
+          discount_amount: asNumber($("discountAmount").value),
+          received_amount: asNumber($("receivedAmount").value),
+          zero_received_action: summary.zeroReceivedAction || selectedZeroReceivedAction(),
+          payment_mode_id: Number($("salePayModeSelect").value || 0),
+          receipt_note: $("receiptNote").value.trim(),
+          items: state.sale.items.map((item) => ({
+            menu_id: Number(item.menu_id || 0),
+            item_name: item.item_name || "",
+            qty: Number(item.qty || 0),
+            rate: Number(item.rate || 0),
+          })),
+        };
+      }
+
+      async function saveBill() {
+        if (state.sale.savePromise) {
+          return state.sale.savePromise;
+        }
+        if (!state.sale.items.length) {
+          notify("Add at least one menu item before saving the bill.", "error");
+          return;
+        }
+        const summary = summaryFromSale();
+        if (summary.walletInsufficient && summary.zeroReceivedAction === "wallet") {
+          notify("Insufficient wallet balance. Please collect cash/online payment or top up wallet.", "error");
+          focusElement($("receivedAmount"));
+          return;
+        }
+        const payload = currentSalePayload(summary);
+        state.sale.saving = true;
+        syncSaleActionState();
+        state.sale.savePromise = (async () => {
+          const result = await api("/api/canteen/bill", {
+            method: "POST",
+            body: JSON.stringify(payload),
+          });
+          state.sale.lastBill = result;
+          renderLastBillCard();
+          notify(result.message || `Bill ${result.bill_no || ""} saved successfully.`);
+          state.loadedTabs.delete("receipts");
+          state.loadedTabs.delete("reports");
+          await openPrintModal(result.bill_id);
+          resetSaleForm();
+          return result;
+        })();
+        try {
+          return await state.sale.savePromise;
+        } finally {
+          state.sale.saving = false;
+          state.sale.savePromise = null;
+          syncSaleActionState();
+        }
+      }
+
+      async function postReceipts() {
+        const bills = selectedDueRows().map((row) => ({
+          bill_id: row.bill_id,
+          amount: Number(row.receipt_amount || 0),
+        }));
+        if (!bills.length) {
+          notify("Pick at least one due bill with a positive receipt amount.", "error");
+          return;
+        }
+        const result = await api("/api/canteen/receipts", {
+          method: "POST",
+          body: JSON.stringify({
+            unit: state.unit,
+            receipt_date: $("dueReceiptDate").value,
+            payment_mode_id: Number($("duePayModeSelect").value || 0),
+            note: $("dueNote").value.trim(),
+            bills,
+          }),
+        });
+        notify(result.message || "Receipt(s) saved successfully.");
+        await refreshDueRows();
+        state.loadedTabs.delete("reports");
+      }
+
+      async function saveMenu() {
+        if (!canManageMenu()) {
+          notify("Menu Master rights are required to save menu items.", "error");
+          return;
+        }
+        const baseRate = asNumber($("menuRate").value);
+        const result = await api("/api/canteen/menu", {
+          method: "POST",
+          body: JSON.stringify({
+            unit: state.unit,
+            menu_id: state.menu.currentId,
+            code: $("menuCode").value.trim(),
+            item_name: $("menuItemName").value.trim(),
+            rate: baseRate,
+            staff_rate: baseRate,
+            room_service_rate: asNumber($("menuRoomServiceRate").value),
+          }),
+        });
+        notify(result.message || "Menu saved successfully.");
+        hydrateMenuForm(null);
+        $("menuCode").value = result.code || "";
+        await refreshMenuList();
+      }
+
+      async function saveCustomer() {
+        const result = await api("/api/canteen/customers", {
+          method: "POST",
+          body: JSON.stringify({
+            unit: state.unit,
+            tmp_patient_id: state.customerMaster.currentId,
+            type_id: Number($("customerTypeSelect").value || 0),
+            code: $("customerCode").value.trim(),
+            name: $("customerName").value.trim(),
+            mobile1: $("customerMobile1").value.trim(),
+            mobile2: $("customerMobile2").value.trim(),
+            ledger_code: $("customerLedgerCode").value.trim(),
+            ledger_name: $("customerLedgerName").value.trim(),
+            department_name: $("customerDepartmentName").value.trim(),
+            card_reference: $("customerCardReference").value.trim(),
+            workflow_context: $("customerWorkflowContext").value.trim(),
+            reference_label: $("customerReferenceLabel").value.trim(),
+            notes: $("customerNotes").value.trim(),
+            is_active: $("customerActiveSelect").value === "1",
+          }),
+        });
+        notify(result.message || "Customer saved successfully.");
+        hydrateCustomerForm(result.customer || null);
+        await refreshCustomerList();
+      }
+
+      function printCopyLabel(index) {
+        return ["CUSTOMER COPY", "KITCHEN COPY", "LEDGER COPY"][index] || `COPY ${index + 1}`;
+      }
+
+      function buildPrintHtml(bill, copyLabel = "CUSTOMER COPY") {
+        const items = (bill.items || []).map((item) => `
+          <tr>
+            <td>${escapeHtml(item.item_name || "-")}</td>
+            <td class="numeric">${money(item.qty)}</td>
+            <td class="numeric">${money(item.rate)}</td>
+            <td class="numeric">${money(item.amount)}</td>
+          </tr>
+        `).join("");
+        return `
+          <div class="print-preview">
+            <div class="print-header">
+              <h3>${escapeHtml(bill.branding?.display_name || bill.branding?.print_title || "Canteen Bill")}</h3>
+              <p class="print-sub">${escapeHtml(bill.branding?.print_subtitle || "")}</p>
+              <p class="print-sub">${escapeHtml(bill.branding?.address || "")}</p>
+            </div>
+            <div class="print-meta">
+              <div class="print-row"><span>Bill No</span><strong>${escapeHtml(bill.bill_no || "-")}</strong></div>
+              <div class="print-row"><span>Bill Date</span><strong>${escapeHtml(bill.bill_date_display || "-")}</strong></div>
+              <div class="print-row"><span>Customer</span><strong>${escapeHtml(bill.customer_label || bill.registration_no || DEFAULT_WALKIN_NAME)}</strong></div>
+              <div class="print-row"><span>Type</span><strong>${escapeHtml(bill.type_name || "-")}</strong></div>
+              ${bill.customer_code ? `<div class="print-row"><span>Code</span><strong>${escapeHtml(bill.customer_code)}</strong></div>` : ""}
+              ${bill.department_name ? `<div class="print-row"><span>Department</span><strong>${escapeHtml(bill.department_name)}</strong></div>` : ""}
+              ${bill.steward_name ? `<div class="print-row"><span>Steward</span><strong>${escapeHtml(bill.steward_name)}${bill.steward_mobile ? ` · ${escapeHtml(bill.steward_mobile)}` : ""}</strong></div>` : ""}
+              ${bill.token_no ? `<div class="print-row"><span>Token</span><strong>${escapeHtml(bill.token_no)}</strong></div>` : ""}
+            </div>
+            <table>
+              <thead>
+                <tr>
+                  <th>Item</th>
+                  <th class="numeric">Qty</th>
+                  <th class="numeric">Rate</th>
+                  <th class="numeric">Amt</th>
+                </tr>
+              </thead>
+              <tbody>
+                ${items}
+              </tbody>
+            </table>
+            <div class="print-totals">
+              <div class="print-row"><span>Gross</span><strong>${money(bill.gross_amount)}</strong></div>
+              <div class="print-row"><span>Discount</span><strong>${money(bill.discount_amount)}</strong></div>
+              <div class="print-row"><span>Net</span><strong>${money(bill.net_amount)}</strong></div>
+              <div class="print-row"><span>Received</span><strong>${money(bill.received_amount)}</strong></div>
+              <div class="print-row"><span>Due</span><strong>${money(bill.due_amount)}</strong></div>
+              ${bill.payment_mode ? `<div class="print-row"><span>Pay Mode</span><strong>${escapeHtml(bill.payment_mode)}</strong></div>` : ""}
+            </div>
+            <div class="copy-tag">${escapeHtml(copyLabel)}</div>
+            <div class="footer-note">
+              Printed by ${escapeHtml(bill.printed_by || "-")} on ${escapeHtml(bill.printed_at || "-")}
+            </div>
+          </div>
+        `;
+      }
+
+      async function openPrintModal(billId) {
+        const payload = await api(`/api/canteen/bill/${encodeURIComponent(billId)}/print?unit=${encodeURIComponent(state.unit)}`);
+        state.sale.printBill = payload.bill;
+        $("printPreviewWrap").innerHTML = buildPrintHtml(payload.bill);
+        $("printModal").classList.add("open");
+        $("printModal").setAttribute("aria-hidden", "false");
+      }
+
+      function closePrintModal() {
+        $("printModal").classList.remove("open");
+        $("printModal").setAttribute("aria-hidden", "true");
+      }
+
+      function openPasswordModal() {
+        $("passwordModal").classList.add("open");
+        $("passwordModal").setAttribute("aria-hidden", "false");
+        const firstInput = $("passwordModal").querySelector("input[name='current_password']");
+        window.setTimeout(() => focusElement(firstInput), 0);
+      }
+
+      function closePasswordModal() {
+        $("passwordModal").classList.remove("open");
+        $("passwordModal").setAttribute("aria-hidden", "true");
+        $("passwordModal").querySelector("form")?.reset?.();
+      }
+
+      function printCopies(count) {
+        const bill = state.sale.printBill;
+        if (!bill) {
+          notify("No print payload is loaded for the current session.", "error");
+          return;
+        }
+        const host = $("printHost");
+        host.innerHTML = Array.from({ length: count }).map((_, index) => buildPrintHtml(bill, printCopyLabel(index))).join("");
+        window.print();
+        window.setTimeout(() => {
+          host.innerHTML = "";
+        }, 500);
+      }
+
+      function installEventHandlers() {
+        window.addEventListener("pageshow", () => {
+          focusSaleStart({ delay: 80 });
+        });
+
+        document.querySelectorAll(".tab-button").forEach((button) => {
+          button.addEventListener("click", () => setActiveTab(button.dataset.tab));
+        });
+
+        $("unitSelect").addEventListener("change", async () => {
+          await loadInit($("unitSelect").value);
+          notify(`Unit switched to ${state.unit}.`);
+          setActiveTab("sale");
+        });
+
+        $("saleTypeSelect").addEventListener("change", () => {
+          syncModeForSelectedType();
+          if (selectedBillingCategoryKey() !== "general" && !state.sale.receivedManual) {
+            $("receivedAmount").value = "0";
+          }
+          repriceSaleItems();
+          syncSaleSummary();
+        });
+        $("saleCustomerKindSelect").addEventListener("change", () => {
+          repriceSaleItems();
+          syncSaleSummary();
+        });
+        $("saleBulkSubcategorySelect").addEventListener("change", () => {
+          syncSaleSummary();
+        });
+
+        $("walkinName").addEventListener("input", () => {
+          if (state.sale.customer) {
+            const currentName = String($("walkinName").value || "").trim();
+            const selectedName = String(state.sale.customer.display_name || state.sale.customer.name || "").trim();
+            if (currentName && currentName !== selectedName) {
+              clearSaleCustomer({ resetLabel: false });
+              syncSaleSummary();
+            }
+          } else {
+            state.sale.selectedMobile = "";
+          }
+        });
+
+        $("clearSelectedCustomerBtn").addEventListener("click", () => {
+          clearSaleCustomer({ resetLabel: true });
+          syncSaleSummary();
+          focusElement($("walkinName"));
+        });
+
+        $("saleWalletTopupBtn").addEventListener("click", () => openWalletTopupModal(state.sale.customer));
+
+        $("discountAmount").addEventListener("input", () => {
+          syncSaleSummary();
+        });
+        $("zeroReceivedActionSelect").addEventListener("change", () => {
+          syncSaleSummary();
+        });
+        $("receivedAmount").addEventListener("input", () => {
+          const rawReceived = String($("receivedAmount").value || "").trim();
+          if (rawReceived === "") {
+            state.sale.receivedManual = false;
+            syncSaleSummary();
+            return;
+          }
+          const received = Math.max(0, asNumber(rawReceived));
+          state.sale.receivedManual = true;
+          syncSaleSummary();
+        });
+        $("receivedAmount").addEventListener("blur", () => {
+          if (!String($("receivedAmount").value || "").trim()) {
+            state.sale.receivedManual = false;
+          }
+          syncSaleSummary();
+        });
+        $("clearBillBtn").addEventListener("click", resetSaleForm);
+        $("saveBillBtn").addEventListener("click", async () => {
+          try {
+            await saveBill();
+          } catch (error) {
+            notify(error.message || "Failed to save canteen bill.", "error");
+          }
+        });
+        $("openLastPrintBtn").addEventListener("click", async () => {
+          if (!state.sale.lastBill?.bill_id) {
+            notify("Save a bill first, then use Print Last.", "error");
+            return;
+          }
+          try {
+            await openPrintModal(state.sale.lastBill.bill_id);
+          } catch (error) {
+            notify(error.message || "Failed to open print preview.", "error");
+          }
+        });
+        syncSaleActionState();
+
+        $("walletTopupAmount").addEventListener("input", syncWalletTopupPreview);
+        $("customerWalletTopupBtn").addEventListener("click", () => {
+          const customer = state.customerMaster.rows.find((row) => Number(row.tmp_patient_id || 0) === Number(state.customerMaster.currentId || 0));
+          openWalletTopupModal(customer || null);
+        });
+        $("closeWalletTopupModalBtn").addEventListener("click", closeWalletTopupModal);
+        $("cancelWalletTopupBtn").addEventListener("click", closeWalletTopupModal);
+        $("submitWalletTopupBtn").addEventListener("click", async () => {
+          try {
+            await submitWalletTopup();
+          } catch (error) {
+            notify(error.message || "Failed to save wallet top-up.", "error");
+          }
+        });
+        $("walletTopupModal").addEventListener("click", (event) => {
+          if (event.target === $("walletTopupModal")) {
+            closeWalletTopupModal();
+          }
+        });
+
+        $("saleLinesBody").addEventListener("change", (event) => {
+          const input = event.target.closest("[data-line-index]");
+          if (!input) {
+            return;
+          }
+          const row = state.sale.items[Number(input.dataset.lineIndex || -1)];
+          if (!row) {
+            return;
+          }
+          row[input.dataset.lineField] = asNumber(input.value);
+          row.amount = asNumber(row.qty) * asNumber(row.rate);
+          renderSaleLines();
+        });
+
+        $("saleLinesBody").addEventListener("keydown", (event) => {
+          const input = event.target.closest("[data-line-index][data-line-field='qty']");
+          if (!input || event.key !== "Tab") {
+            return;
+          }
+          const row = state.sale.items[Number(input.dataset.lineIndex || -1)];
+          if (row) {
+            row.qty = asNumber(input.value);
+            row.amount = asNumber(row.qty) * asNumber(row.rate);
+          }
+          event.preventDefault();
+          const currentIndex = Number(input.dataset.lineIndex || 0);
+          renderSaleLines();
+          if (event.shiftKey) {
+            const previous = currentIndex > 0
+              ? $("saleLinesBody").querySelector(`[data-remove-line="${currentIndex - 1}"]`)
+              : $("itemLookup");
+            focusElement(previous);
+            return;
+          }
+          const removeButton = $("saleLinesBody").querySelector(`[data-remove-line="${currentIndex}"]`);
+          if (removeButton) {
+            focusElement(removeButton);
+            return;
+          }
+          const qtyInputs = Array.from($("saleLinesBody").querySelectorAll("[data-line-field='qty']"));
+          focusElement(qtyInputs[currentIndex + 1] || $("discountAmount"));
+        });
+
+        $("saleLinesBody").addEventListener("click", (event) => {
+          const button = event.target.closest("[data-remove-line]");
+          if (!button) {
+            return;
+          }
+          const returnToItemLookup = event.detail === 0 || document.activeElement === button;
+          state.sale.items.splice(Number(button.dataset.removeLine || -1), 1);
+          renderSaleLines();
+          if (returnToItemLookup) {
+            focusElement($("itemLookup"));
+          }
+        });
+
+        $("reportTableBody").addEventListener("click", async (event) => {
+          const printButton = event.target.closest("[data-report-print]");
+          const cancelButton = event.target.closest("[data-report-cancel]");
+          const recallButton = event.target.closest("[data-report-cancel-recall]");
+          const receiptCancelButton = event.target.closest("[data-report-receipt-cancel]");
+          const receiptCancelRecallButton = event.target.closest("[data-report-receipt-cancel-recall]");
+          const walletCancelButton = event.target.closest("[data-report-wallet-cancel]");
+          const walletCancelRecallButton = event.target.closest("[data-report-wallet-cancel-recall]");
+          const paymentChangeButton = event.target.closest("[data-report-payment-change]");
+          const paymentRecallButton = event.target.closest("[data-report-payment-recall]");
+          const walletPaymentChangeButton = event.target.closest("[data-report-wallet-payment-change]");
+          const walletPaymentRecallButton = event.target.closest("[data-report-wallet-payment-recall]");
+          if (!printButton && !cancelButton && !recallButton && !receiptCancelButton && !receiptCancelRecallButton && !walletCancelButton && !walletCancelRecallButton && !paymentChangeButton && !paymentRecallButton && !walletPaymentChangeButton && !walletPaymentRecallButton) {
+            return;
+          }
+          try {
+            if (printButton) {
+              await openPrintModal(Number(printButton.dataset.reportPrint || 0));
+            } else if (cancelButton) {
+              await requestBillCancellation(Number(cancelButton.dataset.reportCancel || 0));
+            } else if (recallButton) {
+              await recallBillCancellation(Number(recallButton.dataset.reportCancelRecall || 0), Number(recallButton.dataset.reportCancelBill || 0));
+            } else if (receiptCancelButton) {
+              await requestReceiptCancellation(Number(receiptCancelButton.dataset.reportReceiptCancel || 0));
+            } else if (receiptCancelRecallButton) {
+              await recallReceiptCancellationRequest(
+                Number(receiptCancelRecallButton.dataset.reportReceiptCancelRecall || 0),
+                Number(receiptCancelRecallButton.dataset.reportReceiptCancelReceipt || 0)
+              );
+            } else if (walletCancelButton) {
+              await requestWalletTopupCancellation(Number(walletCancelButton.dataset.reportWalletCancel || 0));
+            } else if (walletCancelRecallButton) {
+              await recallWalletTopupCancellationRequest(
+                Number(walletCancelRecallButton.dataset.reportWalletCancelRecall || 0),
+                Number(walletCancelRecallButton.dataset.reportWalletCancelWallet || 0)
+              );
+            } else if (paymentChangeButton) {
+              const row = state.report.rows.find((item) => Number(item.receipt_id || 0) === Number(paymentChangeButton.dataset.reportPaymentChange || 0));
+              openReportPaymentModeModal(row);
+            } else if (paymentRecallButton) {
+              await recallPaymentModeChangeRequest(
+                Number(paymentRecallButton.dataset.reportPaymentRecall || 0),
+                Number(paymentRecallButton.dataset.reportPaymentReceipt || 0)
+              );
+            } else if (walletPaymentChangeButton) {
+              const row = state.report.rows.find((item) => Number(item.wallet_txn_id || 0) === Number(walletPaymentChangeButton.dataset.reportWalletPaymentChange || 0));
+              openReportPaymentModeModal(row);
+            } else if (walletPaymentRecallButton) {
+              await recallPaymentModeChangeRequest(
+                Number(walletPaymentRecallButton.dataset.reportWalletPaymentRecall || 0),
+                0,
+                Number(walletPaymentRecallButton.dataset.reportWalletPaymentWallet || 0)
+              );
+            }
+          } catch (error) {
+            notify(error.message || "Failed to process the report action.", "error");
+          }
+        });
+
+        $("refreshDuesBtn").addEventListener("click", async () => {
+          try {
+            await refreshDueRows();
+          } catch (error) {
+            notify(error.message || "Failed to load due rows.", "error");
+          }
+        });
+
+        $("selectAllDuesBtn").addEventListener("click", () => {
+          state.dues.rows.forEach((row) => {
+            row.picked = true;
+            if (!asNumber(row.receipt_amount)) {
+              row.receipt_amount = row.due_amount;
+            }
+          });
+          renderDueRows();
+        });
+
+        $("dueRowsBody").addEventListener("change", (event) => {
+          const amountInput = event.target.closest("[data-due-amount]");
+          if (amountInput) {
+            const row = state.dues.rows[Number(amountInput.dataset.dueAmount || -1)];
+            if (!row) {
+              return;
+            }
+            row.receipt_amount = Math.max(0, Math.min(asNumber(amountInput.value), asNumber(row.due_amount)));
+            row.picked = row.receipt_amount > 0;
+            renderDueRows();
+            return;
+          }
+          const pickInput = event.target.closest("[data-due-pick]");
+          if (pickInput) {
+            const row = state.dues.rows[Number(pickInput.dataset.duePick || -1)];
+            if (!row) {
+              return;
+            }
+            row.picked = Boolean(pickInput.checked);
+            if (row.picked && !asNumber(row.receipt_amount)) {
+              row.receipt_amount = row.due_amount;
+            }
+            renderDueRows();
+          }
+        });
+
+        $("saveReceiptsBtn").addEventListener("click", async () => {
+          try {
+            await postReceipts();
+          } catch (error) {
+            notify(error.message || "Failed to save due receipts.", "error");
+          }
+        });
+
+        $("refreshReportsBtn").addEventListener("click", async () => {
+          try {
+            await refreshReport();
+          } catch (error) {
+            notify(error.message || "Failed to load report.", "error");
+          }
+        });
+
+        const refreshReportFromSearch = debounce(async () => {
+          try {
+            await refreshReport({ quiet: true });
+          } catch (error) {
+            notify(error.message || "Failed to filter report.", "error");
+          }
+        }, 350);
+        $("reportSearch").addEventListener("input", refreshReportFromSearch);
+        $("reportSearch").addEventListener("keydown", async (event) => {
+          if (event.key !== "Enter") {
+            return;
+          }
+          event.preventDefault();
+          event.stopPropagation();
+          try {
+            await refreshReport();
+            focusElement($("reportSearch"));
+          } catch (error) {
+            notify(error.message || "Failed to filter report.", "error");
+          }
+        });
+        $("reportKindSelect").addEventListener("change", () => {
+          syncReportSummary({ row_count: state.report.rows.length || 0 });
+        });
+
+        $("exportReportExcelBtn").addEventListener("click", async () => {
+          await exportCurrentReport("xlsx");
+        });
+
+        $("exportReportPdfBtn").addEventListener("click", async () => {
+          await exportCurrentReport("pdf");
+        });
+
+        $("closeReportPaymentModeModalBtn").addEventListener("click", closeReportPaymentModeModal);
+        $("cancelReportPaymentModeRequestBtn").addEventListener("click", closeReportPaymentModeModal);
+        $("submitReportPaymentModeRequestBtn").addEventListener("click", async () => {
+          try {
+            await submitReportPaymentModeRequest();
+          } catch (error) {
+            notify(error.message || "Failed to send payment mode change request.", "error");
+          }
+        });
+        $("reportPaymentModeModal").addEventListener("click", (event) => {
+          if (event.target === $("reportPaymentModeModal")) {
+            closeReportPaymentModeModal();
+          }
+        });
+        if (canManageMenu()) {
+          $("refreshMenuBtn")?.addEventListener("click", async () => {
+            try {
+              await refreshMenuList();
+            } catch (error) {
+              notify(error.message || "Failed to refresh menu list.", "error");
+            }
+          });
+
+          $("menuSearch")?.addEventListener("input", debounce(async () => {
+            try {
+              await refreshMenuList();
+            } catch (error) {
+              notify(error.message || "Failed to filter menu list.", "error");
+            }
+          }, 220));
+
+          $("saveMenuBtn")?.addEventListener("click", async () => {
+            try {
+              await saveMenu();
+            } catch (error) {
+              notify(error.message || "Failed to save menu item.", "error");
+            }
+          });
+
+          $("newMenuBtn")?.addEventListener("click", () => hydrateMenuForm(null));
+
+          $("menuRowsBody")?.addEventListener("click", (event) => {
+            const button = event.target.closest("[data-menu-edit]");
+            if (!button) {
+              return;
+            }
+            const row = state.menu.rows.find((item) => Number(item.menu_id) === Number(button.dataset.menuEdit));
+            if (row) {
+              hydrateMenuForm(row);
+            }
+          });
+        }
+
+        $("refreshCustomersBtn").addEventListener("click", async () => {
+          try {
+            await refreshCustomerList();
+          } catch (error) {
+            notify(error.message || "Failed to refresh customer list.", "error");
+          }
+        });
+
+        $("customerSearchMaster").addEventListener("input", debounce(async () => {
+          try {
+            await refreshCustomerList();
+          } catch (error) {
+            notify(error.message || "Failed to filter customer list.", "error");
+          }
+        }, 220));
+
+        $("saveCustomerBtn").addEventListener("click", async () => {
+          try {
+            await saveCustomer();
+          } catch (error) {
+            notify(error.message || "Failed to save customer.", "error");
+          }
+        });
+
+        $("newCustomerBtn").addEventListener("click", () => hydrateCustomerForm(null));
+
+        $("customerRowsBody").addEventListener("click", (event) => {
+          const editButton = event.target.closest("[data-customer-edit]");
+          const walletButton = event.target.closest("[data-customer-wallet]");
+          if (!editButton && !walletButton) {
+            return;
+          }
+          const targetId = Number(editButton?.dataset.customerEdit || walletButton?.dataset.customerWallet || 0);
+          const row = state.customerMaster.rows.find((item) => Number(item.tmp_patient_id) === targetId);
+          if (row && editButton) {
+            hydrateCustomerForm(row);
+          }
+          if (row && walletButton) {
+            openWalletTopupModal(row);
+          }
+        });
+
+        $("closePrintModalBtn").addEventListener("click", closePrintModal);
+        $("printModal").addEventListener("click", (event) => {
+          if (event.target === $("printModal")) {
+            closePrintModal();
+          }
+        });
+        document.querySelectorAll("[data-print-copies]").forEach((button) => {
+          button.addEventListener("click", () => printCopies(Number(button.dataset.printCopies || 1)));
+        });
+        $("changePasswordBtn").addEventListener("click", openPasswordModal);
+        $("closePasswordModalBtn").addEventListener("click", closePasswordModal);
+        $("cancelPasswordBtn").addEventListener("click", closePasswordModal);
+        $("passwordModal").addEventListener("click", (event) => {
+          if (event.target === $("passwordModal")) {
+            closePasswordModal();
+          }
+        });
+
+        document.addEventListener("click", (event) => {
+          if (!event.target.closest(".lookup")) {
+            Object.values(lookupHandles).forEach((lookup) => lookup?.close?.());
+          }
+        });
+
+        document.addEventListener("focusin", (event) => {
+          if (event.target.matches("input[type='number'], input[type='text']")) {
+            event.target.select?.();
+          }
+          ensureInView(event.target);
+        });
+
+        document.addEventListener("keydown", async (event) => {
+          if (event.defaultPrevented) {
+            return;
+          }
+          if (["Tab", "Enter", "ArrowDown", "ArrowUp", "ArrowLeft", "ArrowRight"].includes(event.key)) {
+            window.setTimeout(() => ensureInView(document.activeElement), 0);
+          }
+          if ($("passwordModal").classList.contains("open")) {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              closePasswordModal();
+            }
+            return;
+          }
+          if ($("reportPaymentModeModal").classList.contains("open")) {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              closeReportPaymentModeModal();
+            } else if (event.key === "Enter" && event.target !== $("reportPaymentModeReason")) {
+              event.preventDefault();
+              try {
+                await submitReportPaymentModeRequest();
+              } catch (error) {
+                notify(error.message || "Failed to send payment mode change request.", "error");
+              }
+            }
+            return;
+          }
+          if ($("walletTopupModal").classList.contains("open")) {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              closeWalletTopupModal();
+            } else if (event.key === "Enter" && event.target !== $("walletTopupRemarks")) {
+              event.preventDefault();
+              try {
+                await submitWalletTopup();
+              } catch (error) {
+                notify(error.message || "Failed to save wallet top-up.", "error");
+              }
+            }
+            return;
+          }
+          if (state.sale.printBill && $("printModal").classList.contains("open")) {
+            if (event.key === "Escape") {
+              event.preventDefault();
+              closePrintModal();
+              return;
+            }
+            if (["1", "2", "3"].includes(event.key)) {
+              event.preventDefault();
+              printCopies(Number(event.key));
+              return;
+            }
+            if (event.key.toLowerCase() === "p") {
+              event.preventDefault();
+              printCopies(1);
+              return;
+            }
+          }
+
+          if (event.altKey && !event.shiftKey && !event.ctrlKey) {
+            const tabMap = { "1": "sale", "2": "receipts", "3": "reports", "4": canManageMenu() ? "menu" : "customers", "5": "customers" };
+            if (tabMap[event.key]) {
+              event.preventDefault();
+              setActiveTab(tabMap[event.key]);
+              return;
+            }
+          }
+
+          if (event.key === "F2") {
+            event.preventDefault();
+            setActiveTab("sale");
+            $("walkinName").focus();
+            await lookupHandles.quickCustomer?.search?.();
+            return;
+          }
+
+          if (event.key === "F4") {
+            event.preventDefault();
+            setActiveTab("sale");
+            $("itemLookup").focus();
+            await lookupHandles.item?.search?.();
+            return;
+          }
+
+          if (event.ctrlKey && event.key.toLowerCase() === "s") {
+            if (state.activeTab === "sale") {
+              event.preventDefault();
+              try {
+                await saveBill();
+              } catch (error) {
+                notify(error.message || "Failed to save bill.", "error");
+              }
+            }
+          }
+
+          if (
+            event.key === "Enter" &&
+            !event.shiftKey &&
+            !event.ctrlKey &&
+            !event.altKey &&
+            event.target.matches("input, select") &&
+            !event.target.classList.contains("lookup-input")
+          ) {
+            event.preventDefault();
+            const scope = event.target.closest("[data-enter-scope]") || document;
+            const focusables = Array.from(scope.querySelectorAll("input:not([type='hidden']):not([disabled]), select:not([disabled]), textarea:not([disabled]), button:not([disabled])"))
+              .filter((node) => node.offsetParent !== null);
+            const index = focusables.indexOf(event.target);
+            const next = focusables[index + 1];
+            next?.focus();
+            ensureInView(next);
+          }
+        });
+      }
+
+      async function bootstrap() {
+        [
+          "walkinName",
+          "saleCustomerKindSelect",
+          "saleBulkSubcategorySelect",
+          "itemLookup",
+          "discountAmount",
+          "receivedAmount",
+          "salePayModeSelect",
+          "receiptNote",
+          "dueFromDate",
+          "dueToDate",
+          "dueTypeSelect",
+          "dueReceiptDate",
+          "dueSearch",
+          "duePayModeSelect",
+          "dueNote",
+          "reportKindSelect",
+          "reportFromDate",
+          "reportToDate",
+          "reportTypeSelect",
+          "reportSearch",
+          "menuCode",
+          "menuItemName",
+          "menuRate",
+          "menuRoomServiceRate",
+          "menuSearch",
+          "customerTypeSelect",
+          "customerCode",
+          "customerName",
+          "customerMobile1",
+          "customerMobile2",
+          "customerLedgerCode",
+          "customerLedgerName",
+          "customerDepartmentName",
+          "customerCardReference",
+          "customerWorkflowContext",
+          "customerReferenceLabel",
+          "customerNotes",
+          "customerActiveSelect",
+          "customerWalletBalance",
+          "saleWalletTopupBtn",
+          "clearSelectedCustomerBtn",
+          "saleWalletHint",
+          "walletTopupCustomerName",
+          "walletTopupCurrentBalance",
+          "walletTopupAmount",
+          "walletTopupPayModeSelect",
+          "walletTopupBalanceAfter",
+          "walletTopupRemarks",
+        ].forEach((id) => { el[id] = $(id); });
+
+        installLookups();
+        installEventHandlers();
+        hydrateMenuForm(null);
+        hydrateCustomerForm(null);
+        await loadInit(state.unit);
+        renderSelectedCustomer();
+        renderLastBillCard();
+        renderSaleLines();
+        setActiveTab("sale");
+        focusSaleStart({ force: true });
+        focusSaleStart({ force: true, delay: 150 });
+        const pageParams = new URLSearchParams(window.location.search);
+        const passwordMessage = pageParams.get("msg");
+        const passwordError = pageParams.get("err");
+        if (passwordMessage || passwordError) {
+          notify(passwordMessage || passwordError, passwordError ? "error" : "success");
+          pageParams.delete("msg");
+          pageParams.delete("err");
+          const cleanQuery = pageParams.toString();
+          window.history.replaceState({}, document.title, `${window.location.pathname}${cleanQuery ? `?${cleanQuery}` : ""}`);
+        }
+      }
+
+      bootstrap().catch((error) => {
+        notify(error.message || "Failed to load canteen module.", "error");
+      });
+    </script>
+    {% include '_session_keepalive.html' %}
+  </body>
+</html>

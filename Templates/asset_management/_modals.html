@@ -1,0 +1,748 @@
+<div class="asset-modal" id="assetModal">
+  <div class="asset-modal__dialog asset-modal__dialog--wide">
+    <div class="asset-modal__header">
+      <div>
+        <h3 id="assetModalTitle">Add Asset</h3>
+        <p id="assetModalSubtitle">Capture the asset master details used across the hospital units.</p>
+      </div>
+      <button type="button" class="asset-modal-close" data-close-modal="assetModal">&times;</button>
+    </div>
+    <div class="asset-modal__body">
+      <form id="assetForm">
+        <input type="hidden" name="asset_id" id="assetFormAssetId">
+        <div class="asset-master-access">
+          <button type="button" class="asset-master-access__btn" data-open-reference-quick="company">Company Master</button>
+          <button type="button" class="asset-master-access__btn" data-open-reference-quick="manufacturer">Manufacturer Master</button>
+          <button type="button" class="asset-master-access__btn" data-open-reference-quick="supplier">Supplier Master</button>
+          <button type="button" class="asset-master-access__btn" data-open-reference-quick="equipment">Equipment Master</button>
+        </div>
+        <div class="asset-modal-grid asset-modal-grid--asset">
+          <div class="asset-field asset-field--span-2">
+            <label>Machine Type</label>
+            <select class="asset-select" name="machine_type" id="assetFieldMachineType" required>
+              <option value="">Choose machine type</option>
+              {% for item in lookups.machine_types %}
+                <option value="{{ item.id }}">{{ item.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="asset-field asset-field--span-2">
+            <label>Equipment</label>
+            <select class="asset-select" name="equ_id" id="assetFieldEquipment" required>
+              <option value="">Choose equipment</option>
+              {% for item in lookups.equipment %}
+                <option value="{{ item.id }}" data-machine-type="{{ item.machine_type_id }}">{{ item.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="asset-field">
+            <label>Model Name</label>
+            <input class="asset-input" name="model_name" id="assetFieldModel" placeholder="Enter model name" required>
+          </div>
+          <div class="asset-field">
+            <label>Serial Number</label>
+            <input class="asset-input" name="serial_number" id="assetFieldSerial" placeholder="Enter serial number">
+          </div>
+          <div class="asset-field">
+            <label>Manufacturer</label>
+            <select class="asset-select" name="brand_id" id="assetFieldManufacturer" required>
+              <option value="">Choose manufacturer</option>
+              {% for item in lookups.manufacturers %}
+                <option value="{{ item.id }}">{{ item.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="asset-field">
+            <label>Supplier</label>
+            <select class="asset-select" name="supplier_id" id="assetFieldSupplier" required>
+              <option value="">Choose supplier</option>
+              {% for item in lookups.suppliers %}
+                <option value="{{ item.id }}">{{ item.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="asset-field">
+            <label>PO Source Unit</label>
+            <select class="asset-select" id="assetFieldPoSourceUnit">
+              <option value="">Search AHLSTORE + CANCERUNITSTORE</option>
+              <option value="AHLSTORE">AHLSTORE</option>
+              <option value="CANCERUNITSTORE">CANCERUNITSTORE</option>
+            </select>
+          </div>
+
+          <div class="asset-field">
+            <label>Purchase Order No.</label>
+            <div style="display:flex;gap:8px;align-items:center;">
+              <input class="asset-input" name="purchage_orderNo" id="assetFieldPoNo" placeholder="Enter PO number" style="flex:1;">
+              <button type="button" class="asset-btn secondary" id="assetFetchPoBtn" style="white-space:nowrap;">Fetch PO</button>
+            </div>
+            <small id="assetPoLookupMessage" style="display:block;margin-top:6px;color:#64748b;font-weight:700;"></small>
+          </div>
+
+          <div class="asset-field">
+            <label>Purchase Order Date</label>
+            <input class="asset-input" type="date" name="purchage_orderDate" id="assetFieldPoDate">
+          </div>
+          <div class="asset-field">
+            <label>Invoice Number</label>
+            <input class="asset-input" name="invoice_number" id="assetFieldInvoiceNo" placeholder="Enter invoice number">
+          </div>
+          <div class="asset-field">
+            <label>Invoice Date</label>
+            <input class="asset-input" type="date" name="invoice_date" id="assetFieldInvoiceDate" required>
+          </div>
+          <div class="asset-field">
+            <label>Asset Value</label>
+            <input class="asset-input" type="number" step="0.01" min="0" name="asset_value" id="assetFieldValue" placeholder="Enter asset value" required>
+          </div>
+          <div class="asset-field">
+            <label>Warranty (Years)</label>
+            <input class="asset-input" name="warranty" id="assetFieldWarranty" inputmode="decimal" placeholder="Example: 1 or 5" required>
+          </div>
+          <div class="asset-field asset-field--span-2">
+            <label>Location</label>
+            <select class="asset-select" name="locationId" id="assetFieldLocation" required>
+              <option value="">Choose location</option>
+              {% for item in lookups.locations %}
+                <option value="{{ item.id }}">{{ item.code }} - {{ item.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="asset-field">
+            <label>Status</label>
+            <select class="asset-select" name="asset_status" id="assetFieldStatus">
+              {% for item in lookups.status_options %}
+                <option value="{{ item.value }}">{{ item.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="asset-field-section">AMC / CMC / Warranty Lifecycle</div>
+          <div class="asset-field">
+            <label>Coverage Status</label>
+            <select class="asset-select" name="coverage_type" id="assetFieldCoverageType" required>
+              <option value="">Choose coverage</option>
+              {% for item in lookups.coverage_type_options %}
+                <option value="{{ item.value }}">{{ item.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="asset-field">
+            <label>Vendor / Company</label>
+            <input class="asset-input" name="coverage_vendor" id="assetFieldCoverageVendor" placeholder="Coverage vendor">
+          </div>
+          <div class="asset-field">
+            <label>Coverage Start</label>
+            <input class="asset-input" type="date" name="coverage_start_date" id="assetFieldCoverageStart">
+          </div>
+          <div class="asset-field">
+            <label>AMC / CMC / Warranty Expiry</label>
+            <input class="asset-input" type="date" name="coverage_expiry_date" id="assetFieldCoverageExpiry">
+          </div>
+          <div class="asset-field">
+            <label>Contract / Reference No.</label>
+            <input class="asset-input" name="coverage_contract_no" id="assetFieldCoverageContract" placeholder="If available">
+          </div>
+          <div class="asset-field asset-field--span-2">
+            <label>Coverage Remarks / Reason</label>
+            <textarea class="asset-textarea" name="coverage_remarks" id="assetFieldCoverageRemarks" placeholder="Renewal notes, reason if not covered, or responsible status"></textarea>
+          </div>
+          <input type="hidden" name="coverage_document_file_id" id="assetFieldCoverageDocumentFileId">
+        </div>
+        <div class="asset-modal__footer">
+          <button type="button" class="asset-btn secondary" data-close-modal="assetModal">Cancel</button>
+          <button type="submit" class="asset-btn primary" id="assetFormSubmit">Save Asset</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="asset-modal" id="issueModal">
+  <div class="asset-modal__dialog">
+    <div class="asset-modal__header">
+      <div>
+        <h3>Issue Asset</h3>
+        <p id="issueModalMeta">Assign this asset to a user, department, or unit.</p>
+      </div>
+      <button type="button" class="asset-modal-close" data-close-modal="issueModal">&times;</button>
+    </div>
+    <div class="asset-modal__body">
+      <form id="issueForm">
+        <input type="hidden" name="asset_id" id="issueAssetId">
+        <div class="asset-filter-grid">
+          <div class="asset-field">
+            <label>Issue To</label>
+            <select class="asset-select" name="to_entity_type" id="issueEntityType" required>
+              <option value="">Select target type</option>
+              {% for item in lookups.assignment_type_options %}
+                <option value="{{ item.value }}">{{ item.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="asset-field">
+            <label>Destination</label>
+            <select class="asset-select" name="to_entity_key" id="issueEntityKey" required>
+              <option value="">Select destination</option>
+            </select>
+          </div>
+          <div class="asset-field">
+            <label>Status After Issue</label>
+            <select class="asset-select" name="status_after">
+              {% for item in lookups.status_options %}
+                <option value="{{ item.value }}" {% if item.value == 2 %}selected{% endif %}>{{ item.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="asset-field">
+            <label>Location</label>
+            <select class="asset-select" name="location_id">
+              {% for item in lookups.locations %}
+                <option value="{{ item.id }}">{{ item.code }} - {{ item.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="asset-field" style="grid-column:span 2;">
+            <label>Remarks</label>
+            <textarea class="asset-textarea" name="remarks" placeholder="Reason, receiving person, or useful issue notes"></textarea>
+          </div>
+        </div>
+        <div class="asset-modal__footer">
+          <button type="button" class="asset-btn secondary" data-close-modal="issueModal">Cancel</button>
+          <button type="submit" class="asset-btn primary">Issue Asset</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="asset-modal" id="returnModal">
+  <div class="asset-modal__dialog">
+    <div class="asset-modal__header">
+      <div>
+        <h3>Return Asset</h3>
+        <p id="returnModalMeta">Receive the asset back into store or the home unit location.</p>
+      </div>
+      <button type="button" class="asset-modal-close" data-close-modal="returnModal">&times;</button>
+    </div>
+    <div class="asset-modal__body">
+      <form id="returnForm">
+        <input type="hidden" name="asset_id" id="returnAssetId">
+        <div class="asset-filter-grid">
+          <div class="asset-field">
+            <label>Return To Location</label>
+            <select class="asset-select" name="to_entity_key" id="returnLocationKey" required>
+              {% for item in lookups.locations %}
+                <option value="{{ item.id }}">{{ item.code }} - {{ item.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="asset-field">
+            <label>Status After Return</label>
+            <select class="asset-select" name="status_after">
+              {% for item in lookups.status_options %}
+                <option value="{{ item.value }}" {% if item.value == 3 %}selected{% endif %}>{{ item.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="asset-field">
+            <label>Remarks</label>
+            <textarea class="asset-textarea" name="remarks" placeholder="Return condition or receiving notes"></textarea>
+          </div>
+        </div>
+        <div class="asset-modal__footer">
+          <button type="button" class="asset-btn secondary" data-close-modal="returnModal">Cancel</button>
+          <button type="submit" class="asset-btn primary">Receive Asset</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="asset-modal" id="transferModal">
+  <div class="asset-modal__dialog">
+    <div class="asset-modal__header">
+      <div>
+        <h3>Transfer Asset</h3>
+        <p id="transferModalMeta">Move the asset to a new user, department, or unit without losing history.</p>
+      </div>
+      <button type="button" class="asset-modal-close" data-close-modal="transferModal">&times;</button>
+    </div>
+    <div class="asset-modal__body">
+      <form id="transferForm">
+        <input type="hidden" name="asset_id" id="transferAssetId">
+        <div class="asset-filter-grid">
+          <div class="asset-field">
+            <label>Transfer To</label>
+            <select class="asset-select" name="to_entity_type" id="transferEntityType" required>
+              <option value="">Select target type</option>
+              {% for item in lookups.assignment_type_options %}
+                <option value="{{ item.value }}">{{ item.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="asset-field">
+            <label>Destination</label>
+            <select class="asset-select" name="to_entity_key" id="transferEntityKey" required>
+              <option value="">Select destination</option>
+            </select>
+          </div>
+          <div class="asset-field">
+            <label>Status After Transfer</label>
+            <select class="asset-select" name="status_after">
+              {% for item in lookups.status_options %}
+                <option value="{{ item.value }}" {% if item.value == 2 %}selected{% endif %}>{{ item.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="asset-field">
+            <label>Location</label>
+            <select class="asset-select" name="location_id">
+              {% for item in lookups.locations %}
+                <option value="{{ item.id }}">{{ item.code }} - {{ item.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="asset-field" style="grid-column:span 2;">
+            <label>Remarks</label>
+            <textarea class="asset-textarea" name="remarks" placeholder="Reason, handover notes, or destination instructions"></textarea>
+          </div>
+        </div>
+        <div class="asset-modal__footer">
+          <button type="button" class="asset-btn secondary" data-close-modal="transferModal">Cancel</button>
+          <button type="submit" class="asset-btn primary">Transfer Asset</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="asset-modal" id="statusModal">
+  <div class="asset-modal__dialog">
+    <div class="asset-modal__header">
+      <div>
+        <h3>Update Asset Status</h3>
+        <p id="statusModalMeta">Record a repair, lost, condemned, or other asset status change.</p>
+      </div>
+      <button type="button" class="asset-modal-close" data-close-modal="statusModal">&times;</button>
+    </div>
+    <div class="asset-modal__body">
+      <form id="statusForm">
+        <input type="hidden" name="asset_id" id="statusAssetId">
+        <div class="asset-filter-grid">
+          <div class="asset-field">
+            <label>Status</label>
+            <select class="asset-select" name="status_after" required>
+              {% for item in lookups.status_options %}
+                <option value="{{ item.value }}">{{ item.label }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="asset-field">
+            <label>Remarks</label>
+            <textarea class="asset-textarea" name="remarks" placeholder="Reason or condition details"></textarea>
+          </div>
+          <div class="asset-field asset-field--span-2">
+            <label>Asset-Purchase OTP for Condemned / Disposal / Decommission</label>
+            <div style="display:flex;gap:8px;">
+              <input class="asset-input" name="otp_code" id="statusOtpCode" placeholder="Required when status is condemned/disposed">
+              <button type="button" class="asset-btn secondary" id="statusOtpBtn" style="white-space:nowrap;">Send OTP</button>
+            </div>
+          </div>
+        </div>
+        <div class="asset-modal__footer">
+          <button type="button" class="asset-btn secondary" data-close-modal="statusModal">Cancel</button>
+          <button type="submit" class="asset-btn primary">Save Status</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="asset-modal" id="attachmentModal">
+  <div class="asset-modal__dialog">
+    <div class="asset-modal__header">
+      <div>
+        <h3>Upload Attachment</h3>
+        <p id="attachmentModalMeta">Store invoice copies, installation reports, or service documents against this asset.</p>
+      </div>
+      <button type="button" class="asset-modal-close" data-close-modal="attachmentModal">&times;</button>
+    </div>
+    <div class="asset-modal__body">
+      <form id="attachmentForm" enctype="multipart/form-data">
+        <input type="hidden" name="asset_id" id="attachmentAssetId">
+        <div class="asset-filter-grid">
+          <div class="asset-field" style="grid-column:span 2;">
+            <label>Choose File</label>
+            <input class="asset-input" type="file" name="file" required>
+          </div>
+        </div>
+        <div class="asset-modal__footer">
+          <button type="button" class="asset-btn secondary" data-close-modal="attachmentModal">Cancel</button>
+          <button type="submit" class="asset-btn primary">Upload File</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<div class="asset-modal" id="referenceQuickModal">
+  <div class="asset-modal__dialog asset-modal__dialog--wide">
+    <div class="asset-modal__header">
+      <div>
+        <h3 id="referenceQuickTitle">Quick Master Entry</h3>
+        <p id="referenceQuickSubtitle">Add a new reference record without leaving asset entry.</p>
+      </div>
+      <button type="button" class="asset-modal-close" data-close-modal="referenceQuickModal">&times;</button>
+    </div>
+    <div class="asset-modal__body">
+      <div class="asset-toolbar">
+        <p class="asset-master-toolbar-note" id="referenceQuickIntro" style="margin:0;">The newly saved record will be available in the asset form immediately.</p>
+        <a class="asset-btn secondary" id="referenceQuickOpenPage" href="#" target="_blank" rel="noopener">Open Full Master Page</a>
+      </div>
+      <form id="referenceQuickForm">
+        <input type="hidden" name="id" id="referenceQuickId">
+        <input type="hidden" name="kind" id="referenceQuickKind">
+        <div class="asset-master-form-grid">
+          <div class="asset-field">
+            <label>Code</label>
+            <input class="asset-input" id="referenceQuickCode" name="code" readonly>
+          </div>
+          <div class="asset-field">
+            <label id="referenceQuickNameLabel">Name</label>
+            <input class="asset-input" id="referenceQuickName" name="name" placeholder="Enter name" required>
+          </div>
+          <div class="asset-field" data-reference-party-only>
+            <label>Contact Person</label>
+            <input class="asset-input" id="referenceQuickContactPerson" name="contact_person" placeholder="Enter contact person">
+          </div>
+          <div class="asset-field" data-reference-party-only>
+            <label>Phone 1</label>
+            <input class="asset-input" id="referenceQuickPhone1" name="phone1" placeholder="Primary phone number">
+          </div>
+          <div class="asset-field" data-reference-party-only>
+            <label>Email</label>
+            <input class="asset-input" id="referenceQuickEmail" name="email" placeholder="Email address">
+          </div>
+          <div class="asset-field" data-reference-party-only>
+            <label>State</label>
+            <select class="asset-select" id="referenceQuickState" name="state_id"></select>
+          </div>
+          <div class="asset-field" data-reference-party-only>
+            <label>City</label>
+            <select class="asset-select" id="referenceQuickCity" name="city_id"></select>
+          </div>
+          <div class="asset-field" data-reference-party-only>
+            <label>PIN</label>
+            <input class="asset-input" id="referenceQuickPin" name="pin" placeholder="PIN / postal code">
+          </div>
+          <div class="asset-field" data-reference-party-only>
+            <label>Society</label>
+            <input class="asset-input" id="referenceQuickSociety" name="society" placeholder="Society / complex">
+          </div>
+          <div class="asset-field" data-reference-party-only>
+            <label>Landmark</label>
+            <input class="asset-input" id="referenceQuickLandmark" name="landmark" placeholder="Landmark">
+          </div>
+          <div class="asset-field" data-reference-equipment-only style="display:none;">
+            <label>Machine Type</label>
+            <select class="asset-select" id="referenceQuickMachineType" name="machine_type_id">
+              <option value="">Select machine type</option>
+              {% for item in lookups.machine_types %}
+                <option value="{{ item.id }}">{{ item.name }}</option>
+              {% endfor %}
+            </select>
+          </div>
+          <div class="asset-field" data-reference-manufacturer-only>
+            <label>Status</label>
+            <select class="asset-select" id="referenceQuickActive" name="active">
+              <option value="1">Active</option>
+              <option value="0">Inactive</option>
+            </select>
+          </div>
+          <div class="asset-field" data-reference-supplier-only>
+            <label>Credit Period</label>
+            <input class="asset-input" id="referenceQuickCreditPeriod" name="credit_period" placeholder="Credit days">
+          </div>
+          <div class="asset-field" data-reference-supplier-only>
+            <label>Date Of Association</label>
+            <input class="asset-input" type="date" id="referenceQuickDateOfAssociation" name="date_of_association">
+          </div>
+          <div class="asset-field" data-reference-supplier-only>
+            <label>GST / CST</label>
+            <input class="asset-input" id="referenceQuickGstCst" name="gst_cst" placeholder="GST or CST number">
+          </div>
+          <div class="asset-field asset-field--span-full" data-reference-party-only>
+            <label>Address</label>
+            <textarea class="asset-textarea" id="referenceQuickAddress" name="address" placeholder="Street address"></textarea>
+          </div>
+          <div class="asset-field asset-field--span-full" data-reference-party-only>
+            <label>Note</label>
+            <textarea class="asset-textarea" id="referenceQuickNote" name="note" placeholder="Optional note"></textarea>
+          </div>
+        </div>
+        <div class="asset-modal__footer">
+          <button type="button" class="asset-btn secondary" data-close-modal="referenceQuickModal">Cancel</button>
+          <button type="submit" class="asset-btn primary" id="referenceQuickSubmit">Save Record</button>
+        </div>
+      </form>
+    </div>
+  </div>
+</div>
+
+<script>
+  window.assetLookups = window.assetLookups || {};
+  const assetReferenceQuickState = { states: null, cities: [], currentKind: '', currentSelectId: '' };
+
+  function assetFilterEquipmentOptions(selectedValue = ''){
+    const machineTypeEl = document.getElementById('assetFieldMachineType');
+    const equipmentEl = document.getElementById('assetFieldEquipment');
+    const equipmentRows = Array.isArray(window.assetLookups?.equipment) ? window.assetLookups.equipment : [];
+    if (!equipmentEl) return;
+    const machineType = String(machineTypeEl?.value || '');
+    let html = '<option value="">Choose equipment</option>';
+    equipmentRows
+      .filter((item) => !machineType || String(item.machine_type_id || '') === machineType)
+      .forEach((item) => {
+        const selected = String(item.id) === String(selectedValue || '');
+        html += `<option value="${String(item.id)}" data-machine-type="${String(item.machine_type_id || '')}" ${selected ? 'selected' : ''}>${item.name}</option>`;
+      });
+    equipmentEl.innerHTML = html;
+    equipmentEl.value = String(selectedValue || '');
+  }
+  window.assetFilterEquipmentOptions = assetFilterEquipmentOptions;
+
+  function assetReferenceQuickConfig(kind){
+    const key = String(kind || '').toLowerCase();
+    if (key === 'equipment') {
+      return {
+        kind: 'equipment',
+        title: 'Quick Equipment Entry',
+        subtitle: 'Add an equipment master record and continue asset entry without leaving this form.',
+        intro: 'The newly saved equipment will be selected in the Equipment field.',
+        pageUrl: '{{ url_for("asset_management.reference_master_page", kind="equipment") }}',
+        selectId: 'assetFieldEquipment',
+        submitLabel: 'Save Equipment',
+      };
+    }
+    if (key === 'supplier') {
+      return {
+        kind: 'supplier',
+        title: 'Quick Supplier Entry',
+        subtitle: 'Add a supplier record and continue asset entry without losing your progress.',
+        intro: 'The newly saved supplier will be selected in the asset form.',
+        pageUrl: '{{ url_for("asset_management.reference_master_page", kind="supplier") }}',
+        selectId: 'assetFieldSupplier',
+        submitLabel: 'Save Supplier',
+      };
+    }
+    if (key === 'manufacturer' || key === 'company') {
+      return {
+        kind: key,
+        title: key === 'company' ? 'Quick Company Entry' : 'Quick Manufacturer Entry',
+        subtitle: key === 'company'
+          ? 'Add a company record from the same shared manufacturer source used in asset entry.'
+          : 'Add a manufacturer record and continue asset entry without leaving this form.',
+        intro: 'The newly saved record will be selected in the Manufacturer field.',
+        pageUrl: key === 'company'
+          ? '{{ url_for("asset_management.reference_master_page", kind="company") }}'
+          : '{{ url_for("asset_management.reference_master_page", kind="manufacturer") }}',
+        selectId: 'assetFieldManufacturer',
+        submitLabel: key === 'company' ? 'Save Company' : 'Save Manufacturer',
+      };
+    }
+    return null;
+  }
+
+  async function assetReferenceQuickEnsureStates(){
+    if (Array.isArray(assetReferenceQuickState.states)) return assetReferenceQuickState.states;
+    const result = await assetFetchJson('{{ url_for("asset_management.api_reference_states") }}');
+    assetReferenceQuickState.states = Array.isArray(result.states) ? result.states : [];
+    return assetReferenceQuickState.states;
+  }
+
+  function assetReferenceQuickRenderStateOptions(selectedValue = ''){
+    const stateEl = document.getElementById('referenceQuickState');
+    if (!stateEl) return;
+    let html = '<option value="">Select state</option>';
+    (assetReferenceQuickState.states || []).forEach((item) => {
+      html += `<option value="${String(item.id)}" ${String(item.id) === String(selectedValue || '') ? 'selected' : ''}>${item.name}</option>`;
+    });
+    stateEl.innerHTML = html;
+  }
+
+  function assetReferenceQuickRenderCityOptions(selectedValue = ''){
+    const cityEl = document.getElementById('referenceQuickCity');
+    if (!cityEl) return;
+    let html = '<option value="">Select city</option>';
+    (assetReferenceQuickState.cities || []).forEach((item) => {
+      html += `<option value="${String(item.id)}" ${String(item.id) === String(selectedValue || '') ? 'selected' : ''}>${item.name}</option>`;
+    });
+    cityEl.innerHTML = html;
+  }
+
+  async function assetReferenceQuickLoadCities(stateId, selectedValue = ''){
+    const stateText = String(stateId || '');
+    if (!stateText) {
+      assetReferenceQuickState.cities = [];
+      assetReferenceQuickRenderCityOptions('');
+      return;
+    }
+    const result = await assetFetchJson(`{{ url_for("asset_management.api_reference_cities") }}?state_id=${encodeURIComponent(stateText)}`);
+    assetReferenceQuickState.cities = Array.isArray(result.cities) ? result.cities : [];
+    assetReferenceQuickRenderCityOptions(selectedValue);
+  }
+
+  function assetReferenceQuickToggleSections(kind){
+    const key = String(kind || '').toLowerCase();
+    const isSupplier = key === 'supplier';
+    const isEquipment = key === 'equipment';
+    document.querySelectorAll('[data-reference-supplier-only]').forEach((node) => {
+      node.style.display = isSupplier ? '' : 'none';
+    });
+    document.querySelectorAll('[data-reference-manufacturer-only]').forEach((node) => {
+      node.style.display = isSupplier ? 'none' : '';
+    });
+    document.querySelectorAll('[data-reference-party-only]').forEach((node) => {
+      node.style.display = isEquipment ? 'none' : '';
+    });
+    document.querySelectorAll('[data-reference-equipment-only]').forEach((node) => {
+      node.style.display = isEquipment ? '' : 'none';
+    });
+  }
+
+  function assetReferenceQuickRefreshSelect(kind, rows, selectedId, detail = {}){
+    const config = assetReferenceQuickConfig(kind);
+    if (!config) return;
+    const target = document.getElementById(config.selectId);
+    if (!target) return;
+    const list = Array.isArray(rows) ? rows : [];
+    const defaultLabel = config.selectId === 'assetFieldSupplier'
+      ? 'Choose supplier'
+      : config.selectId === 'assetFieldEquipment'
+        ? 'Choose equipment'
+        : 'Choose manufacturer';
+    let html = `<option value="">${defaultLabel}</option>`;
+    list.forEach((item) => {
+      const machineTypeAttr = config.selectId === 'assetFieldEquipment' ? ` data-machine-type="${String(item.machine_type_id || '')}"` : '';
+      html += `<option value="${String(item.id)}"${machineTypeAttr} ${String(item.id) === String(selectedId || '') ? 'selected' : ''}>${item.name}</option>`;
+    });
+    target.innerHTML = html;
+    if (config.selectId === 'assetFieldEquipment') {
+      const machineTypeField = document.getElementById('assetFieldMachineType');
+      if (machineTypeField && detail.machine_type_id) {
+        machineTypeField.value = String(detail.machine_type_id);
+      }
+      if (window.assetLookups) {
+        window.assetLookups.equipment = list;
+      }
+      assetFilterEquipmentOptions(selectedId || (detail.id || ''));
+      return;
+    }
+    target.value = String(selectedId || '');
+    if (window.assetLookups) {
+      if (config.selectId === 'assetFieldSupplier') {
+        window.assetLookups.suppliers = list;
+      } else {
+        window.assetLookups.manufacturers = list;
+      }
+    }
+  }
+
+  async function assetOpenReferenceQuick(kind){
+    const config = assetReferenceQuickConfig(kind);
+    if (!config) return;
+    const channel = 'asset-reference-quick';
+    assetNotify('Loading master form...', 'loading', channel);
+    try {
+      if (config.kind !== 'equipment') {
+        await assetReferenceQuickEnsureStates();
+      }
+      const listResult = await assetFetchJson(`{{ url_for("asset_management.api_reference_master_list", kind="supplier") }}`.replace('/supplier/', `/${config.kind}/`));
+      const defaultGeo = listResult.default_geo || {};
+      const nextCode = (listResult.next_code || {}).next_code || '';
+
+      const form = document.getElementById('referenceQuickForm');
+      form.reset();
+      document.getElementById('referenceQuickId').value = '';
+      document.getElementById('referenceQuickKind').value = config.kind;
+      document.getElementById('referenceQuickCode').value = nextCode;
+      document.getElementById('referenceQuickTitle').textContent = config.title;
+      document.getElementById('referenceQuickSubtitle').textContent = config.subtitle;
+      document.getElementById('referenceQuickIntro').textContent = config.intro;
+      document.getElementById('referenceQuickOpenPage').href = config.pageUrl;
+      document.getElementById('referenceQuickSubmit').textContent = config.submitLabel;
+      document.getElementById('referenceQuickNameLabel').textContent = config.kind === 'equipment' ? 'Equipment Name' : 'Name';
+      document.getElementById('referenceQuickName').placeholder = config.kind === 'equipment' ? 'Enter equipment name' : 'Enter name';
+      assetReferenceQuickState.currentKind = config.kind;
+      assetReferenceQuickState.currentSelectId = config.selectId;
+      assetReferenceQuickToggleSections(config.kind);
+      if (config.kind === 'equipment') {
+        const machineTypeField = document.getElementById('referenceQuickMachineType');
+        if (machineTypeField) {
+          machineTypeField.value = document.getElementById('assetFieldMachineType')?.value || '';
+        }
+        document.getElementById('referenceQuickActive').value = '1';
+      } else {
+        assetReferenceQuickRenderStateOptions(defaultGeo.state_id || '');
+        await assetReferenceQuickLoadCities(defaultGeo.state_id || '', defaultGeo.city_id || '');
+      }
+      if (config.kind === 'supplier') {
+        document.getElementById('referenceQuickDateOfAssociation').value = new Date().toISOString().slice(0, 10);
+      } else if (config.kind !== 'equipment') {
+        document.getElementById('referenceQuickActive').value = '1';
+      }
+      assetClearLoading(channel);
+      assetOpenModal('referenceQuickModal');
+      assetCaptureModalSnapshot('referenceQuickModal');
+    } catch (error) {
+      assetClearLoading(channel);
+      assetNotify(error.message || 'Failed to open master form.', 'error', channel);
+    }
+  }
+
+  document.querySelectorAll('[data-open-reference-quick]').forEach((button) => {
+    button.addEventListener('click', () => assetOpenReferenceQuick(button.getAttribute('data-open-reference-quick')));
+  });
+
+  const referenceQuickStateEl = document.getElementById('referenceQuickState');
+  if (referenceQuickStateEl) {
+    referenceQuickStateEl.addEventListener('change', () => assetReferenceQuickLoadCities(referenceQuickStateEl.value, ''));
+  }
+
+  const referenceQuickForm = document.getElementById('referenceQuickForm');
+  if (referenceQuickForm) {
+    referenceQuickForm.addEventListener('submit', async (event) => {
+      event.preventDefault();
+      const kind = document.getElementById('referenceQuickKind').value;
+      const config = assetReferenceQuickConfig(kind);
+      if (!config) return;
+      const payload = Object.fromEntries(new FormData(referenceQuickForm).entries());
+      const saveUrl = `{{ url_for("asset_management.api_reference_master_save", kind="supplier") }}`.replace('/supplier', `/${config.kind}`);
+      const channel = `asset-master-save-${config.kind}`;
+      assetNotify(`Saving ${config.kind} record...`, 'loading', channel);
+      try {
+        const result = await assetFetchJson(saveUrl, {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify(payload)
+        });
+        assetClearLoading(channel);
+        assetNotify(result.message || 'Master saved successfully.', 'success', channel);
+        assetReferenceQuickRefreshSelect(config.kind, result.rows || [], (result.detail || {}).id || '', result.detail || {});
+        assetCaptureModalSnapshot('referenceQuickModal');
+        assetCloseModal('referenceQuickModal');
+      } catch (error) {
+        assetClearLoading(channel);
+        assetNotify(error.message || 'Failed to save master record.', 'error', channel);
+      }
+    });
+  }
+
+  const assetFieldMachineType = document.getElementById('assetFieldMachineType');
+  if (assetFieldMachineType) {
+    assetFieldMachineType.addEventListener('change', () => assetFilterEquipmentOptions(''));
+    if (Array.isArray(window.assetLookups?.equipment) && window.assetLookups.equipment.length) {
+      assetFilterEquipmentOptions(document.getElementById('assetFieldEquipment')?.value || '');
+    }
+  }
+</script>

@@ -40,9 +40,12 @@ def register_purchase_master_routes(
     ensure_purchase_unit_master_entry,
     mirror_new_item_master_to_family,
     item_master_descriptive_name_max,
+    item_master_default_medicine_type_id,
     local_tz,
     safe_float,
     audit_log_event,
+    invalidate_item_master_meta_cache,
+    invalidate_item_name_cache,
 ):
     """Register the Purchase master/setup routes."""
     _allowed_purchase_units_for_session = allowed_purchase_units_for_session
@@ -77,9 +80,180 @@ def register_purchase_master_routes(
     _ensure_purchase_unit_master_entry = ensure_purchase_unit_master_entry
     _mirror_new_item_master_to_family = mirror_new_item_master_to_family
     ITEM_MASTER_DESCRIPTIVE_NAME_MAX = item_master_descriptive_name_max
+    ITEM_MASTER_DEFAULT_MEDICINE_TYPE_ID = _safe_int(item_master_default_medicine_type_id)
     LOCAL_TZ = local_tz
     _safe_float = safe_float
     _audit_log_event = audit_log_event
+    _invalidate_item_master_meta_cache = invalidate_item_master_meta_cache
+    _invalidate_item_name_cache = invalidate_item_name_cache
+    CONTRACTED_RATE_UNITS = {"AHL", "ACI", "BALLIA"}
+
+    def _supports_contracted_rate(unit: str) -> bool:
+        return str(unit or "").strip().upper() in CONTRACTED_RATE_UNITS
+
+    def _master_flag_is_active(raw_val, fallback: bool = True) -> bool:
+        if raw_val in (None, "", []):
+            return bool(fallback)
+        if isinstance(raw_val, bool):
+            return raw_val
+        text = str(raw_val).strip().lower()
+        if text in {"1", "true", "yes", "y"}:
+            return True
+        if text in {"0", "false", "no", "n"}:
+            return False
+        try:
+            return int(raw_val) != 0
+        except Exception:
+            return bool(fallback)
+
+    def _normalize_master_name(value) -> str:
+        return " ".join(str(value or "").strip().lower().split())
+
+    def _build_item_type_master_rows(unit: str, include_inactive: bool = True):
+        df = data_fetch.fetch_item_type_master(unit, include_inactive=include_inactive)
+        rows = _build_master_list(
+            df,
+            ["id"],
+            ["name"],
+            ["code"],
+            extra_keys={"is_active": ["isactive"]},
+        )
+        return [
+            {
+                "id": _safe_int(row.get("id")),
+                "code": str(row.get("code") or "").strip(),
+                "name": str(row.get("name") or "").strip(),
+                "is_active": 1 if _master_flag_is_active(row.get("is_active"), True) else 0,
+            }
+            for row in (rows or [])
+            if _safe_int(row.get("id")) > 0 and str(row.get("name") or "").strip()
+        ]
+
+    def _build_item_group_master_rows(unit: str, include_inactive: bool = True, type_id: int | None = None):
+        df = data_fetch.fetch_item_group_master(unit, include_inactive=include_inactive, type_id=type_id)
+        rows = _build_master_list(
+            df,
+            ["id"],
+            ["name"],
+            ["code"],
+            extra_keys={
+                "type_id": ["typeid"],
+                "type_name": ["typename"],
+                "type_code": ["typecode"],
+                "is_active": ["isactive"],
+            },
+        )
+        return [
+            {
+                "id": _safe_int(row.get("id")),
+                "code": str(row.get("code") or "").strip(),
+                "name": str(row.get("name") or "").strip(),
+                "type_id": _safe_int(row.get("type_id")),
+                "type_name": str(row.get("type_name") or "").strip(),
+                "type_code": str(row.get("type_code") or "").strip(),
+                "is_active": 1 if _master_flag_is_active(row.get("is_active"), True) else 0,
+            }
+            for row in (rows or [])
+            if _safe_int(row.get("id")) > 0 and str(row.get("name") or "").strip()
+        ]
+
+    def _build_item_subgroup_master_rows(
+        unit: str,
+        include_inactive: bool = True,
+        group_id: int | None = None,
+        type_id: int | None = None,
+    ):
+        df = data_fetch.fetch_item_subgroup_master(
+            unit,
+            include_inactive=include_inactive,
+            group_id=group_id,
+            type_id=type_id,
+        )
+        rows = _build_master_list(
+            df,
+            ["id"],
+            ["name"],
+            ["code"],
+            extra_keys={
+                "group_id": ["groupid"],
+                "group_name": ["groupname"],
+                "type_id": ["typeid"],
+                "type_name": ["typename"],
+                "is_active": ["isactive"],
+            },
+        )
+        return [
+            {
+                "id": _safe_int(row.get("id")),
+                "code": str(row.get("code") or "").strip(),
+                "name": str(row.get("name") or "").strip(),
+                "group_id": _safe_int(row.get("group_id")),
+                "group_name": str(row.get("group_name") or "").strip(),
+                "type_id": _safe_int(row.get("type_id")),
+                "type_name": str(row.get("type_name") or "").strip(),
+                "is_active": 1 if _master_flag_is_active(row.get("is_active"), True) else 0,
+            }
+            for row in (rows or [])
+            if _safe_int(row.get("id")) > 0 and str(row.get("name") or "").strip()
+        ]
+
+    def _active_master_rows(rows):
+        return [row for row in (rows or []) if _master_flag_is_active(row.get("is_active"), True)]
+
+    def _resolve_verified_item_master_id(unit: str, item_id: int | None, item_name: str) -> int:
+        resolved_item_id = _safe_int(item_id)
+        normalized_name = _normalize_master_name(item_name)
+
+        def _item_exists(candidate_id: int) -> bool:
+            if candidate_id <= 0:
+                return False
+            detail_df = data_fetch.fetch_item_master_detail(unit, candidate_id)
+            return detail_df is not None and not detail_df.empty
+
+        if _item_exists(resolved_item_id):
+            return resolved_item_id
+
+        try:
+            data_fetch.invalidate_item_master_query_cache(unit)
+        except Exception:
+            pass
+        try:
+            _invalidate_item_master_meta_cache(unit)
+        except Exception:
+            pass
+        try:
+            _invalidate_item_name_cache(unit)
+        except Exception:
+            pass
+
+        if _item_exists(resolved_item_id):
+            return resolved_item_id
+
+        if not normalized_name:
+            return 0
+
+        detail_by_name_df = data_fetch.fetch_item_master_detail_by_exact_name(unit, item_name)
+        if detail_by_name_df is not None and not detail_by_name_df.empty:
+            detail_by_name_df = _clean_df_columns(detail_by_name_df)
+            saved_row = detail_by_name_df.iloc[0]
+            saved_name = str(saved_row.get("Name") or "").strip()
+            saved_item_id = _safe_int(saved_row.get("ID") or saved_row.get("Id"))
+            if saved_item_id > 0 and _normalize_master_name(saved_name) == normalized_name:
+                return saved_item_id
+
+        list_df = data_fetch.fetch_item_master_list(unit)
+        if list_df is None or list_df.empty:
+            return 0
+
+        rows = _build_master_list(list_df, ["id"], ["name"], ["code"])
+        for row in rows or []:
+            if _normalize_master_name(row.get("name")) != normalized_name:
+                continue
+            candidate_id = _safe_int(row.get("id"))
+            if _item_exists(candidate_id):
+                return candidate_id
+        return 0
+
     @app.route('/purchase')
     @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
     def purchase_module():
@@ -142,6 +316,10 @@ def register_purchase_master_routes(
             pass
         try:
             data_fetch.ensure_po_senior_approval_designation_column(unit)
+        except Exception:
+            pass
+        try:
+            data_fetch.ensure_iv_supplier_email_column(unit)
         except Exception:
             pass
 
@@ -510,6 +688,410 @@ def register_purchase_master_routes(
                 "unit_id": unit_id,
                 "units": _sanitize_json_payload(master_rows),
                 "active_units": _sanitize_json_payload(active_rows),
+                "permissions": _purchase_unit_master_permissions(role_base),
+                "unit": unit,
+            }
+        )
+
+
+    @app.route('/api/purchase/item_type_master/list')
+    @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+    def api_purchase_item_type_master_list():
+        unit, error = _get_purchase_unit()
+        if error:
+            return error
+        role_base = _role_base(session.get("role") or "")
+        master_rows = _build_item_type_master_rows(unit, include_inactive=True)
+        active_rows = _active_master_rows(master_rows)
+        return jsonify(
+            {
+                "status": "success",
+                "unit": unit,
+                "item_types": _sanitize_json_payload(master_rows),
+                "active_item_types": _sanitize_json_payload(active_rows),
+                "permissions": _purchase_unit_master_permissions(role_base),
+            }
+        )
+
+
+    @app.route('/api/purchase/item_type_master', methods=['POST'])
+    @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+    def api_purchase_item_type_master_save():
+        unit, error = _get_purchase_unit()
+        if error:
+            return error
+        role_base = _role_base(session.get("role") or "")
+        if role_base == "Executive":
+            return jsonify({"status": "error", "message": "Access denied for your role."}), 403
+
+        payload = request.get_json(silent=True) or {}
+        item_type_payload = payload.get("item_type_master") or {}
+        item_type_id = _safe_int(item_type_payload.get("id"))
+        item_type_name = str(item_type_payload.get("name") or "").strip()
+        item_type_code = _normalize_purchase_unit_text(item_type_payload.get("code") or "").upper()
+        if not item_type_name:
+            return jsonify({"status": "error", "message": "Item type name is required."}), 400
+
+        result = data_fetch.upsert_item_type_master(
+            unit,
+            item_type_name=item_type_name,
+            item_type_code=item_type_code,
+            item_type_id=item_type_id if item_type_id > 0 else None,
+            reactivate=True,
+        )
+        if result.get("error"):
+            code = str(result.get("code") or "").strip().lower()
+            if code == "duplicate":
+                return jsonify(
+                    {
+                        "status": "error",
+                        "message": result.get("error") or "Item type already exists.",
+                        "existing_id": result.get("existing_id"),
+                    }
+                ), 409
+            if code == "not_found":
+                return jsonify({"status": "error", "message": result.get("error") or "Item type not found."}), 404
+            if code == "table_not_found":
+                return jsonify({"status": "error", "message": "Item type master table not found in selected unit database."}), 500
+            return jsonify({"status": "error", "message": result.get("error") or "Failed to save item type."}), 500
+
+        master_rows = _build_item_type_master_rows(unit, include_inactive=True)
+        active_rows = _active_master_rows(master_rows)
+        return jsonify(
+            {
+                "status": "success",
+                "mode": result.get("mode") or ("update" if item_type_id > 0 else "add"),
+                "item_type_id": result.get("record_id"),
+                "item_type_name": result.get("name") or item_type_name,
+                "item_type_code": result.get("code") or item_type_code,
+                "item_types": _sanitize_json_payload(master_rows),
+                "active_item_types": _sanitize_json_payload(active_rows),
+                "permissions": _purchase_unit_master_permissions(role_base),
+                "unit": unit,
+            }
+        )
+
+
+    @app.route('/api/purchase/item_type_master/action', methods=['POST'])
+    @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+    def api_purchase_item_type_master_action():
+        unit, error = _get_purchase_unit()
+        if error:
+            return error
+        role_base = _role_base(session.get("role") or "")
+        if role_base == "Executive":
+            return jsonify({"status": "error", "message": "Access denied for your role."}), 403
+
+        payload = request.get_json(silent=True) or {}
+        action = str(payload.get("action") or "").strip().lower()
+        item_type_id = _safe_int(payload.get("item_type_id"))
+        if item_type_id <= 0:
+            return jsonify({"status": "error", "message": "Item type id is required."}), 400
+        if action not in {"activate", "deactivate"}:
+            return jsonify({"status": "error", "message": "Invalid action."}), 400
+
+        result = data_fetch.set_item_type_master_active(unit, item_type_id, is_active=(action == "activate"))
+        if result.get("error"):
+            code = str(result.get("code") or "").strip().lower()
+            if code == "not_found":
+                return jsonify({"status": "error", "message": result.get("error") or "Item type not found."}), 404
+            if code == "invalid_id":
+                return jsonify({"status": "error", "message": result.get("error") or "Invalid item type id."}), 400
+            return jsonify({"status": "error", "message": result.get("error") or "Action failed."}), 500
+
+        master_rows = _build_item_type_master_rows(unit, include_inactive=True)
+        active_rows = _active_master_rows(master_rows)
+        return jsonify(
+            {
+                "status": "success",
+                "action": action,
+                "item_type_id": item_type_id,
+                "item_types": _sanitize_json_payload(master_rows),
+                "active_item_types": _sanitize_json_payload(active_rows),
+                "permissions": _purchase_unit_master_permissions(role_base),
+                "unit": unit,
+            }
+        )
+
+
+    @app.route('/api/purchase/item_group_master/list')
+    @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+    def api_purchase_item_group_master_list():
+        unit, error = _get_purchase_unit()
+        if error:
+            return error
+        role_base = _role_base(session.get("role") or "")
+        master_rows = _build_item_group_master_rows(unit, include_inactive=True)
+        active_rows = _active_master_rows(master_rows)
+        active_item_types = _build_item_type_master_rows(unit, include_inactive=False)
+        return jsonify(
+            {
+                "status": "success",
+                "unit": unit,
+                "item_groups": _sanitize_json_payload(master_rows),
+                "active_item_groups": _sanitize_json_payload(active_rows),
+                "item_types": _sanitize_json_payload(active_item_types),
+                "permissions": _purchase_unit_master_permissions(role_base),
+            }
+        )
+
+
+    @app.route('/api/purchase/item_group_master', methods=['POST'])
+    @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+    def api_purchase_item_group_master_save():
+        unit, error = _get_purchase_unit()
+        if error:
+            return error
+        role_base = _role_base(session.get("role") or "")
+        if role_base == "Executive":
+            return jsonify({"status": "error", "message": "Access denied for your role."}), 403
+
+        payload = request.get_json(silent=True) or {}
+        group_payload = payload.get("item_group_master") or {}
+        group_id = _safe_int(group_payload.get("id"))
+        group_name = str(group_payload.get("name") or "").strip()
+        group_code = _normalize_purchase_unit_text(group_payload.get("code") or "").upper()
+        type_id = _safe_int(group_payload.get("type_id"))
+        if not group_name:
+            return jsonify({"status": "error", "message": "Item group name is required."}), 400
+        if type_id <= 0:
+            return jsonify({"status": "error", "message": "Item type selection is required."}), 400
+
+        active_item_types = _build_item_type_master_rows(unit, include_inactive=False)
+        if not any(_safe_int(row.get("id")) == type_id for row in active_item_types):
+            return jsonify({"status": "error", "message": "Selected item type was not found."}), 400
+
+        result = data_fetch.upsert_item_group_master(
+            unit,
+            group_name=group_name,
+            group_code=group_code,
+            parent_type_id=type_id,
+            group_id=group_id if group_id > 0 else None,
+            reactivate=True,
+        )
+        if result.get("error"):
+            code = str(result.get("code") or "").strip().lower()
+            if code == "duplicate":
+                return jsonify(
+                    {
+                        "status": "error",
+                        "message": result.get("error") or "Item group already exists.",
+                        "existing_id": result.get("existing_id"),
+                    }
+                ), 409
+            if code == "not_found":
+                return jsonify({"status": "error", "message": result.get("error") or "Item group not found."}), 404
+            if code == "required_parent":
+                return jsonify({"status": "error", "message": "Item type selection is required."}), 400
+            return jsonify({"status": "error", "message": result.get("error") or "Failed to save item group."}), 500
+
+        master_rows = _build_item_group_master_rows(unit, include_inactive=True)
+        active_rows = _active_master_rows(master_rows)
+        active_item_types = _build_item_type_master_rows(unit, include_inactive=False)
+        return jsonify(
+            {
+                "status": "success",
+                "mode": result.get("mode") or ("update" if group_id > 0 else "add"),
+                "item_group_id": result.get("record_id"),
+                "item_group_name": result.get("name") or group_name,
+                "item_group_code": result.get("code") or group_code,
+                "type_id": type_id,
+                "item_groups": _sanitize_json_payload(master_rows),
+                "active_item_groups": _sanitize_json_payload(active_rows),
+                "item_types": _sanitize_json_payload(active_item_types),
+                "permissions": _purchase_unit_master_permissions(role_base),
+                "unit": unit,
+            }
+        )
+
+
+    @app.route('/api/purchase/item_group_master/action', methods=['POST'])
+    @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+    def api_purchase_item_group_master_action():
+        unit, error = _get_purchase_unit()
+        if error:
+            return error
+        role_base = _role_base(session.get("role") or "")
+        if role_base == "Executive":
+            return jsonify({"status": "error", "message": "Access denied for your role."}), 403
+
+        payload = request.get_json(silent=True) or {}
+        action = str(payload.get("action") or "").strip().lower()
+        group_id = _safe_int(payload.get("item_group_id"))
+        if group_id <= 0:
+            return jsonify({"status": "error", "message": "Item group id is required."}), 400
+        if action not in {"activate", "deactivate"}:
+            return jsonify({"status": "error", "message": "Invalid action."}), 400
+
+        result = data_fetch.set_item_group_master_active(unit, group_id, is_active=(action == "activate"))
+        if result.get("error"):
+            code = str(result.get("code") or "").strip().lower()
+            if code == "not_found":
+                return jsonify({"status": "error", "message": result.get("error") or "Item group not found."}), 404
+            if code == "invalid_id":
+                return jsonify({"status": "error", "message": result.get("error") or "Invalid item group id."}), 400
+            return jsonify({"status": "error", "message": result.get("error") or "Action failed."}), 500
+
+        master_rows = _build_item_group_master_rows(unit, include_inactive=True)
+        active_rows = _active_master_rows(master_rows)
+        active_item_types = _build_item_type_master_rows(unit, include_inactive=False)
+        return jsonify(
+            {
+                "status": "success",
+                "action": action,
+                "item_group_id": group_id,
+                "item_groups": _sanitize_json_payload(master_rows),
+                "active_item_groups": _sanitize_json_payload(active_rows),
+                "item_types": _sanitize_json_payload(active_item_types),
+                "permissions": _purchase_unit_master_permissions(role_base),
+                "unit": unit,
+            }
+        )
+
+
+    @app.route('/api/purchase/item_subgroup_master/list')
+    @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+    def api_purchase_item_subgroup_master_list():
+        unit, error = _get_purchase_unit()
+        if error:
+            return error
+        role_base = _role_base(session.get("role") or "")
+        master_rows = _build_item_subgroup_master_rows(unit, include_inactive=True)
+        active_rows = _active_master_rows(master_rows)
+        active_item_types = _build_item_type_master_rows(unit, include_inactive=False)
+        active_item_groups = _build_item_group_master_rows(unit, include_inactive=False)
+        return jsonify(
+            {
+                "status": "success",
+                "unit": unit,
+                "item_subgroups": _sanitize_json_payload(master_rows),
+                "active_item_subgroups": _sanitize_json_payload(active_rows),
+                "item_types": _sanitize_json_payload(active_item_types),
+                "item_groups": _sanitize_json_payload(active_item_groups),
+                "permissions": _purchase_unit_master_permissions(role_base),
+            }
+        )
+
+
+    @app.route('/api/purchase/item_subgroup_master', methods=['POST'])
+    @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+    def api_purchase_item_subgroup_master_save():
+        unit, error = _get_purchase_unit()
+        if error:
+            return error
+        role_base = _role_base(session.get("role") or "")
+        if role_base == "Executive":
+            return jsonify({"status": "error", "message": "Access denied for your role."}), 403
+
+        payload = request.get_json(silent=True) or {}
+        subgroup_payload = payload.get("item_subgroup_master") or {}
+        subgroup_id = _safe_int(subgroup_payload.get("id"))
+        subgroup_name = str(subgroup_payload.get("name") or "").strip()
+        subgroup_code = _normalize_purchase_unit_text(subgroup_payload.get("code") or "").upper()
+        type_id = _safe_int(subgroup_payload.get("type_id"))
+        group_id = _safe_int(subgroup_payload.get("group_id"))
+        if not subgroup_name:
+            return jsonify({"status": "error", "message": "Item sub group name is required."}), 400
+        if type_id <= 0:
+            return jsonify({"status": "error", "message": "Item type selection is required."}), 400
+        if group_id <= 0:
+            return jsonify({"status": "error", "message": "Item group selection is required."}), 400
+
+        active_item_types = _build_item_type_master_rows(unit, include_inactive=False)
+        if not any(_safe_int(row.get("id")) == type_id for row in active_item_types):
+            return jsonify({"status": "error", "message": "Selected item type was not found."}), 400
+
+        type_groups = _build_item_group_master_rows(unit, include_inactive=True, type_id=type_id)
+        if not any(_safe_int(row.get("id")) == group_id for row in type_groups):
+            return jsonify({"status": "error", "message": "Selected item group does not belong to the chosen item type."}), 400
+
+        result = data_fetch.upsert_item_subgroup_master(
+            unit,
+            subgroup_name=subgroup_name,
+            subgroup_code=subgroup_code,
+            group_id=group_id,
+            subgroup_id=subgroup_id if subgroup_id > 0 else None,
+            reactivate=True,
+        )
+        if result.get("error"):
+            code = str(result.get("code") or "").strip().lower()
+            if code == "duplicate":
+                return jsonify(
+                    {
+                        "status": "error",
+                        "message": result.get("error") or "Item sub group already exists.",
+                        "existing_id": result.get("existing_id"),
+                    }
+                ), 409
+            if code == "not_found":
+                return jsonify({"status": "error", "message": result.get("error") or "Item sub group not found."}), 404
+            if code == "required_parent":
+                return jsonify({"status": "error", "message": "Item group selection is required."}), 400
+            return jsonify({"status": "error", "message": result.get("error") or "Failed to save item sub group."}), 500
+
+        master_rows = _build_item_subgroup_master_rows(unit, include_inactive=True)
+        active_rows = _active_master_rows(master_rows)
+        active_item_types = _build_item_type_master_rows(unit, include_inactive=False)
+        active_item_groups = _build_item_group_master_rows(unit, include_inactive=False)
+        return jsonify(
+            {
+                "status": "success",
+                "mode": result.get("mode") or ("update" if subgroup_id > 0 else "add"),
+                "item_subgroup_id": result.get("record_id"),
+                "item_subgroup_name": result.get("name") or subgroup_name,
+                "item_subgroup_code": result.get("code") or subgroup_code,
+                "type_id": type_id,
+                "group_id": group_id,
+                "item_subgroups": _sanitize_json_payload(master_rows),
+                "active_item_subgroups": _sanitize_json_payload(active_rows),
+                "item_types": _sanitize_json_payload(active_item_types),
+                "item_groups": _sanitize_json_payload(active_item_groups),
+                "permissions": _purchase_unit_master_permissions(role_base),
+                "unit": unit,
+            }
+        )
+
+
+    @app.route('/api/purchase/item_subgroup_master/action', methods=['POST'])
+    @login_required(allowed_roles={"IT", "Management", "Departmental Head"})
+    def api_purchase_item_subgroup_master_action():
+        unit, error = _get_purchase_unit()
+        if error:
+            return error
+        role_base = _role_base(session.get("role") or "")
+        if role_base == "Executive":
+            return jsonify({"status": "error", "message": "Access denied for your role."}), 403
+
+        payload = request.get_json(silent=True) or {}
+        action = str(payload.get("action") or "").strip().lower()
+        subgroup_id = _safe_int(payload.get("item_subgroup_id"))
+        if subgroup_id <= 0:
+            return jsonify({"status": "error", "message": "Item sub group id is required."}), 400
+        if action not in {"activate", "deactivate"}:
+            return jsonify({"status": "error", "message": "Invalid action."}), 400
+
+        result = data_fetch.set_item_subgroup_master_active(unit, subgroup_id, is_active=(action == "activate"))
+        if result.get("error"):
+            code = str(result.get("code") or "").strip().lower()
+            if code == "not_found":
+                return jsonify({"status": "error", "message": result.get("error") or "Item sub group not found."}), 404
+            if code == "invalid_id":
+                return jsonify({"status": "error", "message": result.get("error") or "Invalid item sub group id."}), 400
+            return jsonify({"status": "error", "message": result.get("error") or "Action failed."}), 500
+
+        master_rows = _build_item_subgroup_master_rows(unit, include_inactive=True)
+        active_rows = _active_master_rows(master_rows)
+        active_item_types = _build_item_type_master_rows(unit, include_inactive=False)
+        active_item_groups = _build_item_group_master_rows(unit, include_inactive=False)
+        return jsonify(
+            {
+                "status": "success",
+                "action": action,
+                "item_subgroup_id": subgroup_id,
+                "item_subgroups": _sanitize_json_payload(master_rows),
+                "active_item_subgroups": _sanitize_json_payload(active_rows),
+                "item_types": _sanitize_json_payload(active_item_types),
+                "item_groups": _sanitize_json_payload(active_item_groups),
                 "permissions": _purchase_unit_master_permissions(role_base),
                 "unit": unit,
             }
@@ -1149,6 +1731,28 @@ def register_purchase_master_routes(
         if not code:
             return jsonify({"status": "error", "message": "Failed to generate manufacturer code"}), 500
 
+        manufacturer_list_df = data_fetch.fetch_iv_manufacturer_master_list(unit)
+        if manufacturer_list_df is None:
+            return jsonify({"status": "error", "message": "Failed to validate manufacturer name"}), 500
+        duplicate_name_key = _normalize_master_name(name)
+        if duplicate_name_key:
+            duplicate_rows = _build_master_list(manufacturer_list_df, ["id"], ["name"], ["code"])
+            duplicate_match = next(
+                (
+                    row for row in (duplicate_rows or [])
+                    if _safe_int(row.get("id")) != manufacturer_id
+                    and _normalize_master_name(row.get("name")) == duplicate_name_key
+                ),
+                None,
+            )
+            if duplicate_match:
+                return jsonify({
+                    "status": "error",
+                    "message": f'Manufacturer "{duplicate_match.get("name")}" already exists.',
+                    "code": "duplicate",
+                    "manufacturer_id": _safe_int(duplicate_match.get("id")),
+                }), 409
+
         city_id = _safe_int(manufacturer.get("city_id")) if "city_id" in manufacturer else 0
         state_id = _safe_int(manufacturer.get("state_id")) if "state_id" in manufacturer else 0
         if not city_id and existing:
@@ -1210,6 +1814,11 @@ def register_purchase_master_routes(
         unit, error = _get_purchase_unit()
         if error:
             return error
+        if _supports_contracted_rate(unit):
+            try:
+                data_fetch.ensure_iv_item_contracted_rate_column(unit)
+            except Exception:
+                pass
         meta = _load_item_master_lists(unit)
         return jsonify({
             "status": "success",
@@ -1233,7 +1842,7 @@ def register_purchase_master_routes(
         type_id_raw = request.args.get("type_id")
         if not type_id_raw or not str(type_id_raw).isdigit():
             return jsonify({"status": "error", "message": "Type ID is required"}), 400
-        df = data_fetch.fetch_item_groups_by_type(unit, int(type_id_raw))
+        df = data_fetch.fetch_item_groups_by_type(unit, int(type_id_raw), include_inactive=False)
         if df is None:
             return jsonify({"status": "error", "message": "Failed to fetch groups"}), 500
         if df.empty:
@@ -1242,12 +1851,18 @@ def register_purchase_master_routes(
         cols = {str(c).strip().lower(): c for c in df.columns}
         id_col = cols.get("id")
         name_col = cols.get("name")
+        code_col = cols.get("code")
+        type_col = cols.get("typeid")
+        type_name_col = cols.get("typename")
         rows = []
         if id_col and name_col:
             for _, row in df.iterrows():
                 rows.append({
                     "id": row.get(id_col),
                     "name": str(row.get(name_col) or "").strip(),
+                    "code": str(row.get(code_col) or "").strip() if code_col else "",
+                    "type_id": row.get(type_col) if type_col else "",
+                    "type_name": str(row.get(type_name_col) or "").strip() if type_name_col else "",
                 })
         return jsonify({"status": "success", "groups": _sanitize_json_payload(rows), "unit": unit})
 
@@ -1261,7 +1876,7 @@ def register_purchase_master_routes(
         group_id_raw = request.args.get("group_id")
         if not group_id_raw or not str(group_id_raw).isdigit():
             return jsonify({"status": "error", "message": "Group ID is required"}), 400
-        df = data_fetch.fetch_item_subgroups_by_group(unit, int(group_id_raw))
+        df = data_fetch.fetch_item_subgroups_by_group(unit, int(group_id_raw), include_inactive=False)
         if df is None:
             return jsonify({"status": "error", "message": "Failed to fetch subgroups"}), 500
         if df.empty:
@@ -1270,12 +1885,22 @@ def register_purchase_master_routes(
         cols = {str(c).strip().lower(): c for c in df.columns}
         id_col = cols.get("id")
         name_col = cols.get("name")
+        code_col = cols.get("code")
+        group_col = cols.get("groupid")
+        group_name_col = cols.get("groupname")
+        type_col = cols.get("typeid")
+        type_name_col = cols.get("typename")
         rows = []
         if id_col and name_col:
             for _, row in df.iterrows():
                 rows.append({
                     "id": row.get(id_col),
                     "name": str(row.get(name_col) or "").strip(),
+                    "code": str(row.get(code_col) or "").strip() if code_col else "",
+                    "group_id": row.get(group_col) if group_col else "",
+                    "group_name": str(row.get(group_name_col) or "").strip() if group_name_col else "",
+                    "type_id": row.get(type_col) if type_col else "",
+                    "type_name": str(row.get(type_name_col) or "").strip() if type_name_col else "",
                 })
         return jsonify({"status": "success", "subgroups": _sanitize_json_payload(rows), "unit": unit})
 
@@ -1332,12 +1957,16 @@ def register_purchase_master_routes(
             "technical_specs": _row_value(row, ["TechnicalSpecs", "TechnicalSpec", "TechSpecs", "TechSpec"]),
             "product_code": _row_value(row, ["ProductCode"]),
             "item_type_id": _row_value(row, ["ItemTypeID", "ItemTypeId"]),
+            "item_type_name": _row_value(row, ["ItemTypeName", "TypeName"]),
             "item_group_id": _row_value(row, ["ItemGroupID", "ItemGroupId"]),
+            "item_group_name": _row_value(row, ["ItemGroupName", "GroupName"]),
             "sub_group_id": _row_value(row, ["SubGroupID", "SubGroupId"]),
+            "sub_group_name": _row_value(row, ["SubGroupName", "SubGroup"]),
             "unit_id": _row_value(row, ["UnitID", "UnitId"]),
             "location_id": _row_value(row, ["LocationID", "LocationId"]),
             "pack_size_id": _row_value(row, ["PackSizeID", "PackSizeId"]),
             "standard_rate": _row_value(row, ["StandardRate"]),
+            "contracted_rate": _row_value(row, ["Contracted_Rate", "ContractedRate"]),
             "sales_price": _row_value(row, ["SalesPrice", "Salesprice"]),
             "sales_tax": _row_value(row, ["SalesTax", "Salestax"]),
             "current_qty": _row_value(row, ["CurrentQty"]),
@@ -1471,6 +2100,12 @@ def register_purchase_master_routes(
             pass
         payload = request.get_json(silent=True) or {}
         item = payload.get("item") or {}
+        manufacturer_id = _safe_int(
+            payload.get("manufacturer_id")
+            or payload.get("manufacturerId")
+            or item.get("manufacturer_id")
+            or item.get("manufacturerId")
+        )
 
         item_id = _safe_int(item.get("item_id"))
         name = str(item.get("name") or "").strip()
@@ -1494,8 +2129,11 @@ def register_purchase_master_routes(
         unit_name = str(item.get("unit_name") or item.get("unit") or "").strip()
         rate = _safe_float(item.get("rate"))
         mrp = _safe_float(item.get("mrp"))
+        contracted_rate_raw = item.get("contracted_rate")
+        contracted_rate = _safe_float(contracted_rate_raw, None) if _supports_contracted_rate(unit) else None
         gst_raw = item.get("gst_pct")
         gst = _safe_float(gst_raw)
+        gst_provided = gst_raw is not None and str(gst_raw).strip() != ""
         allow_zero_rate_mrp = _unit_allows_zero_rate_mrp(unit)
 
         missing = []
@@ -1509,10 +2147,15 @@ def register_purchase_master_routes(
             missing.append("rate")
         if mrp < 0 or (mrp <= 0 and not allow_zero_rate_mrp):
             missing.append("mrp")
-        if str(gst_raw or "").strip() == "" or gst < 0:
+        if not gst_provided or gst < 0:
             missing.append("gst")
         if missing:
             return jsonify({"status": "error", "message": f"Missing required fields: {', '.join(missing)}"}), 400
+        if _supports_contracted_rate(unit):
+            if contracted_rate is not None and contracted_rate < 0:
+                return jsonify({"status": "error", "message": "Contracted Rate cannot be negative"}), 400
+            if contracted_rate is not None and contracted_rate <= 0:
+                contracted_rate = None
 
         if not unit_id and unit_name:
             unit_id_resolved, unit_err = _ensure_purchase_unit_master_entry(unit, unit_name)
@@ -1520,9 +2163,39 @@ def register_purchase_master_routes(
                 return jsonify({"status": "error", "message": f"Failed to save unit '{unit_name}': {unit_err}"}), 500
             unit_id = unit_id_resolved
 
-        meta = _load_item_master_lists(unit)
-        defaults = meta.get("defaults", {})
-        lookups = meta.get("lookups", {})
+        if manufacturer_id:
+            manufacturer_df = data_fetch.fetch_iv_manufacturer_master_detail(unit, manufacturer_id)
+            if manufacturer_df is None:
+                return jsonify({"status": "error", "message": "Failed to validate manufacturer selection"}), 500
+            if manufacturer_df.empty:
+                return jsonify({"status": "error", "message": "Selected manufacturer was not found. Please refresh and try again."}), 400
+
+        defaults = {
+            "item_type_id": _safe_int(item.get("item_type_id")),
+            "item_group_id": _safe_int(item.get("item_group_id")),
+            "sub_group_id": _safe_int(item.get("sub_group_id")),
+            "unit_id": _safe_int(unit_id),
+            "location_id": _safe_int(location_id),
+            "pack_size_id": _safe_int(pack_size_id),
+            "medicine_type_id": _safe_int(item.get("medicine_type_id"), ITEM_MASTER_DEFAULT_MEDICINE_TYPE_ID),
+        }
+        lookups = {}
+        needs_master_meta = (
+            defaults["item_type_id"] <= 0
+            or defaults["item_group_id"] <= 0
+            or defaults["sub_group_id"] <= 0
+            or defaults["unit_id"] <= 0
+            or defaults["location_id"] <= 0
+            or defaults["pack_size_id"] <= 0
+        )
+        if needs_master_meta:
+            meta = _load_item_master_lists(
+                unit,
+                selected_type_id=defaults["item_type_id"] or None,
+                selected_group_id=defaults["item_group_id"] or None,
+            )
+            defaults.update(meta.get("defaults", {}))
+            lookups = meta.get("lookups", {})
         now_str = datetime.now(tz=LOCAL_TZ).strftime("%Y-%m-%d %H:%M:%S")
         user_token = str(session.get("user_id") or session.get("user") or session.get("username") or "1")
 
@@ -1569,12 +2242,35 @@ def register_purchase_master_routes(
                 request.remote_addr,
                 existing,
             )
-            result = data_fetch.update_iv_item(unit, params)
         else:
             params = _build_item_master_params(item_payload, defaults, lookups, user_token, now_str, request.remote_addr)
-            result = data_fetch.add_iv_item(unit, params)
+        if _supports_contracted_rate(unit):
+            params["ContractedRate"] = contracted_rate
+        result = data_fetch.save_iv_item_with_manufacturer_link(
+            unit,
+            params,
+            is_update=bool(item_id),
+            manufacturer_id=manufacturer_id,
+            user_token=user_token,
+            now_str=now_str,
+            remote_addr=request.remote_addr,
+        )
         if result.get("error"):
             return jsonify({"status": "error", "message": result["error"]}), 500
+        saved_item_id = _resolve_verified_item_master_id(unit, item_id or result.get("item_id"), name)
+        if saved_item_id <= 0:
+            return jsonify({
+                "status": "error",
+                "message": "Item save could not be verified in Item Master. Please refresh and try again.",
+            }), 500
+        try:
+            _invalidate_item_master_meta_cache(unit)
+        except Exception:
+            pass
+        try:
+            _invalidate_item_name_cache(unit)
+        except Exception:
+            pass
 
         mirror_outcomes = []
         if not item_id:
@@ -1582,16 +2278,24 @@ def register_purchase_master_routes(
         message, mirror_status = _build_replication_message(
             "Item",
             "updated" if item_id else "saved",
-            item_id or result.get("item_id"),
+            saved_item_id,
             mirror_outcomes,
         )
+        if manufacturer_id:
+            if result.get("manufacturer_link_created") is False:
+                message = f"{message} Manufacturer was already linked."
+            else:
+                message = f"{message} Manufacturer linked in the same save."
         return jsonify({
             "status": "success",
-            "item_id": item_id or result.get("item_id"),
+            "item_id": saved_item_id,
             "item_name": name,
             "unit": unit,
             "mirrored_units": [row.get("unit") for row in mirror_outcomes if row.get("status") == "mirrored"],
             "mirror_failures": [row for row in mirror_outcomes if row.get("status") == "failed"],
             "mirror_status": mirror_status,
+            "manufacturer_id": manufacturer_id or None,
+            "manufacturer_linked": bool(manufacturer_id),
+            "manufacturer_link_created": result.get("manufacturer_link_created"),
             "message": message,
         })

@@ -559,10 +559,10 @@
     <table class="report-table" id="referralTable" style="margin-top:8px;">
       <thead>
         <tr class="alt-section">
-          <th colspan="5">Referral/Refusal/Brought Death Information (12:00 PM to 11:59 PM)</th>
+          <th colspan="7">Referral/Refusal/Brought Death/Daycare Information (12:00 AM to 11:59 PM)</th>
         </tr>
         <tr class="table-actions">
-          <th colspan="5">
+          <th colspan="7">
             <div class="action-buttons">
               <button class="add-row-btn" type="button" id="addReferralRowBtn">Add Row</button>
               <button class="add-row-btn remove-row-btn" type="button" id="removeReferralRowBtn">Remove Row</button>
@@ -573,12 +573,34 @@
           <th style="width:60px;">Sl</th>
           <th>Patient Name</th>
           <th style="width:110px;">Visit Time</th>
+          <th style="width:110px;">Discharge Time</th>
           <th>Consultant Name</th>
-          <th>Reason for Refering</th>
+          <th style="width:180px;">Reason</th>
+          <th>Remarks</th>
         </tr>
       </thead>
       <tbody id="referralBody">
-        <tr><td colspan="5">Loading...</td></tr>
+        <tr><td colspan="7">Loading...</td></tr>
+      </tbody>
+    </table>
+
+    <table class="report-table" id="nonCuredDischargeTable" style="margin-top:8px;">
+      <thead>
+        <tr class="alt-section">
+          <th colspan="7">Lama/Dama/Refer (12:00 AM to 11:59 PM)</th>
+        </tr>
+        <tr class="alt-head">
+          <th style="width:60px;">Sl.</th>
+          <th>Patient Name</th>
+          <th style="width:140px;">Admission Time</th>
+          <th style="width:140px;">Discharge Time</th>
+          <th style="width:180px;">Doctor</th>
+          <th>Reason</th>
+          <th>Remarks</th>
+        </tr>
+      </thead>
+      <tbody id="nonCuredDischargeBody">
+        <tr><td colspan="7">Loading...</td></tr>
       </tbody>
     </table>
   </div>
@@ -604,6 +626,8 @@
   const staffBody = document.getElementById('staffBody');
   const nonMedicalBody = document.getElementById('nonMedicalBody');
   const referralBody = document.getElementById('referralBody');
+  const daycareBody = document.getElementById('daycareBody');
+  const nonCuredDischargeBody = document.getElementById('nonCuredDischargeBody');
   const addDoctorwiseRowBtn = document.getElementById('addDoctorwiseRowBtn');
   const addOccupancyRowBtn = document.getElementById('addOccupancyRowBtn');
   const addNightVisitRowBtn = document.getElementById('addNightVisitRowBtn');
@@ -638,6 +662,15 @@
   let prefillStaffActive = false;
   let prefillNonMedActive = false;
   let prefillSourceStamp = '';
+  const referralReasonOptions = [
+    '',
+    'Daycare Discharge',
+    'Refer to Higher Center',
+    'Died',
+    'Admission Refusal',
+    'Doctor Denied',
+    'DAMA/LAMA'
+  ];
 
   function setStatus(text, warn = false) {
     if (!actionStatus) return;
@@ -800,6 +833,16 @@
   function filterRows(rows, keys) {
     if (!rows) return [];
     return rows.filter((row) => row?._manual || rowHasValue(row, keys));
+  }
+
+  function renderReferralReasonOptions(selectedValue) {
+    const selected = String(selectedValue || '').trim();
+    return referralReasonOptions.map((option) => {
+      const label = option || 'Select Reason';
+      const isSelected = option === selected ? ' selected' : '';
+      const extraAttrs = option ? '' : ' disabled hidden';
+      return `<option value="${option}"${isSelected}${extraAttrs}>${label}</option>`;
+    }).join('');
   }
 
   function normalizeStaffRows(rows) {
@@ -993,9 +1036,11 @@
     referralBody.querySelectorAll('tr[data-referral-row]').forEach((row) => {
       const patient = row.querySelector('[data-referral="patient_name"]')?.value || '';
       const visit = row.querySelector('[data-referral="visit_time"]')?.value || '';
+      const discharge = row.querySelector('[data-referral="discharge_time"]')?.value || '';
       const consultant = row.querySelector('[data-referral="consultant"]')?.value || '';
+      const reasonType = row.querySelector('[data-referral="reason_type"]')?.value || '';
       const reason = row.querySelector('[data-referral="reason"]')?.value || '';
-      if (String(patient || '').trim() || String(visit || '').trim() || String(consultant || '').trim() || String(reason || '').trim()) {
+      if (String(patient || '').trim() || String(visit || '').trim() || String(discharge || '').trim() || String(consultant || '').trim() || String(reasonType || '').trim() || String(reason || '').trim()) {
         total += 1;
       }
     });
@@ -1277,7 +1322,7 @@
 
   function renderReferral(rows) {
     if (!referralBody) return;
-    const data = filterRows(rows, ["patient_name", "visit_time", "consultant", "reason"]);
+    const data = filterRows(rows, ["patient_name", "visit_time", "discharge_time", "consultant", "reason_type", "reason"]);
     const bodyRows = data.map((row, idx) => {
       const sl = row.sl ?? (idx + 1);
       return `
@@ -1285,7 +1330,13 @@
           <td>${sl}</td>
           <td><input class="manual-input text" type="text" data-referral="patient_name" value="${fmt(row.patient_name)}"></td>
           <td><input class="manual-input" type="text" data-referral="visit_time" value="${fmt(row.visit_time)}"></td>
+          <td><input class="manual-input" type="text" data-referral="discharge_time" value="${fmt(row.discharge_time)}"></td>
           <td><input class="manual-input text" type="text" data-referral="consultant" value="${fmt(row.consultant)}"></td>
+          <td>
+            <select class="manual-input text" data-referral="reason_type" required>
+              ${renderReferralReasonOptions(row.reason_type)}
+            </select>
+          </td>
           <td><input class="manual-input text" type="text" data-referral="reason" value="${fmt(row.reason)}"></td>
         </tr>
       `;
@@ -1296,11 +1347,44 @@
         <td class="left">Total</td>
         <td></td>
         <td></td>
+        <td></td>
+        <td></td>
         <td data-referral-total></td>
       </tr>
     `;
-    referralBody.innerHTML = (bodyRows || '<tr class="empty-row"><td colspan="5">No data.</td></tr>') + (bodyRows ? totalRow : '');
+    referralBody.innerHTML = (bodyRows || '<tr class="empty-row"><td colspan="7">No data.</td></tr>') + (bodyRows ? totalRow : '');
     updateReferralTotals();
+  }
+
+  function renderDischargeDetailRows(targetBody, rows) {
+    if (!targetBody) return;
+    const data = filterRows(rows, ["patient_name", "reason_type", "admission_time", "discharge_time", "doctor_name", "reason", "remarks"]);
+    if (!data.length) {
+      targetBody.innerHTML = '<tr class="empty-row"><td colspan="7">No data.</td></tr>';
+      return;
+    }
+    targetBody.innerHTML = data.map((row, idx) => {
+      const sl = row.sl ?? (idx + 1);
+      return `
+        <tr data-non-cured-row>
+          <td data-non-cured="sl">${sl}</td>
+          <td class="left" data-non-cured="patient_name">${fmt(row.patient_name)}</td>
+          <td data-non-cured="admission_time">${fmt(row.admission_time)}</td>
+          <td data-non-cured="discharge_time">${fmt(row.discharge_time)}</td>
+          <td class="left" data-non-cured="doctor_name">${fmt(row.doctor_name)}</td>
+          <td class="left" data-non-cured="reason">${fmt(row.reason)}</td>
+          <td><input class="manual-input text" type="text" data-non-cured="remarks" value="${fmt(row.remarks)}"></td>
+        </tr>
+      `;
+    }).join('');
+  }
+
+  function renderDaycare(rows) {
+    renderDischargeDetailRows(daycareBody, rows);
+  }
+
+  function renderNonCuredDischarges(rows) {
+    renderDischargeDetailRows(nonCuredDischargeBody, rows);
   }
 
   async function loadMorningReport(mode) {
@@ -1345,6 +1429,7 @@
       renderStaff(data.staff_rows || []);
       renderNonMedical(data.non_medical_rows || []);
       renderReferral(data.referral_rows || []);
+      renderNonCuredDischarges(data.non_cured_discharge_rows || []);
       resetPrefillTracking();
       setPrefillTracking(data);
       if (data.source === 'snapshot') {
@@ -1366,7 +1451,8 @@
       if (nightVisitBody) nightVisitBody.innerHTML = `<tr><td colspan="5">Error loading data.</td></tr>`;
       if (staffBody) staffBody.innerHTML = `<tr><td colspan="7">Error loading data.</td></tr>`;
       if (nonMedicalBody) nonMedicalBody.innerHTML = `<tr><td colspan="5">Error loading data.</td></tr>`;
-      if (referralBody) referralBody.innerHTML = `<tr><td colspan="5">Error loading data.</td></tr>`;
+      if (referralBody) referralBody.innerHTML = `<tr><td colspan="7">Error loading data.</td></tr>`;
+      if (nonCuredDischargeBody) nonCuredDischargeBody.innerHTML = `<tr><td colspan="7">Error loading data.</td></tr>`;
       setStatus('Failed to load report.', true);
     }
   }
@@ -1421,6 +1507,31 @@
         setStatus('Death Count Previous Day Upto 00:00 Hours is mandatory. Enter 0 if there were no Cardiac deaths.', true);
         cardiacInput?.focus();
         cardiacInput?.select?.();
+        return false;
+      }
+    }
+    return true;
+  }
+
+  function validateReferralReasons() {
+    if (!referralBody) return true;
+    const rows = referralBody.querySelectorAll('tr[data-referral-row]');
+    for (const row of rows) {
+      const patient = row.querySelector('[data-referral="patient_name"]')?.value || '';
+      const visitTime = row.querySelector('[data-referral="visit_time"]')?.value || '';
+      const dischargeTime = row.querySelector('[data-referral="discharge_time"]')?.value || '';
+      const consultant = row.querySelector('[data-referral="consultant"]')?.value || '';
+      const reasonType = row.querySelector('[data-referral="reason_type"]')?.value || '';
+      const remarks = row.querySelector('[data-referral="reason"]')?.value || '';
+      const hasAnyValue = [patient, visitTime, dischargeTime, consultant, remarks].some((value) => String(value || '').trim());
+      if (!hasAnyValue) {
+        continue;
+      }
+      if (!String(reasonType).trim()) {
+        const sl = row.querySelector('td')?.textContent?.trim() || 'this';
+        setStatus(`Reason is mandatory for referral/daycare row ${sl}.`, true);
+        const select = row.querySelector('[data-referral="reason_type"]');
+        select?.focus();
         return false;
       }
     }
@@ -1550,17 +1661,47 @@
     referralBody.querySelectorAll('tr[data-referral-row]').forEach((row, idx) => {
       const patient = row.querySelector('[data-referral="patient_name"]')?.value || '';
       const visitTime = row.querySelector('[data-referral="visit_time"]')?.value || '';
+      const dischargeTime = row.querySelector('[data-referral="discharge_time"]')?.value || '';
       const consultant = row.querySelector('[data-referral="consultant"]')?.value || '';
+      const reasonType = row.querySelector('[data-referral="reason_type"]')?.value || '';
       const reason = row.querySelector('[data-referral="reason"]')?.value || '';
-      if (!String(patient).trim() && !String(visitTime).trim() && !String(consultant).trim() && !String(reason).trim()) {
+      if (!String(patient).trim() && !String(visitTime).trim() && !String(dischargeTime).trim() && !String(consultant).trim() && !String(reasonType).trim() && !String(reason).trim()) {
         return;
       }
       rows.push({
         sl: rows.length + 1,
         patient_name: patient,
         visit_time: visitTime,
+        discharge_time: dischargeTime,
         consultant,
+        reason_type: reasonType,
         reason
+      });
+    });
+    return rows;
+  }
+
+  function collectNonCuredDischargeRows() {
+    const rows = [];
+    if (!nonCuredDischargeBody) return rows;
+    nonCuredDischargeBody.querySelectorAll('tr[data-non-cured-row]').forEach((row) => {
+      const patientName = row.querySelector('[data-non-cured="patient_name"]')?.textContent || '';
+      const admissionTime = row.querySelector('[data-non-cured="admission_time"]')?.textContent || '';
+      const dischargeTime = row.querySelector('[data-non-cured="discharge_time"]')?.textContent || '';
+      const doctorName = row.querySelector('[data-non-cured="doctor_name"]')?.textContent || '';
+      const reason = row.querySelector('[data-non-cured="reason"]')?.textContent || '';
+      const remarks = row.querySelector('[data-non-cured="remarks"]')?.value || '';
+      if (!String(patientName).trim() && !String(admissionTime).trim() && !String(dischargeTime).trim() && !String(doctorName).trim() && !String(reason).trim() && !String(remarks).trim()) {
+        return;
+      }
+      rows.push({
+        sl: rows.length + 1,
+        patient_name: patientName.trim(),
+        admission_time: admissionTime.trim(),
+        discharge_time: dischargeTime.trim(),
+        doctor_name: doctorName.trim(),
+        reason: reason.trim(),
+        remarks
       });
     });
     return rows;
@@ -1646,7 +1787,10 @@
       doctor_night_visits: collectNightVisits(),
       staff_rows: collectStaffRows(),
       non_medical_rows: collectNonMedicalRows(),
-      referral_rows: collectReferralRows()
+      referral_rows: collectReferralRows(),
+      daycare_rows: [],
+      non_cured_discharge_rows: collectNonCuredDischargeRows(),
+      _non_cured_remarks_supported: true
     };
   }
 
@@ -1682,7 +1826,7 @@
 
   function addReferralRow() {
     const rows = collectReferralRows();
-    rows.push({ patient_name: '', visit_time: '', consultant: '', reason: '', _manual: true });
+    rows.push({ patient_name: '', visit_time: '', discharge_time: '', consultant: '', reason_type: '', reason: '', _manual: true });
     renderReferral(rows);
   }
 
@@ -1736,6 +1880,9 @@
     if (!validateRequiredSummaryRows()) {
       return;
     }
+    if (!validateReferralReasons()) {
+      return;
+    }
     try {
       setStatus('Saving manual entries...');
       const payload = buildPayloadFromUi();
@@ -1772,6 +1919,9 @@
 
   async function exportReport() {
     if (!validateRequiredSummaryRows()) {
+      return;
+    }
+    if (!validateReferralReasons()) {
       return;
     }
     try {
@@ -1812,6 +1962,9 @@
       return;
     }
     if (!validateRequiredSummaryRows()) {
+      return;
+    }
+    if (!validateReferralReasons()) {
       return;
     }
     try {
@@ -1855,6 +2008,9 @@
       return;
     }
     if (!validateRequiredSummaryRows()) {
+      return;
+    }
+    if (!validateReferralReasons()) {
       return;
     }
     try {
@@ -1915,6 +2071,7 @@
   staffBody?.addEventListener('input', updateStaffTotals);
   nonMedicalBody?.addEventListener('input', updateNonMedicalTotals);
   referralBody?.addEventListener('input', updateReferralTotals);
+  referralBody?.addEventListener('change', updateReferralTotals);
 
   const runIfEditable = (fn) => {
     if (editLocked) {
