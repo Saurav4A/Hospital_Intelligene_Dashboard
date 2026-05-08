@@ -138,6 +138,42 @@ USE_CORP_RECON_SP = True
 SECRET_KEY = "asarfi_rid_secret_2025"
 
 # ---------------------------
+# ABDM sandbox integration
+# ---------------------------
+# Temporary source-level configuration for M1 sandbox work. Move these values
+# to environment variables or a local secrets file before production.
+ABDM_ENV = "sandbox"
+ABDM_GATEWAY_BASE_URL = "https://dev.abdm.gov.in/gateway"
+ABDM_BRIDGE_BASE_URL = "https://dev.abdm.gov.in/gateway"
+ABDM_SERVICE_BASE_URL = "https://dev.abdm.gov.in/gateway"
+ABDM_SESSION_PATH = "/v0.5/sessions"
+ABDM_BRIDGE_PATH = "/v1/bridges"
+ABDM_BRIDGE_SERVICE_METHOD = "POST"
+ABDM_ABHA_SESSION_URL = "https://dev.abdm.gov.in/api/hiecm/gateway/v3/sessions"
+ABDM_ABHA_BASE_URL = "https://abhasbx.abdm.gov.in/abha/api"
+ABDM_ABHA_PHR_BASE_URL = "https://abhasbx.abdm.gov.in/abha/api/v3/phr/web"
+ABDM_BRIDGE_V3_URL = "https://dev.abdm.gov.in/api/hiecm/gateway/v3/bridge/url"
+ABDM_FACILITY_BASE_URL = "https://facilitysbx.abdm.gov.in"
+ABDM_FACILITY_ID = "IN2010000816"
+ABDM_FACILITY_NAME = "ASARFI HOSPITAL"
+ABDM_HIP_NAME = "ASARFI-HOSPITAL-HIP"
+ABDM_CM_ID = "sbx"
+ABDM_CLIENT_ID = "SBXID_028981"
+ABDM_CLIENT_SECRET = "b24927f8-dc97-43cc-9e1e-b0367fdd64c6"
+ABDM_BRIDGE_URL = "https://hid.asarfihospital.com"
+ABDM_SERVICE_ID = "IN2010000816"
+ABDM_SERVICE_NAME = "ASARFI-HOSPITAL-HIP"
+ABDM_SERVICE_TYPE = "HIP"
+ABDM_SERVICE_ALIAS = "asarfi-hospital-hip"
+ABDM_SERVICE_ENDPOINT_URL = ""
+ABDM_SERVICE_ENDPOINT_USE = "registration"
+ABDM_TIMEOUT_SECONDS = 30
+ABDM_RETRY_ATTEMPTS = 3
+ABDM_RETRY_BACKOFF_SECONDS = 2.0
+ABDM_VERIFY_SSL = False
+ABDM_CA_BUNDLE = ""
+
+# ---------------------------
 # OTP mail worker (Graph sender)
 # ---------------------------
 # Set True to start the background OTP mail worker from app.py

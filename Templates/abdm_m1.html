@@ -1,0 +1,3671 @@
+{% extends "layout.html" %}
+
+{% block page_header %}{% endblock %}
+{% block page_footer %}{% endblock %}
+
+{% block content %}
+<style>
+  /* ABDM integration page */
+  :root {
+    --abdm-blue: #1e3a8a;
+    --abdm-blue-2: #2563eb;
+    --abdm-green: #0f766e;
+    --abdm-amber: #b45309;
+    --abdm-red: #b91c1c;
+    --abdm-slate: #334155;
+    --abdm-muted: #64748b;
+    --abdm-line: #e2e8f0;
+    --abdm-bg: #f6f8fb;
+    --abdm-card: #ffffff;
+    --abdm-shadow: 0 14px 32px rgba(15, 23, 42, .08);
+  }
+
+  body > main {
+    padding: 0;
+    align-items: stretch;
+    overflow: hidden;
+  }
+  .abdm-page {
+    width: 100%;
+    height: 100vh;
+    padding: 16px 20px;
+    background: linear-gradient(180deg, #f8fbff 0%, var(--abdm-bg) 100%);
+    color: #0f172a;
+    overflow: hidden;
+  }
+  .abdm-shell {
+    width: min(1440px, 100%);
+    height: 100%;
+    margin: 0 auto;
+    display: flex;
+    flex-direction: column;
+    min-height: 0;
+  }
+  .abdm-hero {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 20px;
+    align-items: center;
+    background: var(--abdm-card);
+    border: 1px solid var(--abdm-line);
+    border-radius: 8px;
+    box-shadow: var(--abdm-shadow);
+    padding: 16px 20px;
+    margin-bottom: 12px;
+    flex: 0 0 auto;
+  }
+  .abdm-eyebrow {
+    color: var(--abdm-blue-2);
+    font-size: 12px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: .08em;
+    margin-bottom: 7px;
+  }
+  .abdm-title h1 {
+    margin: 0;
+    color: var(--abdm-blue);
+    font-size: 27px;
+    line-height: 1.2;
+    letter-spacing: 0;
+  }
+  .abdm-title p {
+    max-width: 760px;
+    margin: 8px 0 0;
+    color: var(--abdm-muted);
+    font-size: 14px;
+    line-height: 1.45;
+  }
+  .abdm-hero-actions {
+    display: flex;
+    gap: 10px;
+    align-items: center;
+  }
+  .abdm-back,
+  .abdm-setup-button {
+    min-height: 40px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 8px;
+    border-radius: 8px;
+    padding: 9px 13px;
+    font-weight: 800;
+    text-decoration: none;
+    border: 1px solid #bfdbfe;
+    color: var(--abdm-blue);
+    background: #eff6ff;
+    cursor: pointer;
+  }
+  .abdm-setup-button {
+    display: none;
+  }
+  .abdm-workbench {
+    flex: 1 1 auto;
+    min-height: 0;
+    display: grid;
+    grid-template-columns: 260px minmax(0, 1fr);
+    gap: 14px;
+    align-items: stretch;
+  }
+  .abdm-side-nav {
+    min-height: 0;
+    overflow: auto;
+    border: 1px solid var(--abdm-line);
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, .055);
+    padding: 18px 14px;
+  }
+  .abdm-side-nav h2 {
+    margin: 0 0 6px;
+    color: #0f172a;
+    font-size: 20px;
+    letter-spacing: 0;
+  }
+  .abdm-side-nav p {
+    margin: 0 0 18px;
+    color: var(--abdm-muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .abdm-module-nav {
+    display: grid;
+    gap: 6px;
+  }
+  .module-nav-button {
+    position: relative;
+    width: 100%;
+    min-height: 58px;
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    padding: 11px 10px;
+    color: #0f172a;
+    text-align: left;
+    cursor: pointer;
+    transition: background .14s ease, box-shadow .14s ease, color .14s ease;
+  }
+  .module-nav-button::before {
+    content: attr(data-step-number);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    border: 1px solid #d4dbe8;
+    background: #ffffff;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 900;
+  }
+  .module-nav-button strong {
+    display: block;
+    color: inherit;
+    font-size: 14px;
+    line-height: 1.25;
+    margin-bottom: 3px;
+  }
+  .module-nav-button span span {
+    display: block;
+    color: var(--abdm-muted);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .module-nav-button:hover {
+    background: #f8fafc;
+  }
+  .module-nav-button.active {
+    background: #f1f5f9;
+    box-shadow: inset 3px 0 0 var(--abdm-blue-2);
+  }
+  .module-nav-button.active::before {
+    color: #ffffff;
+    border-color: var(--abdm-blue-2);
+    background: var(--abdm-blue-2);
+  }
+  .module-nav-button.done::before {
+    content: "\2713";
+    color: #ffffff;
+    border-color: var(--abdm-green);
+    background: var(--abdm-green);
+  }
+  .abdm-side-actions {
+    display: grid;
+    gap: 8px;
+    margin-top: 18px;
+    padding-top: 14px;
+    border-top: 1px solid #e2e8f0;
+  }
+  .abdm-side-actions .btn {
+    width: 100%;
+  }
+  .abdm-module-stage {
+    min-height: 0;
+    overflow: hidden;
+  }
+  .abdm-module {
+    height: 100%;
+    min-height: 0;
+    overflow: auto;
+    padding-right: 4px;
+  }
+  .abdm-module[hidden] {
+    display: none !important;
+  }
+  .abdm-module > .abdm-card {
+    min-height: 100%;
+  }
+  .abdm-module .scan-inbox-card,
+  .abdm-module .existing-abha-card {
+    margin-top: 0;
+  }
+  .abdm-module-stage .existing-abha-card .abha-workflow-rail {
+    display: none;
+  }
+  .abdm-module-stage .existing-abha-card .existing-abha-workspace {
+    grid-template-columns: 1fr;
+    padding: 18px 22px 22px;
+  }
+  .abdm-main {
+    display: grid;
+    grid-template-columns: minmax(0, 1.08fr) minmax(380px, .92fr);
+    gap: 18px;
+    align-items: start;
+  }
+  .abdm-card {
+    background: var(--abdm-card);
+    border: 1px solid var(--abdm-line);
+    border-radius: 8px;
+    box-shadow: 0 10px 26px rgba(15, 23, 42, .06);
+    padding: 20px;
+  }
+  .abdm-card h2 {
+    margin: 0;
+    color: #0f172a;
+    font-size: 19px;
+    line-height: 1.25;
+  }
+  .abdm-card-subtitle {
+    margin: 6px 0 0;
+    color: var(--abdm-muted);
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .card-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 12px;
+    align-items: flex-start;
+    margin-bottom: 16px;
+  }
+  .badge,
+  .chip {
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    border-radius: 999px;
+    padding: 4px 9px;
+    font-size: 11px;
+    font-weight: 900;
+    border: 1px solid transparent;
+    white-space: nowrap;
+  }
+  .badge.info,
+  .chip.info,
+  .status-in_progress,
+  .status-started {
+    color: #1e40af;
+    background: #dbeafe;
+    border-color: #bfdbfe;
+  }
+  .badge.ok,
+  .chip.ok,
+  .status-implemented {
+    color: #065f46;
+    background: #d1fae5;
+    border-color: #a7f3d0;
+  }
+  .badge.warn,
+  .chip.warn,
+  .status-ready_when_env_set,
+  .status-pending_infrastructure {
+    color: #92400e;
+    background: #fef3c7;
+    border-color: #fde68a;
+  }
+  .badge.err,
+  .chip.err {
+    color: #991b1b;
+    background: #fee2e2;
+    border-color: #fecaca;
+  }
+  .badge.neutral,
+  .chip.neutral {
+    color: #334155;
+    background: #f1f5f9;
+    border-color: #e2e8f0;
+  }
+
+  .wizard-top {
+    display: flex;
+    justify-content: space-between;
+    gap: 16px;
+    align-items: center;
+    margin-bottom: 16px;
+  }
+  .step-meter {
+    color: var(--abdm-blue);
+    font-weight: 900;
+    white-space: nowrap;
+  }
+  .step-track {
+    height: 8px;
+    border-radius: 999px;
+    background: #edf2f7;
+    overflow: hidden;
+    margin-bottom: 14px;
+  }
+  .step-track span {
+    display: block;
+    width: 25%;
+    height: 100%;
+    background: var(--abdm-blue-2);
+    transition: width .2s ease;
+  }
+  .abha-steps {
+    display: grid;
+    grid-template-columns: repeat(4, minmax(0, 1fr));
+    gap: 10px;
+    margin-bottom: 18px;
+  }
+  .abha-step {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+    min-height: 58px;
+    padding: 10px 12px;
+    border-radius: 8px;
+    color: var(--abdm-muted);
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    font-size: 12px;
+    font-weight: 900;
+    line-height: 1.25;
+    min-width: 0;
+  }
+  .abha-step-number {
+    flex: 0 0 26px;
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    background: #e5e7eb;
+    color: #64748b;
+    font-size: 12px;
+  }
+  .abha-step-label {
+    display: block;
+    min-width: 0;
+    overflow-wrap: anywhere;
+  }
+  .abha-step.active {
+    color: #1e3a8a;
+    border-color: #93c5fd;
+    background: #eff6ff;
+  }
+  .abha-step.active .abha-step-number {
+    color: #fff;
+    background: var(--abdm-blue-2);
+  }
+  .abha-step.done {
+    color: #065f46;
+    border-color: #99f6e4;
+    background: #ecfdf5;
+  }
+  .abha-step.done .abha-step-number {
+    color: #fff;
+    background: var(--abdm-green);
+  }
+  .abha-step-panel {
+    display: none;
+  }
+  .abha-step-panel.active {
+    display: block;
+  }
+  .form-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 14px;
+  }
+  .form-section {
+    grid-column: 1 / -1;
+    margin: 4px 0 -2px;
+    padding-top: 8px;
+    border-top: 1px solid #eef2f7;
+    color: var(--abdm-blue);
+    font-size: 12px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .field {
+    display: grid;
+    gap: 6px;
+  }
+  .field label {
+    color: #475569;
+    font-size: 12px;
+    font-weight: 900;
+  }
+  .required {
+    color: var(--abdm-red);
+  }
+  .field input,
+  .field select,
+  .captcha-box input {
+    width: 100%;
+    min-height: 42px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    padding: 9px 11px;
+    color: #0f172a;
+    background: #fff;
+    font-size: 14px;
+  }
+  .field input:focus,
+  .field select:focus,
+  .captcha-box input:focus {
+    outline: 3px solid #dbeafe;
+    border-color: var(--abdm-blue-2);
+  }
+  .aadhaar-split {
+    display: flex;
+    align-items: center;
+    gap: 8px;
+  }
+  .aadhaar-split input {
+    width: 96px;
+    text-align: center;
+    letter-spacing: 1px;
+    font-weight: 800;
+  }
+  .notice {
+    margin: 12px 0;
+    color: #475569;
+    background: #f8fafc;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 11px 13px;
+    font-size: 13px;
+    line-height: 1.45;
+  }
+  .consent-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    overflow: hidden;
+    margin: 14px 0;
+    background: #fff;
+  }
+  .consent-box {
+    max-height: 142px;
+    overflow: auto;
+    padding: 14px 16px;
+    line-height: 1.5;
+    color: #1f2937;
+  }
+  .consent-box strong {
+    display: block;
+    margin-bottom: 8px;
+  }
+  .agree-row {
+    display: flex;
+    align-items: center;
+    gap: 10px;
+    border-top: 1px solid #e2e8f0;
+    padding: 12px 16px;
+    font-weight: 900;
+    background: #f8fafc;
+  }
+  .agree-row input {
+    width: 20px;
+    height: 20px;
+  }
+  .captcha-box {
+    max-width: 620px;
+    display: grid;
+    grid-template-columns: 140px minmax(0, 1fr) auto;
+    gap: 12px;
+    align-items: end;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #fff;
+    padding: 12px;
+    margin-top: 14px;
+  }
+  .captcha-question {
+    color: #4338ca;
+    font-size: 27px;
+    font-weight: 900;
+    letter-spacing: 1px;
+    min-height: 36px;
+    display: flex;
+    align-items: center;
+  }
+  .status-line {
+    min-height: 18px;
+    margin: 12px 0 0;
+    color: var(--abdm-muted);
+    font-size: 13px;
+    font-weight: 800;
+    white-space: pre-wrap;
+  }
+  .status-line.ok { color: var(--abdm-green); }
+  .status-line.err { color: var(--abdm-red); }
+  .actions,
+  .wizard-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 10px;
+    margin-top: 16px;
+  }
+  .wizard-actions {
+    justify-content: flex-end;
+  }
+  .btn {
+    border: 1px solid transparent;
+    border-radius: 8px;
+    min-height: 40px;
+    padding: 9px 13px;
+    font-weight: 900;
+    cursor: pointer;
+    transition: transform .12s ease, box-shadow .12s ease, background .12s ease;
+  }
+  .btn:hover {
+    transform: translateY(-1px);
+    box-shadow: 0 8px 18px rgba(15, 23, 42, .08);
+  }
+  .btn:disabled {
+    opacity: .65;
+    cursor: not-allowed;
+    transform: none;
+    box-shadow: none;
+  }
+  .btn.primary,
+  .wizard-actions .next {
+    color: #fff;
+    background: var(--abdm-blue-2);
+  }
+  .btn.success {
+    color: #fff;
+    background: var(--abdm-green);
+  }
+  .btn.info {
+    color: #fff;
+    background: #0e7490;
+  }
+  .btn.neutral,
+  .wizard-actions .cancel {
+    color: #334155;
+    background: #f8fafc;
+    border-color: #cbd5e1;
+  }
+  .btn.warn {
+    color: #fff;
+    background: var(--abdm-amber);
+  }
+  .btn.danger {
+    color: #fff;
+    background: var(--abdm-red);
+  }
+  .workflow-reset-btn {
+    min-height: 34px;
+    padding: 7px 11px;
+    color: #991b1b;
+    background: #fff;
+    border-color: #fecaca;
+  }
+  .workflow-reset-btn:hover {
+    background: #fff5f5;
+    box-shadow: 0 6px 14px rgba(185, 28, 28, .08);
+  }
+  .btn.loading {
+    position: relative;
+    pointer-events: none;
+  }
+  .btn.loading::after {
+    content: "";
+    width: 12px;
+    height: 12px;
+    margin-left: 8px;
+    border: 2px solid currentColor;
+    border-top-color: transparent;
+    border-radius: 999px;
+    display: inline-block;
+    vertical-align: -2px;
+    animation: abdm-spin .7s linear infinite;
+  }
+  .context-help {
+    color: var(--abdm-muted);
+    font-size: 13px;
+    line-height: 1.45;
+    margin: -4px 0 16px;
+  }
+  .existing-abha-card {
+    margin-top: 18px;
+    padding: 0;
+    overflow: hidden;
+    box-shadow: 0 14px 34px rgba(15, 23, 42, .055);
+  }
+  .existing-abha-card > .card-head {
+    margin: 0;
+    padding: 20px 24px 15px;
+    border-bottom: 1px solid #e2e8f0;
+    background:
+      linear-gradient(90deg, rgba(30, 58, 138, .04), rgba(15, 118, 110, .025)),
+      #ffffff;
+  }
+  .existing-abha-card > .card-head h2 {
+    font-size: 21px;
+  }
+  .existing-abha-meta {
+    display: flex;
+    flex-wrap: wrap;
+    justify-content: flex-end;
+    gap: 8px;
+    align-items: center;
+  }
+  .workflow-stage-bar {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 8px;
+    align-items: center;
+    margin: 0;
+  }
+  .workflow-chip {
+    display: inline-flex;
+    align-items: center;
+    gap: 6px;
+    min-height: 26px;
+    padding: 5px 10px;
+    border-radius: 999px;
+    border: 1px solid #dbeafe;
+    background: #eff6ff;
+    color: #1e40af;
+    font-size: 11px;
+    font-weight: 900;
+  }
+  .existing-abha-card .workflow-stage-bar {
+    padding: 12px 24px;
+    border-bottom: 1px solid #e2e8f0;
+    background: #f8fafc;
+  }
+  .existing-abha-card .workflow-chip {
+    background: #ffffff;
+    border-color: #c7d2fe;
+    box-shadow: 0 1px 2px rgba(15, 23, 42, .04);
+  }
+  .existing-abha-workspace {
+    display: grid;
+    grid-template-columns: 252px minmax(0, 1fr);
+    gap: 22px;
+    padding: 22px 24px 24px;
+  }
+  .abha-workflow-rail {
+    position: sticky;
+    top: 92px;
+    align-self: start;
+    display: grid;
+    gap: 8px;
+  }
+  .abha-rail-title {
+    margin: 0 0 10px;
+    color: #0f172a;
+    font-size: 18px;
+    font-weight: 900;
+  }
+  .abha-rail-note {
+    margin: 0 0 14px;
+    color: var(--abdm-muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .abha-login-step {
+    position: relative;
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 10px;
+    align-items: start;
+    width: 100%;
+    min-height: 66px;
+    padding: 12px 12px;
+    border: 0;
+    border-radius: 8px;
+    background: transparent;
+    color: #0f172a;
+    text-align: left;
+    cursor: pointer;
+    transition: background .14s ease, box-shadow .14s ease, color .14s ease;
+  }
+  .abha-login-step::before {
+    content: attr(data-step-number);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    width: 26px;
+    height: 26px;
+    border-radius: 999px;
+    border: 1px solid #d4dbe8;
+    background: #ffffff;
+    color: #64748b;
+    font-size: 12px;
+    font-weight: 900;
+  }
+  .abha-login-step strong {
+    display: block;
+    color: inherit;
+    font-size: 14px;
+    line-height: 1.25;
+    margin-bottom: 4px;
+  }
+  .abha-login-step span {
+    display: block;
+    color: var(--abdm-muted);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .abha-login-step:hover {
+    background: #f8fafc;
+  }
+  .abha-login-step.active {
+    background: #f1f5f9;
+    box-shadow: inset 3px 0 0 var(--abdm-blue-2);
+    color: #0f172a;
+  }
+  .abha-login-step.active::before {
+    color: #ffffff;
+    border-color: var(--abdm-blue-2);
+    background: var(--abdm-blue-2);
+  }
+  .abha-login-step.done::before {
+    content: "\2713";
+    color: #ffffff;
+    border-color: var(--abdm-green);
+    background: var(--abdm-green);
+  }
+  .existing-abha-layout {
+    display: grid;
+    grid-template-columns: minmax(0, 1.05fr) minmax(340px, .95fr);
+    gap: 18px;
+    align-items: start;
+  }
+  .workflow-segment {
+    border: 1px solid #d9e2ef;
+    border-radius: 8px;
+    background: #ffffff;
+    box-shadow: 0 8px 18px rgba(15, 23, 42, .035);
+    padding: 0;
+    overflow: hidden;
+    transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+  }
+  .workflow-segment:hover {
+    border-color: #bfdbfe;
+    box-shadow: 0 12px 24px rgba(37, 99, 235, .08);
+  }
+  .workflow-segment h3 {
+    margin: 0;
+    padding: 14px 16px 0;
+    color: var(--abdm-blue);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .workflow-segment p {
+    margin: 0;
+    padding: 5px 16px 12px;
+    color: var(--abdm-muted);
+    font-size: 12px;
+    line-height: 1.45;
+  }
+  .workflow-segment .form-grid,
+  .workflow-segment .actions,
+  .workflow-segment .profile-preview {
+    margin-left: 16px;
+    margin-right: 16px;
+  }
+  .workflow-segment .actions {
+    padding-bottom: 16px;
+  }
+  .workflow-stack {
+    display: grid;
+    gap: 16px;
+  }
+  .field.readonly input,
+  input[readonly] {
+    background: #f8fafc;
+    color: #334155;
+  }
+  .masked-token {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    align-items: center;
+    padding: 9px 10px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f8fafc;
+    color: #334155;
+    font-size: 12px;
+    font-weight: 800;
+    min-height: 42px;
+  }
+  .masked-token code {
+    overflow-wrap: anywhere;
+  }
+  .mini-btn {
+    border: 1px solid #cbd5e1;
+    border-radius: 7px;
+    background: #fff;
+    color: #334155;
+    min-height: 28px;
+    padding: 5px 8px;
+    cursor: pointer;
+    font-size: 11px;
+    font-weight: 900;
+  }
+  .abha-login-flow {
+    display: grid;
+    gap: 0;
+  }
+  .abha-login-strip {
+    display: contents;
+  }
+  .profile-preview {
+    min-height: 88px;
+    max-height: 220px;
+    overflow: auto;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 12px;
+    color: #334155;
+    font-size: 12px;
+    line-height: 1.45;
+    white-space: pre-wrap;
+  }
+  .scan-share-layout {
+    display: grid;
+    grid-template-columns: minmax(280px, .95fr) minmax(280px, 1.05fr);
+    gap: 18px;
+    align-items: start;
+  }
+  .scan-share-preview {
+    display: grid;
+    place-items: center;
+    gap: 12px;
+    min-height: 320px;
+    border: 1px solid #dbeafe;
+    border-radius: 8px;
+    background: #f8fbff;
+    padding: 16px;
+    text-align: center;
+  }
+  .scan-share-qr-box {
+    width: 280px;
+    max-width: 100%;
+    aspect-ratio: 1;
+    display: grid;
+    place-items: center;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    background: #fff;
+    padding: 12px;
+  }
+  .scan-share-qr-box img {
+    display: block;
+    width: 100%;
+    height: auto;
+  }
+  .scan-share-print-card {
+    display: grid;
+    gap: 6px;
+  }
+  .scan-share-print-card strong {
+    color: var(--abdm-blue);
+    font-size: 18px;
+  }
+  .scan-share-print-card span {
+    color: var(--abdm-muted);
+    font-size: 12px;
+    font-weight: 800;
+  }
+  .scan-share-url {
+    max-width: 100%;
+    color: #1e3a8a;
+    background: #eff6ff;
+    border: 1px solid #bfdbfe;
+    border-radius: 8px;
+    padding: 8px 10px;
+    font-size: 11px;
+    line-height: 1.35;
+    overflow-wrap: anywhere;
+    text-align: left;
+  }
+  .scan-inbox-card {
+    margin-top: 18px;
+  }
+  .scan-inbox-layout {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 12px;
+  }
+  .scan-inbox-panel {
+    display: grid;
+    gap: 6px;
+    min-height: 104px;
+    padding: 14px;
+    border: 1px solid #dbeafe;
+    border-radius: 10px;
+    background: #f8fbff;
+    transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+  }
+  .scan-inbox-panel:hover {
+    border-color: #93c5fd;
+    box-shadow: 0 10px 22px rgba(37, 99, 235, .08);
+    transform: translateY(-1px);
+  }
+  .scan-inbox-panel strong {
+    color: var(--abdm-blue);
+    font-size: 14px;
+  }
+  .scan-inbox-panel span {
+    color: var(--abdm-muted);
+    font-size: 12px;
+    line-height: 1.45;
+    font-weight: 800;
+  }
+  .status-events-grid {
+    display: grid;
+    grid-template-columns: minmax(280px, .35fr) minmax(0, .65fr);
+    gap: 18px;
+    margin-top: 18px;
+  }
+  .ready-panel {
+    display: grid;
+    gap: 12px;
+  }
+  .ready-metric {
+    display: grid;
+    gap: 4px;
+    padding: 12px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    background: #f8fafc;
+  }
+  .ready-metric span {
+    color: var(--abdm-muted);
+    font-size: 12px;
+    font-weight: 800;
+  }
+  .ready-metric strong {
+    color: #0f172a;
+    font-size: 22px;
+  }
+  .events-list {
+    display: grid;
+    gap: 10px;
+    max-height: 330px;
+    overflow: auto;
+  }
+  .event-row {
+    display: grid;
+    grid-template-columns: 140px minmax(0, 1fr) auto;
+    gap: 10px;
+    align-items: center;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 10px;
+    background: #fff;
+  }
+  .event-time {
+    color: var(--abdm-muted);
+    font-size: 12px;
+    font-weight: 800;
+  }
+  .event-main strong {
+    display: block;
+    font-size: 13px;
+    color: #0f172a;
+    word-break: break-word;
+  }
+  .event-main span {
+    color: var(--abdm-muted);
+    font-size: 12px;
+  }
+  .process-log-card {
+    grid-column: 1 / -1;
+  }
+  .process-log-card .events-list {
+    max-height: 360px;
+  }
+  .empty-events {
+    border: 1px dashed #cbd5e1;
+    border-radius: 8px;
+    padding: 22px;
+    text-align: center;
+    color: var(--abdm-muted);
+    background: #f8fafc;
+    font-weight: 800;
+  }
+  .output {
+    white-space: pre-wrap;
+    overflow: auto;
+    max-height: 260px;
+    background: #0f172a;
+    color: #e2e8f0;
+    border-radius: 8px;
+    padding: 12px;
+    font-size: 12px;
+    margin-top: 14px;
+  }
+
+  .admin-drawer {
+    position: fixed;
+    top: 76px;
+    right: 0;
+    width: min(760px, calc(100vw - 48px));
+    max-height: calc(100vh - 96px);
+    z-index: 70;
+    transform: translateX(100%);
+    transition: transform .24s ease, opacity .18s ease;
+    opacity: .98;
+  }
+  .admin-drawer.hover-open,
+  .admin-drawer.open {
+    transform: translateX(0);
+  }
+  .admin-drawer::before {
+    content: "";
+    position: absolute;
+    inset: -10px 0 -10px -34px;
+    pointer-events: none;
+    background: linear-gradient(90deg, rgba(15, 23, 42, .08), rgba(15, 23, 42, 0));
+    border-radius: 14px;
+    opacity: 0;
+    transition: opacity .2s ease;
+  }
+  .admin-drawer.hover-open::before,
+  .admin-drawer.open::before {
+    opacity: 1;
+  }
+  .admin-tab {
+    position: absolute;
+    left: -46px;
+    top: min(340px, calc(50vh - 76px));
+    width: 42px;
+    min-height: 152px;
+    border: 1px solid #bfdbfe;
+    border-right: 0;
+    border-radius: 12px 0 0 12px;
+    background: linear-gradient(180deg, var(--abdm-blue), #1d4ed8);
+    color: #ffffff;
+    padding: 12px 7px;
+    font-size: 12px;
+    font-weight: 900;
+    cursor: pointer;
+    box-shadow: 0 14px 28px rgba(15, 23, 42, .18);
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    gap: 6px;
+    writing-mode: vertical-rl;
+    rotate: 180deg;
+    letter-spacing: .04em;
+  }
+  .admin-tab::before {
+    content: "";
+    width: 8px;
+    height: 8px;
+    border-radius: 999px;
+    background: #93c5fd;
+    box-shadow: 0 0 0 3px rgba(147, 197, 253, .22);
+  }
+  .admin-panel {
+    position: relative;
+    max-height: calc(100vh - 96px);
+    overflow: auto;
+    border: 1px solid rgba(148, 163, 184, .34);
+    border-radius: 12px 0 0 12px;
+    background: #ffffff;
+    box-shadow: 0 24px 60px rgba(15, 23, 42, .22);
+    padding: 0;
+  }
+  .admin-panel::before {
+    content: "";
+    position: sticky;
+    top: 0;
+    display: block;
+    height: 5px;
+    background: linear-gradient(90deg, var(--abdm-blue), var(--abdm-blue-2), #0f766e);
+    z-index: 2;
+  }
+  .admin-head {
+    position: sticky;
+    top: 5px;
+    z-index: 3;
+    display: flex;
+    align-items: flex-start;
+    justify-content: space-between;
+    gap: 12px;
+    margin: 0;
+    padding: 18px 20px 15px;
+    border-bottom: 1px solid #e2e8f0;
+    background: rgba(255, 255, 255, .96);
+    backdrop-filter: blur(10px);
+  }
+  .admin-head h2 {
+    margin: 0;
+    color: var(--abdm-blue);
+    font-size: 20px;
+  }
+  .admin-head p {
+    margin: 5px 0 0;
+    color: var(--abdm-muted);
+    font-size: 13px;
+  }
+  .drawer-close {
+    width: 34px;
+    height: 34px;
+    border: 1px solid #cbd5e1;
+    border-radius: 8px;
+    background: #f8fafc;
+    cursor: pointer;
+    font-weight: 900;
+  }
+  .setup-section {
+    margin: 14px 16px;
+    padding: 14px;
+    border: 1px solid #e2e8f0;
+    border-radius: 10px;
+    background: #ffffff;
+  }
+  .console-grid {
+    display: grid;
+    grid-template-columns: repeat(3, minmax(0, 1fr));
+    gap: 10px;
+  }
+  .console-metric {
+    display: grid;
+    gap: 4px;
+    border: 1px solid #e2e8f0;
+    border-radius: 9px;
+    background: #f8fafc;
+    padding: 11px;
+  }
+  .console-metric span {
+    color: var(--abdm-muted);
+    font-size: 11px;
+    font-weight: 900;
+  }
+  .console-metric strong {
+    color: #0f172a;
+    font-size: 22px;
+  }
+  .section-toolbar {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: center;
+    margin-bottom: 10px;
+  }
+  .section-toolbar h3 {
+    margin: 0;
+  }
+  .last-refreshed {
+    color: var(--abdm-muted);
+    font-size: 11px;
+    font-weight: 800;
+  }
+  .scan-profile-card,
+  .log-card,
+  .selected-scan-card {
+    border: 1px solid #e2e8f0;
+    border-radius: 9px;
+    background: #fff;
+    padding: 11px;
+    transition: border-color .16s ease, box-shadow .16s ease, transform .16s ease;
+  }
+  .scan-profile-card:hover,
+  .log-card:hover {
+    border-color: #93c5fd;
+    box-shadow: 0 10px 22px rgba(37, 99, 235, .08);
+    transform: translateY(-1px);
+  }
+  .scan-profile-card.active {
+    border-color: #2563eb;
+    box-shadow: 0 0 0 3px #dbeafe;
+  }
+  .card-row-head {
+    display: flex;
+    justify-content: space-between;
+    gap: 10px;
+    align-items: flex-start;
+  }
+  .card-row-head strong {
+    display: block;
+    color: #0f172a;
+    font-size: 13px;
+    overflow-wrap: anywhere;
+  }
+  .card-row-head span {
+    color: var(--abdm-muted);
+    font-size: 11px;
+    font-weight: 800;
+  }
+  .card-meta {
+    color: #475569;
+    font-size: 12px;
+    line-height: 1.45;
+    margin-top: 8px;
+    overflow-wrap: anywhere;
+  }
+  .scan-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 7px;
+    margin-top: 10px;
+  }
+  .detail-grid {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .detail-item {
+    border: 1px solid #edf2f7;
+    border-radius: 8px;
+    background: #f8fafc;
+    padding: 8px;
+    min-width: 0;
+  }
+  .detail-item span {
+    display: block;
+    color: var(--abdm-muted);
+    font-size: 10px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+  .detail-item strong {
+    display: block;
+    margin-top: 3px;
+    color: #0f172a;
+    font-size: 12px;
+    overflow-wrap: anywhere;
+  }
+  .log-card details {
+    margin-top: 8px;
+  }
+  .log-card summary {
+    color: var(--abdm-blue);
+    font-size: 12px;
+    font-weight: 900;
+    cursor: pointer;
+  }
+  .log-card pre {
+    max-height: 220px;
+    overflow: auto;
+    background: #0f172a;
+    color: #e2e8f0;
+    border-radius: 8px;
+    padding: 10px;
+    font-size: 11px;
+    white-space: pre-wrap;
+  }
+  .console-list {
+    display: grid;
+    gap: 9px;
+    max-height: 360px;
+    overflow: auto;
+    padding-right: 2px;
+  }
+  .setup-section h3 {
+    margin: 0 0 10px;
+    color: var(--abdm-blue);
+    font-size: 13px;
+    text-transform: uppercase;
+    letter-spacing: .06em;
+  }
+  .setup-row {
+    display: grid;
+    grid-template-columns: 136px minmax(0, 1fr);
+    gap: 10px;
+    align-items: center;
+    padding: 8px 0;
+    border-bottom: 1px solid #f1f5f9;
+    font-size: 12px;
+  }
+  .setup-row span:first-child {
+    color: var(--abdm-muted);
+    font-weight: 900;
+  }
+  .setup-row strong,
+  .setup-row code {
+    color: #0f172a;
+    word-break: break-word;
+    font-size: 12px;
+  }
+  .action-group {
+    display: grid;
+    gap: 8px;
+    margin-bottom: 12px;
+  }
+  .action-group-title {
+    color: var(--abdm-muted);
+    font-size: 12px;
+    font-weight: 900;
+    text-transform: uppercase;
+    letter-spacing: .05em;
+  }
+  .action-buttons {
+    display: grid;
+    grid-template-columns: repeat(2, minmax(0, 1fr));
+    gap: 8px;
+  }
+  .action-buttons .btn {
+    width: 100%;
+    min-height: 38px;
+    padding: 8px 10px;
+    font-size: 12px;
+  }
+  .checklist {
+    display: grid;
+    gap: 9px;
+  }
+  .check-item {
+    display: grid;
+    grid-template-columns: minmax(0, 1fr) auto;
+    gap: 8px;
+    border: 1px solid #e2e8f0;
+    border-radius: 8px;
+    padding: 11px;
+    background: #f8fafc;
+  }
+  .check-item strong {
+    display: block;
+    color: #0f172a;
+    font-size: 13px;
+    margin-bottom: 4px;
+  }
+  .check-item p {
+    color: var(--abdm-muted);
+    font-size: 12px;
+    margin: 0;
+    line-height: 1.35;
+  }
+  .drawer-output-label {
+    color: var(--abdm-muted);
+    font-size: 12px;
+    font-weight: 900;
+    margin-top: 14px;
+  }
+  .admin-panel .output {
+    max-height: 190px;
+  }
+
+  .toast-stack {
+    position: fixed;
+    right: 24px;
+    bottom: 24px;
+    z-index: 90;
+    display: grid;
+    gap: 10px;
+    width: min(390px, calc(100vw - 32px));
+  }
+  .toast {
+    display: grid;
+    grid-template-columns: 28px minmax(0, 1fr);
+    gap: 9px;
+    border-radius: 8px;
+    border: 1px solid #e2e8f0;
+    background: #fff;
+    padding: 12px 14px;
+    box-shadow: 0 16px 32px rgba(15, 23, 42, .16);
+    animation: toast-in .18s ease both;
+  }
+  .toast-icon {
+    width: 28px;
+    height: 28px;
+    display: inline-flex;
+    align-items: center;
+    justify-content: center;
+    border-radius: 999px;
+    color: #fff;
+    font-size: 13px;
+    font-weight: 900;
+  }
+  .toast.success .toast-icon { background: var(--abdm-green); }
+  .toast.info .toast-icon { background: var(--abdm-blue-2); }
+  .toast.warning .toast-icon { background: var(--abdm-amber); }
+  .toast.error .toast-icon { background: var(--abdm-red); }
+  .toast-body {
+    min-width: 0;
+  }
+  .toast.hide {
+    animation: toast-out .18s ease both;
+  }
+  .toast strong {
+    color: #0f172a;
+    font-size: 13px;
+  }
+  .toast span {
+    color: var(--abdm-muted);
+    font-size: 12px;
+    line-height: 1.35;
+  }
+  .toast time {
+    display: block;
+    color: #94a3b8;
+    font-size: 11px;
+    margin-top: 4px;
+  }
+  .toast.success { border-left: 5px solid var(--abdm-green); }
+  .toast.info { border-left: 5px solid var(--abdm-blue-2); }
+  .toast.warning { border-left: 5px solid var(--abdm-amber); }
+  .toast.error { border-left: 5px solid var(--abdm-red); }
+  @keyframes toast-in {
+    from { opacity: 0; transform: translateX(22px); }
+    to { opacity: 1; transform: translateX(0); }
+  }
+  @keyframes toast-out {
+    from { opacity: 1; transform: translateX(0); }
+    to { opacity: 0; transform: translateX(22px); }
+  }
+  @keyframes abdm-spin {
+    to { transform: rotate(360deg); }
+  }
+
+  @media (max-width: 1050px) {
+    .abdm-workbench {
+      grid-template-columns: 220px minmax(0, 1fr);
+    }
+    .abdm-main,
+    .status-events-grid {
+      grid-template-columns: 1fr;
+    }
+    .abdm-setup-button,
+    .drawer-close {
+      display: inline-flex;
+    }
+    .admin-drawer {
+      top: 72px;
+      right: 0;
+      max-height: calc(100vh - 86px);
+      transform: translateX(100%);
+    }
+    .admin-drawer.hover-open {
+      transform: translateX(100%);
+    }
+    .admin-drawer.open {
+      transform: translateX(0);
+    }
+    .admin-tab {
+      display: none;
+    }
+  }
+  @media (max-width: 760px) {
+    .abdm-page {
+      padding: 10px;
+    }
+    .abdm-workbench {
+      grid-template-columns: 1fr;
+      grid-template-rows: auto minmax(0, 1fr);
+    }
+    .abdm-side-nav {
+      max-height: 210px;
+      padding: 12px;
+    }
+    .abdm-hero {
+      grid-template-columns: 1fr;
+      padding: 14px;
+    }
+    .abdm-hero-actions {
+      flex-wrap: wrap;
+    }
+    .abha-steps,
+    .abha-login-strip,
+    .form-grid,
+    .existing-abha-workspace,
+    .existing-abha-layout,
+    .console-grid,
+    .detail-grid,
+    .scan-inbox-layout {
+      grid-template-columns: 1fr;
+    }
+    .abha-workflow-rail {
+      position: static;
+      border-bottom: 1px solid #e2e8f0;
+      padding-bottom: 12px;
+    }
+    .abha-login-strip {
+      display: grid;
+      gap: 6px;
+    }
+    .existing-abha-card > .card-head,
+    .existing-abha-meta {
+      align-items: flex-start;
+      justify-content: flex-start;
+    }
+    .abha-step {
+      min-height: 44px;
+    }
+    .captcha-box {
+      grid-template-columns: 1fr;
+    }
+    .aadhaar-split {
+      flex-wrap: wrap;
+    }
+    .event-row {
+      grid-template-columns: 1fr;
+    }
+    .setup-row {
+      grid-template-columns: 1fr;
+      gap: 2px;
+    }
+    .admin-drawer {
+      right: 0;
+      width: calc(100vw - 18px);
+    }
+    .admin-panel {
+      max-height: calc(100vh - 86px);
+    }
+    .action-buttons {
+      grid-template-columns: 1fr;
+    }
+  }
+</style>
+
+<div class="abdm-page">
+  <div class="abdm-shell">
+    <header class="abdm-hero">
+      <div class="abdm-title">
+        <div class="abdm-eyebrow">Health Identity Dashboard</div>
+        <h1>ABDM M1 + M2 Integration</h1>
+        <p>Sandbox bridge bootstrap, ABHA helpers, and HIP care-context workflow controls for Asarfi Hospital.</p>
+      </div>
+      <div class="abdm-hero-actions">
+        <button type="button" class="abdm-setup-button" id="openSetupPanelBtn">ABDM Setup</button>
+        <a class="abdm-back" href="{{ url_for('dashboard') }}">Back to Dashboard</a>
+      </div>
+    </header>
+
+    <div class="abdm-workbench">
+      <aside class="abdm-side-nav" aria-label="ABDM workflow navigation">
+        <h2>ABDM Workflow</h2>
+        <p>Select a module to work on. The main workspace changes without moving the page.</p>
+        <nav class="abdm-module-nav">
+          <button type="button" class="module-nav-button active" data-step-number="1" data-abdm-module-nav="module-create-abha" aria-current="page">
+            <span>
+              <strong>Create ABHA</strong>
+              <span>Aadhaar OTP assisted creation.</span>
+            </span>
+          </button>
+          <button type="button" class="module-nav-button" data-step-number="2" data-abdm-module-nav="module-care-context">
+            <span>
+              <strong>M2 Care Context</strong>
+              <span>Register and test HIP context.</span>
+            </span>
+          </button>
+          <button type="button" class="module-nav-button" data-step-number="3" data-abdm-module-nav="module-scan-inbox">
+            <span>
+              <strong>Recent Scans</strong>
+              <span>Process Scan & Share callbacks.</span>
+            </span>
+          </button>
+          <button type="button" class="module-nav-button" data-step-number="4" data-abdm-module-nav="module-existing-abha">
+            <span>
+              <strong>Existing ABHA</strong>
+              <span>Login, profile, card, updates.</span>
+            </span>
+          </button>
+        </nav>
+        <div class="abdm-side-actions">
+          <button type="button" class="btn neutral" id="sideOpenSetupPanelBtn">Operational Console</button>
+          <button type="button" class="btn neutral workflow-reset-btn" id="sideResetWorkflowBtn">Reset Workflow</button>
+        </div>
+      </aside>
+
+      <div class="abdm-module-stage">
+        <section class="abdm-module active" id="module-create-abha" data-abdm-module>
+      <section class="abdm-card">
+        <div class="wizard-top">
+          <div>
+            <h2>Create ABHA Number Using Aadhaar</h2>
+            <p class="abdm-card-subtitle">Please ensure the mobile number is linked with Aadhaar. OTP authentication is required.</p>
+          </div>
+          <div class="step-meter">Step <span id="abhaStepNumber">1</span> of 4</div>
+        </div>
+        <div class="step-track"><span id="abhaProgress"></span></div>
+        <div class="abha-steps">
+          <div class="abha-step active" data-step-indicator="1"><span class="abha-step-number">1</span><span class="abha-step-label">Consent Collection</span></div>
+          <div class="abha-step" data-step-indicator="2"><span class="abha-step-number">2</span><span class="abha-step-label">Aadhaar Authentication</span></div>
+          <div class="abha-step" data-step-indicator="3"><span class="abha-step-number">3</span><span class="abha-step-label">Communication Details</span></div>
+          <div class="abha-step" data-step-indicator="4"><span class="abha-step-number">4</span><span class="abha-step-label">ABHA Address Creation</span></div>
+        </div>
+
+        <div class="abha-step-panel active" data-step-panel="1">
+          <div class="field">
+            <label>Aadhaar number <span class="required">*</span></label>
+            <div class="aadhaar-split">
+              <input id="abhaAadhaar1" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="0000">
+              <span>-</span>
+              <input id="abhaAadhaar2" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="0000">
+              <span>-</span>
+              <input id="abhaAadhaar3" inputmode="numeric" autocomplete="off" maxlength="4" placeholder="0000">
+            </div>
+            <input id="abhaAadhaar" type="hidden">
+          </div>
+          <div class="notice">Please ensure the mobile number is linked with Aadhaar. If it is not linked, the patient must visit an ABDM participating facility for assisted creation.</div>
+          <div class="consent-card">
+            <div class="consent-box">
+              <strong>Terms and Conditions</strong>
+              <p>I hereby declare that I am voluntarily sharing my Aadhaar number and demographic information issued by UIDAI with National Health Authority (NHA) for the sole purpose of creation of ABHA number. I understand that my ABHA number can be used and shared for purposes as may be notified by ABDM from time to time including provision of healthcare services.</p>
+            </div>
+            <label class="agree-row">
+              <input id="abhaConsent" type="checkbox">
+              I agree
+            </label>
+          </div>
+          <div class="form-grid">
+            <div class="field">
+              <label for="abhaAuthType">Authentication type <span class="required">*</span></label>
+              <select id="abhaAuthType">
+                <option value="aadhaar">Aadhaar OTP</option>
+              </select>
+            </div>
+          </div>
+          <div class="captcha-box">
+            <div>
+              <label>Captcha <span class="required">*</span></label>
+              <div class="captcha-question" id="captchaQuestion"></div>
+            </div>
+            <input id="captchaAnswer" autocomplete="off" inputmode="numeric" placeholder="Enter answer">
+            <button type="button" class="btn neutral" id="refreshCaptchaBtn">Refresh</button>
+          </div>
+          <div class="wizard-actions">
+            <button type="button" class="btn neutral cancel" id="resetAbhaWizardBtn">Cancel</button>
+            <button type="button" class="btn primary next" id="requestAbhaOtpBtn" disabled>Next</button>
+          </div>
+        </div>
+
+        <div class="abha-step-panel" data-step-panel="2">
+          <div class="form-grid">
+            <div class="field">
+              <label for="abhaTxnId">Transaction ID</label>
+              <input id="abhaTxnId" autocomplete="off" placeholder="Filled after OTP request">
+            </div>
+            <div class="field">
+              <label for="abhaOtp">Aadhaar OTP <span class="required">*</span></label>
+              <input id="abhaOtp" inputmode="numeric" autocomplete="one-time-code" placeholder="OTP">
+            </div>
+          </div>
+          <div class="wizard-actions">
+            <button type="button" class="btn neutral cancel" data-abha-prev="1">Back</button>
+            <button type="button" class="btn neutral cancel" id="freshAbhaOtpBtn">Generate Fresh OTP</button>
+            <button type="button" class="btn primary next" data-abha-next="3">Next</button>
+          </div>
+        </div>
+
+        <div class="abha-step-panel" data-step-panel="3">
+          <div class="form-grid">
+            <div class="field">
+              <label for="abhaMobile">Mobile <span class="required">*</span></label>
+              <input id="abhaMobile" inputmode="numeric" autocomplete="off" placeholder="Primary mobile">
+            </div>
+            <div class="field">
+              <label for="abhaEmail">Email</label>
+              <input id="abhaEmail" type="email" autocomplete="off" placeholder="Optional">
+            </div>
+          </div>
+          <div class="wizard-actions">
+            <button type="button" class="btn neutral cancel" data-abha-prev="2">Back</button>
+            <button type="button" class="btn primary next" id="verifyAbhaOtpBtn">Verify & Create</button>
+          </div>
+        </div>
+
+        <div class="abha-step-panel" data-step-panel="4">
+          <div class="form-grid">
+            <div class="field">
+              <label for="abhaAddressCandidate">Preferred ABHA address</label>
+              <input id="abhaAddressCandidate" autocomplete="off" placeholder="Use response value or enter patient@sbx">
+            </div>
+            <div class="field">
+              <label for="abhaCreatedNumber">Created ABHA number</label>
+              <input id="abhaCreatedNumber" autocomplete="off" readonly>
+            </div>
+          </div>
+          <div class="wizard-actions">
+            <button type="button" class="btn neutral cancel" data-abha-prev="3">Back</button>
+            <button type="button" class="btn primary next" id="copyAbhaToContextBtn">Fill Care Context</button>
+          </div>
+        </div>
+        <div class="status-line" id="abhaEnrollStatus"></div>
+      </section>
+        </section>
+
+        <section class="abdm-module" id="module-care-context" data-abdm-module hidden>
+      <section class="abdm-card">
+        <div class="card-head">
+          <div>
+            <h2>M2 Care Context Linking</h2>
+            <p class="abdm-card-subtitle">Register or test a patient care context for ABDM M2 discovery and linking.</p>
+          </div>
+          <span class="badge info">HIP</span>
+        </div>
+        <p class="context-help">Use the ABHA response to fill these fields, then save the record locally for sandbox discovery tests.</p>
+        <div class="form-grid">
+          <div class="form-section">Patient Identity</div>
+          <div class="field">
+            <label for="ccName">Patient name</label>
+            <input id="ccName" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="ccMobile">Mobile</label>
+            <input id="ccMobile" inputmode="numeric" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="ccMr">MR / UHID</label>
+            <input id="ccMr" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="ccPatientRef">Patient reference</label>
+            <input id="ccPatientRef" autocomplete="off">
+          </div>
+          <div class="form-section">ABHA Details</div>
+          <div class="field">
+            <label for="ccAbhaAddress">ABHA address</label>
+            <input id="ccAbhaAddress" autocomplete="off" placeholder="patient@sbx">
+          </div>
+          <div class="field">
+            <label for="ccAbhaNumber">ABHA number</label>
+            <input id="ccAbhaNumber" autocomplete="off">
+          </div>
+          <div class="form-section">Care Context Details</div>
+          <div class="field">
+            <label for="ccRef">Care-context reference <span class="required">*</span></label>
+            <input id="ccRef" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="ccDisplay">Care-context display</label>
+            <input id="ccDisplay" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="ccHiType">HI type</label>
+            <select id="ccHiType">
+              <option value="OPConsultation">OPConsultation</option>
+              <option value="Prescription">Prescription</option>
+              <option value="DiagnosticReport">DiagnosticReport</option>
+              <option value="DischargeSummary">DischargeSummary</option>
+              <option value="WellnessRecord">WellnessRecord</option>
+              <option value="ImmunizationRecord">ImmunizationRecord</option>
+              <option value="HealthDocumentRecord">HealthDocumentRecord</option>
+            </select>
+          </div>
+          <div class="form-section">Demographics</div>
+          <div class="field">
+            <label for="ccGender">Gender</label>
+            <input id="ccGender" autocomplete="off">
+          </div>
+          <div class="field">
+            <label for="ccYob">Year of birth</label>
+            <input id="ccYob" inputmode="numeric" autocomplete="off">
+          </div>
+        </div>
+        <div class="actions">
+          <button type="button" class="btn success" id="saveCareContextBtn">Save Care Context</button>
+          <button type="button" class="btn info" data-action="m2-discover">Test Saved Discovery</button>
+        </div>
+        <div class="status-line" id="careContextStatus"></div>
+      </section>
+        </section>
+
+        <section class="abdm-module" id="module-scan-inbox" data-abdm-module hidden>
+    <section class="abdm-card scan-inbox-card">
+      <div class="card-head">
+        <div>
+          <h2>Recent Scan & Share Profiles</h2>
+          <p class="abdm-card-subtitle">HSPR/ABDM owns the counter QR. HID focuses on received scan callbacks and operator processing.</p>
+        </div>
+        <span class="badge info">M1 Inbox</span>
+      </div>
+      <div class="scan-inbox-layout">
+        <div class="scan-inbox-panel">
+          <strong>Callback inbox</strong>
+          <span>Refresh incoming profiles, select a patient scan, then process it from the ABDM Setup console.</span>
+        </div>
+        <div class="scan-inbox-panel">
+          <strong>Operator workflow</strong>
+          <span>Use a scan for M2 care-context fields or existing ABHA login without refreshing the page.</span>
+        </div>
+        <div class="scan-inbox-panel">
+          <strong>Registration status</strong>
+          <span>Mark linked/registered from the selected scan details when local linkage information is ready.</span>
+        </div>
+      </div>
+      <div class="actions">
+        <button type="button" class="btn primary" id="openScanConsoleBtn">Open Scan Console</button>
+        <button type="button" class="btn info" id="refreshScanConsoleBtn">Refresh Recent Scans</button>
+      </div>
+      <div class="status-line" id="scanShareStatus"></div>
+    </section>
+        </section>
+
+        <section class="abdm-module" id="module-existing-abha" data-abdm-module hidden>
+    <section class="abdm-card existing-abha-card">
+      <div class="card-head">
+        <div>
+          <h2>Existing ABHA Account</h2>
+          <p class="abdm-card-subtitle">Login with an already-created ABHA number, then fetch profile, download card, or submit supported profile updates.</p>
+        </div>
+        <div class="existing-abha-meta">
+          <span class="badge neutral" id="existingAbhaBadge">Not logged in</span>
+          <button type="button" class="btn neutral workflow-reset-btn" id="resetAbdmWorkflowBtn">Reset Workflow</button>
+        </div>
+      </div>
+      <div class="workflow-stage-bar">
+        <span class="workflow-chip" id="workflowStageChip">Idle</span>
+      </div>
+      <div class="abha-login-flow">
+        <div class="existing-abha-workspace">
+          <aside class="abha-workflow-rail" aria-label="Existing ABHA workflow">
+            <h3 class="abha-rail-title">Workflow</h3>
+            <p class="abha-rail-note">Process one ABHA account at a time. The active stage updates as OTP, session, profile, and update actions complete.</p>
+            <div class="abha-login-strip">
+              <button type="button" class="abha-login-step active" id="existingAbhaStepLogin" data-step-number="1" data-existing-step-target="abhaLoginSegment">
+                <span>
+                  <strong>Verify ABHA</strong>
+                  <span>Request and verify login OTP.</span>
+                </span>
+              </button>
+              <button type="button" class="abha-login-step" id="existingAbhaStepProfile" data-step-number="2" data-existing-step-target="profileCardSegment">
+                <span>
+                  <strong>Profile & Card</strong>
+                  <span>Fetch profile and download card.</span>
+                </span>
+              </button>
+              <button type="button" class="abha-login-step" id="existingAbhaStepUpdate" data-step-number="3" data-existing-step-target="profileUpdateSegment">
+                <span>
+                  <strong>Update Profile</strong>
+                  <span>Mobile or supported edit flow.</span>
+                </span>
+              </button>
+            </div>
+          </aside>
+
+          <div class="existing-abha-content">
+            <div class="existing-abha-layout">
+          <div class="workflow-stack">
+            <div class="workflow-segment" id="abhaLoginSegment">
+              <h3>ABHA Login</h3>
+              <p>Request and verify the OTP for the ABHA number. Use this side only for operator input.</p>
+              <div class="form-grid">
+                <div class="field">
+                  <label for="existingAbhaNumber">ABHA number <span class="required">*</span></label>
+                  <input id="existingAbhaNumber" autocomplete="off" inputmode="numeric" placeholder="91-1234-5678-9012">
+                </div>
+                <div class="field">
+                  <label for="existingAbhaOtpSystem">OTP type</label>
+                  <select id="existingAbhaOtpSystem">
+                    <option value="abdm">ABHA OTP</option>
+                    <option value="aadhaar">Aadhaar OTP</option>
+                  </select>
+                </div>
+                <div class="field">
+                  <label for="existingAbhaOtp">OTP <span class="required">*</span></label>
+                  <input id="existingAbhaOtp" inputmode="numeric" autocomplete="one-time-code" placeholder="Enter login OTP">
+                </div>
+                <div class="field">
+                  <label for="existingAbhaAddress">ABHA address</label>
+                  <input id="existingAbhaAddress" autocomplete="off" placeholder="patient@sbx">
+                </div>
+                <div class="field">
+                  <label for="existingAbhaAddressOtp">ABHA address OTP</label>
+                  <input id="existingAbhaAddressOtp" inputmode="numeric" autocomplete="one-time-code" placeholder="Enter profile OTP">
+                </div>
+              </div>
+              <div class="actions">
+                <button type="button" class="btn primary" id="existingAbhaOtpBtn">Send OTP</button>
+                <button type="button" class="btn success" id="existingAbhaVerifyBtn">Verify Login</button>
+                <button type="button" class="btn primary" id="abhaAddressOtpBtn">Send Profile OTP</button>
+                <button type="button" class="btn success" id="abhaAddressVerifyBtn">Verify Profile Login</button>
+              </div>
+            </div>
+
+            <div class="workflow-segment" id="profileUpdateSegment">
+              <h3>Profile Update</h3>
+              <p>Mobile update OTP is separate from login OTP and ABHA-address OTP. Request it here, then verify only after the patient shares the update OTP.</p>
+              <div class="form-grid">
+                <div class="field">
+                  <label for="updateAbhaMobile">Mobile</label>
+                  <input id="updateAbhaMobile" inputmode="numeric" autocomplete="off" placeholder="10 digit mobile">
+                </div>
+                <div class="field">
+                  <label for="updateAbhaMobileOtp">Mobile update OTP</label>
+                  <input id="updateAbhaMobileOtp" inputmode="numeric" autocomplete="one-time-code" placeholder="Enter update OTP">
+                </div>
+                <div class="field">
+                  <label for="updateAbhaEmail">Email</label>
+                  <input id="updateAbhaEmail" type="email" autocomplete="off" placeholder="Email flow, if supported">
+                </div>
+              </div>
+              <div class="actions">
+                <button type="button" class="btn warn" id="updateAbhaProfileBtn">Send Mobile Update OTP</button>
+                <button type="button" class="btn success" id="verifyAbhaMobileUpdateBtn">Verify Mobile Update</button>
+              </div>
+            </div>
+          </div>
+
+          <div class="workflow-stack">
+            <div class="workflow-segment" id="systemRefsSegment">
+              <h3>System Generated References</h3>
+              <p>Transaction IDs and session references are generated by ABDM/HID. Tokens are stored server-side and masked here.</p>
+              <div class="form-grid">
+                <div class="field readonly">
+                  <label for="existingAbhaTxnId">Transaction ID</label>
+                  <input id="existingAbhaTxnId" autocomplete="off" placeholder="Filled after OTP request">
+                </div>
+                <div class="field readonly">
+                  <label for="existingAbhaSessionRef">Server session reference</label>
+                  <input id="existingAbhaSessionRef" autocomplete="off" readonly placeholder="Stored after verification">
+                </div>
+                <div class="field readonly">
+                  <label for="existingAbhaAddressTxnId">ABHA address transaction ID</label>
+                  <input id="existingAbhaAddressTxnId" autocomplete="off" placeholder="Filled after profile OTP request">
+                </div>
+                <div class="field readonly">
+                  <label for="updateAbhaMobileTxnId">Mobile update transaction ID</label>
+                  <input id="updateAbhaMobileTxnId" autocomplete="off" placeholder="Filled after update OTP request">
+                </div>
+                <div class="field readonly">
+                  <label>Token / session summary</label>
+                  <div class="masked-token"><code id="existingAbhaTokenSummary">No active token</code><button type="button" class="mini-btn" id="copySessionRefBtn">Copy Ref</button></div>
+                </div>
+                <div class="field readonly">
+                  <label>Last verified</label>
+                  <div class="masked-token"><code id="existingAbhaLastVerified">Not verified</code></div>
+                </div>
+              </div>
+            </div>
+
+            <div class="workflow-segment" id="profileCardSegment">
+              <h3>Profile & Card</h3>
+              <p>Fetch the profile after login. Download card requires a compatible profile-session token.</p>
+              <div class="actions">
+                <button type="button" class="btn info" id="fetchAbhaProfileBtn">Fetch Profile</button>
+                <button type="button" class="btn neutral" id="downloadAbhaCardBtn">Download Card</button>
+              </div>
+              <div class="profile-preview" id="existingAbhaProfilePreview">No ABHA profile loaded yet.</div>
+            </div>
+          </div>
+            </div>
+            <div class="status-line" id="existingAbhaStatus"></div>
+          </div>
+        </div>
+      </div>
+    </section>
+        </section>
+      </div>
+    </div>
+
+  </div>
+</div>
+
+<aside class="admin-drawer" id="setupDrawer" aria-label="ABDM setup drawer">
+  <button type="button" class="admin-tab" id="setupDrawerTab">ABDM Setup</button>
+  <div class="admin-panel">
+    <div class="admin-head">
+      <div>
+        <h2>ABDM Setup</h2>
+        <p>Operational console for scan callbacks, ABHA workflow state, M2 activity, logs, and setup checks.</p>
+      </div>
+      <button type="button" class="drawer-close" id="closeSetupPanelBtn">X</button>
+    </div>
+
+    <div class="setup-section">
+      <div class="section-toolbar">
+        <h3>Workflow Control</h3>
+        <button type="button" class="btn danger" id="drawerResetWorkflowBtn">Start New ABHA Check</button>
+      </div>
+      <div class="workflow-stage-bar">
+        <span class="workflow-chip" id="drawerWorkflowStageChip">Idle</span>
+        <span class="workflow-chip" id="selectedScanChip">No scan selected</span>
+      </div>
+    </div>
+
+    <div class="setup-section">
+      <div class="section-toolbar">
+        <h3>Integration Status</h3>
+        <span class="badge ok" id="readyBadge">Ready</span>
+      </div>
+      <div class="console-grid">
+        <div class="console-metric">
+          <span>Care contexts</span>
+          <strong id="careContextCount">0</strong>
+        </div>
+        <div class="console-metric">
+          <span>Recent M2 events</span>
+          <strong id="recentEventCount">0</strong>
+        </div>
+        <div class="console-metric">
+          <span>Scan profiles</span>
+          <strong id="scanShareCount">0</strong>
+        </div>
+      </div>
+      <div class="last-refreshed" id="statusLastRefreshed">Not refreshed yet.</div>
+    </div>
+
+    <div class="setup-section">
+      <div class="section-toolbar">
+        <div>
+          <h3>Scan & Share Profiles</h3>
+          <div class="last-refreshed" id="scanShareLastRefreshed">Not refreshed yet.</div>
+        </div>
+        <button type="button" class="btn neutral" data-action="scan-share">Refresh</button>
+      </div>
+      <div class="console-list" id="scanShareList">
+        <div class="empty-events">No Scan & Share callbacks loaded yet.</div>
+      </div>
+    </div>
+
+    <div class="setup-section">
+      <div class="section-toolbar">
+        <h3>Selected Scan Details</h3>
+        <button type="button" class="btn primary" id="startSelectedScanBtn" disabled>Start Processing This Scan</button>
+      </div>
+      <div class="selected-scan-card" id="selectedScanDetails">
+        <div class="empty-events">Select a Scan & Share profile to inspect patient details and prepare care-context linking.</div>
+      </div>
+    </div>
+
+    <div class="setup-section">
+      <div class="section-toolbar">
+        <div>
+          <h3>Recent M2 Events</h3>
+          <div class="last-refreshed" id="m2EventsLastRefreshed">Not refreshed yet.</div>
+        </div>
+        <button type="button" class="btn neutral" data-action="m2-events">Refresh</button>
+      </div>
+      <div class="console-list" id="m2EventsList">
+        <div class="empty-events">No M2 events loaded yet.</div>
+      </div>
+    </div>
+
+    <div class="setup-section">
+      <div class="section-toolbar">
+        <div>
+          <h3>ABDM Process Logs</h3>
+          <div class="last-refreshed" id="logsLastRefreshed">Not refreshed yet.</div>
+        </div>
+        <button type="button" class="btn neutral" data-action="abdm-logs">Refresh</button>
+      </div>
+      <div class="console-list" id="abdmProcessLogsList">
+        <div class="empty-events">No ABDM process logs loaded yet.</div>
+      </div>
+    </div>
+
+    <div class="setup-section">
+      <h3>Environment</h3>
+      <div class="setup-row"><span>Environment</span><strong><span class="badge info">{{ settings.get("env") or "Not configured" }}</span></strong></div>
+      <div class="setup-row"><span>Client ID</span><strong>{{ settings.get("client_id") or "Not configured" }}</strong></div>
+      <div class="setup-row"><span>Client secret</span><strong><span class="badge {{ 'ok' if settings.get('client_secret_configured') else 'err' }}">{{ "Configured" if settings.get("client_secret_configured") else "Missing" }}</span></strong></div>
+    </div>
+
+    <div class="setup-section">
+      <h3>Gateway & Session URLs</h3>
+      <div class="setup-row"><span>Gateway base</span><code>{{ settings.get("gateway_base_url") or "Not configured" }}</code></div>
+      <div class="setup-row"><span>ABHA session</span><code>{{ settings.get("abha_session_url") or "Not configured" }}</code></div>
+      <div class="setup-row"><span>ABHA base</span><code>{{ settings.get("abha_base_url") or "Not configured" }}</code></div>
+      <div class="setup-row"><span>PHR base</span><code>{{ settings.get("abha_phr_base_url") or "Not configured" }}</code></div>
+    </div>
+
+    <div class="setup-section">
+      <h3>Facility / HIP Identity</h3>
+      <div class="setup-row"><span>Facility ID</span><strong>{{ settings.get("facility_id") or "Not configured" }}</strong></div>
+      <div class="setup-row"><span>Facility name</span><strong>{{ settings.get("facility_name") or "Not configured" }}</strong></div>
+      <div class="setup-row"><span>HIP name</span><strong>{{ settings.get("hip_name") or "Not configured" }}</strong></div>
+      <div class="setup-row"><span>CM ID</span><strong>{{ settings.get("cm_id") or "Not configured" }}</strong></div>
+    </div>
+
+    <div class="setup-section">
+      <h3>Service Registration</h3>
+      <div class="setup-row"><span>Bridge URL</span><code>{{ settings.get("bridge_url") or "Not configured" }}</code></div>
+      <div class="setup-row"><span>Service ID</span><strong>{{ settings.get("service_id") or "Not configured" }}</strong></div>
+      <div class="setup-row"><span>Service type</span><strong><span class="badge info">{{ settings.get("service_type") or "Not configured" }}</span></strong></div>
+      <div class="setup-row"><span>Service alias</span><strong>{{ settings.get("service_alias") or "Not configured" }}</strong></div>
+      <div class="setup-row"><span>Endpoint use</span><strong>{{ settings.get("service_endpoint_use") or "Not configured" }}</strong></div>
+    </div>
+
+    <div class="setup-section">
+      <h3>Security & Runtime</h3>
+      <div class="setup-row"><span>Verify SSL</span><strong><span class="badge {{ 'ok' if settings.get('verify_ssl') else 'warn' }}">{{ settings.get("verify_ssl") }}</span></strong></div>
+      <div class="setup-row"><span>CA bundle</span><strong><span class="badge {{ 'ok' if settings.get('ca_bundle_configured') else 'neutral' }}">{{ "Configured" if settings.get("ca_bundle_configured") else "Not configured" }}</span></strong></div>
+      <div class="setup-row"><span>Timeout</span><strong>{{ settings.get("timeout_seconds") }} seconds</strong></div>
+      <div class="setup-row"><span>Retries</span><strong>{{ settings.get("retry_attempts") }}</strong></div>
+    </div>
+
+    <div class="setup-section">
+      <h3>Actions</h3>
+      <div class="action-group">
+        <div class="action-group-title">Session & Certificate Tests</div>
+        <div class="action-buttons">
+          <button type="button" class="btn primary" data-action="session">Test Session</button>
+          <button type="button" class="btn primary" data-action="m1-session">Test M1 V3 Session</button>
+          <button type="button" class="btn neutral" data-action="m1-certificate">Fetch ABHA Certificate</button>
+          <button type="button" class="btn neutral" data-action="m1-encrypt">Test ABHA Encryption</button>
+        </div>
+      </div>
+      <div class="action-group">
+        <div class="action-group-title">Bridge Registration</div>
+        <div class="action-buttons">
+          <button type="button" class="btn success" data-action="bridge-url">Update Bridge URL</button>
+          <button type="button" class="btn success" data-action="service">Add/Update HIP Service</button>
+          <button type="button" class="btn neutral" data-action="services">Get Services</button>
+        </div>
+      </div>
+      <div class="action-group">
+        <div class="action-group-title">M2 Testing</div>
+        <div class="action-buttons">
+          <button type="button" class="btn primary" data-action="m2-status">M2 Status</button>
+          <button type="button" class="btn success" data-action="m2-add-demo">Add Demo Care Context</button>
+          <button type="button" class="btn info" data-action="m2-discover">Test M2 Discovery</button>
+        </div>
+      </div>
+      <div class="drawer-output-label">Last API response</div>
+      <pre class="output" id="abdmOutput">Ready.</pre>
+    </div>
+
+    <div class="setup-section">
+      <h3>M1 Checklist</h3>
+      <div class="checklist">
+        {% for item in checklist %}
+        <div class="check-item">
+          <div>
+            <strong>{{ item.title }}</strong>
+            <p>{{ item.detail }}</p>
+          </div>
+          <span class="chip status-{{ item.status }}">{{ item.status }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+
+    <div class="setup-section">
+      <h3>M2 Checklist</h3>
+      <div class="checklist">
+        {% for item in m2_checklist %}
+        <div class="check-item">
+          <div>
+            <strong>{{ item.title }}</strong>
+            <p>{{ item.detail }}</p>
+          </div>
+          <span class="chip status-{{ item.status }}">{{ item.status }}</span>
+        </div>
+        {% endfor %}
+      </div>
+    </div>
+  </div>
+</aside>
+
+<div class="toast-stack" id="toastStack" aria-live="polite"></div>
+{% endblock %}
+
+{% block scripts %}
+<script>
+  const output = document.getElementById("abdmOutput");
+  const enrollStatus = document.getElementById("abhaEnrollStatus");
+  const contextStatus = document.getElementById("careContextStatus");
+  const toastStack = document.getElementById("toastStack");
+  const eventsList = document.getElementById("m2EventsList");
+  const scanShareList = document.getElementById("scanShareList");
+  const processLogsList = document.getElementById("abdmProcessLogsList");
+  const careContextCount = document.getElementById("careContextCount");
+  const recentEventCount = document.getElementById("recentEventCount");
+  const scanShareCount = document.getElementById("scanShareCount");
+  const readyBadge = document.getElementById("readyBadge");
+  const existingAbhaStatus = document.getElementById("existingAbhaStatus");
+  const existingAbhaBadge = document.getElementById("existingAbhaBadge");
+  const existingAbhaProfilePreview = document.getElementById("existingAbhaProfilePreview");
+  const scanShareStatus = document.getElementById("scanShareStatus");
+  const selectedScanDetails = document.getElementById("selectedScanDetails");
+  const startSelectedScanBtn = document.getElementById("startSelectedScanBtn");
+  const workflowStageChip = document.getElementById("workflowStageChip");
+  const drawerWorkflowStageChip = document.getElementById("drawerWorkflowStageChip");
+  const selectedScanChip = document.getElementById("selectedScanChip");
+  const existingAbhaTokenSummary = document.getElementById("existingAbhaTokenSummary");
+  const existingAbhaLastVerified = document.getElementById("existingAbhaLastVerified");
+  const statusLastRefreshed = document.getElementById("statusLastRefreshed");
+  const scanShareLastRefreshed = document.getElementById("scanShareLastRefreshed");
+  const m2EventsLastRefreshed = document.getElementById("m2EventsLastRefreshed");
+  const logsLastRefreshed = document.getElementById("logsLastRefreshed");
+  const abdmModuleButtons = Array.from(document.querySelectorAll("[data-abdm-module-nav]"));
+  const abdmModules = Array.from(document.querySelectorAll("[data-abdm-module]"));
+  let captchaExpected = 0;
+  let lastAbhaResponse = null;
+  let currentAbhaSessionRef = "";
+  let currentAbhaLoginEndpoint = "";
+  let scanShareProfiles = [];
+  const workflowState = {
+    activeScan: null,
+    activeAbhaSession: null,
+    activeTransactionIds: {},
+    activeProfile: null,
+    activeWorkflowStage: "Idle",
+    activeLogs: []
+  };
+  const activeToasts = new Map();
+
+  function activateAbdmModule(moduleId, options = {}) {
+    const nextModule = document.getElementById(moduleId);
+    if (!nextModule) return;
+    abdmModules.forEach((module) => {
+      const active = module.id === moduleId;
+      module.hidden = !active;
+      module.classList.toggle("active", active);
+      if (active && options.resetScroll !== false) module.scrollTop = 0;
+    });
+    abdmModuleButtons.forEach((button) => {
+      const active = button.dataset.abdmModuleNav === moduleId;
+      button.classList.toggle("active", active);
+      if (active) {
+        button.setAttribute("aria-current", "page");
+      } else {
+        button.removeAttribute("aria-current");
+      }
+    });
+  }
+
+  function setAbdmModuleDone(moduleId, done = true) {
+    const button = document.querySelector(`[data-abdm-module-nav="${moduleId}"]`);
+    button?.classList.toggle("done", !!done);
+  }
+
+  const actions = {
+    session: { url: "/api/abdm/session/test", method: "POST" },
+    "m1-session": { url: "/api/abdm/m1/session/test", method: "POST" },
+    "m1-certificate": { url: "/api/abdm/m1/public-certificate", method: "GET" },
+    "m1-encrypt": { url: "/api/abdm/m1/encrypt/test", method: "POST", body: { value: "123456789012" } },
+    "bridge-url": { url: "/api/abdm/bridge/url", method: "POST" },
+    service: { url: "/api/abdm/bridge/services", method: "POST" },
+    services: { url: "/api/abdm/bridge/services", method: "GET" },
+    "m2-status": { url: "/api/abdm/m2/status", method: "GET" },
+    "m2-events": { url: "/api/abdm/m2/events", method: "GET" },
+    "scan-share": { url: "/api/abdm/m1/scan-share/profiles?limit=25", method: "GET" },
+    "abdm-logs": { url: "/api/abdm/logs?limit=80", method: "GET" },
+    "m2-add-demo": {
+      url: "/api/abdm/m2/care-contexts",
+      method: "POST",
+      body: {
+        abha_address: "demo@sbx",
+        mr: "DEMO-MR-001",
+        mobile: "9999999999",
+        name: "Sandbox Patient",
+        patient_reference: "PAT-DEMO-MR-001",
+        care_context_reference: "OPD-DEMO-001",
+        care_context_display: "OP Consultation - Demo",
+        hi_type: "OPConsultation"
+      }
+    },
+    "m2-discover": { url: "/api/abdm/m2/discover/test", method: "POST", body: { abha_address: "demo@sbx", mr: "DEMO-MR-001", mobile: "9999999999" } }
+  };
+
+  const actionToastText = {
+    session: ["Starting session test", "Session test successful", "Session test failed"],
+    "m1-session": ["Starting ABHA V3 session test", "Session test successful", "Session test failed"],
+    "m1-certificate": ["Fetching ABHA certificate", "Certificate fetched successfully", "Certificate fetch failed"],
+    "m1-encrypt": ["Testing ABHA encryption", "Encryption test successful", "Encryption test failed"],
+    "bridge-url": ["Bridge URL update started", "Bridge URL updated successfully", "Bridge URL update failed"],
+    service: ["HIP service update started", "HIP service updated successfully", "HIP service update failed"],
+    services: ["Fetching HIP services", "HIP services fetched", "HIP service fetch failed"],
+    "m2-status": ["Checking M2 status", "Checklist validation complete", "M2 status check failed"],
+    "m2-add-demo": ["M2 care-context linking started", "Care context linked successfully", "Care context linking failed"],
+    "m2-discover": ["Testing saved discovery", "Discovery test successful", "Discovery test failed"],
+    "m2-events": ["Loading M2 events", "M2 events refreshed", "M2 events refresh failed"],
+    "scan-share": ["Loading Scan & Share profiles", "Scan & Share profiles refreshed", "Scan & Share refresh failed"],
+    "abdm-logs": ["Loading ABDM logs", "ABDM logs refreshed", "ABDM logs refresh failed"]
+  };
+
+  function initSetupPanel() {
+    const drawer = document.getElementById("setupDrawer");
+    const tab = document.getElementById("setupDrawerTab");
+    const openBtn = document.getElementById("openSetupPanelBtn");
+    const sideOpenBtn = document.getElementById("sideOpenSetupPanelBtn");
+    const closeBtn = document.getElementById("closeSetupPanelBtn");
+    let hoverSuppressedUntil = 0;
+
+    function pinOpen() {
+      drawer.classList.add("open");
+      drawer.classList.remove("hover-open");
+    }
+
+    function closeDrawer() {
+      drawer.classList.remove("open", "hover-open");
+      hoverSuppressedUntil = Date.now() + 700;
+    }
+
+    openBtn?.addEventListener("click", pinOpen);
+    sideOpenBtn?.addEventListener("click", pinOpen);
+    tab?.addEventListener("click", () => {
+      if (drawer.classList.contains("open")) closeDrawer();
+      else pinOpen();
+    });
+    closeBtn?.addEventListener("click", closeDrawer);
+    tab?.addEventListener("mouseenter", () => {
+      if (Date.now() < hoverSuppressedUntil || drawer.classList.contains("open")) return;
+      drawer.classList.add("hover-open");
+    });
+    drawer.addEventListener("mouseleave", () => {
+      if (!drawer.classList.contains("open")) drawer.classList.remove("hover-open");
+    });
+    document.addEventListener("keydown", (event) => {
+      if (event.key === "Escape") closeDrawer();
+    });
+  }
+
+  function showToast(type, title, message = "", options = {}) {
+    const key = options.key || `${type}:${title}:${message}`;
+    if (activeToasts.has(key)) return;
+    const toast = document.createElement("div");
+    toast.className = `toast ${type || "info"}`;
+    const iconMap = { success: "OK", info: "i", warning: "!", error: "X" };
+    const timestamp = new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+    toast.innerHTML = `
+      <div class="toast-icon">${escapeHtml(iconMap[type] || "i")}</div>
+      <div class="toast-body">
+        <strong>${escapeHtml(title)}</strong>
+        ${message ? `<span>${escapeHtml(message)}</span>` : ""}
+        <time>${escapeHtml(timestamp)}</time>
+      </div>
+    `;
+    toastStack.appendChild(toast);
+    activeToasts.set(key, toast);
+    const sticky = options.sticky ?? (type === "error" || type === "warning");
+    const timeout = options.timeout || (type === "error" ? 9000 : 3600);
+    if (sticky) return;
+    window.setTimeout(() => {
+      toast.classList.add("hide");
+      window.setTimeout(() => {
+        toast.remove();
+        activeToasts.delete(key);
+      }, 220);
+    }, timeout);
+  }
+
+  function escapeHtml(value) {
+    return String(value || "").replace(/[&<>"']/g, (ch) => ({
+      "&": "&amp;",
+      "<": "&lt;",
+      ">": "&gt;",
+      '"': "&quot;",
+      "'": "&#39;"
+    }[ch]));
+  }
+
+  function setStatus(el, message, cls = "") {
+    if (!el) return;
+    el.className = "status-line" + (cls ? " " + cls : "");
+    el.textContent = message || "";
+  }
+
+  function setBusy(button, busy, label) {
+    if (!button) return;
+    if (busy) {
+      button.dataset.originalText = button.textContent;
+      button.dataset.busy = "1";
+      button.textContent = label || "Working...";
+      button.disabled = true;
+      button.classList.add("loading");
+    } else {
+      button.textContent = button.dataset.originalText || button.textContent;
+      delete button.dataset.busy;
+      button.disabled = false;
+      button.classList.remove("loading");
+    }
+  }
+
+  function updateWorkflowStage(stage, detail = "") {
+    workflowState.activeWorkflowStage = stage || "Idle";
+    [workflowStageChip, drawerWorkflowStageChip].forEach((chip) => {
+      if (!chip) return;
+      chip.textContent = detail ? `${workflowState.activeWorkflowStage} - ${detail}` : workflowState.activeWorkflowStage;
+    });
+  }
+
+  function setLastRefreshed(el) {
+    if (!el) return;
+    el.textContent = "Last refreshed " + new Date().toLocaleTimeString([], { hour: "2-digit", minute: "2-digit" });
+  }
+
+  function maskValue(value) {
+    const text = String(value || "").trim();
+    if (!text) return "Not available";
+    if (text.length <= 10) return text.slice(0, 2) + "***";
+    return text.slice(0, 6) + "..." + text.slice(-4);
+  }
+
+  function setButtonEnabled(id, enabled) {
+    const btn = document.getElementById(id);
+    if (btn && !btn.dataset.busy) btn.disabled = !enabled;
+  }
+
+  function updateWorkflowButtons() {
+    const hasSession = !!(currentAbhaSessionRef || getValue("existingAbhaSessionRef"));
+    const hasScan = !!workflowState.activeScan;
+    setButtonEnabled("existingAbhaVerifyBtn", !!getValue("existingAbhaTxnId"));
+    setButtonEnabled("fetchAbhaProfileBtn", hasSession);
+    setButtonEnabled("downloadAbhaCardBtn", hasSession);
+    setButtonEnabled("abhaAddressVerifyBtn", !!getValue("existingAbhaAddressTxnId"));
+    setButtonEnabled("updateAbhaProfileBtn", hasSession);
+    setButtonEnabled("verifyAbhaMobileUpdateBtn", hasSession && !!getValue("updateAbhaMobileTxnId"));
+    if (startSelectedScanBtn) startSelectedScanBtn.disabled = !hasScan;
+  }
+
+  function openSetupPanel() {
+    const drawer = document.getElementById("setupDrawer");
+    drawer?.classList.add("open");
+    drawer?.classList.remove("hover-open");
+  }
+
+  async function postJson(url, body, method = "POST") {
+    const response = await fetch(url, {
+      method,
+      headers: { "Content-Type": "application/json" },
+      body: method === "GET" ? undefined : JSON.stringify(body || {})
+    });
+    let data = {};
+    try {
+      data = await response.json();
+    } catch (err) {
+      data = { status: "error", message: String(err) };
+    }
+    if (!response.ok || data.status === "error") {
+      const provider = data.provider_response ? "\n" + JSON.stringify(data.provider_response, null, 2) : "";
+      const hint = data.recovery_hint ? "\n\n" + data.recovery_hint : "";
+      const error = new Error((data.message || "Request failed") + provider + hint);
+      error.payload = data;
+      throw error;
+    }
+    return data;
+  }
+
+  async function runAction(name, button = null) {
+    const cfg = actions[name];
+    if (!cfg) return;
+    if (name === "m2-discover") {
+      const contextBody = careContextPayload();
+      cfg.body = {
+        abha_address: contextBody.abha_address || "demo@sbx",
+        mr: contextBody.mr || "DEMO-MR-001",
+        mobile: contextBody.mobile || "9999999999"
+      };
+    }
+    const toastText = actionToastText[name] || ["Running action", "Action completed", "Action failed"];
+    showToast("info", toastText[0], "", { key: `${name}:start`, timeout: 1800 });
+    setBusy(button, true, "Running...");
+    output.textContent = "Running " + name + "...";
+    try {
+      const data = await postJson(cfg.url, cfg.body || {}, cfg.method);
+      output.textContent = JSON.stringify(data, null, 2);
+      showToast("success", toastText[1]);
+      if (name === "m2-events") {
+        renderEvents(data.events || []);
+        setLastRefreshed(m2EventsLastRefreshed);
+      }
+      if (name === "scan-share") {
+        renderScanShare(data.profiles || []);
+        setLastRefreshed(scanShareLastRefreshed);
+      }
+      if (name === "abdm-logs") {
+        renderProcessLogs(data.logs || []);
+        setLastRefreshed(logsLastRefreshed);
+      }
+      if (name === "m2-status") {
+        updateStatusSummary(data);
+        setLastRefreshed(statusLastRefreshed);
+      }
+      if (name === "m2-discover" && data.result && !data.result.error) showToast("success", "Discovery test successful");
+      if (name === "m2-add-demo") {
+        showToast("success", "Care context saved successfully");
+        await loadM2Status(false);
+      }
+      if (name === "m2-status") showChecklistToast(data);
+    } catch (err) {
+      output.textContent = String(err.message || err);
+      showToast("error", toastText[2], shortError(err));
+      if (name === "m2-status") showToast("warning", "Checklist has pending items");
+    } finally {
+      setBusy(button, false);
+    }
+  }
+
+  function showChecklistToast(data) {
+    const pending = [...(data.checklist || [])].some((item) => !["implemented"].includes(item.status));
+    showToast(pending ? "warning" : "success", pending ? "Checklist has pending items" : "Checklist validation complete");
+  }
+
+  function shortError(err) {
+    return String(err?.message || err || "").split("\n")[0].slice(0, 160);
+  }
+
+  function digitsOnly(value) {
+    return String(value || "").replace(/\D+/g, "");
+  }
+
+  function normaliseKey(value) {
+    return String(value || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+  }
+
+  function findValue(source, keys) {
+    const wanted = new Set(keys.map(normaliseKey));
+    const seen = new Set();
+    function walk(value) {
+      if (!value || typeof value !== "object" || seen.has(value)) return "";
+      seen.add(value);
+      if (Array.isArray(value)) {
+        for (const item of value) {
+          const found = walk(item);
+          if (found) return found;
+        }
+        return "";
+      }
+      for (const [key, item] of Object.entries(value)) {
+        if (wanted.has(normaliseKey(key)) && item !== null && item !== undefined && typeof item !== "object") {
+          return String(item);
+        }
+      }
+      for (const item of Object.values(value)) {
+        const found = walk(item);
+        if (found) return found;
+      }
+      return "";
+    }
+    return walk(source);
+  }
+
+  function findPatientName(source) {
+    const direct = findValue(source, ["name", "fullName", "patientName"]);
+    if (direct) return direct;
+    return [findValue(source, ["firstName"]), findValue(source, ["middleName"]), findValue(source, ["lastName"])]
+      .filter(Boolean)
+      .join(" ")
+      .trim();
+  }
+
+  function getValue(id) {
+    return document.getElementById(id)?.value.trim() || "";
+  }
+
+  function setValue(id, value) {
+    const el = document.getElementById(id);
+    if (el && value) el.value = value;
+  }
+
+  function setAbhaStep(step) {
+    const nextStep = Math.max(1, Math.min(4, Number(step) || 1));
+    activateAbdmModule("module-create-abha", { resetScroll: false });
+    setAbdmModuleDone("module-create-abha", nextStep >= 4);
+    document.getElementById("abhaStepNumber").textContent = String(nextStep);
+    document.getElementById("abhaProgress").style.width = (nextStep * 25) + "%";
+    document.querySelectorAll("[data-step-indicator]").forEach((el) => {
+      const value = Number(el.dataset.stepIndicator);
+      el.classList.toggle("active", value === nextStep);
+      el.classList.toggle("done", value < nextStep);
+    });
+    document.querySelectorAll("[data-step-panel]").forEach((el) => {
+      el.classList.toggle("active", Number(el.dataset.stepPanel) === nextStep);
+    });
+  }
+
+  function refreshCaptcha() {
+    const a = Math.floor(Math.random() * 8) + 1;
+    captchaExpected = a * 2;
+    document.getElementById("captchaQuestion").textContent = a + " x 2 =?";
+    document.getElementById("captchaAnswer").value = "";
+    updateConsentNextState();
+    showToast("info", "Captcha refreshed");
+  }
+
+  function combinedAadhaar() {
+    const value = ["abhaAadhaar1", "abhaAadhaar2", "abhaAadhaar3"].map((id) => digitsOnly(getValue(id))).join("");
+    document.getElementById("abhaAadhaar").value = value;
+    return value;
+  }
+
+  function consentStepReady() {
+    return combinedAadhaar().length === 12 && document.getElementById("abhaConsent").checked && Number(getValue("captchaAnswer")) === captchaExpected;
+  }
+
+  function updateConsentNextState() {
+    const btn = document.getElementById("requestAbhaOtpBtn");
+    if (btn && !btn.dataset.busy) btn.disabled = !consentStepReady();
+  }
+
+  function validateConsentStep() {
+    const aadhaar = combinedAadhaar();
+    if (aadhaar.length !== 12) {
+      setStatus(enrollStatus, "Enter a valid 12 digit sandbox Aadhaar number.", "err");
+      showToast("warning", "Required input missing", "Enter a valid Aadhaar number.");
+      return "";
+    }
+    if (!document.getElementById("abhaConsent").checked) {
+      setStatus(enrollStatus, "Please accept the consent declaration.", "err");
+      showToast("warning", "Required consent missing");
+      return "";
+    }
+    if (Number(getValue("captchaAnswer")) !== captchaExpected) {
+      setStatus(enrollStatus, "Captcha answer is incorrect.", "err");
+      showToast("warning", "Captcha answer is incorrect");
+      refreshCaptcha();
+      return "";
+    }
+    return aadhaar;
+  }
+
+  function clearOtpTransaction() {
+    ["abhaTxnId", "abhaOtp"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+  }
+
+  function isFreshOtpRequiredError(err) {
+    const code = err?.payload?.provider_response?.error?.code;
+    const message = err?.payload?.provider_response?.error?.message || String(err?.message || "");
+    return code === "ABDM-1204" || message.includes("OTP match is exceeded") || message.includes("OTP is not generated");
+  }
+
+  async function requestFreshOtp(button, { force = false } = {}) {
+    const aadhaar = force ? combinedAadhaar() : validateConsentStep();
+    if (!aadhaar) return;
+    clearOtpTransaction();
+    setBusy(button, true, "Generating...");
+    setStatus(enrollStatus, force ? "Generating fresh OTP..." : "Requesting OTP...");
+    showToast("info", "Starting ABHA Aadhaar request");
+    try {
+      const data = await postJson("/api/abdm/m1/enrollment/aadhaar/request-otp", { aadhaar });
+      const txnId = findValue(data, ["txnId", "transactionId"]);
+      if (txnId) document.getElementById("abhaTxnId").value = txnId;
+      output.textContent = JSON.stringify(data, null, 2);
+      setStatus(enrollStatus, txnId ? "OTP sent successfully. Use the latest OTP and transaction ID." : "OTP requested. Copy transaction ID from the response.", "ok");
+      showToast("success", "OTP sent successfully");
+      setAbhaStep(2);
+    } catch (err) {
+      setStatus(enrollStatus, String(err.message || err), "err");
+      showToast("error", "ABHA creation failed", shortError(err));
+    } finally {
+      setBusy(button, false);
+      updateConsentNextState();
+    }
+  }
+
+  function fillCareContextFromAbha(data) {
+    const result = data?.result || data || {};
+    const abhaAddress = findValue(result, ["abhaAddress", "preferredAbhaAddress", "healthId", "phrAddress"]);
+    const abhaNumber = findValue(result, ["abhaNumber", "healthIdNumber", "ABHANumber"]);
+    const name = findPatientName(result);
+    const gender = findValue(result, ["gender"]);
+    const yob = findValue(result, ["yearOfBirth", "year_of_birth", "birthYear"]);
+    const mobile = digitsOnly(getValue("abhaMobile")) || digitsOnly(findValue(result, ["mobile", "mobileNumber"]));
+    const baseRef = digitsOnly(abhaNumber).slice(-6) || digitsOnly(mobile).slice(-6) || Date.now().toString().slice(-6);
+    setValue("ccName", name);
+    setValue("ccMobile", mobile);
+    setValue("ccAbhaAddress", abhaAddress);
+    setValue("ccAbhaNumber", abhaNumber);
+    setValue("ccMr", getValue("ccMr") || "ABHA-" + baseRef);
+    setValue("ccPatientRef", getValue("ccPatientRef") || "PAT-ABHA-" + baseRef);
+    setValue("ccRef", getValue("ccRef") || "OPD-ABHA-" + baseRef);
+    setValue("ccDisplay", getValue("ccDisplay") || "OP Consultation - ABHA " + baseRef);
+    setValue("ccGender", gender);
+    setValue("ccYob", yob);
+    setValue("abhaAddressCandidate", abhaAddress);
+    setValue("abhaCreatedNumber", abhaNumber);
+    setValue("existingAbhaAddress", abhaAddress);
+  }
+
+  function careContextPayload() {
+    return {
+      name: getValue("ccName"),
+      mobile: digitsOnly(getValue("ccMobile")),
+      abha_address: getValue("ccAbhaAddress"),
+      abha_number: getValue("ccAbhaNumber"),
+      mr: getValue("ccMr"),
+      patient_reference: getValue("ccPatientRef"),
+      care_context_reference: getValue("ccRef"),
+      care_context_display: getValue("ccDisplay"),
+      hi_type: getValue("ccHiType") || "OPConsultation",
+      gender: getValue("ccGender"),
+      year_of_birth: getValue("ccYob")
+    };
+  }
+
+  function eventChipClass(status) {
+    const value = String(status || "").toLowerCase();
+    if (value.includes("error") || value.includes("fail")) return "err";
+    if (value.includes("warn") || value.includes("pending") || value.includes("started") || value.includes("ack_only")) return "warn";
+    if (value.includes("success") || value.includes("accepted") || value.includes("ok")) return "ok";
+    return "info";
+  }
+
+  function renderEvents(events) {
+    if (!Array.isArray(events) || !events.length) {
+      eventsList.innerHTML = '<div class="empty-events">No recent M2 events.</div>';
+      return;
+    }
+    eventsList.innerHTML = events.slice(0, 12).map((event) => {
+      const payload = event.payload || {};
+      const response = payload.response || payload.ack || payload.request || {};
+      const message = response.error?.message || response.message || payload.error || event.id || "";
+      return `
+        <div class="log-card">
+          <div class="card-row-head">
+            <div>
+              <strong>${escapeHtml(event.type || "m2_event")}</strong>
+              <span>${escapeHtml(formatTime(event.timestamp))}</span>
+            </div>
+            <span class="chip ${eventChipClass(event.status)}">${escapeHtml(event.status || "info")}</span>
+          </div>
+          <div class="card-meta">${escapeHtml(String(message).slice(0, 150) || "No message available.")}</div>
+          <details>
+            <summary>View Details</summary>
+            <pre>${escapeHtml(JSON.stringify(payload, null, 2))}</pre>
+          </details>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function scanKey(profile) {
+    return String(profile?.id || profile?.shareRef || profile?.requestId || profile?.transactionId || "");
+  }
+
+  function scanDisplayName(profile) {
+    return profile?.patientName || profile?.name || profile?.patientReference || "Patient";
+  }
+
+  function renderScanShare(profiles) {
+    if (!scanShareList) return;
+    scanShareProfiles = Array.isArray(profiles) ? profiles : [];
+    if (!scanShareProfiles.length) {
+      scanShareList.innerHTML = '<div class="empty-events">No Scan & Share callbacks available yet.</div>';
+      return;
+    }
+    const activeKey = scanKey(workflowState.activeScan);
+    scanShareList.innerHTML = scanShareProfiles.slice(0, 25).map((profile) => {
+      const key = scanKey(profile);
+      const name = scanDisplayName(profile);
+      const ids = [
+        profile.uhid ? "UHID " + profile.uhid : "",
+        profile.mrNo ? "MR " + profile.mrNo : "",
+        profile.abhaAddress || profile.abhaNumber || ""
+      ].filter(Boolean).join(" | ");
+      const message = [
+        ids,
+        profile.counterId ? "Counter " + profile.counterId : "",
+        profile.careContextReference ? "CC " + profile.careContextReference : "",
+        profile.linkingTokenStored ? "Link token saved" : "Profile received"
+      ].filter(Boolean).join(" | ");
+      return `
+        <div class="scan-profile-card ${key && key === activeKey ? "active" : ""}" data-scan-key="${escapeHtml(key)}">
+          <div class="card-row-head">
+            <div>
+              <strong>${escapeHtml(name)}</strong>
+              <span>${escapeHtml(formatTime(profile.receivedAtUtc))}</span>
+            </div>
+            <span class="chip ${eventChipClass(profile.status)}">${escapeHtml(profile.status || "pending")}</span>
+          </div>
+          <div class="card-meta">${escapeHtml(message || profile.shareRef || "Callback profile received.")}</div>
+          <div class="scan-actions">
+            <button type="button" class="mini-btn" data-scan-action="view" data-scan-key="${escapeHtml(key)}">View Details</button>
+            <button type="button" class="mini-btn" data-scan-action="m2" data-scan-key="${escapeHtml(key)}">Use for M2</button>
+            <button type="button" class="mini-btn" data-scan-action="abha" data-scan-key="${escapeHtml(key)}">Use for ABHA Login</button>
+            <button type="button" class="mini-btn" data-scan-action="link" data-scan-key="${escapeHtml(key)}">Mark Linked</button>
+            <button type="button" class="mini-btn" data-scan-action="refresh" data-scan-key="${escapeHtml(key)}">Refresh Status</button>
+          </div>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function findScanProfile(key) {
+    return scanShareProfiles.find((profile) => scanKey(profile) === String(key || ""));
+  }
+
+  function renderSelectedScanDetails(profile) {
+    if (!selectedScanDetails) return;
+    if (!profile) {
+      selectedScanDetails.innerHTML = '<div class="empty-events">Select a Scan & Share profile to inspect patient details and prepare care-context linking.</div>';
+      if (selectedScanChip) selectedScanChip.textContent = "No scan selected";
+      updateWorkflowButtons();
+      return;
+    }
+    const details = [
+      ["Patient name", scanDisplayName(profile)],
+      ["ABHA address", profile.abhaAddress],
+      ["ABHA number", profile.abhaNumber],
+      ["Mobile", profile.mobile],
+      ["Gender", profile.gender],
+      ["Year of birth", profile.yearOfBirth],
+      ["Counter code", profile.counterId],
+      ["Care context", profile.careContextReference],
+      ["Status", profile.status || "pending"],
+      ["Callback time", formatTime(profile.receivedAtUtc)]
+    ];
+    selectedScanDetails.innerHTML = `
+      <div class="card-row-head">
+        <div>
+          <strong>${escapeHtml(scanDisplayName(profile))}</strong>
+          <span>${escapeHtml(profile.shareRef || profile.requestId || "Scan profile")}</span>
+        </div>
+        <span class="chip ${eventChipClass(profile.status)}">${escapeHtml(profile.status || "pending")}</span>
+      </div>
+      <div class="detail-grid" style="margin-top:10px;">
+        ${details.map(([label, value]) => `
+          <div class="detail-item">
+            <span>${escapeHtml(label)}</span>
+            <strong>${escapeHtml(value || "-")}</strong>
+          </div>
+        `).join("")}
+      </div>
+    `;
+    if (selectedScanChip) selectedScanChip.textContent = "Scan: " + scanDisplayName(profile);
+    updateWorkflowButtons();
+  }
+
+  function selectScanProfile(profile, { openPanel = true } = {}) {
+    if (!profile) return;
+    activateAbdmModule("module-scan-inbox", { resetScroll: false });
+    workflowState.activeScan = profile;
+    setAbdmModuleDone("module-scan-inbox", true);
+    renderSelectedScanDetails(profile);
+    renderScanShare(scanShareProfiles);
+    updateWorkflowStage("Scan Selected", scanDisplayName(profile));
+    showToast("info", "Selected scan loaded", scanDisplayName(profile), { sticky: false });
+    if (openPanel) openSetupPanel();
+  }
+
+  function fillCareContextFromScan(profile) {
+    if (!profile) return;
+    activateAbdmModule("module-care-context");
+    const rawBase = profile.careContextReference || profile.patientReference || profile.uhid || profile.mrNo || ("SCAN-" + scanKey(profile));
+    const baseRef = String(rawBase || "").replace(/\s+/g, "-");
+    setValue("ccName", scanDisplayName(profile));
+    setValue("ccMobile", digitsOnly(profile.mobile));
+    setValue("ccAbhaAddress", profile.abhaAddress);
+    setValue("ccAbhaNumber", profile.abhaNumber);
+    setValue("ccMr", profile.mrNo || profile.uhid || baseRef);
+    setValue("ccPatientRef", profile.patientReference || baseRef);
+    setValue("ccRef", profile.careContextReference || "REG-" + baseRef);
+    setValue("ccDisplay", profile.careContextDisplay || "Registration - " + scanDisplayName(profile));
+    setValue("ccGender", profile.gender);
+    setValue("ccYob", profile.yearOfBirth);
+    setStatus(contextStatus, "Care-context fields filled from selected Scan & Share profile.", "ok");
+    updateWorkflowStage("Scan Selected", "M2 fields prepared");
+  }
+
+  function fillExistingAbhaFromScan(profile) {
+    if (!profile) return;
+    activateAbdmModule("module-existing-abha");
+    setValue("existingAbhaNumber", profile.abhaNumber);
+    setValue("existingAbhaAddress", profile.abhaAddress);
+    setValue("updateAbhaMobile", digitsOnly(profile.mobile));
+    setStatus(existingAbhaStatus, "Existing ABHA fields filled from selected scan. Send OTP to continue.", "ok");
+    updateWorkflowStage("Scan Selected", "ABHA fields prepared");
+  }
+
+  function startProcessingSelectedScan() {
+    const profile = workflowState.activeScan;
+    if (!profile) {
+      showToast("warning", "No scan selected", "Select a Scan & Share profile first.");
+      return;
+    }
+    fillCareContextFromScan(profile);
+    fillExistingAbhaFromScan(profile);
+    updateWorkflowStage("Scan Selected", "Ready to process");
+    showToast("success", "Scan ready for processing", "M2 and existing ABHA fields were prepared.", { sticky: false });
+  }
+
+  async function markSelectedScanLinked(button) {
+    const profile = workflowState.activeScan;
+    if (!profile) {
+      showToast("warning", "No scan selected", "Select a Scan & Share profile first.");
+      return;
+    }
+    fillCareContextFromScan(profile);
+    const payload = {
+      scan_share_id: profile.id,
+      share_ref: profile.shareRef,
+      uhid: getValue("ccMr"),
+      mr: getValue("ccMr"),
+      patient_reference: getValue("ccPatientRef"),
+      care_context_reference: getValue("ccRef"),
+      care_context_display: getValue("ccDisplay"),
+      hi_type: getValue("ccHiType") || "OPConsultation"
+    };
+    setBusy(button, true, "Linking...");
+    showToast("info", "Saving scan linkage", scanDisplayName(profile), { sticky: false });
+    try {
+      const data = await postJson("/api/abdm/m1/scan-share/link", payload);
+      output.textContent = JSON.stringify(data, null, 2);
+      setStatus(contextStatus, "Selected scan linked and care context saved.", "ok");
+      updateWorkflowStage("Care Context Saved", scanDisplayName(profile));
+      showToast("success", "Scan marked linked", "Care context saved for M2 discovery.", { sticky: false });
+      await loadM2Status(false);
+    } catch (err) {
+      setStatus(contextStatus, String(err.message || err), "err");
+      updateWorkflowStage("Error", "Scan link failed");
+      showToast("error", "Scan linkage failed", shortError(err));
+    } finally {
+      setBusy(button, false);
+    }
+  }
+
+  scanShareList?.addEventListener("click", (event) => {
+    const actionBtn = event.target.closest("[data-scan-action]");
+    const card = event.target.closest("[data-scan-key]");
+    const key = actionBtn?.dataset.scanKey || card?.dataset.scanKey;
+    const profile = findScanProfile(key);
+    if (!profile) return;
+    const action = actionBtn?.dataset.scanAction || "view";
+    selectScanProfile(profile);
+    if (action === "m2") fillCareContextFromScan(profile);
+    if (action === "abha") fillExistingAbhaFromScan(profile);
+    if (action === "link") markSelectedScanLinked(actionBtn);
+    if (action === "refresh") runAction("scan-share", actionBtn);
+  });
+
+  startSelectedScanBtn?.addEventListener("click", startProcessingSelectedScan);
+
+  function renderProcessLogs(logs) {
+    if (!processLogsList) return;
+    if (!Array.isArray(logs) || !logs.length) {
+      processLogsList.innerHTML = '<div class="empty-events">No ABDM process logs available yet.</div>';
+      return;
+    }
+    processLogsList.innerHTML = logs.slice(0, 20).map((log) => {
+      const action = log.action || log.Action || "abdm_log";
+      const status = log.status || log.Status || "info";
+      const category = log.category || log.Category || "";
+      const http = log.httpStatus || log.HttpStatus;
+      const duration = log.durationMs || log.DurationMs;
+      const method = log.method || log.Method || "";
+      const url = log.url || log.Url || "";
+      const summary = log.summary || log.Summary || log.errorMessage || log.ErrorMessage || "";
+      const meta = [category, method, http ? "HTTP " + http : "", duration ? duration + " ms" : ""].filter(Boolean).join(" | ");
+      const detail = {
+        time: log.eventTimeUtc || log.EventTimeUtc,
+        endpoint: url || action,
+        category,
+        method,
+        http_status: http || "",
+        duration_ms: duration || "",
+        status,
+        message: summary
+      };
+      return `
+        <div class="log-card">
+          <div class="card-row-head">
+            <div>
+              <strong>${escapeHtml(url || action)}</strong>
+              <span>${escapeHtml(formatTime(log.eventTimeUtc || log.EventTimeUtc))}</span>
+            </div>
+            <span class="chip ${eventChipClass(status)}">${escapeHtml(status)}</span>
+          </div>
+          <div class="card-meta">${escapeHtml((meta ? meta + " | " : "") + String(summary).slice(0, 150))}</div>
+          <details>
+            <summary>View Details</summary>
+            <pre>${escapeHtml(JSON.stringify(detail, null, 2))}</pre>
+          </details>
+        </div>
+      `;
+    }).join("");
+  }
+
+  function formatTime(value) {
+    if (!value) return "Just now";
+    const date = new Date(value);
+    if (Number.isNaN(date.getTime())) return String(value).slice(0, 16);
+    return date.toLocaleString([], { month: "short", day: "2-digit", hour: "2-digit", minute: "2-digit" });
+  }
+
+  function updateStatusSummary(data) {
+    careContextCount.textContent = String(data.care_context_count ?? "0");
+    recentEventCount.textContent = String(data.recent_event_count ?? "0");
+    if (scanShareCount) scanShareCount.textContent = String(data.scan_share_recent_count ?? "0");
+    const pending = [...(data.checklist || [])].some((item) => item.status !== "implemented");
+    readyBadge.className = "badge " + (pending ? "warn" : "ok");
+    readyBadge.textContent = pending ? "Attention" : "Ready";
+  }
+
+  async function loadM2Status(showToastOnLoad = false) {
+    try {
+      const status = await postJson("/api/abdm/m2/status", {}, "GET");
+      updateStatusSummary(status);
+      setLastRefreshed(statusLastRefreshed);
+      const events = await postJson("/api/abdm/m2/events", {}, "GET");
+      renderEvents(events.events || []);
+      setLastRefreshed(m2EventsLastRefreshed);
+      const scanProfiles = await postJson("/api/abdm/m1/scan-share/profiles?limit=25", {}, "GET");
+      renderScanShare(scanProfiles.profiles || []);
+      setLastRefreshed(scanShareLastRefreshed);
+      const logs = await postJson("/api/abdm/logs?limit=80", {}, "GET");
+      renderProcessLogs(logs.logs || []);
+      setLastRefreshed(logsLastRefreshed);
+      if (showToastOnLoad) showToast("success", "Checklist validation complete");
+    } catch (err) {
+      readyBadge.className = "badge warn";
+      readyBadge.textContent = "Check setup";
+    }
+  }
+
+  function setExistingAbhaStep(step) {
+    const loggedIn = step >= 2;
+    setAbdmModuleDone("module-existing-abha", loggedIn);
+    const stepMap = [
+      ["existingAbhaStepLogin", 1, loggedIn],
+      ["existingAbhaStepProfile", 2, step >= 3],
+      ["existingAbhaStepUpdate", 3, false]
+    ];
+    stepMap.forEach(([id, value, done]) => {
+      const el = document.getElementById(id);
+      if (!el) return;
+      el.classList.toggle("active", step === value);
+      el.classList.toggle("done", !!done);
+      if (step === value) {
+        el.setAttribute("aria-current", "step");
+      } else {
+        el.removeAttribute("aria-current");
+      }
+    });
+    if (existingAbhaBadge) {
+      existingAbhaBadge.className = "badge " + (loggedIn ? "ok" : "neutral");
+      existingAbhaBadge.textContent = loggedIn ? "Session stored" : "Not logged in";
+    }
+  }
+
+  function setExistingAbhaSession(sessionRef) {
+    currentAbhaSessionRef = String(sessionRef || "").trim();
+    workflowState.activeAbhaSession = currentAbhaSessionRef;
+    const refInput = document.getElementById("existingAbhaSessionRef");
+    if (refInput) refInput.value = currentAbhaSessionRef;
+    if (existingAbhaTokenSummary) existingAbhaTokenSummary.textContent = currentAbhaSessionRef ? "Session ref " + maskValue(currentAbhaSessionRef) + " | token stored server-side" : "No active token";
+    if (currentAbhaSessionRef && existingAbhaLastVerified) existingAbhaLastVerified.textContent = new Date().toLocaleString();
+    setExistingAbhaStep(currentAbhaSessionRef ? 2 : 1);
+    updateWorkflowButtons();
+  }
+
+  function existingSessionPayload(extra = {}) {
+    return { session_ref: currentAbhaSessionRef || getValue("existingAbhaSessionRef"), ...extra };
+  }
+
+  function previewExistingProfile(data) {
+    if (!existingAbhaProfilePreview) return;
+    existingAbhaProfilePreview.textContent = JSON.stringify(data?.result || data || {}, null, 2);
+    workflowState.activeProfile = data?.result || data || {};
+    fillCareContextFromAbha(data);
+    const mobile = digitsOnly(findValue(data, ["mobile", "mobileNumber"])) || digitsOnly(getValue("ccMobile"));
+    const email = findValue(data, ["email", "emailId"]);
+    const abhaAddress = findValue(data, ["abhaAddress", "preferredAbhaAddress", "phrAddress"]);
+    setValue("existingAbhaAddress", abhaAddress);
+    setValue("updateAbhaMobile", mobile);
+    setValue("updateAbhaEmail", email);
+    setExistingAbhaStep(3);
+    updateWorkflowStage("Profile Loaded");
+    updateWorkflowButtons();
+  }
+
+  async function requestExistingAbhaOtp(button) {
+    const abhaNumber = digitsOnly(getValue("existingAbhaNumber"));
+    if (abhaNumber.length !== 14) {
+      setStatus(existingAbhaStatus, "Enter a valid 14 digit ABHA number.", "err");
+      showToast("warning", "Required input missing", "Enter a valid ABHA number.");
+      return;
+    }
+    setBusy(button, true, "Sending...");
+    setStatus(existingAbhaStatus, "Requesting OTP for existing ABHA login...");
+    updateWorkflowStage("OTP Requested", "requesting login OTP");
+    showToast("info", "Requesting ABHA login OTP", "Sending OTP request for existing ABHA login.", { sticky: false });
+    try {
+      const otpSystem = getValue("existingAbhaOtpSystem") || "abdm";
+      const data = await postJson("/api/abdm/m1/existing-abha/request-otp", {
+        abha_number: abhaNumber,
+        otp_system: otpSystem,
+        auth_method: otpSystem
+      });
+      const txnId = findValue(data, ["txnId", "transactionId"]);
+      currentAbhaLoginEndpoint = findValue(data, ["abha_login_endpoint_used", "abhaLoginEndpointUsed"]) || "";
+      if (txnId) document.getElementById("existingAbhaTxnId").value = txnId;
+      workflowState.activeTransactionIds.existingAbha = txnId || "";
+      document.getElementById("existingAbhaOtp").value = "";
+      output.textContent = JSON.stringify(data, null, 2);
+      setStatus(existingAbhaStatus, txnId ? "OTP sent. Verify with the latest transaction ID." : "OTP requested. Copy the transaction ID from the response.", "ok");
+      updateWorkflowStage("OTP Requested", "login OTP sent");
+      showToast("success", "ABHA login OTP sent", txnId ? "Transaction ID captured automatically." : "Copy transaction ID from the response.", { sticky: false });
+      setExistingAbhaStep(1);
+      updateWorkflowButtons();
+    } catch (err) {
+      setStatus(existingAbhaStatus, String(err.message || err), "err");
+      updateWorkflowStage("Error", "login OTP failed");
+      showToast("error", "ABHA login OTP failed", shortError(err));
+    } finally {
+      setBusy(button, false);
+    }
+  }
+
+  async function verifyExistingAbhaOtp(button) {
+    const txnId = getValue("existingAbhaTxnId");
+    const otp = getValue("existingAbhaOtp");
+    if (!txnId || !otp) {
+      setStatus(existingAbhaStatus, "Transaction ID and OTP are required.", "err");
+      showToast("warning", "Required input missing", "Transaction ID and OTP are required.");
+      return;
+    }
+    setBusy(button, true, "Verifying...");
+    setStatus(existingAbhaStatus, "Verifying OTP and storing server session in ACI...");
+    updateWorkflowStage("OTP Requested", "verifying login OTP");
+    showToast("info", "Verifying ABHA login OTP", "HID is validating the OTP and storing the server-side session.", { sticky: false });
+    try {
+      const otpSystem = getValue("existingAbhaOtpSystem") || "abdm";
+      const data = await postJson("/api/abdm/m1/existing-abha/verify-otp", {
+        txnId,
+        otp,
+        auth_method: otpSystem,
+        login_endpoint: currentAbhaLoginEndpoint
+      });
+      setExistingAbhaSession(data.session_ref);
+      output.textContent = JSON.stringify(data, null, 2);
+      previewExistingProfile(data);
+      setStatus(existingAbhaStatus, "ABHA login verified. Session token is stored server-side in ACI.", "ok");
+      updateWorkflowStage("OTP Verified", "session active");
+      showToast("success", "ABHA login verified", "Session reference stored server-side.", { sticky: false });
+    } catch (err) {
+      setStatus(existingAbhaStatus, String(err.message || err), "err");
+      updateWorkflowStage("Error", "login verification failed");
+      showToast("error", "ABHA login verification failed", shortError(err));
+    } finally {
+      setBusy(button, false);
+    }
+  }
+
+  async function fetchExistingAbhaProfile(button) {
+    if (!existingSessionPayload().session_ref) {
+      setStatus(existingAbhaStatus, "Verify ABHA login before fetching profile.", "err");
+      showToast("warning", "Required login missing", "Verify ABHA first.");
+      return;
+    }
+    setBusy(button, true, "Fetching...");
+    setStatus(existingAbhaStatus, "Fetching ABHA profile...");
+    updateWorkflowStage("Session Active", "fetching profile");
+    showToast("info", "Fetching ABHA profile", "Using the active server-side session.", { sticky: false });
+    try {
+      const data = await postJson("/api/abdm/m1/abha/profile", existingSessionPayload());
+      output.textContent = JSON.stringify(data, null, 2);
+      previewExistingProfile(data);
+      setStatus(existingAbhaStatus, "ABHA profile fetched and care-context fields updated.", "ok");
+      showToast("success", "ABHA profile fetched", "Profile and care-context fields were updated.", { sticky: false });
+    } catch (err) {
+      setStatus(existingAbhaStatus, String(err.message || err), "err");
+      updateWorkflowStage("Error", "profile fetch failed");
+      showToast("error", "ABHA profile fetch failed", shortError(err));
+    } finally {
+      setBusy(button, false);
+    }
+  }
+
+  async function requestAbhaAddressOtp(button) {
+    const abhaAddress = getValue("existingAbhaAddress") || getValue("ccAbhaAddress");
+    if (!abhaAddress || !abhaAddress.includes("@")) {
+      setStatus(existingAbhaStatus, "Enter an ABHA address first, such as patient@sbx.", "err");
+      showToast("warning", "Required input missing", "Enter an ABHA address first.");
+      return;
+    }
+    setBusy(button, true, "Sending...");
+    setStatus(existingAbhaStatus, "Requesting profile-session OTP for ABHA address...");
+    updateWorkflowStage("OTP Requested", "requesting profile OTP");
+    showToast("info", "Requesting ABHA-address OTP", "Sending profile-session OTP request.", { sticky: false });
+    try {
+      const data = await postJson("/api/abdm/m1/abha-address/request-otp", { abha_address: abhaAddress });
+      const txnId = findValue(data, ["txnId", "transactionId"]);
+      if (txnId) document.getElementById("existingAbhaAddressTxnId").value = txnId;
+      workflowState.activeTransactionIds.abhaAddress = txnId || "";
+      document.getElementById("existingAbhaAddressOtp").value = "";
+      output.textContent = JSON.stringify(data, null, 2);
+      setStatus(existingAbhaStatus, txnId ? "Profile OTP sent. Verify it to enable card download." : "Profile OTP requested. Copy transaction ID from the response.", "ok");
+      showToast("success", "ABHA-address OTP sent", txnId ? "Transaction ID captured automatically." : "Copy transaction ID from response.", { sticky: false });
+      updateWorkflowButtons();
+    } catch (err) {
+      setStatus(existingAbhaStatus, String(err.message || err), "err");
+      showToast("error", "ABHA profile OTP failed", shortError(err));
+    } finally {
+      setBusy(button, false);
+    }
+  }
+
+  async function verifyAbhaAddressOtp(button) {
+    const txnId = getValue("existingAbhaAddressTxnId");
+    const otp = getValue("existingAbhaAddressOtp");
+    if (!txnId || !otp) {
+      setStatus(existingAbhaStatus, "ABHA address transaction ID and OTP are required.", "err");
+      showToast("warning", "Required input missing", "ABHA address transaction ID and OTP are required.");
+      return;
+    }
+    setBusy(button, true, "Verifying...");
+    setStatus(existingAbhaStatus, "Verifying profile login and storing profile-session token in ACI...");
+    updateWorkflowStage("OTP Requested", "verifying profile OTP");
+    showToast("info", "Verifying profile OTP", "HID is storing the profile-session token if ABDM returns one.", { sticky: false });
+    try {
+      const data = await postJson("/api/abdm/m1/abha-address/verify-otp", { txnId, otp });
+      if (data.session_ref) setExistingAbhaSession(data.session_ref);
+      output.textContent = JSON.stringify(data, null, 2);
+      previewExistingProfile(data);
+      setStatus(existingAbhaStatus, data.session_ref ? "Profile login verified. Card download is now enabled." : "Profile OTP verified, but ABDM did not return a profile token.", data.session_ref ? "ok" : "err");
+      updateWorkflowStage(data.session_ref ? "Session Active" : "Error", data.session_ref ? "profile session active" : "profile token missing");
+      showToast(data.session_ref ? "success" : "warning", data.session_ref ? "Profile login verified" : "Profile token missing", data.session_ref ? "Card download can use this profile session." : "ABDM did not return a profile-session token.", { sticky: !data.session_ref });
+    } catch (err) {
+      setStatus(existingAbhaStatus, String(err.message || err), "err");
+      showToast("error", "ABHA profile login failed", shortError(err));
+    } finally {
+      setBusy(button, false);
+    }
+  }
+
+  function filenameFromDisposition(header, fallback) {
+    const match = String(header || "").match(/filename\*?=(?:UTF-8''|")?([^";]+)/i);
+    return match ? decodeURIComponent(match[1].replace(/"/g, "")) : fallback;
+  }
+
+  async function downloadExistingAbhaCard(button) {
+    if (!existingSessionPayload().session_ref) {
+      setStatus(existingAbhaStatus, "Verify ABHA login before downloading the card.", "err");
+      showToast("warning", "Required login missing", "Verify ABHA first.");
+      return;
+    }
+    setBusy(button, true, "Downloading...");
+    setStatus(existingAbhaStatus, "Downloading ABHA card...");
+    updateWorkflowStage("Profile Loaded", "downloading card");
+    showToast("info", "Downloading ABHA card", "Preparing card file from ABDM profile session.", { sticky: false });
+    try {
+      const response = await fetch("/api/abdm/m1/abha/card", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(existingSessionPayload())
+      });
+      const blob = await response.blob();
+      if (!response.ok) {
+        let message = "ABHA card download failed";
+        try {
+          const parsed = JSON.parse(await blob.text());
+          message = parsed.message || message;
+        } catch (err) {}
+        throw new Error(message);
+      }
+      const url = URL.createObjectURL(blob);
+      const link = document.createElement("a");
+      link.href = url;
+      link.download = filenameFromDisposition(response.headers.get("Content-Disposition"), "abha-card.bin");
+      document.body.appendChild(link);
+      link.click();
+      link.remove();
+      URL.revokeObjectURL(url);
+      setStatus(existingAbhaStatus, "ABHA card downloaded.", "ok");
+      updateWorkflowStage("Card Downloaded");
+      showToast("success", "ABHA card downloaded", "The card download has started.", { sticky: false });
+    } catch (err) {
+      setStatus(existingAbhaStatus, String(err.message || err), "err");
+      updateWorkflowStage("Error", "card download failed");
+      showToast("error", "ABHA card download failed", shortError(err));
+    } finally {
+      setBusy(button, false);
+    }
+  }
+
+  async function updateExistingAbhaProfile(button) {
+    if (!existingSessionPayload().session_ref) {
+      setStatus(existingAbhaStatus, "Verify ABHA login before updating profile.", "err");
+      showToast("warning", "Required login missing", "Verify ABHA first.");
+      return;
+    }
+    const mobile = digitsOnly(getValue("updateAbhaMobile"));
+    if (mobile.length !== 10) {
+      setStatus(existingAbhaStatus, "Enter a 10 digit mobile number for update.", "err");
+      showToast("warning", "Required input missing", "Enter a 10 digit mobile number.");
+      return;
+    }
+    setBusy(button, true, "Sending...");
+    setStatus(existingAbhaStatus, "Requesting OTP for mobile update...");
+    setExistingAbhaStep(3);
+    updateWorkflowStage("Session Active", "requesting mobile update OTP");
+    showToast("info", "Requesting mobile update OTP", "This OTP is only for the profile mobile update flow.", { sticky: false });
+    try {
+      const data = await postJson("/api/abdm/m1/abha/profile/mobile/request-otp", existingSessionPayload({ mobile }));
+      const txnId = findValue(data, ["txnId", "transactionId"]);
+      if (txnId) document.getElementById("updateAbhaMobileTxnId").value = txnId;
+      workflowState.activeTransactionIds.mobileUpdate = txnId || "";
+      document.getElementById("updateAbhaMobileOtp").value = "";
+      output.textContent = JSON.stringify(data, null, 2);
+      setStatus(existingAbhaStatus, txnId ? "Mobile update OTP sent. Verify it to link the new mobile." : "Mobile update OTP requested. Copy transaction ID from response.", "ok");
+      showToast("success", "Mobile update OTP sent", txnId ? "Mobile update transaction ID captured." : "Copy the transaction ID from response.", { sticky: false });
+      updateWorkflowButtons();
+    } catch (err) {
+      setStatus(existingAbhaStatus, String(err.message || err), "err");
+      showToast("error", "Mobile update OTP failed", shortError(err));
+    } finally {
+      setBusy(button, false);
+    }
+  }
+
+  async function verifyAbhaMobileUpdate(button) {
+    if (!existingSessionPayload().session_ref) {
+      setStatus(existingAbhaStatus, "Verify ABHA login before updating mobile.", "err");
+      showToast("warning", "Required login missing", "Verify ABHA first.");
+      return;
+    }
+    const txnId = getValue("updateAbhaMobileTxnId");
+    const otp = getValue("updateAbhaMobileOtp");
+    if (!txnId || !otp) {
+      setStatus(existingAbhaStatus, "Mobile update transaction ID and OTP are required.", "err");
+      showToast("warning", "Required input missing", "Mobile update transaction ID and OTP are required.");
+      return;
+    }
+    setBusy(button, true, "Verifying...");
+    setStatus(existingAbhaStatus, "Verifying mobile update OTP...");
+    setExistingAbhaStep(3);
+    updateWorkflowStage("Session Active", "verifying mobile update");
+    showToast("info", "Verifying mobile update OTP", "Submitting the mobile update OTP to ABDM.", { sticky: false });
+    try {
+      const data = await postJson("/api/abdm/m1/abha/profile/mobile/verify-otp", existingSessionPayload({ txnId, otp }));
+      output.textContent = JSON.stringify(data, null, 2);
+      previewExistingProfile(data);
+      setStatus(existingAbhaStatus, "ABHA mobile update verified.", "ok");
+      updateWorkflowStage("Profile Loaded", "mobile updated");
+      showToast("success", "Mobile updated successfully", "Profile snapshot was refreshed.", { sticky: false });
+    } catch (err) {
+      setStatus(existingAbhaStatus, String(err.message || err), "err");
+      showToast("error", "Mobile update failed", shortError(err));
+    } finally {
+      setBusy(button, false);
+    }
+  }
+
+  function resetAbdmWorkflow() {
+    workflowState.activeScan = null;
+    workflowState.activeAbhaSession = null;
+    workflowState.activeTransactionIds = {};
+    workflowState.activeProfile = null;
+    ["module-scan-inbox", "module-care-context", "module-existing-abha"].forEach((moduleId) => setAbdmModuleDone(moduleId, false));
+    currentAbhaSessionRef = "";
+    currentAbhaLoginEndpoint = "";
+
+    [
+      "existingAbhaNumber",
+      "existingAbhaTxnId",
+      "existingAbhaOtp",
+      "existingAbhaSessionRef",
+      "existingAbhaAddress",
+      "existingAbhaAddressTxnId",
+      "existingAbhaAddressOtp",
+      "updateAbhaMobile",
+      "updateAbhaMobileTxnId",
+      "updateAbhaMobileOtp",
+      "updateAbhaEmail"
+    ].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+
+    const otpSystemEl = document.getElementById("existingAbhaOtpSystem");
+    if (otpSystemEl) otpSystemEl.value = "abdm";
+    if (existingAbhaProfilePreview) existingAbhaProfilePreview.textContent = "No ABHA profile loaded yet.";
+    if (existingAbhaTokenSummary) existingAbhaTokenSummary.textContent = "No active token";
+    if (existingAbhaLastVerified) existingAbhaLastVerified.textContent = "Not verified";
+    renderSelectedScanDetails(null);
+    renderScanShare(scanShareProfiles);
+    setExistingAbhaStep(1);
+    setStatus(existingAbhaStatus, "");
+    setStatus(contextStatus, "");
+    output.textContent = "Workflow reset. Select another scan or start a new ABHA login.";
+    updateWorkflowStage("Idle");
+    updateWorkflowButtons();
+    showToast("success", "Workflow reset completed", "Saved callbacks, care contexts, and logs were not changed.", { sticky: false });
+  }
+
+  document.querySelectorAll("[data-action]").forEach((btn) => {
+    btn.addEventListener("click", () => runAction(btn.dataset.action, btn));
+  });
+
+  document.getElementById("resetAbdmWorkflowBtn")?.addEventListener("click", resetAbdmWorkflow);
+  document.getElementById("drawerResetWorkflowBtn")?.addEventListener("click", resetAbdmWorkflow);
+  document.getElementById("sideResetWorkflowBtn")?.addEventListener("click", resetAbdmWorkflow);
+  abdmModuleButtons.forEach((button) => {
+    button.addEventListener("click", () => activateAbdmModule(button.dataset.abdmModuleNav));
+  });
+  document.querySelectorAll("[data-existing-step-target]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      const target = document.getElementById(btn.dataset.existingStepTarget);
+      target?.scrollIntoView({ behavior: "smooth", block: "start" });
+    });
+  });
+  document.getElementById("copySessionRefBtn")?.addEventListener("click", async () => {
+    const ref = currentAbhaSessionRef || getValue("existingAbhaSessionRef");
+    if (!ref) {
+      showToast("warning", "No session reference", "Verify ABHA login before copying a session reference.");
+      return;
+    }
+    try {
+      await navigator.clipboard.writeText(ref);
+      showToast("success", "Session reference copied", maskValue(ref), { sticky: false });
+    } catch (err) {
+      showToast("warning", "Copy unavailable", "Select the session reference manually.");
+    }
+  });
+
+  [
+    "existingAbhaTxnId",
+    "existingAbhaAddressTxnId",
+    "updateAbhaMobileTxnId",
+    "existingAbhaNumber",
+    "existingAbhaAddress"
+  ].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", updateWorkflowButtons);
+  });
+
+  document.getElementById("openScanConsoleBtn")?.addEventListener("click", () => {
+    openSetupPanel();
+    runAction("scan-share");
+  });
+
+  document.getElementById("refreshScanConsoleBtn")?.addEventListener("click", () => {
+    openSetupPanel();
+    runAction("scan-share", document.getElementById("refreshScanConsoleBtn"));
+  });
+
+  document.getElementById("existingAbhaOtpBtn")?.addEventListener("click", () => {
+    requestExistingAbhaOtp(document.getElementById("existingAbhaOtpBtn"));
+  });
+
+  document.getElementById("existingAbhaVerifyBtn")?.addEventListener("click", () => {
+    verifyExistingAbhaOtp(document.getElementById("existingAbhaVerifyBtn"));
+  });
+
+  document.getElementById("fetchAbhaProfileBtn")?.addEventListener("click", () => {
+    fetchExistingAbhaProfile(document.getElementById("fetchAbhaProfileBtn"));
+  });
+
+  document.getElementById("abhaAddressOtpBtn")?.addEventListener("click", () => {
+    requestAbhaAddressOtp(document.getElementById("abhaAddressOtpBtn"));
+  });
+
+  document.getElementById("abhaAddressVerifyBtn")?.addEventListener("click", () => {
+    verifyAbhaAddressOtp(document.getElementById("abhaAddressVerifyBtn"));
+  });
+
+  document.getElementById("downloadAbhaCardBtn")?.addEventListener("click", () => {
+    downloadExistingAbhaCard(document.getElementById("downloadAbhaCardBtn"));
+  });
+
+  document.getElementById("updateAbhaProfileBtn")?.addEventListener("click", () => {
+    updateExistingAbhaProfile(document.getElementById("updateAbhaProfileBtn"));
+  });
+
+  document.getElementById("verifyAbhaMobileUpdateBtn")?.addEventListener("click", () => {
+    verifyAbhaMobileUpdate(document.getElementById("verifyAbhaMobileUpdateBtn"));
+  });
+
+  document.getElementById("requestAbhaOtpBtn")?.addEventListener("click", async () => {
+    await requestFreshOtp(document.getElementById("requestAbhaOtpBtn"));
+  });
+
+  document.getElementById("freshAbhaOtpBtn")?.addEventListener("click", async () => {
+    await requestFreshOtp(document.getElementById("freshAbhaOtpBtn"), { force: true });
+  });
+
+  document.getElementById("verifyAbhaOtpBtn")?.addEventListener("click", async () => {
+    const txnId = getValue("abhaTxnId");
+    const otp = getValue("abhaOtp");
+    const mobile = digitsOnly(getValue("abhaMobile"));
+    if (!txnId || !otp) {
+      setStatus(enrollStatus, "Transaction ID and OTP are required.", "err");
+      showToast("warning", "Required input missing", "Transaction ID and OTP are required.");
+      return;
+    }
+    if (!mobile) {
+      setStatus(enrollStatus, "Mobile is required for ABHA enrollment.", "err");
+      showToast("warning", "Required input missing", "Mobile is required for ABHA enrollment.");
+      setAbhaStep(3);
+      return;
+    }
+    const verifyBtn = document.getElementById("verifyAbhaOtpBtn");
+    setBusy(verifyBtn, true, "Verifying...");
+    setStatus(enrollStatus, "Verifying OTP...");
+    showToast("info", "OTP verification pending");
+    try {
+      const data = await postJson("/api/abdm/m1/enrollment/aadhaar/verify-otp", { txnId, otp, mobile });
+      lastAbhaResponse = data;
+      output.textContent = JSON.stringify(data, null, 2);
+      fillCareContextFromAbha(data);
+      setStatus(enrollStatus, "ABHA verified. Review address and care-context details.", "ok");
+      showToast("success", "OTP verified");
+      showToast("success", "ABHA number created successfully");
+      setAbhaStep(4);
+    } catch (err) {
+      if (isFreshOtpRequiredError(err)) {
+        clearOtpTransaction();
+        setAbhaStep(2);
+      }
+      setStatus(enrollStatus, String(err.message || err), "err");
+      showToast("error", "ABHA creation failed", shortError(err));
+    } finally {
+      setBusy(verifyBtn, false);
+    }
+  });
+
+  document.querySelectorAll("[data-abha-prev]").forEach((btn) => {
+    btn.addEventListener("click", () => setAbhaStep(btn.dataset.abhaPrev));
+  });
+
+  document.querySelectorAll("[data-abha-next]").forEach((btn) => {
+    btn.addEventListener("click", () => {
+      if (btn.dataset.abhaNext === "3" && !getValue("abhaOtp")) {
+        setStatus(enrollStatus, "Enter Aadhaar OTP before continuing.", "err");
+        showToast("warning", "Required input missing", "Enter Aadhaar OTP before continuing.");
+        return;
+      }
+      setAbhaStep(btn.dataset.abhaNext);
+    });
+  });
+
+  document.getElementById("refreshCaptchaBtn")?.addEventListener("click", refreshCaptcha);
+
+  const aadhaarInputs = [...document.querySelectorAll("#abhaAadhaar1, #abhaAadhaar2, #abhaAadhaar3")];
+  function fillAadhaarSegments(rawValue) {
+    const digits = digitsOnly(rawValue).slice(0, 12);
+    aadhaarInputs.forEach((input, index) => {
+      input.value = digits.slice(index * 4, index * 4 + 4);
+    });
+    const focusIndex = Math.min(Math.floor(Math.max(0, digits.length - 1) / 4), aadhaarInputs.length - 1);
+    aadhaarInputs[focusIndex]?.focus();
+    updateConsentNextState();
+  }
+
+  aadhaarInputs.forEach((input, index) => {
+    input.addEventListener("keydown", (event) => {
+      if (event.key === "Backspace" && input.selectionStart === 0 && input.selectionEnd === 0 && index > 0) {
+        event.preventDefault();
+        const previous = aadhaarInputs[index - 1];
+        previous.focus();
+        previous.value = previous.value.slice(0, -1);
+        previous.setSelectionRange(previous.value.length, previous.value.length);
+        updateConsentNextState();
+      }
+      if (event.key === "ArrowLeft" && input.selectionStart === 0 && index > 0) {
+        aadhaarInputs[index - 1].focus();
+      }
+      if (event.key === "ArrowRight" && input.selectionStart === input.value.length && index < aadhaarInputs.length - 1) {
+        aadhaarInputs[index + 1].focus();
+      }
+    });
+    input.addEventListener("input", () => {
+      const digits = digitsOnly(input.value);
+      if (digits.length > 4) {
+        const before = aadhaarInputs.slice(0, index).map((el) => el.value).join("");
+        fillAadhaarSegments(before + digits + aadhaarInputs.slice(index + 1).map((el) => el.value).join(""));
+        return;
+      }
+      input.value = digits.slice(0, 4);
+      if (input.value.length === 4 && index < aadhaarInputs.length - 1) aadhaarInputs[index + 1].focus();
+      updateConsentNextState();
+    });
+    input.addEventListener("paste", (event) => {
+      const pasted = event.clipboardData?.getData("text") || "";
+      if (digitsOnly(pasted).length > 4) {
+        event.preventDefault();
+        fillAadhaarSegments(pasted);
+      }
+    });
+  });
+
+  ["abhaConsent", "captchaAnswer"].forEach((id) => {
+    document.getElementById(id)?.addEventListener("input", updateConsentNextState);
+    document.getElementById(id)?.addEventListener("change", updateConsentNextState);
+  });
+
+  document.getElementById("resetAbhaWizardBtn")?.addEventListener("click", () => {
+    ["abhaAadhaar1", "abhaAadhaar2", "abhaAadhaar3", "abhaAadhaar", "abhaTxnId", "abhaOtp", "abhaMobile", "abhaEmail", "abhaAddressCandidate", "abhaCreatedNumber"].forEach((id) => {
+      const el = document.getElementById(id);
+      if (el) el.value = "";
+    });
+    document.getElementById("abhaConsent").checked = false;
+    lastAbhaResponse = null;
+    refreshCaptcha();
+    setStatus(enrollStatus, "");
+    setAbhaStep(1);
+    updateConsentNextState();
+  });
+
+  document.getElementById("copyAbhaToContextBtn")?.addEventListener("click", () => {
+    activateAbdmModule("module-care-context");
+    if (lastAbhaResponse) fillCareContextFromAbha(lastAbhaResponse);
+    setValue("ccAbhaAddress", getValue("abhaAddressCandidate"));
+    setValue("ccAbhaNumber", getValue("abhaCreatedNumber"));
+    setStatus(contextStatus, "Care-context fields filled from ABHA response.", "ok");
+    showToast("success", "Care-context fields filled");
+  });
+
+  document.getElementById("saveCareContextBtn")?.addEventListener("click", async () => {
+    const btn = document.getElementById("saveCareContextBtn");
+    const payload = careContextPayload();
+    if (!payload.abha_address && !payload.abha_number && !payload.mobile && !payload.mr) {
+      setStatus(contextStatus, "At least one patient identifier is required.", "err");
+      showToast("warning", "Required input missing", "At least one patient identifier is required.");
+      return;
+    }
+    if (!payload.care_context_reference) {
+      setStatus(contextStatus, "Care-context reference is required.", "err");
+      showToast("warning", "Required input missing", "Care-context reference is required.");
+      return;
+    }
+    setBusy(btn, true, "Saving...");
+    setStatus(contextStatus, "Saving care context...");
+    updateWorkflowStage("Scan Selected", "saving care context");
+    showToast("info", "Saving care context", "Registering the current patient care context for M2.", { sticky: false });
+    try {
+      const data = await postJson("/api/abdm/m2/care-contexts", payload);
+      output.textContent = JSON.stringify(data, null, 2);
+      setStatus(contextStatus, "Care context saved for M2 discovery.", "ok");
+      setAbdmModuleDone("module-care-context", true);
+      updateWorkflowStage("Care Context Saved");
+      showToast("success", "Care context saved successfully", "M2 discovery can now use this record.", { sticky: false });
+      await loadM2Status(false);
+    } catch (err) {
+      setStatus(contextStatus, String(err.message || err), "err");
+      showToast("error", "Care context save failed", shortError(err));
+    } finally {
+      setBusy(btn, false);
+    }
+  });
+
+  initSetupPanel();
+  refreshCaptcha();
+  setAbhaStep(1);
+  renderSelectedScanDetails(null);
+  updateWorkflowStage("Idle");
+  updateConsentNextState();
+  updateWorkflowButtons();
+  loadM2Status(false);
+</script>
+{% endblock %}

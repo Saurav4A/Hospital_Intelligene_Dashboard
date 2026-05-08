@@ -10,7 +10,7 @@ from functools import wraps  # keep: avoids endpoint collisions
 import pyodbc  # for login DB
 import time
 from secrets import token_hex
-from threading import Lock, Thread, Semaphore
+from threading import Event, Lock, Thread, Semaphore
 import warnings  # <<< provision #2 (previous): silence pandas read_sql warning
 from zoneinfo import ZoneInfo  # Python 3.9+
 import sqlite3
@@ -52,6 +52,7 @@ from modules.mod_reports_night_routes import register_mod_reports_night_routes
 from modules.asset_management import create_asset_management_blueprint, run_asset_breakdown_reminder_job, run_asset_coverage_reminder_job
 from modules.feedback_complaint import create_feedback_complaint_blueprint, run_feedback_escalation_job
 from modules.govt_scheme_tracker import create_govt_scheme_tracker_blueprint
+from modules.abdm import register_abdm_routes
 try:
     from modules.notification_routes import NOTIFICATIONS_FILE, USER_NOTIFICATIONS_FILE
 except Exception:
@@ -126,7 +127,6 @@ def _start_otp_worker_if_enabled():
             )
             t.start()
             OTP_WORKER_THREAD = t
-            print(f"OTP mail worker started (poll every {interval}s)")
         except ModuleNotFoundError as e:
             OTP_WORKER_DISABLED_REASON = f"Missing dependency: {getattr(e, 'name', str(e))}"
             print(f"OTP mail worker disabled: {OTP_WORKER_DISABLED_REASON}")
@@ -1621,6 +1621,8 @@ ROUTE_SECTION_MAP = {
     "/api/modifications": "discount_module",
     "/api/modifications/revenue_component_rebalance": "discount_module",
     "/api/modifications/logs": "discount_module",
+    "/abdm": "abdm",
+    "/api/abdm": "abdm",
 }
 
 def _all_section_keys():
@@ -15878,8 +15880,16 @@ def _sanitize_json_payload(payload):
 
 
 LIVE_RESPONSE_CACHE_TTL_SECONDS = max(5, _safe_int_setting("LIVE_RESPONSE_CACHE_TTL_SECONDS", 30))
+LIVE_RESPONSE_SINGLEFLIGHT_WAIT_SECONDS = max(
+    1,
+    _safe_int_setting("LIVE_RESPONSE_SINGLEFLIGHT_WAIT_SECONDS", 8),
+)
+LIVE_RESPONSE_MAX_CONCURRENCY = max(1, _safe_int_setting("LIVE_RESPONSE_MAX_CONCURRENCY", 2))
 LIVE_RESPONSE_CACHE = {}
 LIVE_RESPONSE_CACHE_LOCK = Lock()
+LIVE_RESPONSE_INFLIGHT = {}
+LIVE_RESPONSE_INFLIGHT_LOCK = Lock()
+LIVE_RESPONSE_SEMAPHORE = Semaphore(LIVE_RESPONSE_MAX_CONCURRENCY)
 
 
 def _live_response_cache_key(name: str, *parts) -> str:
@@ -15927,6 +15937,33 @@ def _live_response_cache_put(name: str, payload, *parts):
         LIVE_RESPONSE_CACHE,
         LIVE_RESPONSE_CACHE_LOCK,
     )
+
+
+def _live_response_singleflight_enter(name: str, *parts):
+    key = _live_response_cache_key(name, *parts)
+    with LIVE_RESPONSE_INFLIGHT_LOCK:
+        event = LIVE_RESPONSE_INFLIGHT.get(key)
+        if event is not None:
+            return key, event, False
+        event = Event()
+        LIVE_RESPONSE_INFLIGHT[key] = event
+        return key, event, True
+
+
+def _live_response_singleflight_leave(key: str | None):
+    if not key:
+        return
+    with LIVE_RESPONSE_INFLIGHT_LOCK:
+        event = LIVE_RESPONSE_INFLIGHT.pop(key, None)
+    if event is not None:
+        event.set()
+
+
+def _live_response_busy_response(message: str = "Live refresh is already running. Please retry shortly."):
+    return jsonify({
+        "status": "busy",
+        "message": message,
+    }), 202
 
 
 def _jsonify_cached_payload(payload, *, cache_name: str | None = None, cache_parts: tuple = ()):
@@ -59946,12 +59983,30 @@ def api_volume_tracker():
     force_live = bool(refresh_flag and len(units_to_use) == 1)
     live_cache_name = None
     live_cache_parts = ()
+    live_refresh_acquired = False
     if force_live:
         live_cache_name = "volume_tracker_live"
         live_cache_parts = (f, t, units_to_use, int(bool(kpi_only)))
         cached_payload = _live_response_cache_get(live_cache_name, *live_cache_parts)
         if cached_payload is not None:
             return jsonify(cached_payload)
+        live_inflight_key, live_inflight_event, live_inflight_owner = _live_response_singleflight_enter(
+            live_cache_name,
+            *live_cache_parts,
+        )
+        if not live_inflight_owner:
+            live_inflight_event.wait(LIVE_RESPONSE_SINGLEFLIGHT_WAIT_SECONDS)
+            cached_payload = _live_response_cache_get(live_cache_name, *live_cache_parts)
+            if cached_payload is not None:
+                return jsonify(cached_payload)
+            return _live_response_busy_response("Live KPI refresh is already running. Please retry shortly.")
+        live_refresh_acquired = LIVE_RESPONSE_SEMAPHORE.acquire(blocking=False)
+        if not live_refresh_acquired:
+            _live_response_singleflight_leave(live_inflight_key)
+            live_inflight_key = None
+            return _live_response_busy_response("Live KPI refresh capacity is busy. Please retry shortly.")
+    else:
+        live_inflight_key = None
 
     try:
         details_df = _get_or_fetch_volume_details(units_to_use, f, t, force_live=force_live)
@@ -59965,19 +60020,17 @@ def api_volume_tracker():
         )
 
         if kpi_only:
-            details_json = json.loads(details_df.to_json(orient="records"))
-            response_payload = {
+            response_payload = make_volume_payload(details_df)
+            response_payload.update({
                 "status": "success",
                 "kpi_only": True,
-                "meta": {"total": int(len(details_df))},
-                "details": details_json,
                 "hcv_doctor_kpi": hcv_doctor_kpi,
                 "discharge_kpi": discharge_kpi,
                 "start": f,
                 "end": t,
                 "units": allowed_units,
                 "unit_used": units_to_use
-            }
+            })
             return _jsonify_cached_payload(
                 response_payload,
                 cache_name=live_cache_name,
@@ -60000,6 +60053,10 @@ def api_volume_tracker():
     except Exception as e:
         print(f"/api/volume_tracker error: {e}")
         return jsonify({"status":"error","message":"Failed to build volume payload"}), 500
+    finally:
+        if live_refresh_acquired:
+            LIVE_RESPONSE_SEMAPHORE.release()
+        _live_response_singleflight_leave(live_inflight_key)
 
 # ============================================================
 # Volume Tracker Excel Export (Summary Sheet + Details Sheet)
@@ -63156,6 +63213,15 @@ def _register_govt_scheme_tracker_route_module():
     )
 
 
+def _register_abdm_route_module():
+    register_abdm_routes(
+        app,
+        login_required=login_required,
+        audit_log_event=_audit_log_event,
+        local_tz=LOCAL_TZ,
+    )
+
+
 def _register_purchase_route_modules():
     register_purchase_master_routes(
         app,
@@ -63337,6 +63403,7 @@ _register_patient_journey_route_module()
 _register_asset_management_route_module()
 _register_feedback_complaint_route_module()
 _register_govt_scheme_tracker_route_module()
+_register_abdm_route_module()
 _register_purchase_route_modules()
 # ============================================================
 # Launch App

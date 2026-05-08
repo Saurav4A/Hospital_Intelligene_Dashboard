@@ -482,6 +482,7 @@
     {% set _unit_scope_text = ((session.get('unit_scope') or _role)|string).upper() %}
     {% set has_govt_scheme_unit = (_role in ['IT', 'Management']) or ('AHL' in _unit_scope_text) or ('ACI' in _unit_scope_text) or ('BALLIA' in _unit_scope_text) %}
     {% set allow_govt_scheme_tracker = (allow_all or ('govt_scheme_tracker' in _sections)) and has_govt_scheme_unit %}
+    {% set allow_abdm = allow_all or ('abdm' in _sections) %}
 
     <div class="top-actions">
       <div class="fab-user">
@@ -595,6 +596,33 @@
             <p class="card-desc">Patient QR feedback flow with department TAT, escalation, remarks, and final closure tracking.</p>
             <div class="quick">
               <span class="btn btn-blue">Open Module
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+
+      {% if allow_abdm %}
+      <a class="card-link" href="{{ url_for('abdm.dashboard_page') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#1d4ed8" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M12 3v18"></path>
+              <path d="M5 8h14"></path>
+              <path d="M5 16h14"></path>
+              <path d="M7 4h10a2 2 0 0 1 2 2v12a2 2 0 0 1-2 2H7a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2z"></path>
+              <path d="M9 12h6"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">ABDM Integration</div>
+            <p class="card-desc">M1 sandbox bridge setup, HIP service registration, and integration readiness controls.</p>
+            <div class="quick">
+              <span class="btn btn-blue">Open ABDM
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
                 </svg>

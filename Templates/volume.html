@@ -2028,7 +2028,7 @@
     return normalizeUnit(val);
   }
 
-  const LIVE_KPI_INTERVAL_MS = 10000;
+  const LIVE_KPI_INTERVAL_MS = 30000;
   let liveKpiTimer = null;
   let liveKpiInFlight = false;
   let lastVolumeUnitUsed = [];
@@ -2062,7 +2062,7 @@
       setLiveKpiNote('', '');
       return true;
     }
-    setLiveKpiNote('warn', 'Live KPI refresh is available only for a single unit. Select a particular unit to view live data every 10 seconds.');
+    setLiveKpiNote('warn', 'Live KPI refresh is available only for a single unit. Select a particular unit to view live data every 30 seconds.');
     return false;
   }
 
@@ -2548,6 +2548,7 @@
       renderAdmissions();
       renderDischargeKpi(js.discharge_kpi || {});
       renderVisitDetailKpis();
+      renderVolumeChartsAndKpis(js);
 
       const total = (js.meta && js.meta.total) ? js.meta.total : detailsCache.length;
       if(total > 0){
@@ -3188,6 +3189,101 @@ function setCityPareto(dataArr, breakdownByCity){
         return `<div class="kpi-group"><div class="kpi-group-title">${escapeHtml(doctorName)} <span class="kpi-count">${fmtCount(doctorData.total)}</span></div>${visitLines}</div>`;
       }).join('');
     setSummaryDetails('doctorcount', doctorDetails);
+  }
+
+  function renderVolumeChartsAndKpis(js){
+    const visitRaw = js.visitwise || [];
+    const visit = applyVisitRename(visitRaw);
+    setPie('vt-visitwise', visit, (p)=>{
+      const label = p.name;
+      const canonical = Object.keys(VISIT_RENAME).find(k=>VISIT_RENAME[k]===label) || label;
+      const fn = r => (r.TypeOfVisit||'') === (canonical || r.TypeOfVisit);
+      fn._k = label;
+      summarizeBy(fn, 'Visit');
+    }, 'Visit');
+    setKPI('visitwise', visit.reduce((s,d)=>s+(d.value||0),0));
+    showEmpty('visitwise', visit.length===0);
+
+    const dept  = js.deptwise || [];
+    const doc   = js.doctorwise || [];
+    const city  = js.citywise || [];
+    const ptree = js.patienttype_patsubtype || [];
+    const deptCleaned = dept.map(d => ({ name: cleanDeptName(d.name), value: d.value, originalName: d.name }));
+
+    function normVisit(v){
+      const s = (v||'').toString().trim().toUpperCase();
+      if(s==='DC' || s==='DAYCARE' || s==='DAY CARE') return 'Daycare';
+      if(s==='OPD' || s==='OUT PATIENT VISITS') return 'OPD';
+      if(s==='IPD' || s==='IN PATIENT VISITS') return 'IPD';
+      if(s==='DPV' || s==='DIAGNOSTIC VISIT') return 'DPV';
+      if(s==='HCV' || s==='HEALTH CHECKUPS') return 'HCV';
+      return 'Other';
+    }
+
+    const bkMapDoctor = new Map();
+    const bkMapDept = new Map();
+    const bkMapCity = new Map();
+    const bkMapSubType = new Map();
+
+    for(const r of detailsCache){
+      const tp = normVisit(r.TypeOfVisit);
+
+      const docName = (r.Consultant||'').toString();
+      if(docName){
+        const objDoc = bkMapDoctor.get(docName) || { OPD:0, DPV:0, IPD:0, Daycare:0, HCV:0, Other:0 };
+        objDoc[tp] = (objDoc[tp]||0) + 1;
+        bkMapDoctor.set(docName, objDoc);
+      }
+
+      const deptName = (r.Dept||'').toString();
+      if(deptName){
+        const objDept = bkMapDept.get(deptName) || { OPD:0, DPV:0, IPD:0, Daycare:0, HCV:0, Other:0 };
+        objDept[tp] = (objDept[tp]||0) + 1;
+        bkMapDept.set(deptName, objDept);
+      }
+
+      const cityName = (r.City||'').toString();
+      if(cityName){
+        const objCity = bkMapCity.get(cityName) || { OPD:0, DPV:0, IPD:0, Daycare:0, HCV:0, Other:0 };
+        objCity[tp] = (objCity[tp]||0) + 1;
+        bkMapCity.set(cityName, objCity);
+      }
+
+      const subTypeName = (r.CorpType||'').toString().trim();
+      if(subTypeName){
+        const objSt = bkMapSubType.get(subTypeName) || { OPD:0, DPV:0, IPD:0, Daycare:0, HCV:0, Other:0 };
+        objSt[tp] = (objSt[tp]||0) + 1;
+        bkMapSubType.set(subTypeName, objSt);
+      }
+    }
+
+    const bkMapDeptCleaned = new Map();
+    deptCleaned.forEach(d => {
+      if(bkMapDept.has(d.originalName)){
+        bkMapDeptCleaned.set(d.name, bkMapDept.get(d.originalName));
+      }
+    });
+
+    setBar('vt-deptwise',
+      deptCleaned.map(x=>x.name), deptCleaned.map(x=>x.value), {},
+      (p)=>{ const cleaned=p.name; const original=deptCleaned.find(d=>d.name===cleaned)?.originalName||cleaned;
+             const fn=r=>(r.Dept||'')===original; fn._k=cleaned; summarizeBy(fn,'Department'); },
+      'Department',
+      bkMapDeptCleaned
+    );
+    setDoctorDot(doc, bkMapDoctor);
+    setCityPareto(city, bkMapCity);
+    setPtBar(ptree, (p)=>{
+      const name = (p.name||'').trim();
+      const fn = r => (r.PatientType||'')===name;
+      fn._k = name;
+      summarizeBy(fn,'PatientType');
+    }, bkMapSubType);
+
+    setKPI('deptwise', dept.reduce((s,d)=>s+(d.value||0),0));
+    setKPI('doctorwise', doc.reduce((s,d)=>s+(d.value||0),0));
+    setKPI('citywise', city.reduce((s,d)=>s+(d.value||0),0));
+    setKPI('pt', ptree.reduce((s,node)=>s+(node.children||[]).reduce((ss,ch)=>ss+(ch.value||0),0),0));
   }
 
   async function load(){
