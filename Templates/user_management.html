@@ -572,10 +572,37 @@
             </div>
           </div>
           <div class="um-section-group">
+            <div class="um-section-group-title">HR DocGen Panels</div>
+            <div class="um-chips-grid um-chips-grid--tight">
+              {% for sec in section_choices %}
+                {% if sec.startswith('hr_docgen') %}
+                  {% set label = sec.replace('_',' ').title() %}
+                  {% if sec == 'hr_docgen' %}
+                    {% set label = 'HR DocGen (All)' %}
+                  {% elif sec == 'hr_docgen_entry' %}
+                    {% set label = 'HR DocGen - Certificate Entry' %}
+                  {% elif sec == 'hr_docgen_records' %}
+                    {% set label = 'HR DocGen - Certificate Records' %}
+                  {% elif sec == 'hr_docgen_attendance_upload' %}
+                    {% set label = 'HR DocGen - Attendance Upload / Editor' %}
+                  {% elif sec == 'hr_docgen_attendance_history' %}
+                    {% set label = 'HR DocGen - Attendance History' %}
+                  {% elif sec == 'hr_docgen_attendance_full' %}
+                    {% set label = 'HR DocGen - Always Full Attendance' %}
+                  {% endif %}
+                  <label class="um-chip">
+                    <input type="checkbox" name="section_option" value="{{ sec }}" {% if sec in _pre or '*' in _pre %}checked{% endif %}>
+                    <span>{{ label }}</span>
+                  </label>
+                {% endif %}
+              {% endfor %}
+            </div>
+          </div>
+          <div class="um-section-group">
             <div class="um-section-group-title">Other Sections</div>
             <div class="um-chips-grid um-chips-grid--tight">
               {% for sec in section_choices %}
-                {% if not sec.startswith('mis_') and sec != 'mis' %}
+                {% if not sec.startswith('mis_') and sec != 'mis' and not sec.startswith('hr_docgen') %}
                   {% set label = sec.replace('_',' ').title() %}
                   {% if sec == 'user_management' %}
                     {% set label = 'User Management (Admin)' %}
@@ -1000,10 +1027,37 @@
                 </div>
               </div>
               <div class="um-section-group">
+                <div class="um-section-group-title">HR DocGen Panels</div>
+                <div class="um-chips-grid um-chips-grid--tight">
+                  {% for sec in section_choices %}
+                    {% if sec.startswith('hr_docgen') %}
+                      {% set label = sec.replace('_',' ').title() %}
+                      {% if sec == 'hr_docgen' %}
+                        {% set label = 'HR DocGen (All)' %}
+                      {% elif sec == 'hr_docgen_entry' %}
+                        {% set label = 'HR DocGen - Certificate Entry' %}
+                      {% elif sec == 'hr_docgen_records' %}
+                        {% set label = 'HR DocGen - Certificate Records' %}
+                      {% elif sec == 'hr_docgen_attendance_upload' %}
+                        {% set label = 'HR DocGen - Attendance Upload / Editor' %}
+                      {% elif sec == 'hr_docgen_attendance_history' %}
+                        {% set label = 'HR DocGen - Attendance History' %}
+                      {% elif sec == 'hr_docgen_attendance_full' %}
+                        {% set label = 'HR DocGen - Always Full Attendance' %}
+                      {% endif %}
+                      <label class="um-chip">
+                        <input type="checkbox" name="section_option_edit" value="{{ sec }}">
+                        <span>{{ label }}</span>
+                      </label>
+                    {% endif %}
+                  {% endfor %}
+                </div>
+              </div>
+              <div class="um-section-group">
                 <div class="um-section-group-title">Other Sections</div>
                 <div class="um-chips-grid um-chips-grid--tight">
                   {% for sec in section_choices %}
-                {% if not sec.startswith('mis_') and sec != 'mis' %}
+                {% if not sec.startswith('mis_') and sec != 'mis' and not sec.startswith('hr_docgen') %}
                   {% set label = sec.replace('_',' ').title() %}
                   {% if sec == 'user_management' %}
                     {% set label = 'User Management (Admin)' %}
@@ -1283,10 +1337,37 @@
                           </div>
                         </div>
                         <div class="um-section-group">
+                          <div class="um-section-group-title">HR DocGen Panels</div>
+                          <div class="um-chips-grid um-chips-grid--tight">
+                            {% for sec in section_choices %}
+                              {% if sec.startswith('hr_docgen') %}
+                                {% set label = sec.replace('_',' ').title() %}
+                                {% if sec == 'hr_docgen' %}
+                                  {% set label = 'HR DocGen (All)' %}
+                                {% elif sec == 'hr_docgen_entry' %}
+                                  {% set label = 'HR DocGen - Certificate Entry' %}
+                                {% elif sec == 'hr_docgen_records' %}
+                                  {% set label = 'HR DocGen - Certificate Records' %}
+                                {% elif sec == 'hr_docgen_attendance_upload' %}
+                                  {% set label = 'HR DocGen - Attendance Upload / Editor' %}
+                                {% elif sec == 'hr_docgen_attendance_history' %}
+                                  {% set label = 'HR DocGen - Attendance History' %}
+                                {% elif sec == 'hr_docgen_attendance_full' %}
+                                  {% set label = 'HR DocGen - Always Full Attendance' %}
+                                {% endif %}
+                                <label class="um-chip">
+                                  <input type="checkbox" value="{{ sec }}">
+                                  <span>{{ label }}</span>
+                                </label>
+                              {% endif %}
+                            {% endfor %}
+                          </div>
+                        </div>
+                        <div class="um-section-group">
                           <div class="um-section-group-title">Other Sections</div>
                           <div class="um-chips-grid um-chips-grid--tight">
                             {% for sec in section_choices %}
-                              {% if not sec.startswith('mis_') and sec != 'mis' %}
+                              {% if not sec.startswith('mis_') and sec != 'mis' and not sec.startswith('hr_docgen') %}
                                 {% set label = sec.replace('_',' ').title() %}
                                 {% if sec == 'user_management' %}
                                   {% set label = 'User Management (Admin)' %}
@@ -1970,6 +2051,8 @@
     const misSpecificCheckboxes = Array.from(grid.querySelectorAll('input[value^="mis_"]'));
     const svcAllCheckbox = grid.querySelector('input[value="service_addition"]');
     const svcSpecificCheckboxes = Array.from(grid.querySelectorAll('input[value^="service_addition_"]'));
+    const hrDocGenAllCheckbox = grid.querySelector('input[value="hr_docgen"]');
+    const hrDocGenSpecificCheckboxes = Array.from(grid.querySelectorAll('input[value^="hr_docgen_"]'));
 
     function syncMisRoutes(clearOnUncheck) {
       if (!misAllCheckbox || !misSpecificCheckboxes.length) return;
@@ -1993,6 +2076,17 @@
       }
     }
 
+    function syncHrDocGenPanels(clearOnUncheck) {
+      if (!hrDocGenAllCheckbox || !hrDocGenSpecificCheckboxes.length) return;
+      if (hrDocGenAllCheckbox.checked) {
+        hrDocGenSpecificCheckboxes.forEach(cb => cb.checked = true);
+        return;
+      }
+      if (clearOnUncheck) {
+        hrDocGenSpecificCheckboxes.forEach(cb => cb.checked = false);
+      }
+    }
+
     function updateHiddenInput() {
       hidden.value = Array.from(grid.querySelectorAll('input:checked')).map(cb => cb.value).join(',');
     }
@@ -2006,9 +2100,12 @@
         syncMisRoutes(true);
       } else if (target === svcAllCheckbox) {
         syncServiceAdditions(true);
+      } else if (target === hrDocGenAllCheckbox) {
+        syncHrDocGenPanels(true);
       }
       syncMisRoutes(false);
       syncServiceAdditions(false);
+      syncHrDocGenPanels(false);
       if (allCheckbox) {
         // If any specific box is unchecked, uncheck "All". 
         // If ALL specific boxes are checked, check "All".
@@ -2019,10 +2116,15 @@
         const svcAllSelected = svcSpecificCheckboxes.every(cb => cb.checked);
         svcAllCheckbox.checked = svcAllSelected;
       }
+      if (hrDocGenAllCheckbox && hrDocGenSpecificCheckboxes.length) {
+        const hrAllSelected = hrDocGenSpecificCheckboxes.every(cb => cb.checked);
+        hrDocGenAllCheckbox.checked = hrAllSelected;
+      }
       updateHiddenInput();
     });
     syncMisRoutes(false);
     syncServiceAdditions(false);
+    syncHrDocGenPanels(false);
     updateHiddenInput();
   }
 

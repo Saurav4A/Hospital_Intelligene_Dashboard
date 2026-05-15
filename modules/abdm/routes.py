@@ -14,6 +14,7 @@ from .bridge import AbdmBridgeService
 from .callbacks import create_abdm_callbacks_blueprint
 from .client import AbdmClient, AbdmError
 from .config import load_settings
+from .hospital_units import get_hospital_unit, list_hospital_units, mark_unit_registration, upsert_hospital_unit
 from .abha_v3 import AbhaV3Client
 from .m1 import get_m1_checklist
 from .log_store import log_abdm_event, recent_abdm_logs, timed_ms
@@ -213,11 +214,31 @@ def register_abdm_routes(
     @login_required(allowed_roles={"IT"}, required_section="abdm")
     def m1_scan_share_profiles():
         limit = request.args.get("limit", "50")
+        hospital_code = str(request.args.get("hospital_code") or request.args.get("hospitalCode") or "").strip()
         try:
             limit_value = max(1, min(200, int(limit)))
         except Exception:
             limit_value = 50
-        return jsonify({"status": "success", "profiles": AbdmScanShareStore().list_profiles(limit_value)})
+        return jsonify({"status": "success", "profiles": AbdmScanShareStore().list_profiles(limit_value, hospital_code=hospital_code)})
+
+    @bp.route("/api/abdm/m1/facility/units", methods=["GET"])
+    @login_required(allowed_roles={"IT"}, required_section="abdm")
+    def m1_facility_units():
+        return jsonify({"status": "success", "units": list_hospital_units(), "bridge_id": load_settings().client_id})
+
+    @bp.route("/api/abdm/m1/facility/units", methods=["POST", "PUT"])
+    @login_required(allowed_roles={"IT"}, required_section="abdm")
+    def m1_facility_units_save():
+        data = request.get_json(silent=True) or {}
+        if not isinstance(data, dict):
+            return jsonify({"status": "error", "message": "JSON object is required."}), 400
+        try:
+            unit = upsert_hospital_unit(data)
+            _audit("m1_facility_unit_save", summary="ABDM hospital unit saved.", details=unit)
+            return jsonify({"status": "success", "unit": unit})
+        except Exception as exc:
+            _audit("m1_facility_unit_save", status="error", summary=str(exc), details=data)
+            return _error_response(exc, 400)
 
     @bp.route("/api/abdm/m1/scan-share/qr", methods=["POST"])
     @login_required(allowed_roles={"IT"}, required_section="abdm")
@@ -226,16 +247,20 @@ def register_abdm_routes(
         if not isinstance(data, dict):
             data = {}
         settings = load_settings()
+        hospital_code = str(data.get("hospital_code") or data.get("hospitalCode") or "").strip().upper()
+        unit = _abdm_unit(settings, hospital_code)
         facility_or_hip_id = str(
             data.get("facility_id")
             or data.get("facilityId")
             or data.get("hip_id")
             or data.get("hipId")
+            or (unit or {}).get("hip_id")
+            or (unit or {}).get("facility_id")
             or settings.service_id
             or settings.facility_id
             or ""
         ).strip()
-        counter_code = str(data.get("counter_code") or data.get("counterCode") or data.get("counter_id") or data.get("counterId") or "").strip()
+        counter_code = str(data.get("counter_code") or data.get("counterCode") or data.get("counter_id") or data.get("counterId") or (unit or {}).get("counter_id") or "").strip()
         purpose = str(data.get("purpose") or "registration").strip().lower()
         if not facility_or_hip_id:
             return jsonify({"status": "error", "message": "Facility/HIP ID is required."}), 400
@@ -253,6 +278,7 @@ def register_abdm_routes(
                 "mode": "hspr_official_qr_required",
                 "message": "Use the official QR generated from HSPR/NHPR Manage QR. HID is ready to receive the callback.",
                 "hspr_url": f"https://hspsbx.abdm.gov.in/nhpr/v4/software-linkage/{facility_or_hip_id}",
+                "hospital": unit or {},
                 "counter": qr,
             }
         )
@@ -755,6 +781,79 @@ def register_abdm_routes(
             _audit("m1_facility_hrp_register", status="error", summary=str(exc))
             return _error_response(exc)
 
+    @bp.route("/api/abdm/m1/facility/hrp/units", methods=["POST"])
+    @login_required(allowed_roles={"IT"}, required_section="abdm")
+    def register_facility_hrp_units():
+        settings = load_settings()
+        service = AbdmBridgeService(settings=settings)
+        results = []
+        errors = []
+        for unit in list_hospital_units():
+            if not unit.get("active") or not unit.get("facility_id"):
+                results.append({"hospital_code": unit.get("code"), "status": "skipped", "reason": "inactive or facility_id missing"})
+                continue
+            overrides = {
+                "facilityId": unit.get("facility_id"),
+                "facilityName": unit.get("name"),
+                "name": unit.get("name"),
+                "type": settings.service_type,
+            }
+            try:
+                result = service.register_facility_hrp(overrides)
+                mark_unit_registration(unit.get("code") or "", status="success", message="Facility linked with bridge.")
+                results.append({"hospital_code": unit.get("code"), "facility_id": unit.get("facility_id"), "status": "success", "result": result})
+            except Exception as exc:
+                mark_unit_registration(unit.get("code") or "", status="error", message=str(exc))
+                errors.append({"hospital_code": unit.get("code"), "facility_id": unit.get("facility_id"), "error": str(exc)})
+        status = "error" if errors and not any(item.get("status") == "success" for item in results) else "success"
+        _audit("m1_facility_hrp_units_register", status=status, summary="ABDM facility HRP registration processed for configured units.", details={"results": results, "errors": errors})
+        return jsonify({"status": status, "results": results, "errors": errors, "message": "Facility unit linking completed with errors." if errors else "Facility unit linking completed."}), 200
+
+    @bp.route("/api/abdm/m1/facility/hrp/unit/<unit_code>", methods=["POST"])
+    @login_required(allowed_roles={"IT"}, required_section="abdm")
+    def register_facility_hrp_unit(unit_code: str):
+        data = request.get_json(silent=True) or {}
+        code = str(unit_code or "").strip().upper()
+        unit = get_hospital_unit(code)
+        if isinstance(data, dict):
+            incoming_facility_id = str(data.get("facility_id") or data.get("facilityId") or "").strip()
+            incoming_hip_id = str(data.get("hip_id") or data.get("hipId") or "").strip()
+            incoming_name = str(data.get("name") or data.get("unit_name") or data.get("unitName") or "").strip()
+            incoming_counter_id = str(data.get("counter_id") or data.get("counterId") or "").strip()
+            incoming_hrp_type = str(data.get("hrp_type") or data.get("hrpType") or data.get("type") or "").strip()
+            if any([incoming_facility_id, incoming_hip_id, incoming_name, incoming_counter_id, incoming_hrp_type]):
+                merged = {
+                    "code": code,
+                    "name": incoming_name or unit.get("name") or code,
+                    "facility_id": incoming_facility_id or unit.get("facility_id") or "",
+                    "hip_id": incoming_hip_id or unit.get("hip_id") or incoming_facility_id or unit.get("facility_id") or "",
+                    "counter_id": incoming_counter_id or unit.get("counter_id") or "REG01",
+                    "hrp_type": incoming_hrp_type or unit.get("hrp_type") or load_settings().service_type,
+                    "active": data.get("active", unit.get("active", True)),
+                }
+                unit = upsert_hospital_unit(merged)
+        if not unit:
+            return jsonify({"status": "error", "message": "Hospital unit was not found."}), 404
+        facility_id = str(unit.get("facility_id") or "").strip()
+        if not facility_id:
+            return jsonify({"status": "error", "message": f"Facility ID is required before linking {code}."}), 400
+        settings = load_settings()
+        overrides = {
+            "facilityId": facility_id,
+            "facilityName": unit.get("name"),
+            "name": unit.get("name"),
+            "type": unit.get("hrp_type") or settings.service_type,
+        }
+        try:
+            result = AbdmBridgeService(settings=settings).register_facility_hrp(overrides)
+            mark_unit_registration(unit.get("code") or "", status="success", message="Facility linked with bridge.")
+            _audit("m1_facility_hrp_unit_register", summary="ABDM facility HRP unit registered.", details={"unit": unit, "result": result})
+            return jsonify({"status": "success", "unit": get_hospital_unit(unit_code), "result": result})
+        except Exception as exc:
+            mark_unit_registration(unit.get("code") or "", status="error", message=str(exc))
+            _audit("m1_facility_hrp_unit_register", status="error", summary=str(exc), details=unit)
+            return _error_response(exc)
+
     app.register_blueprint(bp)
     app.register_blueprint(create_abdm_callbacks_blueprint(audit_log_event=audit_log_event))
 
@@ -1039,8 +1138,8 @@ def _scan_share_qr_payload(settings, *, facility_or_hip_id: str, counter_code: s
     qr_url = "https://" + phr_host + "/share-profile?" + urlencode({"hipid": facility_or_hip_id, "counterid": counter_code})
     payload = {
         "version": "ABDM-SCAN-SHARE-QR",
-        "hipId": settings.service_id or facility_or_hip_id,
-        "facilityId": settings.facility_id or facility_or_hip_id,
+        "hipId": facility_or_hip_id,
+        "facilityId": facility_or_hip_id,
         "facilityName": settings.facility_name,
         "counterCode": counter_code,
         "purpose": purpose,
@@ -1054,6 +1153,19 @@ def _scan_share_qr_payload(settings, *, facility_or_hip_id: str, counter_code: s
         "display": f"{settings.facility_name or 'Facility'} | {counter_code} | {purpose.title()}",
         "qr_text": qr_url,
     }
+
+
+def _abdm_unit(settings, code: str = "") -> dict:
+    units = list_hospital_units()
+    target = str(code or "").strip().upper()
+    if target:
+        for unit in units:
+            if str(unit.get("code") or "").strip().upper() == target:
+                return dict(unit)
+    for unit in units:
+        if str(unit.get("code") or "").strip().upper() == "AHL":
+            return dict(unit)
+    return dict(units[0]) if units else {}
 
 
 def _download_extension(content_type: str) -> str:

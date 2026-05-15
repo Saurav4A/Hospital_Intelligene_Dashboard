@@ -1,0 +1,264 @@
+﻿{% set _hr_user = session.get('username') or session.get('user') %}
+{% if _hr_user %}
+{% set _raw_sections = session.get('section_rights') or [] %}
+{% set _sections = [] %}
+{% for s in _raw_sections %}
+  {% set _ = _sections.append((s|string).strip().lower()) %}
+{% endfor %}
+{% set _role = session.get('role') or '' %}
+{% set hrdg_all = (_role == 'IT') or ('*' in _sections) or ('hr_docgen' in _sections) %}
+{% set can_hrdg_home = hrdg_all or ('hr_docgen_entry' in _sections) or ('hr_docgen_records' in _sections) or ('hr_docgen_attendance_upload' in _sections) or ('hr_docgen_attendance_history' in _sections) or ('hr_docgen_attendance_full' in _sections) %}
+{% set can_hrdg_entry = hrdg_all or ('hr_docgen_entry' in _sections) %}
+{% set can_hrdg_records = hrdg_all or ('hr_docgen_records' in _sections) %}
+{% set can_hrdg_attendance_upload = hrdg_all or ('hr_docgen_attendance_upload' in _sections) %}
+{% set can_hrdg_attendance_history = hrdg_all or ('hr_docgen_attendance_history' in _sections) %}
+{% set can_hrdg_attendance_full = hrdg_all or ('hr_docgen_attendance_full' in _sections) %}
+<style>
+  .hrdg-fab-wrap{
+    position:fixed;
+    top:18px;
+    right:18px;
+    z-index:10000;
+    font-family:"Segoe UI",system-ui,-apple-system,sans-serif;
+  }
+  .hrdg-fab-btn{
+    width:58px;
+    height:58px;
+    border:0;
+    border-radius:50%;
+    display:grid;
+    place-items:center;
+    cursor:pointer;
+    color:#fff;
+    background:linear-gradient(135deg,#1d4ed8,#2563eb 55%,#38bdf8);
+    box-shadow:0 16px 34px rgba(37,99,235,.34);
+    transition:transform .16s ease, box-shadow .16s ease, filter .16s ease;
+  }
+  .hrdg-fab-btn:hover{transform:translateY(-1px);filter:saturate(1.05)}
+  .hrdg-fab-btn:focus-visible{outline:3px solid #bfdbfe;outline-offset:3px}
+  .hrdg-fab-lines{display:grid;gap:4px}
+  .hrdg-fab-lines span{
+    display:block;
+    width:23px;
+    height:2px;
+    border-radius:999px;
+    background:#fff;
+    transition:transform .16s ease, opacity .16s ease;
+  }
+  .hrdg-fab-wrap.is-open .hrdg-fab-btn{box-shadow:0 20px 42px rgba(37,99,235,.40)}
+  .hrdg-fab-wrap.is-open .hrdg-fab-lines span:nth-child(1){transform:translateY(6px) rotate(45deg)}
+  .hrdg-fab-wrap.is-open .hrdg-fab-lines span:nth-child(2){opacity:0}
+  .hrdg-fab-wrap.is-open .hrdg-fab-lines span:nth-child(3){transform:translateY(-6px) rotate(-45deg)}
+  .hrdg-fab-menu{
+    position:absolute;
+    top:66px;
+    right:0;
+    width:318px;
+    max-height:min(560px, calc(100vh - 112px));
+    box-sizing:border-box;
+    padding:8px;
+    border:1px solid rgba(148,163,184,.28);
+    border-radius:18px;
+    background:#ffffff;
+    box-shadow:0 24px 64px rgba(15,23,42,.20);
+    transform:translateY(-8px) scale(.97);
+    transform-origin:top right;
+    opacity:0;
+    pointer-events:none;
+    transition:opacity .16s ease,transform .16s ease;
+    overflow-x:hidden;
+    overflow-y:auto;
+    overscroll-behavior:contain;
+    scrollbar-gutter:stable;
+  }
+  .hrdg-fab-menu::-webkit-scrollbar{width:8px}
+  .hrdg-fab-menu::-webkit-scrollbar-track{background:transparent}
+  .hrdg-fab-menu::-webkit-scrollbar-thumb{
+    border:2px solid #fff;
+    border-radius:999px;
+    background:#cbd5e1;
+  }
+  .hrdg-fab-menu::-webkit-scrollbar-thumb:hover{background:#94a3b8}
+  .hrdg-fab-menu::before{
+    content:"";
+    position:absolute;
+    top:0;
+    left:0;
+    right:0;
+    height:4px;
+    background:linear-gradient(90deg,#1d4ed8,#0f766e,#38bdf8);
+  }
+  .hrdg-fab-wrap.is-open .hrdg-fab-menu{
+    opacity:1;
+    pointer-events:auto;
+    transform:translateY(0) scale(1);
+  }
+  .hrdg-fab-title{
+    display:flex;
+    align-items:center;
+    gap:9px;
+    padding:9px 9px 10px;
+    border-bottom:1px solid #e5e7eb;
+    margin:0 0 6px;
+    font-size:12.5px;
+    font-weight:800;
+    color:#1e3a8a;
+  }
+  .hrdg-fab-avatar{
+    width:31px;
+    height:31px;
+    border-radius:10px;
+    display:grid;
+    place-items:center;
+    flex:0 0 auto;
+    color:#fff;
+    background:linear-gradient(135deg,#1e40af,#0f766e);
+    box-shadow:0 8px 18px rgba(15,23,42,.14);
+    font-size:14px;
+  }
+  .hrdg-fab-user{min-width:0}
+  .hrdg-fab-name{
+    overflow:hidden;
+    text-overflow:ellipsis;
+    white-space:nowrap;
+    max-width:214px;
+  }
+  .hrdg-fab-sub{
+    display:block;
+    margin-top:2px;
+    font-size:11.5px;
+    color:#64748b;
+    font-weight:600;
+  }
+  .hrdg-fab-section{
+    padding:5px 8px 3px;
+    color:#64748b;
+    font-size:9.5px;
+    font-weight:900;
+    letter-spacing:.08em;
+    text-transform:uppercase;
+  }
+  .hrdg-fab-menu a{
+    display:flex;
+    align-items:center;
+    justify-content:space-between;
+    gap:8px;
+    min-height:35px;
+    padding:7px 9px;
+    border-radius:11px;
+    color:#0f172a;
+    text-decoration:none;
+    font-size:13px;
+    font-weight:800;
+    transition:background .14s ease, color .14s ease, transform .14s ease;
+  }
+  .hrdg-fab-menu a:hover{
+    background:#f1f5ff;
+    color:#1e40af;
+    transform:translateX(-2px);
+  }
+  .hrdg-fab-menu a.hrdg-active{
+    background:#eef2ff;
+    color:#1e40af;
+    box-shadow:inset 3px 0 0 #2563eb;
+  }
+  .hrdg-fab-menu a.hrdg-danger{
+    color:#b91c1c;
+    margin-top:3px;
+    border-top:1px solid #f1f5f9;
+    border-radius:0 0 12px 12px;
+  }
+  .hrdg-fab-menu a.hrdg-danger:hover{background:#fef2f2;color:#991b1b}
+  .hrdg-fab-arrow{
+    color:#94a3b8;
+    font-weight:900;
+    transition:transform .14s ease, color .14s ease;
+  }
+  .hrdg-fab-menu a:hover .hrdg-fab-arrow{transform:translateX(2px);color:#2563eb}
+  .hrdg-fab-menu a.hrdg-danger:hover .hrdg-fab-arrow{color:#b91c1c}
+  @media (max-width:640px){
+    .hrdg-fab-wrap{top:12px;right:12px}
+    .hrdg-fab-menu{
+      width:min(318px,calc(100vw - 24px));
+      max-height:calc(100vh - 94px);
+    }
+  }
+</style>
+
+<div class="hrdg-fab-wrap" id="hrDocgenFab" aria-haspopup="true" aria-expanded="false">
+  <button class="hrdg-fab-btn" id="hrDocgenFabBtn" type="button" aria-label="Open HR DocGen navigation">
+    <span class="hrdg-fab-lines" aria-hidden="true"><span></span><span></span><span></span></span>
+  </button>
+  <nav class="hrdg-fab-menu" id="hrDocgenFabMenu" aria-label="HR DocGen navigation">
+    <div class="hrdg-fab-title">
+      <div class="hrdg-fab-avatar" aria-hidden="true">{{ (_hr_user|string)[:1]|upper }}</div>
+      <div class="hrdg-fab-user">
+        <div class="hrdg-fab-name">{{ _hr_user }}</div>
+        <span class="hrdg-fab-sub">{{ session.get('role') or 'HR Module' }}</span>
+      </div>
+    </div>
+    <div class="hrdg-fab-section">Navigation</div>
+    <a href="{{ url_for('dashboard') }}">HID Dashboard <span class="hrdg-fab-arrow">&rsaquo;</span></a>
+    {% if can_hrdg_home %}
+    <a href="{{ url_for('hr_docgen.dashboard') }}">HR DocGen Home <span class="hrdg-fab-arrow">&rsaquo;</span></a>
+    {% endif %}
+    {% if can_hrdg_entry %}
+    <a href="{{ url_for('hr_docgen.home') }}">Certificate Entry <span class="hrdg-fab-arrow">&rsaquo;</span></a>
+    {% endif %}
+    {% if can_hrdg_records %}
+    <a href="{{ url_for('hr_docgen.show_records') }}">Certificate Records <span class="hrdg-fab-arrow">&rsaquo;</span></a>
+    {% endif %}
+    {% if can_hrdg_attendance_upload or can_hrdg_attendance_history or can_hrdg_attendance_full %}
+    <div class="hrdg-fab-section">Attendance</div>
+    {% endif %}
+    {% if can_hrdg_attendance_upload %}
+    <a href="{{ url_for('hr_docgen.attendance_upload') }}">Attendance Upload <span class="hrdg-fab-arrow">&rsaquo;</span></a>
+    {% endif %}
+    {% if can_hrdg_attendance_history %}
+    <a href="{{ url_for('hr_docgen.attendance_history') }}">Attendance History <span class="hrdg-fab-arrow">&rsaquo;</span></a>
+    {% endif %}
+    {% if can_hrdg_attendance_full %}
+    <a href="{{ url_for('hr_docgen.always_full_attendance_list') }}">Always Full Attendance <span class="hrdg-fab-arrow">&rsaquo;</span></a>
+    {% endif %}
+    <div class="hrdg-fab-section">External</div>
+    <a href="https://hr.asarfi.in" target="_blank" rel="noopener">HR Portal <span class="hrdg-fab-arrow">&rsaquo;</span></a>
+    <a class="hrdg-danger" href="{{ url_for('logout') }}">Logout <span class="hrdg-fab-arrow">&rsaquo;</span></a>
+  </nav>
+</div>
+
+<script>
+  (function(){
+    const wrap = document.getElementById("hrDocgenFab");
+    const btn = document.getElementById("hrDocgenFabBtn");
+    if (!wrap || !btn) return;
+    function setOpen(open){
+      wrap.classList.toggle("is-open", open);
+      wrap.setAttribute("aria-expanded", String(open));
+    }
+    const currentPath = window.location.pathname.replace(/\/+$/, "") || "/";
+    wrap.querySelectorAll(".hrdg-fab-menu a[href]").forEach(function(link){
+      try{
+        const url = new URL(link.getAttribute("href"), window.location.origin);
+        const linkPath = url.pathname.replace(/\/+$/, "") || "/";
+        if (url.origin === window.location.origin && linkPath === currentPath){
+          link.classList.add("hrdg-active");
+        }
+      }catch(_err){}
+    });
+    btn.addEventListener("click", function(event){
+      event.stopPropagation();
+      setOpen(!wrap.classList.contains("is-open"));
+    });
+    document.addEventListener("click", function(event){
+      if (!wrap.contains(event.target)) setOpen(false);
+    });
+    document.addEventListener("keydown", function(event){
+      if (event.key === "Escape") setOpen(false);
+    });
+  })();
+</script>
+{% include "_session_keepalive.html" %}
+{% endif %}
+
+
+

@@ -1,0 +1,19 @@
+﻿<!doctype html>
+<html>
+  <head>
+    <meta charset="utf-8">
+    <title>Document Generator | Asarfi Hospital Ltd</title>
+    <link rel="icon" href="{{ url_for('static', filename='logo/asarfi.png') }}">
+  </head>
+  <body style="font-family:Segoe UI; margin:24px;">
+    {% include "hr_docgen/_fab_nav.html" %}
+    <h2>Document Generator</h2>
+    <p><a href="{{ url_for('hr_docgen.home') }}">Create new entry -> Generate</a></p>
+    {% with messages = get_flashed_messages() %}
+      {% if messages %}<ul>{% for m in messages %}<li>{{m}}</li>{% endfor %}</ul>{% endif %}
+    {% endwith %}
+  </body>
+</html>
+
+
+

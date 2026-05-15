@@ -167,6 +167,32 @@ ABDM_SERVICE_TYPE = "HIP"
 ABDM_SERVICE_ALIAS = "asarfi-hospital-hip"
 ABDM_SERVICE_ENDPOINT_URL = ""
 ABDM_SERVICE_ENDPOINT_USE = "registration"
+ABDM_HOSPITAL_UNITS = [
+    {
+        "code": "AHL",
+        "name": "Asarfi Hospital Limited",
+        "facility_id": "IN2010000816",
+        "hip_id": "IN2010000816",
+        "counter_id": "REG01",
+        "active": True,
+    },
+    {
+        "code": "ACI",
+        "name": "Asarfi Cancer Institute",
+        "facility_id": "",
+        "hip_id": "",
+        "counter_id": "REG01",
+        "active": False,
+    },
+    {
+        "code": "BALLIA",
+        "name": "Asarfi Hospital Ballia",
+        "facility_id": "",
+        "hip_id": "",
+        "counter_id": "REG01",
+        "active": False,
+    },
+]
 ABDM_TIMEOUT_SECONDS = 30
 ABDM_RETRY_ATTEMPTS = 3
 ABDM_RETRY_BACKOFF_SECONDS = 2.0
@@ -198,6 +224,23 @@ BOOKING_PAYMENT_EMAIL_DB = {
     "ConnectRetryCount": 3,
     "ConnectRetryInterval": 5,
 }
+
+# ---------------------------
+# Radiology order webhook worker (AHL -> RPS)
+# ---------------------------
+# Run with run_radiology_webhook_worker.bat on the HID server.
+RADIOLOGY_WEBHOOK_ENABLED = os.getenv("RADIOLOGY_WEBHOOK_ENABLED", "true").strip().lower() in {"1", "true", "yes", "on"}
+RADIOLOGY_WEBHOOK_UNIT = os.getenv("RADIOLOGY_WEBHOOK_UNIT", "AHL").strip().upper() or "AHL"
+RADIOLOGY_WEBHOOK_URL = os.getenv(
+    "RADIOLOGY_WEBHOOK_URL",
+    "https://rps.asarfi.in/api/radiology/webhook/patient-create",
+).strip()
+RADIOLOGY_WEBHOOK_API_KEY = os.getenv("RADIOLOGY_WEBHOOK_API_KEY", "AsarfiCall@!2345").strip()
+RADIOLOGY_WEBHOOK_POLL_SECONDS = int(os.getenv("RADIOLOGY_WEBHOOK_POLL_SECONDS", "120") or "120")
+RADIOLOGY_WEBHOOK_BATCH_SIZE = int(os.getenv("RADIOLOGY_WEBHOOK_BATCH_SIZE", "20") or "20")
+RADIOLOGY_WEBHOOK_MAX_ATTEMPTS = int(os.getenv("RADIOLOGY_WEBHOOK_MAX_ATTEMPTS", "20") or "20")
+RADIOLOGY_WEBHOOK_RETRY_SECONDS = int(os.getenv("RADIOLOGY_WEBHOOK_RETRY_SECONDS", "60") or "60")
+RADIOLOGY_WEBHOOK_STALE_PROCESSING_MINUTES = int(os.getenv("RADIOLOGY_WEBHOOK_STALE_PROCESSING_MINUTES", "10") or "10")
 
 # ---------------------------
 # SMS gateway (PRP Bulk SMS)

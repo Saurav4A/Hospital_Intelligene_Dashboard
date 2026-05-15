@@ -1,0 +1,2323 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>HR Certificate Entry | Asarfi Hospital Ltd</title>
+    <link rel="icon" href="{{ url_for('static', filename='logo/asarfi.png') }}">
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+    <!-- Page transition CSS -->
+    <style>
+      @media (prefers-reduced-motion: reduce){
+        html.page-fade-in, html.page-fade-out { animation: none !important; }
+      }
+      @keyframes pageFadeIn { from { opacity: 0 } to { opacity: 1 } }
+      @keyframes pageFadeOut{ from { opacity: 1 } to { opacity: 0 } }
+      html.page-fade-in  { animation: pageFadeIn .28s ease both; }
+      html.page-fade-out { animation: pageFadeOut .18s ease both; }
+      body { transition: filter .12s ease; }
+      html.page-fade-out body { filter: saturate(.96) brightness(.99); }
+    </style>
+
+    <style>
+      :root{
+        --bg: #f4f7fb;
+        --card: #ffffff;
+        --ink: #0f172a;
+        --muted: #546e7a;
+        --brand: #3949ab;
+        --brand-2:#5c6bc0;
+        --teal:#009688;
+        --amber:#ffb300;
+        --ok:#22c55e;
+        --warn:#f59e0b;
+        --shadow: 0 10px 30px rgba(0,0,0,.08);
+        --radius: 16px;
+      }
+      *{box-sizing:border-box}
+      html,body{height:100%}
+      body{
+        margin:0;
+        font-family: "Segoe UI", system-ui, -apple-system, sans-serif;
+        color:var(--ink);
+        background:
+          radial-gradient(1200px 600px at -10% -10%, #e3f2fd 0, transparent 40%),
+          radial-gradient(1400px 700px at 110% -10%, #e3f2fd 0, transparent 35%),
+          var(--bg);
+      }
+      .flash-wrap{margin:0 0 12px;}
+      .flash{
+        padding:10px 12px;
+        border-radius:10px;
+        margin-bottom:8px;
+        font-weight:600;
+        border:1px solid transparent;
+      }
+      .flash-success{background:#ecfdf3; color:#065f46; border-color:#bbf7d0;}
+      .flash-danger{background:#fef2f2; color:#b91c1c; border-color:#fecaca;}
+      .flash-warning{background:#fffbeb; color:#92400e; border-color:#fcd34d;}
+      .flash-info{background:#e0f2fe; color:#1d4ed8; border-color:#bfdbfe;}
+
+      /* ===== Header ===== */
+      header{
+        width:96%;
+        max-width:1760px;
+        margin:16px auto 10px;
+        display:flex;
+        align-items:center;
+        justify-content:center;
+        gap:14px;
+        text-align:left;
+      }
+      header img{
+        width:54px;height:54px;object-fit:contain;border-radius:12px;box-shadow:0 8px 18px rgba(0,0,0,.14)
+      }
+      header h1{margin:0;font-size:26px;line-height:1.05;color:#1e3a8a}
+      header p{margin:4px 0 0;color:#607d8b;letter-spacing:.3px}
+
+      /* ===== Layout ===== */
+      .wrap{
+        display:grid;
+        grid-template-columns: 280px minmax(0, 1fr);
+        gap: 18px;
+        width: 96%;
+        max-width: 1760px;
+        margin: 10px auto 60px;
+        align-items: start;
+      }
+      .stepper{
+        position: sticky; top: 18px;
+        background: var(--card);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 14px;
+        z-index: 2;
+      }
+      .stepper h3{
+        margin: 6px 10px 10px;
+        font-size: 14px; text-transform: uppercase; letter-spacing: .08em; color: var(--muted);
+      }
+      .step{
+        display:flex;align-items:center;
+        border-radius: 12px;
+        padding: 10px 10px;
+        margin: 6px 4px;
+        cursor: pointer;
+        transition: background .2s, transform .1s;
+      }
+      .step:hover{background:#f1f5ff}
+      .step.is-active{background:linear-gradient(90deg,#eef2ff,#fff); border:1px solid #e0e7ff}
+      .step.is-done{opacity:.95}
+      .step .num{
+        display:grid;place-items:center;
+        width:28px;height:28px;border-radius:50%;
+        background:#e8eaf6;color:#1e3a8a;font-weight:700;margin-right:10px
+      }
+      .step.is-active .num{background:#c7d2fe}
+      .step.is-done .num{background:#d1fae5;color:#065f46}
+      .step .meta{display:flex;flex-direction:column}
+      .step .title{font-weight:700;font-size:14px}
+      .step .sub{font-size:12px;color:var(--muted)}
+
+      .card{
+        background: rgba(255,255,255,.9);
+        border: 1px solid rgba(0,0,0,.06);
+        backdrop-filter: blur(8px) saturate(180%);
+        border-radius: var(--radius);
+        box-shadow: var(--shadow);
+        padding: 20px;
+        position: relative;
+        z-index: 2;
+      }
+
+      .legend{
+        font-weight: 800;
+        font-size: 18px;
+        color: #1e3a8a;
+        margin: 4px 0 16px;
+        display:flex;align-items:center;gap:10px
+      }
+      .legend::before{
+        content:"";
+        width: 8px; height: 24px; border-radius: 4px;
+        background: linear-gradient(180deg, var(--brand), var(--brand-2));
+        display:inline-block;
+      }
+
+      .grid{ display:grid; gap: 14px; }
+      .g-2{grid-template-columns: repeat(2, minmax(0, 1fr))}
+      .g-3{grid-template-columns: repeat(3, minmax(0, 1fr))}
+      .g-4{grid-template-columns: repeat(4, minmax(0, 1fr))}
+      @media (max-width: 900px){
+        header{justify-content:flex-start;margin-top:12px}
+        header img{width:46px;height:46px}
+        header h1{font-size:22px}
+        .wrap{grid-template-columns:1fr}
+        .g-2,.g-3,.g-4{grid-template-columns:1fr}
+        .stepper{position:relative;top:auto}
+      }
+
+      label{font-size:13px;color:#37474f;font-weight:600;margin-bottom:6px;display:block}
+      .required-mark{color:#d32f2f;margin-left:4px;font-weight:800}
+      input, select, textarea{
+        width:100%; padding:10px 12px; border:1px solid rgba(0,0,0,.12); border-radius:10px; font-size:14px; background:#fff
+      }
+      textarea{resize:vertical;min-height:60px}
+
+      .hint{font-size:12px;color:#607d8b;margin-top:4px}
+      .employee-lookup{position:relative}
+      .employee-lookup input{padding-right:42px}
+      .employee-lookup-spinner{
+        position:absolute;right:14px;top:34px;width:18px;height:18px;border-radius:50%;
+        border:2px solid #bfdbfe;border-top-color:#1e40af;display:none;
+        animation:empLookupSpin .8s linear infinite;pointer-events:none
+      }
+      .employee-lookup.is-loading .employee-lookup-spinner{display:block}
+      .employee-lookup.is-loading input{
+        border-color:#60a5fa;
+        box-shadow:0 0 0 3px rgba(96,165,250,.18)
+      }
+      .emp-status{display:flex;align-items:center;gap:7px;min-height:18px}
+      .emp-status::before{
+        content:"";width:8px;height:8px;border-radius:50%;background:#94a3b8;flex:0 0 auto
+      }
+      .emp-status.is-loading::before{background:#2563eb;box-shadow:0 0 0 4px rgba(37,99,235,.12)}
+      .emp-status.is-success::before{background:#059669}
+      .emp-status.is-warning::before{background:#f59e0b}
+      .emp-status.is-error::before{background:#dc2626}
+      @keyframes empLookupSpin{to{transform:rotate(360deg)}}
+      .small-note{font-size:12px;color:#546e7a;font-style:italic;margin-top:4px}
+
+      /* Buttons */
+      .btn{
+        display:inline-flex;gap:8px;align-items:center;justify-content:center;
+        padding:10px 16px;border-radius:10px;border:none;font-weight:700;cursor:pointer;transition:.2s;
+        background:linear-gradient(90deg,var(--brand),var(--brand-2)); color:#fff; box-shadow:0 8px 20px rgba(63,81,181,.25)
+      }
+      .btn:hover{transform:translateY(-1px)}
+      .btn-ghost{background:#f1f5f9;color:#0f172a}
+      .btn-teal{background:linear-gradient(90deg,#00796b,#009688)}
+      .btn-amber{background:linear-gradient(90deg,#ffa000,#ffca28);color:#212121}
+
+      .actions{display:flex;justify-content:space-between;gap:10px;margin-top:16px;align-items:center}
+      .actions-right{margin-left:auto;display:flex;gap:8px}
+
+      /* Step visibility */
+      .step-pane{display:none}
+      .step-pane.is-visible{display:block}
+
+      /* ===== Template preview overlay ===== */
+      .template-preview-overlay{
+        position: fixed; inset: 0;
+        background: rgba(15,23,42,.5);
+        display: none; align-items: center; justify-content: center;
+        z-index: 9999; padding: 16px;
+      }
+      .template-preview-overlay.is-open{ display: flex; }
+      .template-preview-modal{
+        width: min(980px, 96vw);
+        height: min(92vh, 900px);
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 20px 60px rgba(0,0,0,.35);
+        display: flex; flex-direction: column;
+        overflow: hidden;
+      }
+      .template-preview-head{
+        display:flex; align-items:center; justify-content:space-between;
+        gap:12px; padding:12px 16px;
+        border-bottom:1px solid rgba(0,0,0,.06);
+        background: linear-gradient(90deg,#eef2ff,#fff);
+      }
+      .template-preview-title{
+        font-size:16px; font-weight:800; color:#1e3a8a;
+      }
+      .template-preview-actions{ display:flex; gap:8px; }
+      .template-preview-body{
+        flex: 1; background:#f8fafc; position: relative; overflow:auto;
+      }
+      .template-preview-docx{
+        width: 100%; min-height: 100%;
+        padding: 18px; background:#f8fafc; display:none;
+      }
+      .template-preview-docx.is-visible{ display:block; }
+      .template-preview-error{
+        display:none; padding:8px 16px; color:#b91c1c;
+        background:#fef2f2; border-top:1px solid #fecaca;
+      }
+      .template-preview-error.is-visible{ display:block; }
+      .template-preview-note{
+        font-size:12px; color:#64748b;
+        padding:8px 16px; border-top:1px solid rgba(0,0,0,.06);
+        background:#f8fafc;
+      }
+
+      /* ===== Template assistant ===== */
+      .template-assistant-drawer{
+        position:fixed;
+        top:82px;
+        right:0;
+        width:min(720px, calc(100vw - 48px));
+        max-height:calc(100vh - 98px);
+        z-index:65;
+        transform:translateX(100%);
+        transition:transform .24s ease, opacity .18s ease;
+        opacity:1;
+      }
+      .template-assistant-drawer.hover-open,
+      .template-assistant-drawer.open{
+        transform:translateX(0);
+      }
+      .template-assistant-drawer::before{
+        content:"";
+        position:absolute;
+        inset:-12px 0 -12px -24px;
+        pointer-events:none;
+        background:linear-gradient(90deg, rgba(15,23,42,.10), rgba(15,23,42,0));
+        border-radius:14px;
+        opacity:0;
+        transition:opacity .2s ease;
+      }
+      .template-assistant-drawer.hover-open::before,
+      .template-assistant-drawer.open::before{
+        opacity:1;
+      }
+      .template-assistant-tab{
+        position:absolute;
+        left:-34px;
+        top:min(260px, calc(50vh - 80px));
+        width:34px;
+        min-height:150px;
+        border:1px solid #b7ece5;
+        border-right:0;
+        border-radius:12px 0 0 12px;
+        background:linear-gradient(180deg,#ffffff,#f0fdfa);
+        color:#0f766e;
+        padding:10px 5px;
+        font-size:11px;
+        font-weight:900;
+        cursor:pointer;
+        box-shadow:0 14px 28px rgba(15,23,42,.14);
+        display:inline-flex;
+        align-items:center;
+        justify-content:center;
+        gap:6px;
+        writing-mode:vertical-rl;
+        rotate:180deg;
+        letter-spacing:.02em;
+        backdrop-filter:blur(8px);
+      }
+      .template-assistant-tab::before{
+        content:"";
+        width:7px;
+        height:7px;
+        border-radius:999px;
+        background:var(--teal);
+        box-shadow:0 0 0 3px rgba(0,150,136,.14);
+      }
+      .template-assistant-tab:hover,
+      .template-assistant-drawer.open .template-assistant-tab{
+        color:#1e3a8a;
+        border-color:#bfdbfe;
+        background:linear-gradient(180deg,#ffffff,#eff6ff);
+      }
+      .template-assistant{
+        position:relative;
+        max-height:calc(100vh - 98px);
+        overflow:auto;
+        margin:0;
+        background:#ffffff;
+        border:1px solid #d7eee9;
+        border-left:5px solid var(--teal);
+        border-right:0;
+        border-radius:14px 0 0 14px;
+        box-shadow:0 24px 70px rgba(15,23,42,.24);
+        padding:0 18px 18px;
+      }
+      .assistant-top{
+        position:sticky;
+        top:0;
+        z-index:2;
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:14px;
+        flex-wrap:wrap;
+        margin:0 -18px;
+        padding:16px 18px 14px;
+        border-bottom:1px solid #e2e8f0;
+        background:linear-gradient(180deg,#ffffff 0%,#fbfdff 100%);
+        backdrop-filter:blur(10px);
+      }
+      .assistant-title{
+        font-size:19px;
+        font-weight:800;
+        color:#0f766e;
+      }
+      .assistant-sub{
+        font-size:12.5px;
+        color:#475569;
+        margin-top:2px;
+      }
+      .assistant-actions{
+        display:flex;
+        gap:8px;
+        flex-wrap:wrap;
+        align-items:center;
+      }
+      .assistant-actions .btn{
+        min-height:42px;
+        padding:9px 13px;
+        border-radius:12px;
+      }
+      .assistant-drawer-close{
+        width:42px;
+        height:42px;
+        border:1px solid #cbd5e1;
+        border-radius:12px;
+        background:#f8fafc;
+        color:#0f172a;
+        cursor:pointer;
+        font-weight:900;
+        font-size:17px;
+        transition:.16s ease;
+      }
+      .assistant-drawer-close:hover{background:#fee2e2;border-color:#fecaca;color:#991b1b}
+      .assistant-stats{
+        display:flex;
+        gap:8px;
+        flex-wrap:wrap;
+        margin-top:16px;
+      }
+      .stat-chip{
+        border:1px solid #e2e8f0;
+        background:#f8fafc;
+        border-radius:999px;
+        font-size:12px;
+        padding:6px 11px;
+        font-weight:800;
+        color:#0f172a;
+      }
+      .stat-chip.ok{
+        color:#065f46;
+        background:#ecfdf3;
+        border-color:#bbf7d0;
+      }
+      .stat-chip.warn{
+        color:#92400e;
+        background:#fffbeb;
+        border-color:#fde68a;
+      }
+      .stat-chip.danger{
+        color:#991b1b;
+        background:#fef2f2;
+        border-color:#fecaca;
+      }
+      .assistant-impact{
+        margin-top:12px;
+        font-size:13px;
+        color:#334155;
+        background:#fbfdff;
+        border:1px solid #e2e8f0;
+        border-radius:12px;
+        padding:10px 12px;
+      }
+      .assistant-memory{
+        margin-top:8px;
+        font-size:12px;
+        color:#64748b;
+      }
+      .placeholder-list{
+        list-style:none;
+        margin:14px 0 0;
+        padding:0;
+        border:1px solid #e2e8f0;
+        border-radius:14px;
+        max-height:calc(100vh - 390px);
+        min-height:220px;
+        overflow:auto;
+        background:#ffffff;
+        box-shadow:inset 0 1px 0 rgba(255,255,255,.7);
+      }
+      @media (max-width:720px){
+        .template-assistant-drawer{
+          top:74px;
+          width:min(420px, calc(100vw - 38px));
+          max-height:calc(100vh - 88px);
+        }
+        .template-assistant-tab{
+          left:-29px;
+          width:28px;
+          min-height:120px;
+          top:180px;
+        }
+        .template-assistant{
+          max-height:calc(100vh - 88px);
+        }
+        .placeholder-row{
+          grid-template-columns:1fr;
+        }
+      }
+      .placeholder-row{
+        display:grid;
+        grid-template-columns: minmax(170px, 1.05fr) minmax(190px, .95fr) minmax(160px, .9fr);
+        gap:12px;
+        padding:12px 14px;
+        border-bottom:1px solid #eef2f7;
+        align-items:center;
+      }
+      .placeholder-row:last-child{ border-bottom:none; }
+      .placeholder-row.mapped{ background:#fbfffd; }
+      .placeholder-row.derived{ background:#f8fafc; }
+      .placeholder-row.unmapped{ background:#fff8f8; }
+      .ph-token{
+        font-family: ui-monospace, SFMono-Regular, Menlo, Consolas, monospace;
+        font-size:12px;
+        color:#0f172a;
+        word-break:break-word;
+      }
+      .ph-target{
+        font-size:12px;
+        color:#334155;
+      }
+      .ph-value{
+        font-size:12px;
+        color:#1e293b;
+        background:#f8fafc;
+        border:1px solid #e2e8f0;
+        border-radius:10px;
+        padding:7px 10px;
+        min-height:34px;
+        display:flex;
+        align-items:center;
+      }
+      .ph-link{
+        padding:4px 9px;
+        border-radius:999px;
+        border:1px solid #c7d2fe;
+        background:#eef2ff;
+        color:#1e3a8a;
+        font-size:11px;
+        font-weight:700;
+        cursor:pointer;
+      }
+      .field-box.is-template-used{
+        border:1px solid #8ee8dc;
+        border-radius:12px;
+        padding:10px 12px;
+        background:#f1fffc;
+        box-shadow:0 8px 18px rgba(13,148,136,.06);
+      }
+      .field-box.is-template-hidden,
+      .template-section-hidden,
+      .step.is-template-hidden,
+      .step-pane.is-template-hidden{
+        display:none !important;
+      }
+      .field-map-note{
+        margin-top:5px;
+        font-size:11px;
+        color:#0f766e;
+      }
+      .grid[data-visible-fields="1"]{
+        grid-template-columns:minmax(280px, 520px);
+      }
+      .grid[data-visible-fields="2"]{
+        grid-template-columns:repeat(2, minmax(0, 1fr));
+      }
+      @media (max-width: 960px){
+        .grid[data-visible-fields="1"],
+        .grid[data-visible-fields="2"]{
+          grid-template-columns:1fr;
+        }
+        .placeholder-row{
+          grid-template-columns: 1fr;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    {% include "hr_docgen/_fab_nav.html" %}
+
+    <header>
+      <img src="{{ url_for('static', filename='hr_docgen/logo/asarfi.png') }}" alt="Asarfi Hospital Logo">
+      <h1>Asarfi Hospital</h1>
+      <p>Human Resource Department - Full Certificate Entry Form</p>
+    </header>
+
+    <div class="wrap">
+      <!-- ===== Left stepper ===== -->
+      <aside class="stepper" id="stepper">
+        <h3>Steps</h3>
+        <div class="step is-active" data-step="1"><div class="num">1</div><div class="meta"><div class="title">Certificate</div><div class="sub">Type, template, ref no</div></div></div>
+        <div class="step" data-step="2"><div class="num">2</div><div class="meta"><div class="title">Employee</div><div class="sub">ID, name, dept, dates</div></div></div>
+        <div class="step" data-step="3"><div class="num">3</div><div class="meta"><div class="title">Institute</div><div class="sub">Internship details</div></div></div>
+        <div class="step" data-step="4"><div class="num">4</div><div class="meta"><div class="title">Work</div><div class="sub">Reporting & timing</div></div></div>
+        <div class="step" data-step="5"><div class="num">5</div><div class="meta"><div class="title">Summary/Warning/Show Cause</div><div class="sub">Subject & reasons</div></div></div>
+        <div class="step" data-step="6"><div class="num">6</div><div class="meta"><div class="title">Address</div><div class="sub">Org & address</div></div></div>
+        <div class="step" data-step="7"><div class="num">7</div><div class="meta"><div class="title">HR & Salary</div><div class="sub">Structure & PF/ESIC</div></div></div>
+        <!--<div class="step" data-step="8"><div class="num">8</div><div class="meta"><div class="title">Warning/Show Cause</div><div class="sub">Reasons</div></div></div>-->
+        <div class="step" data-step="9"><div class="num">8</div><div class="meta"><div class="title">Export</div><div class="sub">Save & generate</div></div></div>
+      </aside>
+
+      <!-- ===== Right content ===== -->
+      <main>
+        {% with messages = get_flashed_messages(with_categories=true) %}
+        {% if messages %}
+        <div class="flash-wrap">
+          {% for category, msg in messages %}
+            <div class="flash flash-{{ category }}">{{ msg }}</div>
+          {% endfor %}
+        </div>
+        {% endif %}
+        {% endwith %}
+        <div id="formError" class="flash flash-danger" style="display:none" role="alert"></div>
+        <form method="post" action="/hr/docgen/save_generate">
+          <!-- Step 1 -->
+          <section class="card step-pane is-visible" data-step="1">
+            <div class="legend">Certificate Information</div>
+            <div class="grid g-2">
+              <div>
+                <label>Certificate Type</label>
+                <input name="CertificateType" placeholder="e.g. Experience Certificate" required>
+              </div>
+              <div>
+                <label>Reference No.</label>
+                <input name="Ref_No" placeholder="e.g. AHL/HR/2025/021" required>
+              </div>
+            </div>
+
+            <div class="grid g-2">
+              <div>
+                <label>Template Name</label>
+                <div style="display:flex;gap:10px">
+                  <select name="TemplateName" id="TemplateName" required style="flex:1">
+                    <option value="">-- Select Template --</option>
+                    {% for template_name in (template_files or []) %}
+                    <option value="{{ template_name }}">{{ template_name }}</option>
+                    {% endfor %}
+                  </select>
+                  <button type="button" class="btn btn-amber" onclick="previewTemplate()">Preview</button>
+                </div>
+              </div>
+              <div>
+                <label>Date Issued</label>
+                <input type="date" name="DateIssued">
+              </div>
+            </div>
+
+            <div class="actions">
+              <span></span>
+              <div class="actions-right">
+                <button type="button" class="btn" onclick="goStep(2)">Next</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Step 2 -->
+          <section class="card step-pane" data-step="2">
+            <div class="legend">Employee Details</div>
+            <div class="grid g-2">
+              <div class="employee-lookup" id="empLookupBox">
+                <label>Employee ID</label>
+                <input name="Emp_ID" id="Emp_ID" placeholder="e.g. 150350" list="empList" autocomplete="off" aria-describedby="empHint">
+                <span class="employee-lookup-spinner" aria-hidden="true"></span>
+                <datalist id="empList"></datalist>
+                <div id="empHint" class="hint emp-status" aria-live="polite">Enter Employee ID to fetch active employee details from HR Systems.</div>
+              </div>
+              <div>
+                <label>Employee Name</label>
+                <input name="Emp_Name" id="Emp_Name" placeholder="e.g. Renu Kumari">
+              </div>
+            </div>
+
+            <div class="grid g-3">
+              <div>
+                <label>Gender</label>
+                <select name="Gender" id="Gender" required>
+                  <option value="">-- Select Gender --</option>
+                  <option value="Male">Male</option>
+                  <option value="Female">Female</option>
+                </select>
+              </div>
+              <div>
+                <label>Employee 2nd Name</label>
+                <input name="Emp_2ndName" placeholder="Secondary name or Middle name">
+              </div>
+              <div>
+                <label>Department</label>
+                <input name="Department" placeholder="e.g. Nursing">
+              </div>
+            </div>
+
+            <div class="grid g-2">
+              <div>
+                <label>Article</label>
+                <input name="article" placeholder="e.g. a / an">
+              </div>
+              <div>
+                <label>Designation</label>
+                <input name="Designation" placeholder="e.g. Staff Nurse">
+              </div>
+            </div>
+
+            <div class="legend" style="margin-top:22px;">Gender / Alias</div>
+            <div class="grid g-3">
+              <div>
+                <label>Alias (His/Her)</label>
+                <input name="Alias_HisHer" id="Alias_HisHer" placeholder="His/Her">
+              </div>
+              <div>
+                <label>Alias (him/her)</label>
+                <input name="Alias_himHer" id="Alias_himHer" placeholder="Him/Her">
+              </div>
+              <div>
+                <label>Alias (He/She)</label>
+                <input name="Alias_HeShe" id="Alias_HeShe" placeholder="He/She">
+              </div>
+            </div>
+
+            <div class="legend" style="margin-top:22px;">Dates</div>
+            <div class="grid g-4">
+              <div>
+                <label>Start Date</label>
+                <input type="date" name="Start_Date">
+              </div>
+              <div>
+                <label>From Date</label>
+                <input type="date" name="From_Date">
+              </div>
+              <div>
+                <label>To Date</label>
+                <input type="date" name="To_Date">
+              </div>
+            </div>
+
+            <div class="grid g-5">
+              <div>
+                <label>Joining Date</label>
+                <input type="date" name="Joining_Date">
+              </div>
+              <div>
+                <label>Relieving Date</label>
+                <input type="date" name="Relieving_Date">
+              </div>
+            </div>
+
+            <div class="actions">
+              <button type="button" class="btn btn-ghost" onclick="goStep(1)">Back</button>
+              <div class="actions-right">
+                <button type="button" class="btn" onclick="goStep(3)">Next</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Step 3 -->
+          <section class="card step-pane" data-step="3">
+            <div class="legend">Institute / Internship Info</div>
+            <div class="grid g-2">
+              <div>
+                <label>Institute</label>
+                <input name="Institute" placeholder="e.g. ISM">
+              </div>
+              <div>
+                <label>Institute Location</label>
+                <input name="Institute_Location" placeholder="e.g. Dhanbad">
+              </div>
+            </div>
+
+            <div class="grid g-2">
+              <div>
+                <label>Internship Location</label>
+                <input name="Internship_Location" placeholder="e.g. Asarfi Hospital Ltd.">
+              </div>
+              <div>
+                <label>Duration</label>
+                <input name="Duration" placeholder="e.g. 3 Months">
+              </div>
+            </div>
+
+            <div class="actions">
+              <button type="button" class="btn btn-ghost" onclick="goStep(2)">Back</button>
+              <div class="actions-right">
+                <button type="button" class="btn" onclick="goStep(4)">Next</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Step 4 -->
+          <section class="card step-pane" data-step="4">
+            <div class="legend">Work & Reporting</div>
+            <div class="grid g-2">
+              <div>
+                <label>Reporting To</label>
+                <input name="Reporting_to" placeholder="e.g. Dr. Singh">
+              </div>
+              <div>
+                <label>Timing</label>
+                <input name="Timing" placeholder="e.g. 9 AM - 5 PM">
+              </div>
+            </div>
+
+            <div class="actions">
+              <button type="button" class="btn btn-ghost" onclick="goStep(3)">Back</button>
+              <div class="actions-right">
+                <button type="button" class="btn" onclick="goStep(5)">Next</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Step 5 -->
+          <section class="card step-pane" data-step="5">
+            <div class="legend">Content & Summary</div>
+            <div class="grid g-3">
+              <div>
+                <label>Reason_1</label>
+                <input name="Reason_1" placeholder="e.g. Internship completion">
+              </div>
+              <div>
+                <label>ETA</label>
+                <input name="ETA" placeholder="e.g. 3 days">
+              </div>
+              <div>
+                <label>Subject</label>
+                <input name="Subject" placeholder="Subject line of certificate/letter">
+              </div>
+            </div>
+
+            <div class="grid">
+              <div>
+                <label>Summary</label>
+                <textarea name="Summary" placeholder="Write summary..."></textarea>
+              </div>
+            </div>
+
+            <div class="grid g-3">
+              <div>
+                <label>Reason</label>
+                <textarea name="Reason" placeholder="Detailed warning reason"></textarea>
+              </div>
+              <div>
+                <label>Penalty</label>
+                <input name="Penalty" placeholder="e.g. None">
+              </div>
+            </div>
+            <div class="grid g-2">
+              <div>
+                <label>Termination Reason</label>
+                <textarea name="ExtraField1"placeholder="Write Termination Reason..."></textarea>
+              </div>
+              <div>
+                <label>Show Cause Reason</label>
+                <textarea name="ExtraField2"placeholder="Write Show Cause Reason..."></textarea>
+              </div>
+            </div>
+            <div class="actions">
+              <button type="button" class="btn btn-ghost" onclick="goStep(4)">Back</button>
+              <div class="actions-right">
+                <button type="button" class="btn" onclick="goStep(6)">Next</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Step 6 -->
+          <section class="card step-pane" data-step="6">
+            <div class="legend">Address & Organization Details</div>
+            <div class="grid">
+              <div>
+                <label>Address</label>
+                <textarea name="Address" placeholder="Enter employee full address"></textarea>
+              </div>
+            </div>
+
+            <div class="grid g-3">
+              <div>
+                <label>State</label>
+                <input name="State" placeholder="e.g. Jharkhand">
+              </div>
+              <div>
+                <label>Pincode</label>
+                <input name="Pincode" placeholder="e.g. 826001">
+              </div>
+              <div>
+                <label>Place</label>
+                <input name="Place" placeholder="e.g. Dhanbad">
+              </div>
+            </div>
+
+            <div class="grid">
+              <div>
+                <label>Organization with Address</label>
+                <textarea name="Organizationwithaddress" placeholder="e.g. Asarfi Hospital Ltd., Dhanbad - 828130"></textarea>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button type="button" class="btn btn-ghost" onclick="goStep(5)">Back</button>
+              <div class="actions-right">
+                <button type="button" class="btn" onclick="goStep(7)">Next</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Step 7 -->
+          <section class="card step-pane" data-step="7">
+            <div class="legend">Employment / HR Details</div>
+
+            <div class="grid g-3">
+              <div>
+                <label>Salary</label>
+                <input name="Salary" id="Salary" placeholder="e.g. 30000">
+              </div>
+              <div>
+                <label>Salary (in Words)</label>
+                <input name="SalaryinWords" id="SalaryinWords" placeholder="e.g. Thirty Thousand Rupees Only" readonly>
+              </div>
+              <div>
+                <label>HR Representative</label>
+                <input name="HR" placeholder="e.g. Mohini / Ekta Dubey">
+              </div>
+            </div>
+
+            <div class="legend" style="margin-top:18px;">Salary Structure (%)</div>
+            <div class="grid g-4">
+              <div>
+                <label>Basic %</label>
+                <input name="Basic_Percentage" id="Basic_Percentage" placeholder="e.g. 55">
+                <div id="basicHint" class="small-note"></div>
+              </div>
+              <div>
+                <label>HRA %</label>
+                <input name="HRA_Percentage" id="HRA_Percentage" placeholder="e.g. 13">
+                <div id="hraHint" class="small-note"></div>
+              </div>
+              <div>
+                <label>Conveyance %</label>
+                <input name="Conveyance_Percentage" id="Conveyance_Percentage" placeholder="e.g. 10">
+                <div id="convHint" class="small-note"></div>
+              </div>
+              <div>
+                <label>Special Allowance %</label>
+                <input name="Special_Percentage" id="Special_Percentage" placeholder="e.g. 5">
+                <div id="specHint" class="small-note"></div>
+              </div>
+            </div>
+            <div id="grossHint" class="small-note" style="margin-top:6px;"></div>
+
+            <div class="grid g-2" style="margin-top:12px">
+              <div>
+                <label>Provident Fund (PF) Amount (optional)</label>
+                <input name="PF" id="PF" placeholder="Auto-calculated if left blank">
+                <div id="pfHint" class="small-note"></div>
+              </div>
+              <div>
+                <label>ESIC Amount (optional)</label>
+                <input name="ESIC" id="ESIC" placeholder="Auto-calculated if left blank">
+                <div id="esicHint" class="small-note"></div>
+              </div>
+            </div>
+
+            <div class="grid g-2">
+              <div>
+                <label>Leaves Allotted</label>
+                <input name="Leaves_allotted" placeholder="e.g. 12 per year">
+              </div>
+            </div>
+
+            <div class="actions">
+              <button type="button" class="btn btn-ghost" onclick="goStep(6)">Back</button>
+              <div class="actions-right">
+                <button type="button" class="btn" onclick="goStep(9)">Next</button>
+              </div>
+            </div>
+          </section>
+
+          <!-- Step 8 
+          <section class="card step-pane" data-step="8">
+            <div class="legend">Warning/Show Cause</div>
+            <div class="grid g-2">
+              <div>
+                <label>Warning Reason</label>
+                <textarea name="ExtraField1"placeholder="Write Warning Reason..."></textarea>
+              </div>
+              <div>
+                <label>Show Cause Reason</label>
+                <textarea name="ExtraField2"placeholder="Write Show Cause Reason..."></textarea>
+              </div>
+            </div>
+
+            <div class="actions">
+              <button type="button" class="btn btn-ghost" onclick="goStep(7)">Back</button>
+              <div class="actions-right">
+                <button type="button" class="btn" onclick="goStep(9)">Next</button>
+              </div>
+            </div>
+          </section>-->
+
+          <!-- Step 8 -->
+          <section class="card step-pane" data-step="9">
+            <div class="legend">Export</div>
+
+            <div class="actions">
+              <button type="button" class="btn btn-ghost" onclick="goStep(7)">Back</button>
+              <div class="actions-right">
+                <a href="{{ url_for('hr_docgen.show_records') }}" class="btn btn-teal" style="text-decoration:none">View All HR Entries</a>
+                <button type="submit" class="btn">Save & Generate</button>
+              </div>
+            </div>
+          </section>
+
+          <aside class="template-assistant-drawer" id="templateAssistantDrawer" aria-label="Template assistant drawer">
+            <button
+              type="button"
+              class="template-assistant-tab"
+              id="templateAssistantTab"
+              aria-expanded="false"
+              aria-controls="templateAssistant"
+            >
+              Template Assistant
+            </button>
+          <section class="card template-assistant" id="templateAssistant">
+            <div class="assistant-top">
+              <div>
+                <div class="assistant-title">Template Assistant</div>
+                <div class="assistant-sub" id="assistantTemplateName">Select a template to see placeholder mapping.</div>
+              </div>
+              <div class="assistant-actions">
+                <button type="button" class="btn btn-amber" onclick="previewTemplate()">Preview Template</button>
+                <button type="button" class="btn btn-ghost" id="applyLastTemplateMemory" disabled>Use Last Saved Values</button>
+                <button type="button" class="assistant-drawer-close" id="templateAssistantClose" aria-label="Close template assistant">X</button>
+              </div>
+            </div>
+            <div class="assistant-stats">
+              <span class="stat-chip" id="statTotal">Placeholders: 0</span>
+              <span class="stat-chip ok" id="statMapped">Mapped: 0</span>
+              <span class="stat-chip warn" id="statPending">Pending input: 0</span>
+              <span class="stat-chip danger" id="statUnknown">Unmapped: 0</span>
+            </div>
+            <div class="assistant-impact" id="assistantImpact">Output preview will appear here as you fill fields.</div>
+            <div class="assistant-memory" id="templateMemoryHint"></div>
+            <ul class="placeholder-list" id="templatePlaceholderList">
+              <li class="placeholder-row"><div class="ph-target">No template selected.</div></li>
+            </ul>
+          </section>
+          </aside>
+        </form>
+      </main>
+    </div>
+
+    <script>
+      function findNearestLabel(el){
+        if (!el) return null;
+        const wrapped = el.closest('label');
+        if (wrapped) return wrapped;
+        let node = el.parentElement;
+        while (node && node !== document.body){
+          const label = node.querySelector('label');
+          if (label) return label;
+          node = node.parentElement;
+        }
+        return null;
+      }
+      function isTemplateHidden(el){
+        return !!(el && el.closest('.is-template-hidden, .template-section-hidden'));
+      }
+      function syncRequiredLabels(){
+        document.querySelectorAll('input[name],select[name],textarea[name]').forEach(el => {
+          const label = findNearestLabel(el);
+          if (!label) return;
+          const existing = label.querySelector('.required-mark');
+          if (el.required && !existing){
+            const span = document.createElement('span');
+            span.className = 'required-mark';
+            span.textContent = '*';
+            span.setAttribute('aria-hidden','true');
+            label.appendChild(span);
+          }else if (!el.required && existing){
+            existing.remove();
+          }
+        });
+      }
+      function markRequiredLabels(){
+        syncRequiredLabels();
+      }
+      function validateRequiredFields(form, opts){
+        if (!form) return true;
+        const scope = (opts && opts.scope) ? opts.scope : form;
+        const required = Array.from(scope.querySelectorAll('[required]')).filter(el => !isTemplateHidden(el));
+        const missing = [];
+        required.forEach(el => {
+          const val = (el.value || "").trim();
+          if (!val){
+            const label = findNearestLabel(el);
+            const labelText = label ? label.textContent.replace(/\*/g,"").trim() : (el.name || "This field");
+            missing.push({ el, label: labelText });
+          }
+        });
+        const errorBox = document.getElementById('formError');
+        if (missing.length){
+          const message = "Please fill: " + missing.map(m => m.label).join(", ");
+          if (errorBox){
+            errorBox.textContent = message;
+            errorBox.style.display = "block";
+            errorBox.scrollIntoView({ behavior:'smooth', block:'center' });
+          }else{
+            alert(message);
+          }
+          const first = missing[0]?.el;
+          if (first && typeof first.focus === "function") first.focus();
+          return false;
+        }
+        if (errorBox){
+          errorBox.textContent = "";
+          errorBox.style.display = "none";
+        }
+        return true;
+      }
+    </script>
+
+    <!-- ===== Template preview overlay ===== -->
+    <div class="template-preview-overlay" id="templatePreviewOverlay" aria-hidden="true">
+      <div class="template-preview-modal" role="dialog" aria-modal="true" aria-labelledby="templatePreviewTitle">
+        <div class="template-preview-head">
+          <div class="template-preview-title" id="templatePreviewTitle">Template Preview</div>
+          <div class="template-preview-actions">
+            <a class="btn btn-ghost" id="templatePreviewNewTab" href="#" target="_blank" rel="noopener" style="text-decoration:none">Open in new tab</a>
+            <button type="button" class="btn btn-ghost" onclick="closeTemplatePreview()">Close</button>
+          </div>
+        </div>
+        <div class="template-preview-body">
+          <div class="template-preview-docx" id="templatePreviewDocx"></div>
+        </div>
+        <div class="template-preview-error" id="templatePreviewError"></div>
+        <div class="template-preview-note">Preview renders the DOCX inline. Use "Open in new tab" for the PDF.</div>
+      </div>
+    </div>
+
+    <script src="{{ url_for('static', filename='hr_docgen/vendor/jszip.min.js') }}"></script>
+    <script src="{{ url_for('static', filename='hr_docgen/vendor/docx-preview.min.js') }}"></script>
+
+    <!-- ===== Template preview ===== -->
+    <script>
+      function showTemplatePreviewError(message){
+        const errorBox = document.getElementById("templatePreviewError");
+        if (!errorBox) return;
+        errorBox.textContent = message;
+        errorBox.classList.add("is-visible");
+      }
+
+      function clearTemplatePreviewError(){
+        const errorBox = document.getElementById("templatePreviewError");
+        if (!errorBox) return;
+        errorBox.textContent = "";
+        errorBox.classList.remove("is-visible");
+      }
+
+      function previewTemplate() {
+        const select = document.getElementById("TemplateName");
+        const selected = select.value.trim();
+        if (!selected) { alert("Please select a template to preview!"); return; }
+        const overlay = document.getElementById("templatePreviewOverlay");
+        const title = document.getElementById("templatePreviewTitle");
+        const newTab = document.getElementById("templatePreviewNewTab");
+        const docxBox = document.getElementById("templatePreviewDocx");
+        const pdfPath = `/hr/docgen/template_preview/${encodeURIComponent(selected)}`;
+        if (!overlay || !title || !newTab) {
+          window.open(pdfPath, "_blank");
+          return;
+        }
+        title.textContent = `Preview: ${selected}`;
+        if (docxBox){
+          docxBox.innerHTML = "";
+          docxBox.classList.remove("is-visible");
+        }
+        clearTemplatePreviewError();
+        overlay.classList.add("is-open");
+        overlay.setAttribute("aria-hidden", "false");
+        document.body.style.overflow = "hidden";
+        newTab.href = pdfPath;
+
+        loadTemplatePreview(selected);
+      }
+
+      async function loadTemplatePreview(selected){
+        const docxBox = document.getElementById("templatePreviewDocx");
+        const newTab = document.getElementById("templatePreviewNewTab");
+        const pdfUrl = `/hr/docgen/template_preview/${encodeURIComponent(selected)}`;
+        const docxUrl = `/hr/docgen/word_templates/${encodeURIComponent(selected)}`;
+
+        const docxLib = window.docx || window.docxPreview;
+        if (!docxLib || !docxLib.renderAsync || !window.JSZip || !docxBox){
+          showTemplatePreviewError("Preview failed. Click \"Open in new tab\" to open the PDF.");
+          if (newTab) newTab.href = pdfUrl;
+          return;
+        }
+
+        try{
+          const res = await fetch(docxUrl, { credentials: "same-origin" });
+          if (!res.ok) throw new Error("docx-fetch-failed");
+          const buf = await res.arrayBuffer();
+          docxBox.classList.add("is-visible");
+          await docxLib.renderAsync(buf, docxBox, null, { className: "docx-preview" });
+          if (newTab) newTab.href = pdfUrl;
+        }catch (err){
+          showTemplatePreviewError("Preview failed. Click \"Open in new tab\" to open the PDF.");
+          if (newTab) newTab.href = pdfUrl;
+        }
+      }
+
+      function closeTemplatePreview() {
+        const overlay = document.getElementById("templatePreviewOverlay");
+        const docxBox = document.getElementById("templatePreviewDocx");
+        if (!overlay) return;
+        overlay.classList.remove("is-open");
+        overlay.setAttribute("aria-hidden", "true");
+        if (docxBox){
+          docxBox.innerHTML = "";
+          docxBox.classList.remove("is-visible");
+        }
+        clearTemplatePreviewError();
+        document.body.style.overflow = "";
+      }
+
+      document.addEventListener("click", (e) => {
+        const overlay = document.getElementById("templatePreviewOverlay");
+        if (!overlay) return;
+        if (e.target === overlay) closeTemplatePreview();
+      });
+
+      document.addEventListener("keydown", (e) => {
+        if (e.key === "Escape") closeTemplatePreview();
+      });
+    </script>
+
+    <!-- ===== NEW: Auto-fill Certificate Type from Template Name ===== -->
+    <script>
+      function templateFileToTitle(filename){
+        if(!filename) return "";
+        let base = filename.replace(/\.docx$/i, "");
+        base = base.replace(/[_-]+/g, " ");
+        const lowers = new Set(["of","and","or","for","to","a","an","the"]);
+        base = base
+          .split(/\s+/)
+          .map((w,i)=>{
+            const lw = w.toLowerCase();
+            if (i>0 && lowers.has(lw)) return lw;
+            return lw.charAt(0).toUpperCase() + lw.slice(1);
+          })
+          .join(" ");
+        return base.trim();
+      }
+      function updateCertTypeFromTemplate(opts){
+        const force = (opts && opts.force) || false;
+        const sel   = document.getElementById("TemplateName");
+        const input = document.querySelector('[name="CertificateType"]');
+        if (!sel || !input) return;
+        const val = (sel.value || "").trim();
+        if (!val) return;
+        const title = templateFileToTitle(val);
+        if (force || !input.value.trim()){
+          input.value = title;
+        }
+      }
+      document.addEventListener("DOMContentLoaded", () => {
+        const sel = document.getElementById("TemplateName");
+        if (sel){
+          updateCertTypeFromTemplate({ force:false });
+          sel.addEventListener("change", () => updateCertTypeFromTemplate({ force:true }));
+        }
+      });
+    </script>
+
+    <script>
+      const TEMPLATE_ASSIST_DERIVED = {
+        basicyearly: { sources:["Salary","Basic_Percentage"], note:"Auto from Salary and Basic %" },
+        basicmonthly: { sources:["Salary","Basic_Percentage"], note:"Auto from Salary and Basic %" },
+        hrayearly: { sources:["Salary","HRA_Percentage"], note:"Auto from Salary and HRA %" },
+        hramonthly: { sources:["Salary","HRA_Percentage"], note:"Auto from Salary and HRA %" },
+        conveyanceyearly: { sources:["Salary","Conveyance_Percentage"], note:"Auto from Salary and Conveyance %" },
+        conveyancemonthly: { sources:["Salary","Conveyance_Percentage"], note:"Auto from Salary and Conveyance %" },
+        specialyearly: { sources:["Salary","Special_Percentage"], note:"Auto from Salary and Special %" },
+        specialmonthly: { sources:["Salary","Special_Percentage"], note:"Auto from Salary and Special %" },
+        grossyearly: { sources:["Salary"], note:"Auto from Salary" },
+        grossmonthly: { sources:["Salary"], note:"Auto from Salary" },
+        pfyearly: { sources:["Salary"], note:"Auto from Salary (or PF override)" },
+        pfmonthly: { sources:["Salary"], note:"Auto from Salary (or PF override)" },
+        esicyearly: { sources:["Salary"], note:"Auto from Salary (or ESIC override)" },
+        esicmonthly: { sources:["Salary"], note:"Auto from Salary (or ESIC override)" },
+        deductionsyearly: { sources:["Salary"], note:"Auto from PF and ESIC" },
+        deductionsmonthly: { sources:["Salary"], note:"Auto from PF and ESIC" },
+        subtotalyearly: { sources:["Salary"], note:"Auto from PF and ESIC" },
+        subtotalmonthly: { sources:["Salary"], note:"Auto from PF and ESIC" },
+        inhandyearly: { sources:["Salary"], note:"Auto from gross minus deductions" },
+        inhandmonthly: { sources:["Salary"], note:"Auto from gross minus deductions" }
+      };
+
+      const DATA_ENTRY_MEMORY_KEY = "docgen.data_entry.memory.v1";
+      const DATA_ENTRY_MEMORY_LIMIT = 8;
+      const TEMPLATE_PLACEHOLDER_CACHE = {};
+      const TEMPLATE_CORE_FIELDS = new Set(["CertificateType", "Ref_No", "TemplateName", "DateIssued", "Emp_ID"]);
+      const TEMPLATE_ALIAS_FIELDS = new Set(["Alias_HisHer", "Alias_himHer", "Alias_HeShe"]);
+      const TEMPLATE_DYNAMIC_REQUIRED = new Set(["Gender"]);
+
+      let tplAssistControls = {};
+      let tplAssistCanonicalFields = {};
+      let tplAssistTemplate = "";
+      let tplAssistPlaceholders = [];
+
+      function canonicalKey(v){
+        return String(v || "").toLowerCase().replace(/[^a-z0-9]/g, "");
+      }
+      function stripTemplateSuffix(v){
+        return String(v || "").replace(/_(dmy|lower|upper|title)$/i, "");
+      }
+      function compactValue(v, maxLen){
+        const s = String(v || "").trim();
+        if (!s) return "";
+        const lim = maxLen || 64;
+        return s.length > lim ? `${s.slice(0, lim)}...` : s;
+      }
+      function getDataEntryForm(){
+        return document.querySelector('form[action="/hr/docgen/save_generate"]');
+      }
+      function currentTemplateName(){
+        const sel = document.getElementById("TemplateName");
+        return sel ? String(sel.value || "").trim() : "";
+      }
+      function safeFilenamePart(v, fallback){
+        const base = String(v || "").trim()
+          .replace(/[<>:"/\\|?*\t\r\n]+/g, "_")
+          .replace(/\s+/g, "_")
+          .replace(/_+/g, "_")
+          .replace(/^_+|_+$/g, "");
+        return base || fallback;
+      }
+      function getFieldValue(name){
+        const el = tplAssistControls[name];
+        return el ? String(el.value || "").trim() : "";
+      }
+      function getFieldLabel(name){
+        const el = tplAssistControls[name];
+        if (!el) return name;
+        const label = findNearestLabel(el);
+        return label ? label.textContent.replace(/\*/g, "").trim() : name;
+      }
+      function getFieldHost(el){
+        if (!el) return null;
+        return el.closest(".field-box") || el.closest("div");
+      }
+      function buildTemplateAssistantIndexes(){
+        const form = getDataEntryForm();
+        if (!form) return;
+        tplAssistControls = {};
+        tplAssistCanonicalFields = {};
+        form.querySelectorAll("input[name],select[name],textarea[name]").forEach(el => {
+          if (!el.name) return;
+          tplAssistControls[el.name] = el;
+          tplAssistCanonicalFields[canonicalKey(el.name)] = el.name;
+          const host = getFieldHost(el);
+          if (host) host.classList.add("field-box");
+        });
+      }
+
+      function readMemoryStore(){
+        try{
+          const raw = localStorage.getItem(DATA_ENTRY_MEMORY_KEY);
+          const parsed = raw ? JSON.parse(raw) : {};
+          return {
+            global: parsed.global || {},
+            templates: parsed.templates || {},
+            lastByTemplate: parsed.lastByTemplate || {}
+          };
+        }catch(_err){
+          return { global:{}, templates:{}, lastByTemplate:{} };
+        }
+      }
+      function writeMemoryStore(store){
+        localStorage.setItem(DATA_ENTRY_MEMORY_KEY, JSON.stringify(store));
+      }
+      function addMemoryValue(bucket, fieldName, value){
+        const val = String(value || "").trim();
+        if (!val) return;
+        const prev = Array.isArray(bucket[fieldName]) ? bucket[fieldName] : [];
+        const next = [val, ...prev.filter(x => String(x).toLowerCase() !== val.toLowerCase())];
+        bucket[fieldName] = next.slice(0, DATA_ENTRY_MEMORY_LIMIT);
+      }
+      function saveFormMemory(){
+        const form = getDataEntryForm();
+        if (!form) return;
+        const template = currentTemplateName();
+        const store = readMemoryStore();
+        const snapshot = { savedAt: new Date().toISOString(), values: {} };
+
+        form.querySelectorAll("input[name],select[name],textarea[name]").forEach(el => {
+          if (!el.name) return;
+          const type = String(el.type || "").toLowerCase();
+          if (type === "hidden" || type === "checkbox" || type === "radio") return;
+          const value = String(el.value || "").trim();
+          if (!value) return;
+          snapshot.values[el.name] = value;
+          addMemoryValue(store.global, el.name, value);
+          if (template){
+            if (!store.templates[template]) store.templates[template] = {};
+            addMemoryValue(store.templates[template], el.name, value);
+          }
+        });
+
+        if (template && Object.keys(snapshot.values).length){
+          store.lastByTemplate[template] = snapshot;
+        }
+        writeMemoryStore(store);
+      }
+      function supportsMemoryDatalist(el){
+        if (!el || el.tagName !== "INPUT") return false;
+        if (el.hasAttribute("list")) return false;
+        const type = String(el.type || "text").toLowerCase();
+        return ["text", "search", "email", "tel", "url"].includes(type);
+      }
+      function getMemorySuggestions(fieldName){
+        const template = currentTemplateName();
+        const store = readMemoryStore();
+        const templateValues = (template && store.templates[template] && store.templates[template][fieldName]) ? store.templates[template][fieldName] : [];
+        const globalValues = store.global[fieldName] || [];
+        const seen = new Set();
+        const merged = [];
+        [...templateValues, ...globalValues].forEach(v => {
+          const val = String(v || "").trim();
+          const key = val.toLowerCase();
+          if (!val || seen.has(key)) return;
+          seen.add(key);
+          merged.push(val);
+        });
+        return merged.slice(0, DATA_ENTRY_MEMORY_LIMIT);
+      }
+      function initMemoryDatalists(){
+        const form = getDataEntryForm();
+        if (!form) return;
+        form.querySelectorAll("input[name]").forEach(el => {
+          if (!supportsMemoryDatalist(el)) return;
+          const listId = `mem_${el.name}`;
+          let dl = document.getElementById(listId);
+          if (!dl){
+            dl = document.createElement("datalist");
+            dl.id = listId;
+            form.appendChild(dl);
+          }
+          el.setAttribute("list", listId);
+          const refill = () => fillMemoryDatalist(el.name);
+          el.addEventListener("focus", refill);
+          el.addEventListener("input", refill);
+        });
+      }
+      function fillMemoryDatalist(fieldName){
+        const dl = document.getElementById(`mem_${fieldName}`);
+        if (!dl) return;
+        const values = getMemorySuggestions(fieldName);
+        dl.innerHTML = "";
+        values.forEach(v => {
+          const opt = document.createElement("option");
+          opt.value = v;
+          dl.appendChild(opt);
+        });
+      }
+      function refreshAllMemoryDatalists(){
+        Object.keys(tplAssistControls).forEach(name => fillMemoryDatalist(name));
+        updateMemoryHintAndButton();
+      }
+      function updateMemoryHintAndButton(){
+        const hint = document.getElementById("templateMemoryHint");
+        const btn = document.getElementById("applyLastTemplateMemory");
+        if (!hint || !btn) return;
+        const template = currentTemplateName();
+        if (!template){
+          hint.textContent = "Choose a template to unlock template-specific memory suggestions.";
+          btn.disabled = true;
+          return;
+        }
+        const store = readMemoryStore();
+        const snap = store.lastByTemplate[template];
+        if (!snap || !snap.values){
+          hint.textContent = "No saved memory yet for this template. After one save, suggestions will appear.";
+          btn.disabled = true;
+          return;
+        }
+        const dt = snap.savedAt ? new Date(snap.savedAt) : null;
+        const stamp = dt && !isNaN(dt.getTime()) ? dt.toLocaleString() : "earlier";
+        hint.textContent = `Memory loaded: last saved values for this template from ${stamp}.`;
+        btn.disabled = false;
+      }
+      function applyLastTemplateMemory(){
+        const template = currentTemplateName();
+        const hint = document.getElementById("templateMemoryHint");
+        if (!template) return;
+        const store = readMemoryStore();
+        const snap = store.lastByTemplate[template];
+        if (!snap || !snap.values){
+          if (hint) hint.textContent = "No saved values found for this template.";
+          return;
+        }
+        let applied = 0;
+        Object.entries(snap.values).forEach(([fieldName, value]) => {
+          const el = tplAssistControls[fieldName];
+          if (!el) return;
+          if (String(el.value || "").trim()) return;
+          el.value = value;
+          applied += 1;
+        });
+        if (typeof setAliasesByGender === "function") setAliasesByGender(false);
+        if (typeof convertSalaryToWords === "function") convertSalaryToWords();
+        if (typeof recalcBreakup === "function") recalcBreakup();
+        refreshAllMemoryDatalists();
+        renderTemplateAssistant();
+        if (hint){
+          hint.textContent = applied > 0 ? `Applied ${applied} values from template memory into empty fields.` : "All mapped fields already had values.";
+        }
+      }
+
+      async function fetchTemplatePlaceholders(templateName){
+        if (TEMPLATE_PLACEHOLDER_CACHE[templateName]){
+          return TEMPLATE_PLACEHOLDER_CACHE[templateName];
+        }
+        const res = await fetch(`/hr/docgen/api/template_placeholders/${encodeURIComponent(templateName)}`, { credentials:"same-origin" });
+        if (!res.ok){
+          throw new Error(`placeholder-fetch-${res.status}`);
+        }
+        const json = await res.json();
+        const placeholders = Array.isArray(json.placeholders) ? json.placeholders : [];
+        TEMPLATE_PLACEHOLDER_CACHE[templateName] = placeholders;
+        return placeholders;
+      }
+      function clearTemplateFieldDecorations(){
+        Object.values(tplAssistControls).forEach(el => {
+          const host = getFieldHost(el);
+          if (host){
+            host.classList.remove("is-template-used");
+          }
+          const notes = host ? host.querySelectorAll(".field-map-note") : [];
+          notes.forEach(n => n.remove());
+        });
+      }
+      function mapPlaceholderRows(){
+        const rows = [];
+        const byField = {};
+        tplAssistPlaceholders.forEach(ph => {
+          const base = stripTemplateSuffix(ph);
+          const rawKey = canonicalKey(ph);
+          const baseKey = canonicalKey(base);
+          const mappedField = tplAssistCanonicalFields[baseKey] || tplAssistCanonicalFields[rawKey] || null;
+
+          if (mappedField){
+            const value = getFieldValue(mappedField);
+            rows.push({
+              placeholder: ph,
+              kind: "mapped",
+              fieldName: mappedField,
+              target: getFieldLabel(mappedField),
+              value: value || "Pending input",
+              pending: !value
+            });
+            if (!byField[mappedField]) byField[mappedField] = [];
+            byField[mappedField].push(ph);
+            return;
+          }
+
+          const helper = TEMPLATE_ASSIST_DERIVED[rawKey] || TEMPLATE_ASSIST_DERIVED[baseKey];
+          if (helper){
+            const missing = helper.sources.filter(field => !getFieldValue(field));
+            rows.push({
+              placeholder: ph,
+              kind: "derived",
+              fieldName: null,
+              target: helper.note,
+              value: missing.length ? `Needs input: ${missing.join(", ")}` : "Ready",
+              pending: missing.length > 0
+            });
+            return;
+          }
+
+          rows.push({
+            placeholder: ph,
+            kind: "unmapped",
+            fieldName: null,
+            target: "No matching input field",
+            value: "Template placeholder not mapped in form",
+            pending: true
+          });
+        });
+        return { rows, byField };
+      }
+      function collectTemplateVisibleFields(rows, byField){
+        const visible = new Set(TEMPLATE_CORE_FIELDS);
+        Object.keys(byField || {}).forEach(fieldName => visible.add(fieldName));
+        (rows || []).forEach(row => {
+          if (row.kind !== "derived") return;
+          const base = stripTemplateSuffix(row.placeholder);
+          const rawKey = canonicalKey(row.placeholder);
+          const baseKey = canonicalKey(base);
+          const helper = TEMPLATE_ASSIST_DERIVED[rawKey] || TEMPLATE_ASSIST_DERIVED[baseKey];
+          if (helper && Array.isArray(helper.sources)){
+            helper.sources.forEach(fieldName => visible.add(fieldName));
+          }
+        });
+        const needsAliasSource = [...TEMPLATE_ALIAS_FIELDS].some(fieldName => visible.has(fieldName));
+        if (needsAliasSource) visible.add("Gender");
+        return visible;
+      }
+      function setFieldFocusVisibility(fieldName, shouldShow){
+        const el = tplAssistControls[fieldName];
+        const host = getFieldHost(el);
+        if (!host) return;
+        host.classList.toggle("is-template-hidden", !shouldShow);
+        host.setAttribute("aria-hidden", shouldShow ? "false" : "true");
+        if (TEMPLATE_DYNAMIC_REQUIRED.has(fieldName)){
+          el.required = shouldShow;
+        }
+      }
+      function refreshTemplateSectionVisibility(){
+        document.querySelectorAll(".step-pane").forEach(pane => {
+          pane.querySelectorAll(".grid").forEach(grid => {
+            const fields = Array.from(grid.querySelectorAll(".field-box"));
+            if (!fields.length) return;
+            const visibleCount = fields.filter(field => !field.classList.contains("is-template-hidden")).length;
+            grid.dataset.visibleFields = String(visibleCount);
+            grid.classList.toggle("template-section-hidden", visibleCount === 0);
+          });
+          pane.querySelectorAll(".legend").forEach(legend => {
+            const fields = [];
+            let node = legend.nextElementSibling;
+            while (node && !node.classList.contains("legend") && !node.classList.contains("actions")){
+              fields.push(...Array.from(node.querySelectorAll(".field-box")));
+              node = node.nextElementSibling;
+            }
+            if (fields.length){
+              legend.classList.toggle("template-section-hidden", fields.every(field => field.classList.contains("is-template-hidden")));
+            }
+          });
+        });
+      }
+      function visibleStepNumbers(){
+        return Array.from(document.querySelectorAll(".step-pane"))
+          .filter(pane => !pane.classList.contains("is-template-hidden"))
+          .map(pane => Number(pane.dataset.step))
+          .filter(Number.isFinite)
+          .sort((a, b) => a - b);
+      }
+      function stepFieldLabel(fieldName){
+        const labels = {
+          Emp_ID:"ID",
+          Emp_Name:"Name",
+          Emp_2ndName:"2nd name",
+          Department:"Dept",
+          Designation:"Designation",
+          Alias_HisHer:"Alias",
+          Alias_himHer:"Alias",
+          Alias_HeShe:"Alias",
+          Start_Date:"Start date",
+          From_Date:"From date",
+          To_Date:"To date",
+          Joining_Date:"Joining date",
+          Relieving_Date:"Relieving date",
+          Reporting_to:"Reporting",
+          Institute_Location:"Institute location",
+          Internship_Location:"Internship location",
+          Organizationwithaddress:"Organization address",
+          Basic_Percentage:"Basic %",
+          HRA_Percentage:"HRA %",
+          Conveyance_Percentage:"Conveyance %",
+          Special_Percentage:"Special %",
+          SalaryinWords:"Salary words",
+          Leaves_allotted:"Leaves"
+        };
+        return labels[fieldName] || getFieldLabel(fieldName);
+      }
+      function refreshStepperSummary(){
+        let visibleIndex = 0;
+        steps.forEach(step => {
+          const stepNo = Number(step.dataset.step);
+          const pane = document.querySelector(`.step-pane[data-step="${stepNo}"]`);
+          if (!step.dataset.defaultSub){
+            const sub = step.querySelector(".sub");
+            step.dataset.defaultSub = sub ? sub.textContent : "";
+          }
+          if (step.classList.contains("is-template-hidden")) return;
+          visibleIndex += 1;
+          const num = step.querySelector(".num");
+          if (num) num.textContent = String(visibleIndex);
+          const sub = step.querySelector(".sub");
+          if (!sub || !pane) return;
+          if (stepNo === 1 || stepNo === 9){
+            sub.textContent = step.dataset.defaultSub || sub.textContent;
+            return;
+          }
+          const fieldNames = Array.from(pane.querySelectorAll(".field-box:not(.is-template-hidden) input[name], .field-box:not(.is-template-hidden) select[name], .field-box:not(.is-template-hidden) textarea[name]"))
+            .map(el => el.name)
+            .filter(Boolean);
+          const uniqueLabels = [];
+          const seen = new Set();
+          fieldNames.forEach(name => {
+            const label = stepFieldLabel(name);
+            const key = label.toLowerCase();
+            if (!label || seen.has(key)) return;
+            seen.add(key);
+            uniqueLabels.push(label);
+          });
+          if (!uniqueLabels.length){
+            sub.textContent = step.dataset.defaultSub || "";
+            return;
+          }
+          const shown = uniqueLabels.slice(0, 3).join(", ");
+          sub.textContent = uniqueLabels.length > 3 ? `${shown} +${uniqueLabels.length - 3}` : shown;
+        });
+      }
+      function refreshFocusedStepVisibility(){
+        document.querySelectorAll(".step-pane").forEach(pane => {
+          const stepNo = Number(pane.dataset.step);
+          const alwaysVisible = stepNo === 1 || stepNo === 9;
+          const hasVisibleField = !!pane.querySelector(".field-box:not(.is-template-hidden)");
+          pane.classList.toggle("is-template-hidden", !alwaysVisible && !hasVisibleField);
+        });
+        steps.forEach(step => {
+          const stepNo = Number(step.dataset.step);
+          const pane = document.querySelector(`.step-pane[data-step="${stepNo}"]`);
+          step.classList.toggle("is-template-hidden", !!(pane && pane.classList.contains("is-template-hidden")));
+        });
+        refreshStepperSummary();
+      }
+      function ensureVisibleStep(){
+        const current = document.querySelector(".step-pane.is-visible");
+        if (!current || !current.classList.contains("is-template-hidden")) return;
+        const visibleSteps = visibleStepNumbers();
+        if (visibleSteps.length && typeof goStep === "function"){
+          goStep(visibleSteps[0], { skipValidation:true });
+        }
+      }
+      function applyTemplateFocusedFields(rows, byField){
+        const template = currentTemplateName();
+        if (!template){
+          Object.keys(tplAssistControls).forEach(fieldName => setFieldFocusVisibility(fieldName, true));
+        }else{
+          const visible = collectTemplateVisibleFields(rows, byField);
+          Object.keys(tplAssistControls).forEach(fieldName => setFieldFocusVisibility(fieldName, visible.has(fieldName)));
+        }
+        refreshTemplateSectionVisibility();
+        refreshFocusedStepVisibility();
+        syncRequiredLabels();
+        ensureVisibleStep();
+      }
+      function decorateMappedFields(byField){
+        clearTemplateFieldDecorations();
+        Object.entries(byField).forEach(([fieldName, placeholders]) => {
+          const el = tplAssistControls[fieldName];
+          if (!el) return;
+          const host = getFieldHost(el);
+          if (!host) return;
+          host.classList.add("is-template-used");
+          const note = document.createElement("div");
+          note.className = "field-map-note";
+          const shown = placeholders.slice(0, 3).map(p => `\u007B\u007B ${p} \u007D\u007D`).join(", ");
+          const more = placeholders.length > 3 ? ` +${placeholders.length - 3} more` : "";
+          note.textContent = `Template placeholders: ${shown}${more}`;
+          host.appendChild(note);
+        });
+      }
+      function renderTemplateRows(rows){
+        const list = document.getElementById("templatePlaceholderList");
+        if (!list) return;
+        list.innerHTML = "";
+        if (!rows.length){
+          const li = document.createElement("li");
+          li.className = "placeholder-row";
+          const col = document.createElement("div");
+          col.className = "ph-target";
+          col.textContent = "No placeholders found for this template.";
+          li.appendChild(col);
+          list.appendChild(li);
+          return;
+        }
+        rows.forEach(row => {
+          const li = document.createElement("li");
+          li.className = `placeholder-row ${row.kind}`;
+
+          const c1 = document.createElement("div");
+          c1.className = "ph-token";
+          c1.textContent = `\u007B\u007B ${row.placeholder} \u007D\u007D`;
+
+          const c2 = document.createElement("div");
+          c2.className = "ph-target";
+          if (row.fieldName){
+            const prefix = document.createElement("span");
+            prefix.textContent = "Input: ";
+            const jump = document.createElement("button");
+            jump.type = "button";
+            jump.className = "ph-link";
+            jump.textContent = row.target;
+            jump.dataset.field = row.fieldName;
+            c2.appendChild(prefix);
+            c2.appendChild(jump);
+          }else{
+            c2.textContent = row.target;
+          }
+
+          const c3 = document.createElement("div");
+          c3.className = "ph-value";
+          c3.textContent = compactValue(row.value, 70);
+
+          li.appendChild(c1);
+          li.appendChild(c2);
+          li.appendChild(c3);
+          list.appendChild(li);
+        });
+      }
+      function updateAssistantStats(rows){
+        const total = rows.length;
+        const mapped = rows.filter(r => r.kind === "mapped").length;
+        const unmapped = rows.filter(r => r.kind === "unmapped").length;
+        const pending = rows.filter(r => r.pending).length;
+        const statTotal = document.getElementById("statTotal");
+        const statMapped = document.getElementById("statMapped");
+        const statPending = document.getElementById("statPending");
+        const statUnknown = document.getElementById("statUnknown");
+        if (statTotal) statTotal.textContent = `Placeholders: ${total}`;
+        if (statMapped) statMapped.textContent = `Mapped: ${mapped}`;
+        if (statPending) statPending.textContent = `Pending input: ${pending}`;
+        if (statUnknown) statUnknown.textContent = `Unmapped: ${unmapped}`;
+      }
+      function updateImpactPreview(){
+        const impact = document.getElementById("assistantImpact");
+        if (!impact) return;
+        const emp = getFieldValue("Emp_Name");
+        const cert = getFieldValue("CertificateType");
+        const template = currentTemplateName();
+        const safeEmp = safeFilenamePart(emp, "Employee");
+        const safeCert = safeFilenamePart(cert, "Document");
+        const docName = `${safeEmp}_${safeCert}.docx`;
+        if (!template){
+          impact.textContent = "Select a template to view placeholder impact and output naming.";
+          return;
+        }
+        impact.textContent = `Selected template: ${template} | Expected output filename: ${docName}`;
+      }
+      function focusMappedField(fieldName){
+        const el = tplAssistControls[fieldName];
+        if (!el) return;
+        const pane = el.closest(".step-pane");
+        if (pane && !pane.classList.contains("is-visible") && typeof goStep === "function"){
+          goStep(Number(pane.dataset.step));
+        }
+        setTimeout(() => {
+          el.focus();
+          el.scrollIntoView({ behavior:"smooth", block:"center" });
+        }, 150);
+      }
+      function renderTemplateAssistant(){
+        const template = currentTemplateName();
+        const title = document.getElementById("assistantTemplateName");
+        if (!template){
+          tplAssistTemplate = "";
+          tplAssistPlaceholders = [];
+          if (title) title.textContent = "Select a template to see placeholder mapping.";
+          renderTemplateRows([]);
+          updateAssistantStats([]);
+          updateImpactPreview();
+          updateMemoryHintAndButton();
+          clearTemplateFieldDecorations();
+          applyTemplateFocusedFields([], {});
+          return;
+        }
+        if (title){
+          title.textContent = `Current template: ${template}`;
+        }
+        const mapped = mapPlaceholderRows();
+        decorateMappedFields(mapped.byField);
+        applyTemplateFocusedFields(mapped.rows, mapped.byField);
+        renderTemplateRows(mapped.rows);
+        updateAssistantStats(mapped.rows);
+        updateImpactPreview();
+        updateMemoryHintAndButton();
+      }
+      async function refreshTemplateAssistant(forceReload){
+        const template = currentTemplateName();
+        if (!template){
+          renderTemplateAssistant();
+          return;
+        }
+        try{
+          const shouldReload = forceReload || tplAssistTemplate !== template;
+          if (shouldReload){
+            tplAssistPlaceholders = await fetchTemplatePlaceholders(template);
+            tplAssistTemplate = template;
+          }
+          renderTemplateAssistant();
+        }catch(_err){
+          const title = document.getElementById("assistantTemplateName");
+          if (title){
+            title.textContent = `Current template: ${template} (placeholder fetch failed)`;
+          }
+          tplAssistPlaceholders = [];
+          renderTemplateRows([]);
+          updateAssistantStats([]);
+        }
+      }
+
+      document.addEventListener("DOMContentLoaded", () => {
+        buildTemplateAssistantIndexes();
+        initMemoryDatalists();
+        refreshAllMemoryDatalists();
+        refreshTemplateAssistant(true);
+        updateImpactPreview();
+
+        const form = getDataEntryForm();
+        const templateSel = document.getElementById("TemplateName");
+        const applyMemoryBtn = document.getElementById("applyLastTemplateMemory");
+        const placeholderList = document.getElementById("templatePlaceholderList");
+
+        if (templateSel){
+          templateSel.addEventListener("change", async () => {
+            refreshAllMemoryDatalists();
+            await refreshTemplateAssistant(true);
+          });
+        }
+        if (form){
+          form.addEventListener("input", () => {
+            renderTemplateAssistant();
+            updateImpactPreview();
+          });
+          form.addEventListener("submit", () => {
+            saveFormMemory();
+          }, true);
+        }
+        if (applyMemoryBtn){
+          applyMemoryBtn.addEventListener("click", applyLastTemplateMemory);
+        }
+        if (placeholderList){
+          placeholderList.addEventListener("click", (e) => {
+            const btn = e.target.closest(".ph-link");
+            if (!btn) return;
+            const fieldName = btn.dataset.field;
+            if (fieldName) focusMappedField(fieldName);
+          });
+        }
+      });
+
+      window.refreshTemplateAssistant = refreshTemplateAssistant;
+    </script>
+
+    <!-- ===== Stepper logic ===== -->
+    <script>
+      const steps = Array.from(document.querySelectorAll('.step'));
+      function normalizeStepTarget(requested, currentStep){
+        const visible = (typeof visibleStepNumbers === "function") ? visibleStepNumbers() : [];
+        if (!visible.length || visible.includes(requested)) return requested;
+        const movingForward = requested >= currentStep;
+        if (movingForward){
+          return visible.find(stepNo => stepNo >= requested) || visible[visible.length - 1];
+        }
+        return [...visible].reverse().find(stepNo => stepNo <= requested) || visible[0];
+      }
+      function goStep(n, opts){
+        const requested = Number(n);
+        const currentPane = document.querySelector('.step-pane.is-visible');
+        const currentStep = currentPane ? Number(currentPane.dataset.step) : requested;
+        const target = normalizeStepTarget(requested, currentStep);
+        const movingForward = target > currentStep;
+        const form = document.querySelector('form[action="/hr/docgen/save_generate"]');
+        if (movingForward && form && !(opts && opts.skipValidation)){
+          const ok = validateRequiredFields(form, { scope: currentPane || form });
+          if (!ok) return;
+        }
+        document.querySelectorAll('.step-pane').forEach(p=>{
+          p.classList.toggle('is-visible', Number(p.dataset.step) === target);
+        });
+        steps.forEach(s=>{
+          const sn = Number(s.dataset.step);
+          s.classList.toggle('is-active', sn === target);
+          s.classList.toggle('is-done', sn < target);
+        });
+        window.scrollTo({ top: document.querySelector('header').offsetHeight + 12, behavior:'smooth' });
+      }
+      steps.forEach(s => s.addEventListener('click', () => goStep(Number(s.dataset.step))));
+    </script>
+
+    <script>
+      (function(){
+        function initTemplateAssistantDrawer(){
+          const drawer = document.getElementById("templateAssistantDrawer");
+          const tab = document.getElementById("templateAssistantTab");
+          const closeBtn = document.getElementById("templateAssistantClose");
+          if (!drawer || !tab) return;
+          let hoverSuppressedUntil = 0;
+
+          function pinOpen(){
+            drawer.classList.add("open");
+            drawer.classList.remove("hover-open");
+            tab.setAttribute("aria-expanded", "true");
+          }
+
+          function closeDrawer(){
+            drawer.classList.remove("open", "hover-open");
+            tab.setAttribute("aria-expanded", "false");
+            hoverSuppressedUntil = Date.now() + 700;
+          }
+
+          tab.addEventListener("click", () => {
+            if (drawer.classList.contains("open")) closeDrawer();
+            else pinOpen();
+          });
+          tab.addEventListener("mouseenter", () => {
+            if (Date.now() < hoverSuppressedUntil || drawer.classList.contains("open")) return;
+            drawer.classList.add("hover-open");
+            tab.setAttribute("aria-expanded", "true");
+          });
+          drawer.addEventListener("mouseleave", () => {
+            if (!drawer.classList.contains("open")){
+              drawer.classList.remove("hover-open");
+              tab.setAttribute("aria-expanded", "false");
+            }
+          });
+          closeBtn?.addEventListener("click", closeDrawer);
+          document.addEventListener("keydown", (event) => {
+            if (event.key === "Escape") closeDrawer();
+          });
+        }
+
+        document.addEventListener("DOMContentLoaded", () => {
+          initTemplateAssistantDrawer();
+        });
+      })();
+    </script>
+
+    <!-- ===== Salary words, gender->alias & live breakup previews ===== -->
+    <script>
+      function numberToWords(num) {
+        if (!num) return "";
+        const n = parseInt(String(num).replace(/[^0-9]/g, ""), 10);
+        if (isNaN(n) || n === 0) return "";
+        const a = ["","One","Two","Three","Four","Five","Six","Seven","Eight","Nine","Ten","Eleven","Twelve","Thirteen","Fourteen","Fifteen","Sixteen","Seventeen","Eighteen","Nineteen"];
+        const b = ["","","Twenty","Thirty","Forty","Fifty","Sixty","Seventy","Eighty","Ninety"];
+        function inWords(x){
+          if (x<20) return a[x];
+          if (x<100) return b[Math.floor(x/10)] + (x%10 ? " " + a[x%10] : "");
+          if (x<1000) return a[Math.floor(x/100)] + " Hundred" + (x%100 ? " and " + inWords(x%100) : "");
+          if (x<100000) return inWords(Math.floor(x/1000)) + " Thousand" + (x%1000 ? " " + inWords(x%1000) : "");
+          if (x<10000000) return inWords(Math.floor(x/100000)) + " Lakh" + (x%100000 ? " " + inWords(x%100000) : "");
+          return inWords(Math.floor(x/10000000)) + " Crore" + (x%10000000 ? " " + inWords(x%10000000) : "");
+        }
+        return inWords(n).trim() + " Rupees Only";
+      }
+      function formatIndianNumber(num){
+        const x = String(num); const lastThree = x.substring(x.length-3); const otherNumbers = x.substring(0,x.length-3);
+        return otherNumbers ? otherNumbers.replace(/\B(?=(\d{2})+(?!\d))/g, ",")+","+lastThree : lastThree;
+      }
+      function cleanNumber(str){
+        if (!str) return 0; const n = parseFloat(String(str).replace(/[^\d.]/g,"")); return isNaN(n)?0:n;
+      }
+      function convertSalaryToWords(){
+        const salaryEl = document.getElementById("Salary");
+        const wordsEl  = document.getElementById("SalaryinWords");
+        const pfHint   = document.getElementById("pfHint");
+        const esicHint = document.getElementById("esicHint");
+        if (!salaryEl || !wordsEl) return;
+        const cleaned = salaryEl.value.replace(/[^\d]/g,""); wordsEl.value = numberToWords(cleaned);
+        if (cleaned){
+          salaryEl.value = formatIndianNumber(cleaned);
+          const salary = parseFloat(cleaned);
+          if (!isNaN(salary)){
+            const pf = Math.round(salary*0.12), esic = Math.round(salary*0.0075);
+            if (pfHint) pfHint.textContent = `Auto PF ~= Rs ${formatIndianNumber(pf)} (yearly) / Rs ${formatIndianNumber(Math.round(pf/12))} (monthly)`;
+            if (esicHint) esicHint.textContent = `Auto ESIC ~= Rs ${formatIndianNumber(esic)} (yearly) / Rs ${formatIndianNumber(Math.round(esic/12))} (monthly)`;
+          }
+        }else{
+          if (pfHint) pfHint.textContent = "";
+          if (esicHint) esicHint.textContent = "";
+        }
+        recalcBreakup();
+      }
+      function markOverride(hintId){
+        const hint = document.getElementById(hintId);
+        if (hint){ hint.textContent = "Manual override applied"; hint.style.color="#757575"; hint.style.fontStyle="italic"; }
+      }
+      function recalcBreakup(){
+        const salary = cleanNumber(document.getElementById("Salary")?.value);
+        const bp = cleanNumber(document.getElementById("Basic_Percentage")?.value);
+        const hp = cleanNumber(document.getElementById("HRA_Percentage")?.value);
+        const cp = cleanNumber(document.getElementById("Conveyance_Percentage")?.value);
+        const sp = cleanNumber(document.getElementById("Special_Percentage")?.value);
+        const basic=Math.round(salary*bp/100), hra=Math.round(salary*hp/100), conv=Math.round(salary*cp/100), spec=Math.round(salary*sp/100);
+        const m=v=>formatIndianNumber(Math.round(v/12));
+        const basicHint=document.getElementById("basicHint"), hraHint=document.getElementById("hraHint"),
+              convHint=document.getElementById("convHint"), specHint=document.getElementById("specHint"), grossHint=document.getElementById("grossHint");
+        if (basicHint) basicHint.textContent = basic?`~= Rs ${formatIndianNumber(basic)} / year | Rs ${m(basic)} / month`:"";
+        if (hraHint)   hraHint.textContent   = hra?  `~= Rs ${formatIndianNumber(hra)} / year | Rs ${m(hra)} / month`  :"";
+        if (convHint)  convHint.textContent  = conv? `~= Rs ${formatIndianNumber(conv)} / year | Rs ${m(conv)} / month`:"";
+        if (specHint)  specHint.textContent  = spec? `~= Rs ${formatIndianNumber(spec)} / year | Rs ${m(spec)} / month`:"";
+        if (grossHint){
+          const grossY = salary, grossM = Math.round(salary/12);
+          grossHint.textContent = salary ? `TOTAL GROSS preview: Rs ${formatIndianNumber(grossY)} / year | Rs ${formatIndianNumber(grossM)} / month` : "";
+        }
+      }
+      function setAliasesByGender(force=true){
+        const g=(document.getElementById('Gender')?.value||'').toLowerCase();
+        const hisHerEl=document.getElementById('Alias_HisHer'), himHerEl=document.getElementById('Alias_himHer'), heSheEl=document.getElementById('Alias_HeShe');
+        if (!hisHerEl||!himHerEl||!heSheEl) return;
+        let vals=null;
+        if (g==='male') vals={hisHer:'His',himHer:'him',heShe:'He'};
+        else if (g==='female') vals={hisHer:'Her',himHer:'her',heShe:'She'};
+        else { if (force){ hisHerEl.value='';himHerEl.value='';heSheEl.value=''; } return; }
+        if (force||!hisHerEl.value) hisHerEl.value=vals.hisHer;
+        if (force||!himHerEl.value) himHerEl.value=vals.himHer;
+        if (force||!heSheEl.value)  heSheEl.value =vals.heShe;
+      }
+    </script>
+
+    <!-- ===== Employee autofill wiring ===== -->
+    <script>
+      let EMP_CACHE = [];
+      let empLookupTimer = null;
+      let empLookupController = null;
+      let empLookupSeq = 0;
+      let lastAppliedEmpId = '';
+      function setEmpLookupState(state, message){
+        const box = document.getElementById('empLookupBox');
+        const hint = document.getElementById('empHint');
+        const idEl = document.getElementById('Emp_ID');
+        if (box) box.classList.toggle('is-loading', state === 'loading');
+        if (idEl) idEl.setAttribute('aria-busy', state === 'loading' ? 'true' : 'false');
+        if (hint){
+          hint.classList.remove('is-loading','is-success','is-warning','is-error');
+          if (state) hint.classList.add(`is-${state}`);
+          hint.textContent = message || '';
+        }
+      }
+      function cacheEmployee(emp){
+        if (!emp || !emp.Emp_ID) return;
+        const key = String(emp.Emp_ID).toLowerCase();
+        const idx = EMP_CACHE.findIndex(x => String(x.Emp_ID || '').toLowerCase() === key);
+        if (idx >= 0) EMP_CACHE[idx] = emp;
+        else EMP_CACHE.push(emp);
+      }
+      function applyEmployeeData(emp, message){
+        const nameEl=document.getElementById('Emp_Name');
+        const genderEl=document.getElementById('Gender');
+        const deptEl=document.querySelector('[name="Department"]');
+        const desigEl=document.querySelector('[name="Designation"]');
+        if (nameEl) nameEl.value = emp.Emp_Name || '';
+        if (genderEl){ genderEl.value = emp.Gender || ''; setAliasesByGender(true); }
+        if (deptEl) deptEl.value = emp.Department || '';
+        if (desigEl) desigEl.value = emp.Designation || '';
+        cacheEmployee(emp);
+        lastAppliedEmpId = String(emp.Emp_ID || '').trim();
+        setEmpLookupState('success', message || `Autofilled: ${emp.Emp_Name || ''} (${emp.Emp_ID || ''})`);
+      }
+      async function loadEmployees(){
+        EMP_CACHE = [];
+        const dl = document.getElementById('empList');
+        if (dl) dl.innerHTML = '';
+        setEmpLookupState('', 'Enter Employee ID to fetch active employee details from HR Systems.');
+      }
+      async function autofillByEmpId(empId, options){
+        const opts = options || {};
+        empId = String(empId || '').trim();
+        if (!empId){
+          setEmpLookupState('', 'Enter Employee ID to fetch active employee details from HR Systems.');
+          return;
+        }
+
+        let hit = EMP_CACHE.find(x => String(x.Emp_ID).toLowerCase() === String(empId).toLowerCase());
+        if (hit){
+          applyEmployeeData(hit, `Autofilled: ${hit.Emp_Name || ''} (${hit.Emp_ID || ''})`);
+          return;
+        }
+        if (!opts.force && lastAppliedEmpId && String(lastAppliedEmpId).toLowerCase() === empId.toLowerCase()) return;
+        if (empLookupController) empLookupController.abort();
+        const seq = ++empLookupSeq;
+        empLookupController = new AbortController();
+        try{
+          setEmpLookupState('loading', `Fetching employee details for ${empId} from HR Systems...`);
+          const res = await fetch(`/hr/docgen/api/employee/${encodeURIComponent(empId)}`, {
+            credentials:'same-origin',
+            signal: empLookupController.signal
+          });
+          if (seq !== empLookupSeq) return;
+          if (res.status === 404){
+            setEmpLookupState('warning', `No active employee found for ID ${empId}.`);
+            return;
+          }
+          const json = await res.json();
+          if (json.status === 'success' && json.data){
+            const d = json.data;
+            applyEmployeeData(d, `Autofilled: ${d.Emp_Name || ''} (${d.Emp_ID || empId})`);
+          } else {
+            setEmpLookupState('warning', `No active employee found for ID ${empId}.`);
+          }
+        }catch(err){
+          if (err && err.name === 'AbortError') return;
+          setEmpLookupState('error', 'Could not fetch employee details. Please try again.');
+          console.error('autofillByEmpId error:', err);
+        }finally{
+          if (seq === empLookupSeq) empLookupController = null;
+        }
+      }
+      function scheduleEmpLookup(){
+        const idEl=document.getElementById('Emp_ID');
+        const empId = idEl && idEl.value ? String(idEl.value).trim() : '';
+        if (empLookupTimer) clearTimeout(empLookupTimer);
+        if (empLookupController) empLookupController.abort();
+        if (!empId){
+          setEmpLookupState('', 'Enter Employee ID to fetch active employee details from HR Systems.');
+          return;
+        }
+        if (empId.length < 4){
+          setEmpLookupState('', 'Keep typing the Employee ID to start HR Systems fetch.');
+          return;
+        }
+        setEmpLookupState('loading', `Preparing HR Systems fetch for ${empId}...`);
+        empLookupTimer = setTimeout(()=>autofillByEmpId(empId), 450);
+      }
+      function maybeBackfillEmpIdFromName(){
+        const nameEl=document.getElementById('Emp_Name');
+        const idEl=document.getElementById('Emp_ID');
+        const deptEl=document.querySelector('[name="Department"]');
+        const desigEl=document.querySelector('[name="Designation"]');
+        if (!nameEl||!idEl) return;
+        const n=(nameEl.value||'').toLowerCase().trim(); if (!n || EMP_CACHE.length===0) return;
+        const hit = EMP_CACHE.find(x => (x.Emp_Name||'').toLowerCase() === n);
+        if (hit){
+          idEl.value = hit.Emp_ID || '';
+          const genderEl = document.getElementById('Gender');
+          if (genderEl){ genderEl.value = hit.Gender || ''; setAliasesByGender(true); }
+          if (deptEl) deptEl.value = hit.Department || '';
+          if (desigEl) desigEl.value = hit.Designation || '';
+          setEmpLookupState('success', `Matched ID from name: ${hit.Emp_ID}`);
+        }
+      }
+      document.addEventListener('DOMContentLoaded', ()=>{
+        loadEmployees();
+        markRequiredLabels();
+        const idEl=document.getElementById('Emp_ID');
+        if (idEl){
+          idEl.addEventListener('input', scheduleEmpLookup);
+          idEl.addEventListener('change', ()=>{ const v=idEl.value && String(idEl.value).trim(); if (v) autofillByEmpId(v, {force:true}); });
+          idEl.addEventListener('blur',   ()=>{ const v=idEl.value && String(idEl.value).trim(); if (v) autofillByEmpId(v, {force:true}); });
+          idEl.addEventListener('keydown', (ev)=>{
+            if (ev.key === 'Enter'){
+              const v=idEl.value && String(idEl.value).trim();
+              if (v){ ev.preventDefault(); autofillByEmpId(v, {force:true}); }
+            }
+          });
+        }
+        const nameEl=document.getElementById('Emp_Name');
+        if (nameEl){
+          nameEl.addEventListener('change', maybeBackfillEmpIdFromName);
+          nameEl.addEventListener('blur',   maybeBackfillEmpIdFromName);
+        }
+        const genderEl=document.getElementById('Gender');
+        if (genderEl){ genderEl.addEventListener('change', ()=>setAliasesByGender(true)); setAliasesByGender(false); }
+
+        const salaryEl = document.getElementById("Salary");
+        if (salaryEl){ salaryEl.addEventListener("input", convertSalaryToWords); salaryEl.addEventListener("change", convertSalaryToWords); }
+        ["Basic_Percentage","HRA_Percentage","Conveyance_Percentage","Special_Percentage"].forEach(id=>{
+          const el=document.getElementById(id); if (el){ el.addEventListener("input",recalcBreakup); el.addEventListener("change",recalcBreakup); }
+        });
+        const pfEl=document.getElementById("PF"), esicEl=document.getElementById("ESIC");
+        if (pfEl) pfEl.addEventListener("input", ()=>markOverride("pfHint"));
+        if (esicEl) esicEl.addEventListener("input", ()=>markOverride("esicHint"));
+
+        convertSalaryToWords();
+        recalcBreakup();
+      });
+    </script>
+
+    <!-- ===== Edit-mode hydration ===== -->
+    {% if record %}
+    <script>
+      (function(){
+        // Parse record JSON via Jinja output, keeping it JS-valid for editors
+        const data = JSON.parse('{{ record|tojson|safe }}');
+        const form = document.querySelector('form'); if (!form || !data) return;
+        Object.keys(data).forEach(function(key){
+          const el = form.querySelector(`[name="${key}"]`);
+          if (el){ const val = (data[key]===null || data[key]==="None") ? "" : String(data[key]); el.value = val; }
+        });
+        if (data.PF){ const pf=form.querySelector('[name="PF"]'); if (pf) pf.value = data.PF; }
+        if (data.ESIC){ const es=form.querySelector('[name="ESIC"]'); if (es) es.value = data.ESIC; }
+        if (data.TemplateName){ const sel=form.querySelector('[name="TemplateName"]'); if (sel) sel.value = data.TemplateName; }
+        let hid=form.querySelector('input[name="ID"]'); if (!hid){ hid=document.createElement('input'); hid.type='hidden'; hid.name='ID'; form.appendChild(hid); }
+        hid.value = data.ID;
+
+        const idEl=document.getElementById('Emp_ID');
+        if (idEl && data.Emp_ID){
+          idEl.value = data.Emp_ID;
+          if (!document.getElementById('Emp_Name').value || !document.getElementById('Gender').value){
+            autofillByEmpId(String(data.Emp_ID));
+          }
+        }
+        if (data.Gender){ const gsel=document.getElementById('Gender'); if (gsel) gsel.value=data.Gender; }
+
+        /* NEW: ensure CertificateType mirrors template if empty */
+        if (data.TemplateName && (!data.CertificateType || String(data.CertificateType).trim()==="")) {
+          updateCertTypeFromTemplate({ force:true });
+        }
+
+        if (typeof setAliasesByGender==='function') setAliasesByGender(false);
+        if (typeof convertSalaryToWords==='function') convertSalaryToWords();
+        if (typeof recalcBreakup==='function') recalcBreakup();
+        if (typeof refreshTemplateAssistant === 'function') refreshTemplateAssistant(true);
+      })();
+    </script>
+    {% endif %}
+
+    <!-- Page transition JS -->
+    <script>
+      (function () {
+        document.documentElement.classList.add('page-fade-in');
+
+        window.addEventListener('pageshow', function (e) {
+          if (e.persisted) {
+            document.documentElement.classList.remove('page-fade-out');
+            document.documentElement.classList.add('page-fade-in');
+          }
+        });
+
+        function isSameOrigin(url) {
+          try { return new URL(url, location.href).origin === location.origin; }
+          catch { return false; }
+        }
+
+        document.addEventListener('click', function (e) {
+          const a = e.target.closest('a');
+          if (!a) return;
+          if (a.target === '_blank' || a.hasAttribute('download') || a.getAttribute('href')?.startsWith('#')) return;
+          const href = a.getAttribute('href');
+          if (!href || !isSameOrigin(href)) return;
+
+          e.preventDefault();
+          document.documentElement.classList.remove('page-fade-in');
+          document.documentElement.classList.add('page-fade-out');
+          setTimeout(() => { location.href = href; }, 180);
+        }, { capture: true });
+
+        document.addEventListener('submit', function (e) {
+          const form = e.target;
+          if (form.hasAttribute('data-no-transition')) return;
+
+          const needsValidation = form.matches('form[action="/hr/docgen/save_generate"]');
+          if (needsValidation && !validateRequiredFields(form)){
+            e.preventDefault();
+            return;
+          }
+
+          e.preventDefault();
+          document.documentElement.classList.remove('page-fade-in');
+          document.documentElement.classList.add('page-fade-out');
+
+          setTimeout(() => { form.submit(); }, 180);
+        }, { capture: true });
+      })();
+    </script>
+  </body>
+</html>
+
+
+
+

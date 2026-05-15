@@ -1,0 +1,243 @@
+<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8">
+  <title>Patient Diagnostic Intelligence | HID</title>
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <link rel="icon" href="{{ url_for('static', filename='logo/asarfi.png') }}">
+  <link rel="stylesheet" href="{{ url_for('static', filename='patient_diagnostic_intelligence/patient_diagnostic_intelligence.css') }}">
+</head>
+<body>
+  <div class="pdi-fab-user">
+    <button type="button" class="pdi-fab-btn" id="pdiFabToggle" title="Navigation menu" aria-label="Navigation menu" aria-expanded="false">
+      <span class="pdi-fab-icon"><span></span><span></span><span></span></span>
+    </button>
+    <div class="pdi-fab-menu" id="pdiFabMenu">
+      <div class="pdi-fab-profile">{{ session.get('username') or session.get('user') or 'User' }}</div>
+      <a href="{{ url_for('dashboard') }}">Dashboard</a>
+      <button type="button" data-fab-tab="history">Diagnostic Timeline</button>
+      <button type="button" data-fab-tab="abnormal">Abnormal Worklist</button>
+      <button type="button" data-fab-tab="intelligence">Test Intelligence</button>
+      <button type="button" data-fab-tab="comparison" id="comparisonFabLink" class="tab-hidden">Parameter Comparison</button>
+      <a href="{{ url_for('logout') }}" class="danger">Logout</a>
+    </div>
+  </div>
+
+  <div class="pdi-shell" data-default-unit="{{ default_unit }}" data-allowed-units='{{ (allowed_units or [])|tojson }}'>
+    <nav class="pdi-topbar">
+      <a href="{{ url_for('dashboard') }}" class="pdi-brand-link">
+        <img src="{{ url_for('static', filename='logo/asarfi.png') }}" alt="Asarfi Hospital Logo" class="pdi-logo">
+        <span>Hospital Intelligence Dashboard</span>
+      </a>
+    </nav>
+
+    <header class="pdi-hero">
+      <div>
+        <h1>Patient Diagnostic Intelligence</h1>
+        <p>Search patients or pathology tests, review result history, compare repeated test parameters, and export reports</p>
+      </div>
+      <div class="pdi-badges">
+        <span>In-house Pathology Active</span>
+        <span>Radiology Planned</span>
+        <span>Outsourced Diagnostics Planned</span>
+        <span>Excel/PDF Reports Available</span>
+      </div>
+    </header>
+
+    <section class="pdi-panel pdi-filters">
+      <div class="filter-card-head">
+        <div>
+          <span class="eyebrow">Report builder</span>
+          <h2>Diagnostic Filters</h2>
+        </div>
+        <p>Follow the steps from left to right, then apply filters to load the grid.</p>
+      </div>
+      <div class="filter-flow">
+        <span><b>1</b> Search patient and set date</span>
+        <span><b>2</b> Choose tests and clinical filters</span>
+        <span><b>3</b> Apply or export</span>
+      </div>
+
+      <div class="filter-grid">
+        <div class="filter-group group-scope">
+          <div class="group-title">1. Patient, Date & Unit</div>
+          <div class="compact-grid">
+            <div class="field">
+              <label>Unit</label>
+              <select id="unitSelect">
+                {% for unit in allowed_units %}
+                <option value="{{ unit }}" {% if unit == default_unit %}selected{% endif %}>{{ unit }}</option>
+                {% endfor %}
+              </select>
+            </div>
+            <div class="field">
+              <label>From</label>
+              <input type="date" id="fromDate">
+            </div>
+            <div class="field">
+              <label>To</label>
+              <input type="date" id="toDate">
+            </div>
+            <div class="field patient-search-field">
+              <label>Search patient</label>
+              <input type="search" id="patientSearch" placeholder="Patient, reg, mobile or visit">
+              <span class="field-help">Use registration no, patient ID, name, mobile or visit no</span>
+            </div>
+          </div>
+          <div class="patient-test-panel">
+            <div class="patient-summary" id="patientSummary">
+              <div class="panel-kicker">Comparison helper</div>
+              <div class="panel-title">Find a patient</div>
+              <div class="patient-summary-empty">Search by registration no, patient ID, name, mobile or visit no to view conducted tests here.</div>
+            </div>
+            <div class="patient-test-suggestions" id="patientTestSuggestions">
+              <div class="suggestion-note muted">Enter a patient to view conducted tests.</div>
+            </div>
+          </div>
+        </div>
+
+        <div class="filter-group group-clinical">
+          <div class="group-title">2. Clinical Filters, Tests & Parameters</div>
+          <div class="compact-grid">
+            <div class="field">
+              <label>Result status</label>
+              <select id="resultStatus">
+                <option value="all">All</option>
+                <option value="normal">Normal</option>
+                <option value="high">High</option>
+                <option value="low">Low</option>
+                <option value="abnormal">Abnormal</option>
+                <option value="critical">Critical</option>
+                <option value="unclassified">Unclassified</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Authorization</label>
+              <select id="authStatus">
+                <option value="all">All</option>
+                <option value="authorized">Authorized</option>
+                <option value="pending">Pending Authorization</option>
+              </select>
+            </div>
+            <div class="field">
+              <label>Visit type</label>
+              <div class="search-combo" data-combo="visit">
+                <button type="button" class="combo-trigger" id="visitComboTrigger">All visit types</button>
+                <div class="combo-menu combo-menu-small" id="visitComboMenu">
+                  <input type="search" id="visitSearch" class="combo-search" placeholder="Search visit">
+                  <div class="combo-list" id="visitComboList"></div>
+                </div>
+              </div>
+              <select id="visitType" multiple size="4" class="native-select-hidden">
+                <option value="OPD">OPD</option>
+                <option value="IPD">IPD</option>
+                <option value="DPV">DPV</option>
+                <option value="HCV">HCV</option>
+              </select>
+            </div>
+          </div>
+          <div class="selector-grid">
+            <div class="field">
+              <label>Pathology tests</label>
+              <div class="search-combo" data-combo="test">
+                <button type="button" class="combo-trigger" id="testComboTrigger">Search and select tests</button>
+                <div class="combo-menu" id="testComboMenu">
+                  <input type="search" id="testSearch" class="combo-search" placeholder="Search test">
+                  <div class="combo-list" id="testComboList"></div>
+                </div>
+              </div>
+              <select id="testSelect" multiple size="7" class="native-select-hidden"></select>
+              <div class="mini-actions">
+                <button type="button" id="selectVisibleTests">Select visible</button>
+                <button type="button" id="clearTests">Clear tests</button>
+              </div>
+            </div>
+            <div class="field">
+              <label>Parameters</label>
+              <div class="search-combo" data-combo="parameter">
+                <button type="button" class="combo-trigger" id="parameterComboTrigger">All parameters</button>
+                <div class="combo-menu" id="parameterComboMenu">
+                  <input type="search" id="parameterSearch" class="combo-search" placeholder="Search parameter">
+                  <div class="combo-list" id="parameterComboList"></div>
+                </div>
+              </div>
+              <select id="parameterSelect" multiple size="7" class="native-select-hidden"></select>
+            </div>
+          </div>
+        </div>
+
+        <div class="filter-group group-report">
+          <div class="report-band-head">
+            <div>
+              <div class="group-title">3. Report Actions</div>
+              <div class="report-band-subtitle">Preview, export and screening options for the selected diagnostic dataset.</div>
+            </div>
+          </div>
+          <div class="compact-grid">
+            <input type="hidden" id="followupGap" value="90">
+            <div class="field">
+              <label>Report to generate</label>
+              <select id="reportType"></select>
+              <span class="field-help">Used for preview, Excel and PDF</span>
+            </div>
+            <div class="field">
+              <label>Test matching rule</label>
+              <select id="matchMode">
+                <option value="any">Match any selected test</option>
+                <option value="all">Match all selected tests</option>
+                <option value="abnormal_any">Abnormal in any selected test</option>
+                <option value="abnormal_all">Abnormal in all selected tests</option>
+                <option value="missing_repeat">Missing repeat test</option>
+              </select>
+              <span class="field-help">Used for multi-test screening</span>
+            </div>
+          </div>
+          <div class="pdi-filter-actions">
+            <button type="button" id="applyFilters" class="primary">Apply</button>
+            <button type="button" id="resetFilters">Reset</button>
+            <button type="button" id="exportExcel">Export Excel</button>
+            <button type="button" id="exportPdf">Export PDF</button>
+          </div>
+        </div>
+      </div>
+    </section>
+
+    <section class="pdi-tabs">
+      <button class="active" data-tab="history">Patient Diagnostic Timeline</button>
+      <button data-tab="abnormal">Abnormal Result Worklist</button>
+      <button data-tab="intelligence">Test Intelligence</button>
+      <button data-tab="comparison" id="comparisonTab" class="tab-hidden">Parameter Comparison</button>
+    </section>
+
+    <section class="pdi-panel pdi-tab-panel active" id="tab-history">
+      <div class="section-head"><h2>Patient Diagnostic Timeline</h2><div id="historyMeta"></div></div>
+      <div class="table-wrap"><table id="historyTable"></table></div>
+      <div class="pager"><button id="prevPage">Previous</button><span id="pageInfo">Page 1</span><button id="nextPage">Next</button></div>
+    </section>
+
+    <section class="pdi-panel pdi-tab-panel" id="tab-abnormal">
+      <div class="section-head"><h2>Abnormal Result Worklist</h2><button type="button" data-load="abnormal">Refresh</button></div>
+      <div class="table-wrap"><table id="abnormalTable"></table></div>
+    </section>
+
+    <section class="pdi-panel pdi-tab-panel" id="tab-intelligence">
+      <div class="section-head"><h2>Test Intelligence</h2></div>
+      <div class="table-wrap"><table id="intelligenceTable"></table></div>
+    </section>
+
+    <section class="pdi-panel pdi-tab-panel" id="tab-comparison">
+      <div class="section-head">
+        <div>
+          <h2>Parameter Comparison</h2>
+          <div id="comparisonMeta" class="section-subtitle">Available for one selected test and one patient.</div>
+        </div>
+      </div>
+      <div class="table-wrap comparison-wrap"><table id="comparisonTable"></table></div>
+    </section>
+  </div>
+
+  <div class="toast-host" id="toastHost"></div>
+  {% include '_session_keepalive.html' %}
+  <script src="{{ url_for('static', filename='patient_diagnostic_intelligence/patient_diagnostic_intelligence.js') }}"></script>
+</body>
+</html>

@@ -311,6 +311,10 @@ def register_purchase_master_routes(
         except Exception:
             pass
         try:
+            data_fetch.ensure_po_approval_date_column(unit)
+        except Exception:
+            pass
+        try:
             data_fetch.ensure_po_senior_approval_authority_column(unit)
         except Exception:
             pass

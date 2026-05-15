@@ -1,0 +1,621 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Attendance Editor - Edit | Asarfi Hospital Ltd</title>
+  <link rel="icon" href="{{ url_for('static', filename='logo/asarfi.png') }}">
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root{ --bg:#f4f7fb;--ink:#0f172a;--muted:#607d8b;--brand:#3949ab;--brand2:#5c6bc0; --card:#ffffff;--border:#e5e7eb;--shadow:0 10px 24px rgba(0,0,0,.08); --radius:16px; }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;font-family:"Segoe UI",system-ui,-apple-system,sans-serif;color:var(--ink);
+      background:
+        radial-gradient(1200px 600px at -10% -10%, #e3f2fd 0, transparent 40%),
+        radial-gradient(1400px 700px at 110% -10%, #e3f2fd 0, transparent 35%),
+        var(--bg);
+    }
+    .shell{ max-width:1200px; margin:26px auto 20px; padding:0 16px; }
+    .att-head{ display:flex; justify-content:space-between; align-items:center; gap:12px; flex-wrap:wrap; margin:4px 0 12px; }
+    .att-title{ color:#1e3a8a; font-weight:800; font-size:22px; margin:0 }
+    .att-sub{ color:#546e7a; margin:0; font-size:13px }
+    .toolbar{ display:flex; gap:8px; flex-wrap:wrap; align-items:center; }
+
+    .search{ display:flex;align-items:center;gap:8px;padding:8px 12px;border:1px solid #cbd5e1;border-radius:999px;background:#fff;min-width:260px; }
+    .search input{ border:none;outline:none;background:transparent;min-width:200px;font-weight:600; }
+
+    .btn{
+      display:inline-flex;gap:8px;align-items:center;justify-content:center;
+      padding:10px 14px;border-radius:999px;border:1px solid #cbd5e1;font-weight:700;cursor:pointer;transition:.2s;
+      background:#fff; text-decoration:none; line-height:1;
+    }
+    .btn:hover{ transform: translateY(-1px); }
+    .btn-blue{ background:linear-gradient(90deg,#3949ab,#5c6bc0); color:#fff; border:none; box-shadow:0 8px 18px rgba(63,81,181,.22) }
+    .btn-amber{ background:linear-gradient(90deg,#ffb300,#ffca28); color:#3b3b3b; border:none; box-shadow:0 8px 18px rgba(255,179,0,.22) }
+
+    .table-wrap{ overflow:auto; max-height: 70vh; border:1px solid #e5e7eb; border-radius:12px; background:#fff; box-shadow: 0 10px 22px rgba(0,0,0,.05); }
+    .att-table{ width:100%; border-collapse:collapse; font-size:15px; }
+    .att-table th, .att-table td{ border:1px solid #e5e7eb; padding:10px 12px; }
+    .att-table th{ position:sticky; top:0; background:#f8fafc; z-index:1; font-weight:700; font-size:14px; }
+    td[contenteditable="true"]{ background:#fff; outline:none; }
+    td[contenteditable="false"]{ background:#f6f7fb; color:#0f172a; font-weight:600; }
+    
+    /* Attendance code colors */
+    .code-p { background:#d1f4e0 !important; color:#0d7c3f; font-weight:700; }
+    .code-p-wo { background:#b3e5fc !important; color:#01579b; font-weight:700; }
+    .code-pen { background:#c8e6c9 !important; color:#2e7d32; font-weight:700; }
+    .code-wo { background:#90caf9 !important; color:#0d47a1; font-weight:700; }
+    .code-h { background:#ffccbc !important; color:#d84315; font-weight:700; }
+    .code-co { background:#fff9c4 !important; color:#f57f17; font-weight:700; }
+    .code-leave { background:#fff59d !important; color:#f57f17; font-weight:700; }
+    .code-ul { background:#ffe082 !important; color:#e65100; font-weight:700; }
+    .code-oco { background:#ffecb3 !important; color:#ff6f00; font-weight:700; }
+    .code-absent { background:#ffcdd2 !important; color:#c62828; font-weight:700; }
+    .code-a { background:#ffcdd2 !important; color:#c62828; font-weight:700; }
+    
+    .legend{ margin:10px 0 0; color:#64748b; font-size:13px; }
+    .legend code{ background:#f1f5f9; padding:2px 6px; border-radius:6px; }
+    footer{ margin:36px 0 28px; text-align:center; color:#64748b; font-size:13px; }
+  </style>
+
+  <style>
+    @media (prefers-reduced-motion: reduce){ html.page-fade-in, html.page-fade-out { animation: none !important; } }
+    @keyframes pageFadeIn { from { opacity: 0 } to { opacity: 1 } }
+    @keyframes pageFadeOut{ from { opacity: 1 } to { opacity: 0 } }
+    html.page-fade-in  { animation: pageFadeIn .28s ease both; }
+    html.page-fade-out { animation: pageFadeOut .18s ease both; }
+    body { transition: filter .12s ease; }
+    html.page-fade-out body { filter: saturate(.96) brightness(.99); }
+  </style>
+</head>
+<body>
+    {% include "hr_docgen/_fab_nav.html" %}
+
+  <div class="shell">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div style="display:grid;gap:8px;margin:12px 0">
+          {% for category, message in messages %}
+            <div style="padding:10px 12px;border-radius:10px;border:1px solid #e5e7eb;background:#fff;font-weight:600">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <div class="att-head">
+      <div>
+        <h2 class="att-title">Attendance Editor - {{ records|length }} rows</h2>
+        <p class="att-sub">Edit cells directly. Calculated columns are locked.</p>
+      </div>
+      <div class="toolbar">
+        <label class="search" title="Search any column">
+          <svg width="16" height="16" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2"><circle cx="11" cy="11" r="8"></circle><line x1="21" y1="21" x2="16.65" y2="16.65"></line></svg>
+          <input id="searchBox" type="search" placeholder="Search...">
+        </label>
+        <a class="btn" href="{{ url_for('hr_docgen.attendance_upload') }}">Upload another CSV</a>
+        <button id="recalcBtn" class="btn btn-amber" type="button">
+          Recalculate
+          <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><polyline points="23 4 23 10 17 10"></polyline><polyline points="1 20 1 14 7 14"></polyline><path d="M3.51 9a9 9 0 0 1 14.13-3.36L23 10"></path><path d="M20.49 15A9 9 0 0 1 6.36 18.36L1 14"></path></svg>
+        </button>
+        <button id="saveBtn" class="btn" type="button">Save</button>
+        <button id="downloadBtn" class="btn btn-blue" type="button">Download CSV</button>
+        <a class="btn" href="{{ url_for('hr_docgen.attendance_history') }}" style="background:linear-gradient(90deg,#7c3aed,#a855f7);color:#fff;border:none;box-shadow:0 8px 18px rgba(124,58,237,.22)">History</a>
+      </div>
+    </div>
+
+    <div class="table-wrap">
+      <table class="att-table" id="attTable" spellcheck="false">
+        <thead>
+          <tr>
+            {% for c in columns %}
+              <th>{{ c }}</th>
+            {% endfor %}
+          </tr>
+        </thead>
+        <tbody>
+          {% for r in records %}
+            <tr>
+              {% for c in columns %}
+                {% set isCalc = c in ["Present","TotalLeave","TotalWeeklyOff","PayableDays","CO+"] %}
+                <td contenteditable="{{ 'false' if isCalc else 'true' }}">{{ r.get(c, '') }}</td>
+              {% endfor %}
+            </tr>
+          {% endfor %}
+        </tbody>
+      </table>
+    </div>
+
+    <p class="legend">
+      <b>Codes:</b>
+      <span style="background:#d1f4e0;color:#0d7c3f;padding:2px 6px;border-radius:4px;font-weight:700">P</span> Present &nbsp;
+      <span style="background:#b3e5fc;color:#01579b;padding:2px 6px;border-radius:4px;font-weight:700">P/WO</span> Present+WO &nbsp;
+      <span style="background:#c8e6c9;color:#2e7d32;padding:2px 6px;border-radius:4px;font-weight:700">PEN</span> Present &nbsp;
+      <span style="background:#90caf9;color:#0d47a1;padding:2px 6px;border-radius:4px;font-weight:700">WO</span> Weekly Off &nbsp;
+      <span style="background:#ffccbc;color:#d84315;padding:2px 6px;border-radius:4px;font-weight:700">H</span> Holiday &nbsp;
+      <span style="background:#fff9c4;color:#f57f17;padding:2px 6px;border-radius:4px;font-weight:700">CO</span> Comp Off &nbsp;
+      <span style="background:#fff59d;color:#f57f17;padding:2px 6px;border-radius:4px;font-weight:700">L*</span> Leave &nbsp;
+      <span style="background:#ffe082;color:#e65100;padding:2px 6px;border-radius:4px;font-weight:700">UL*</span> Unpaid Leave &nbsp;
+      <span style="background:#ffecb3;color:#ff6f00;padding:2px 6px;border-radius:4px;font-weight:700">OCO</span> Old CO &nbsp;
+      <span style="background:#ffcdd2;color:#c62828;padding:2px 6px;border-radius:4px;font-weight:700">A</span> Absent
+      <br>
+      Add column <code>RegularWO</code> (Mon/Tue/Wed/Thu/Fri/Sat/Sun or "(Auto)").
+      <br><span style="background:#e8f5e9;padding:2px 8px;border-radius:4px;font-weight:700">Full Salary Employees</span> - Always receive full payable days regardless of attendance.
+    </p>
+  </div>
+
+  <footer>&copy; 2025 Asarfi Hospital Ltd. All Rights Reserved.</footer>
+
+  <script>
+  (function(){
+    document.documentElement.classList.add('page-fade-in');
+
+    const table = document.getElementById('attTable');
+    let headCells = Array.from(table.querySelectorAll('thead th')).map(th => (th.textContent || '').trim());
+
+    // ---------- FULL SALARY EMPLOYEES LIST ----------
+    // Added 110003 here based on your previous screenshot
+    // Keep JS parsable in editors before Jinja renders by parsing the JSON string.
+    const FULL_SALARY_EMPLOYEES = new Set(JSON.parse('{{ full_salary_list | tojson | safe }}'));
+
+    function isFullSalaryEmployee(employeeCode) {
+      const code = String(employeeCode || "").trim();
+      return FULL_SALARY_EMPLOYEES.has(code);
+    }
+
+    function cellText(td){ return (td.textContent || "").trim(); }
+    function normalizeCodeDisplay(raw){
+      const v = (raw || "").trim();
+      if (!v) return "";
+      if (/^L\s*[-_ ]?\s*UP$/i.test(v)) return "L-UP";
+      return v;
+    }
+    function normalizedCode(raw){
+      return normalizeCodeDisplay(raw).toUpperCase();
+    }
+    function normalizeCellDisplay(td){
+      const fixed = normalizeCodeDisplay(td?.textContent || "");
+      if (fixed !== cellText(td)) td.textContent = fixed;
+      return fixed;
+    }
+    const colIdx = (name) => headCells.indexOf(name);
+
+    function ensureCol(name){
+      let idx = colIdx(name);
+      if (idx === -1){
+        const theadRow = table.querySelector('thead tr');
+        const th = document.createElement('th'); th.textContent = name; theadRow.appendChild(th);
+        table.querySelectorAll('tbody tr').forEach(r => {
+          const td = document.createElement('td'); 
+          td.contentEditable = "false"; 
+          r.appendChild(td);
+        });
+        headCells.push(name);
+        idx = headCells.length - 1;
+      }
+      return idx;
+    }
+
+    // ---------- Day-column detection ----------
+    function headerLooksLikeDate(header){
+      const s = String(header || "").trim();
+      if (!s) return false;
+      const numDate = /^(0?[1-9]|[12]\d|3[01])[\/-](0?[1-9]|1[0-2])[\/-]\d{2,4}$/;
+      const textDate = /^(0?[1-9]|[12]\d|3[01])[\/-][A-Za-z]{3,9}[\/-]\d{2,4}$/;
+      return numDate.test(s) || textDate.test(s);
+    }
+
+    const ATT_CODE_RE = /^(P|P\/WO|P\/H|PEN|WO|H|CO|L(?:\b|[\s(])|L-?UP|LWP|UL(?:\b|[\s(])|.*\(OCO\).*)$/i;
+    function detectDayColumns(maxRows){
+      const rows = table.querySelectorAll('tbody tr');
+      const sampleN = Math.min(rows.length, maxRows || 60);
+      const colCount = headCells.length;
+      const good = [];
+      for (let c = 0; c < colCount; c++){
+        let seen = 0, ok = 0;
+        for (let r = 0; r < sampleN; r++){
+          const td = rows[r].children[c];
+          if (!td) continue;
+          const v = cellText(td);
+          if (!v) continue;
+          seen++;
+          if (ATT_CODE_RE.test(v)) ok++;
+        }
+        if (seen > 0 && ok/seen >= 0.6) good.push(c);
+      }
+      return good;
+    }
+
+    function buildDayCols(){
+      const calcCols = new Set(["Present","TotalLeave","TotalHoliday","TotalWeeklyOff","PayableDays","CO+","RegularWO"]);
+      const headerDates = headCells.map((h, i) => headerLooksLikeDate(h) ? i : -1).filter(i => i >= 0);
+      if (headerDates.length) return headerDates;
+      const inferred = detectDayColumns(Math.max(table.querySelectorAll('tbody tr').length, 180));
+      if (inferred.length) return inferred;
+      return headCells.map((_,i)=>i).filter(i => !calcCols.has(headCells[i]));
+    }
+    let dayCols = buildDayCols();
+
+    // ---------- AUTO-DETECT WEEK OFF COLUMNS (MAJORITY VOTE) ----------
+    function identifyGlobalWeekOffColumns(cols) {
+        const woSet = new Set();
+        const rows = table.querySelectorAll('tbody tr');
+        const totalRows = rows.length;
+        if (totalRows === 0) return woSet;
+
+        cols.forEach(cIdx => {
+            let woCount = 0;
+            rows.forEach(tr => {
+                const code = normalizedCode(tr.children[cIdx]?.textContent);
+                if (code === 'WO' || code === 'OFF' || code === 'P/WO') woCount++;
+            });
+            if (woCount >= (totalRows * 0.4)) {
+                woSet.add(cIdx);
+            }
+        });
+        return woSet;
+    }
+    let detectedWeekOffCols = new Set();
+
+    // ---------- Search ----------
+    const searchBox = document.getElementById('searchBox');
+    if (searchBox){
+      searchBox.addEventListener('input', () => {
+        const q = (searchBox.value || '').trim().toLowerCase();
+        table.querySelectorAll('tbody tr').forEach(tr => {
+          if (!q) { tr.style.display = ''; return; }
+          const hit = Array.from(tr.children).some(td => ((td.textContent||'').toLowerCase().includes(q)));
+          tr.style.display = hit ? '' : 'none';
+        });
+      });
+    }
+
+    // ---------- CORE CALCULATION LOGIC ----------
+    function resolveRowDuration(cells, dayColsLocal, idxDuration){
+      const dayCount = (dayColsLocal && dayColsLocal.length) ? dayColsLocal.length : 0;
+      if (dayCount > 0) {
+        if (idxDuration >= 0) {
+          const raw = cellText(cells[idxDuration]);
+          if (raw !== String(dayCount)) cells[idxDuration].textContent = String(dayCount);
+        }
+        return dayCount;
+      }
+
+      if (idxDuration >= 0) {
+        const raw = cellText(cells[idxDuration]);
+        const parsed = parseFloat(raw);
+        if (!Number.isNaN(parsed) && parsed > 0) return parsed;
+      }
+      return 0;
+    }
+
+    function recalcRow(tr, cols, globalWOSet, globalMaxDuration){
+      const idxPresent      = ensureCol("Present");
+      const idxTotalLeave   = ensureCol("TotalLeave");
+      const idxTotalHoliday = ensureCol("TotalHoliday");
+      const idxWeeklyOff    = ensureCol("TotalWeeklyOff");
+      const idxPayable      = ensureCol("PayableDays");
+      const idxCOPlus       = ensureCol("CO+");
+
+      const cells = Array.from(tr.children);
+      const dayColsLocal = (cols && cols.length) ? cols : dayCols;
+      
+      const employeeCodeCol = colIdx("Employee Code") >= 0 ? colIdx("Employee Code") : colIdx("EmployeeCode");
+      const employeeCode = employeeCodeCol >= 0 ? cellText(cells[employeeCodeCol]) : null;
+      const isFullSalary = employeeCode && isFullSalaryEmployee(employeeCode);
+      
+      const autoHolidayCount = dayColsLocal.reduce((count, i) => {
+        const code = normalizedCode(cells[i]?.textContent);
+        return count + ((code === "H" || code === "HOLIDAY") ? 1 : 0);
+      }, 0);
+
+      let totalHoliday = autoHolidayCount;
+      if (idxTotalHoliday >= 0) {
+        const holidayCell = cells[idxTotalHoliday];
+        const manualHoliday = holidayCell.dataset.manualHoliday === "true";
+        if (manualHoliday) {
+          const holidayVal = parseInt(cellText(holidayCell), 10);
+          totalHoliday = Number.isNaN(holidayVal) ? 0 : Math.max(0, holidayVal);
+        }
+      }
+
+      // --- LOGIC A: Full Salary Employees ---
+      if (isFullSalary) {
+        const limit = (globalMaxDuration > 0) ? globalMaxDuration : dayColsLocal.length;
+        const weeklyOff = 5; 
+        const present = Math.max(0, limit - totalHoliday - weeklyOff);
+        const totalLeave = 0;
+        const payableDays = limit; 
+        const coPlus = 0; 
+        
+        cells[idxPresent].textContent      = present;
+        cells[idxTotalLeave].textContent   = totalLeave;
+        cells[idxTotalHoliday].textContent = totalHoliday;
+        cells[idxWeeklyOff].textContent    = weeklyOff;
+        cells[idxPayable].textContent      = payableDays;
+        cells[idxCOPlus].textContent       = coPlus;
+        
+        [idxPresent, idxTotalLeave, idxWeeklyOff, idxPayable, idxCOPlus].forEach(i => {
+           cells[i].setAttribute("contenteditable","false");
+           cells[i].style.backgroundColor = "#f6f7fb";
+           cells[i].style.fontWeight = "600";
+        });
+        cells[idxTotalHoliday].setAttribute("contenteditable","true");
+        cells[idxTotalHoliday].style.backgroundColor = "#e8f5e9";
+        cells[idxTotalHoliday].style.fontWeight = "700";
+        cells[idxTotalHoliday].style.border = "";
+        tr.setAttribute("data-full-salary", "true");
+        return; 
+      }
+      
+      // --- LOGIC B: Regular Employees ---
+      const presentCodes = new Set(["P", "P/WO", "P/H"]);
+      let present = 0, totalLeave = 0;
+      
+      const durHeader = headCells.find(h => /Total.*Days.*Duration/i.test(h));
+      const idxDuration = durHeader ? colIdx(durHeader) : -1;
+      const rowDuration = resolveRowDuration(cells, dayColsLocal, idxDuration);
+
+      for (const i of dayColsLocal){
+        const codeRaw = cellText(cells[i]);
+        const display = normalizeCodeDisplay(codeRaw);
+        const code = display.toUpperCase();
+        const isLeaveUp = code === "L-UP";
+        if (presentCodes.has(code)) present++;
+        if (!isLeaveUp && (code === "CO" || code.startsWith("L") || code.startsWith("UL") || code.includes("(OCO)"))) totalLeave++;
+      }
+
+      // --- 1. SPLIT ROUNDING LOGIC (Using Present + Leave) ---
+      let weeklyOff = 0;
+      const sumForThreshold = present + totalLeave;
+      const rawEntitlement = sumForThreshold / 6;
+
+      // Default: nearest whole number. Exception: long months with high attendance (25+ of 31) use ceiling.
+      // New rule: if attendance is below 24 days, always use floor.
+      let formulaLimit;
+      if (sumForThreshold < 24) {
+          formulaLimit = Math.floor(rawEntitlement);
+      } else if (rowDuration >= 31 && sumForThreshold >= 25) {
+          formulaLimit = Math.ceil(rawEntitlement);
+      } else {
+          formulaLimit = Math.round(rawEntitlement);
+      }
+
+      // Hard cap at 5 to avoid runaway weekoffs.
+      if (formulaLimit > 5) formulaLimit = 5;
+
+      // --- 2. BASE CALCULATION (Formula Priority) ---
+      let baseWO = formulaLimit;
+
+      // --- 3. SANDWICH RULE PENALTY ---
+      const accountedDays = present + totalLeave + totalHoliday;
+      const isFullAttendance = accountedDays >= (rowDuration - 1); 
+
+      if (!isFullAttendance) {
+          let sandwichPenalty = 0;
+          const isAbsent = (cIdx) => {
+               if (cIdx < 0 || cIdx >= dayColsLocal.length) return false; 
+               const cellCode = normalizedCode(cells[dayColsLocal[cIdx]]?.textContent);
+               return cellCode === 'A' || cellCode === 'ABSENT' || cellCode === ''; 
+          };
+
+          for (let k = 0; k < dayColsLocal.length; k++) {
+              const actualColIdx = dayColsLocal[k];
+              if (globalWOSet.has(actualColIdx)) {
+                  const prevAbsent = (k > 0) && isAbsent(k - 1);
+                  const nextAbsent = (k < dayColsLocal.length - 1) && isAbsent(k + 1);
+                  if (prevAbsent && nextAbsent) {
+                      sandwichPenalty++;
+                  }
+              }
+          }
+          baseWO = Math.max(0, baseWO - sandwichPenalty);
+      }
+
+      weeklyOff = baseWO;
+
+      // --- 4. FINAL PAYMENT CAP (GLOBAL VS LOCAL) ---
+      const payableRaw = present + weeklyOff + totalLeave + totalHoliday;
+      const coGenRaw = present + weeklyOff + totalLeave;
+      const capLimit = (globalMaxDuration > 0) ? globalMaxDuration : rowDuration;
+      
+      const payableDays = Math.min(payableRaw, capLimit);
+      const coPlus      = Math.max(coGenRaw - capLimit, 0);
+
+      cells[idxPresent].textContent      = present;
+      cells[idxTotalLeave].textContent   = totalLeave;
+      cells[idxTotalHoliday].textContent = totalHoliday;
+      cells[idxWeeklyOff].textContent    = weeklyOff;
+      cells[idxPayable].textContent      = payableDays;
+      cells[idxCOPlus].textContent       = coPlus;
+
+      [idxPresent, idxTotalLeave, idxWeeklyOff, idxPayable, idxCOPlus].forEach(i => {
+         cells[i].setAttribute("contenteditable","false");
+         cells[i].style.backgroundColor = "";
+      });
+      cells[idxTotalHoliday].setAttribute("contenteditable","true");
+      cells[idxTotalHoliday].style.backgroundColor = "#fff9e6";
+      cells[idxTotalHoliday].style.fontWeight = "700";
+      cells[idxTotalHoliday].style.border = "1px solid #fbbf24";
+      tr.removeAttribute("data-full-salary");
+    }
+
+    function updateRecalcStatus(text){
+      let badge = document.getElementById('recalcStatus');
+      if (!badge){
+        badge = document.createElement('span');
+        badge.id = 'recalcStatus';
+        badge.style.marginLeft = '10px';
+        badge.style.fontSize = '12px';
+        badge.style.fontWeight = '700';
+        badge.style.color = '#0f172a';
+        const btn = document.getElementById('recalcBtn');
+        btn?.parentNode?.insertBefore(badge, btn.nextSibling);
+      }
+      const ts = new Date().toLocaleTimeString();
+      badge.textContent = `${text} @ ${ts}`;
+    }
+
+    function recalcAll(){
+      headCells = Array.from(table.querySelectorAll('thead th')).map(th => (th.textContent || '').trim());
+      dayCols = buildDayCols();
+      detectedWeekOffCols = identifyGlobalWeekOffColumns(dayCols);
+      
+      let globalMaxDuration = 0;
+      const durHeader = headCells.find(h => /Total.*Days.*Duration/i.test(h));
+      const idxDuration = durHeader ? colIdx(durHeader) : -1;
+      
+      const rows = table.querySelectorAll('tbody tr');
+      
+      rows.forEach(tr => {
+        const cells = Array.from(tr.children);
+        const rowDuration = resolveRowDuration(cells, dayCols, idxDuration);
+        if (rowDuration > globalMaxDuration) globalMaxDuration = rowDuration;
+      });
+      if (globalMaxDuration === 0) globalMaxDuration = dayCols.length;
+
+      console.log("Global Month Cap set to:", globalMaxDuration);
+
+      rows.forEach(tr => {
+        try { recalcRow(tr, dayCols, detectedWeekOffCols, globalMaxDuration); }
+        catch (e) { console.error('Recalc error on row', e); }
+      });
+      applyColorCoding();
+      requestAnimationFrame(applyColorCoding);
+      updateRecalcStatus('Recalculated (Capped at 5 WO)');
+    }
+
+    // ---------- Color Coding ----------
+    function applyColorCoding() {
+      const cols = dayCols.length ? dayCols : buildDayCols();
+      const calcCols = new Set(["Present","TotalLeave","TotalHoliday","TotalWeeklyOff","PayableDays","CO+","RegularWO"]);
+
+      table.querySelectorAll('tbody tr').forEach(tr => {
+        const cells = Array.from(tr.children);
+        cells.forEach((cell, idx) => {
+          if (cell.getAttribute('contenteditable') === 'false') return;
+          if (cols.length && !cols.includes(idx)) {
+            const header = headCells[idx] || "";
+            if (calcCols.has(header)) return;
+          }
+          const display = normalizeCellDisplay(cell);
+          const code = display.toUpperCase();
+          cell.className = cell.className.split(' ').filter(c => !c.startsWith('code-')).join(' ');
+          
+          if (code === 'P') cell.classList.add('code-p');
+          else if (code === 'P/H') cell.classList.add('code-p');
+          else if (code === 'P/WO') cell.classList.add('code-p-wo');
+          else if (code === 'PEN') cell.classList.add('code-pen');
+          else if (code === 'WO') cell.classList.add('code-wo');
+          else if (code === 'H') cell.classList.add('code-h');
+          else if (code === 'CO') cell.classList.add('code-co');
+          else if (/^L\b|L-UP|LWP/i.test(code)) cell.classList.add('code-leave');
+          else if (/^UL\b/i.test(code)) cell.classList.add('code-ul');
+          else if (/\(OCO\)/i.test(code)) cell.classList.add('code-oco');
+          else if (code === 'A' || code === 'ABSENT') cell.classList.add('code-a');
+        });
+      });
+    }
+
+    document.getElementById('recalcBtn')?.addEventListener('click', recalcAll);
+
+    document.getElementById('saveBtn')?.addEventListener('click', async ()=>{
+      const rows = Array.from(table.querySelectorAll('tbody tr')).map(tr => {
+        const obj = {};
+        Array.from(tr.children).forEach((td, i) => { obj[headCells[i]] = (td.textContent || "").trim(); });
+        return obj;
+      });
+      try{
+        const res = await fetch("{{ url_for('hr_docgen.attendance_save') }}", {
+          method: "POST", headers: {"Content-Type":"application/json"}, body: JSON.stringify({rows: rows})
+        });
+        const j = await res.json();
+        if (j.ok){
+          const monthInfo = j.dominant_month ? ` | ${j.dominant_month}` : '';
+          alert(`Saved successfully!${monthInfo}\nBatch #${j.batch_id || "-"}`);
+        }else{ alert("Save failed: " + (j.msg || 'Unknown error')); }
+      }catch(e){ alert("Save failed: " + e); }
+    });
+
+    document.getElementById('downloadBtn')?.addEventListener('click', ()=>{
+      const summaryColumns = [
+        { output: "EmployeeCode", input: ["Employee Code", "EmployeeCode", "EmpCode", "Emp Code"] },
+        { output: "PresentDays", input: ["Present"] },
+        { output: "PaidLeave", input: ["TotalLeave"] },
+        { output: "Public Holiday", input: ["TotalHoliday"] },
+        { output: "Weekoff", input: ["TotalWeeklyOff"] },
+        { output: "payableDays", input: ["PayableDays"] },
+        { output: "CO+", input: ["CO+"] }
+      ];
+      const columnMap = [];
+      const existingHeaders = [];
+      summaryColumns.forEach(col => {
+        let foundIdx = -1;
+        for (const inputName of col.input) { foundIdx = colIdx(inputName); if (foundIdx !== -1) break; }
+        if (foundIdx !== -1) { columnMap.push({ name: col.output, idx: foundIdx }); existingHeaders.push(col.output); }
+      });
+      if (columnMap.length === 0) { alert('No summary columns found to export.'); return; }
+      let csv = existingHeaders.join(',') + '\n';
+      table.querySelectorAll('tbody tr').forEach(tr => {
+        const cells = Array.from(tr.children);
+        const row = columnMap.map(col => {
+          const val = cellText(cells[col.idx]);
+          return val.includes(',') || val.includes('"') ? `"${val.replace(/"/g, '""')}"` : val;
+        }).join(',');
+        csv += row + '\n';
+      });
+      const blob = new Blob([csv], { type: 'text/csv;charset=utf-8;' });
+      const link = document.createElement('a');
+      link.href = URL.createObjectURL(blob);
+      link.download = `attendance_summary_${new Date().toISOString().split('T')[0]}.csv`;
+      document.body.appendChild(link); link.click(); document.body.removeChild(link);
+    });
+
+    function hasTableData(){
+      const tbody = table.querySelector('tbody');
+      return tbody && tbody.querySelectorAll('tr').length > 0 && headCells.length > 0;
+    }
+
+    function performAutoRecalc(attempt = 1){
+      if (!hasTableData()) {
+        if (attempt < 10) setTimeout(() => performAutoRecalc(attempt + 1), 150);
+        return;
+      }
+      recalcAll();
+    }
+
+    window.addEventListener('load', () => { setTimeout(() => performAutoRecalc(), 200); });
+
+    table.addEventListener('input', (e) => {
+      if (e.target.tagName === 'TD' && e.target.getAttribute('contenteditable') === 'true') {
+        normalizeCellDisplay(e.target);
+        const cell = e.target;
+        const row = cell.parentElement;
+        const idx = row ? Array.prototype.indexOf.call(row.children, cell) : -1;
+        const header = idx >= 0 ? (headCells[idx] || '') : '';
+        if (header === 'TotalHoliday') {
+          if (cellText(cell) === '') delete cell.dataset.manualHoliday;
+          else cell.dataset.manualHoliday = "true";
+        }
+        setTimeout(applyColorCoding, 10);
+      }
+    });
+    
+    function isSameOrigin(url) { try { return new URL(url, location.href).origin === location.origin; } catch { return false; } }
+    document.addEventListener('click', function (e) {
+      const a = e.target.closest('a');
+      if (!a || a.target === '_blank' || a.hasAttribute('download') || a.getAttribute('href')?.startsWith('#')) return;
+      const href = a.getAttribute('href');
+      if (!href || !isSameOrigin(href)) return;
+      e.preventDefault();
+      document.documentElement.classList.remove('page-fade-in');
+      document.documentElement.classList.add('page-fade-out');
+      setTimeout(() => { location.href = href; }, 160);
+    }, { capture: true });
+  })();
+  </script>
+</body>
+</html>
+
+
+

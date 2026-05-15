@@ -594,6 +594,10 @@ def register_purchase_po_routes(
             data_fetch.ensure_po_cmc_amc_warranty_column(unit)
         except Exception:
             pass
+        try:
+            data_fetch.ensure_po_approval_date_column(unit)
+        except Exception:
+            pass
         query = (request.args.get("q") or "").strip()
         if not query:
             return jsonify({"status": "error", "message": "Please enter a PO number or ID"}), 400
@@ -632,6 +636,7 @@ def register_purchase_po_routes(
             "po_id": header_row.get("ID"),
             "po_no": header_row.get("PONo"),
             "po_date": header_row.get("PODate"),
+            "po_approval_date": header_row.get("POApprovalDate"),
             "supplier_id": header_row.get("SupplierID"),
             "supplier_name": header_row.get("SupplierName"),
             "supplier_code": header_row.get("SupplierCode"),
@@ -1929,6 +1934,10 @@ def register_purchase_po_routes(
         except Exception:
             pass
         try:
+            data_fetch.ensure_po_approval_date_column(unit)
+        except Exception:
+            pass
+        try:
             data_fetch.ensure_po_senior_approval_authority_column(unit)
         except Exception:
             pass
@@ -2412,6 +2421,10 @@ def register_purchase_po_routes(
             pass
         try:
             data_fetch.ensure_po_print_format_column(unit)
+        except Exception:
+            pass
+        try:
+            data_fetch.ensure_po_approval_date_column(unit)
         except Exception:
             pass
         try:
@@ -3085,6 +3098,14 @@ def register_purchase_po_routes(
             )
             return jsonify({"status": "error", "message": status_result["error"]}), 500
 
+        try:
+            approved_header_df = data_fetch.fetch_purchase_po_header(unit, po_id=po_id)
+            if approved_header_df is not None and not approved_header_df.empty:
+                approved_header_df = _clean_df_columns(approved_header_df)
+                header_row = approved_header_df.iloc[0].to_dict()
+        except Exception:
+            header_row["Status"] = "A"
+
         user = session.get("username") or session.get("user") or ""
         _mark_central_otp_used(request_id, user)
         _mark_purchase_otp_used(po_id, request_id, user)
@@ -3265,6 +3286,7 @@ def register_purchase_po_routes(
                 "status": "success",
                 "po_id": po_id,
                 "po_no": header_row.get("PONo"),
+                "po_approval_date": header_row.get("POApprovalDate"),
                 "auto_email": auto_email_result,
             }
         )

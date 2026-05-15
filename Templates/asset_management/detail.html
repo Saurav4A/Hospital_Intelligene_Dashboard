@@ -76,7 +76,12 @@
             </div>
             <div class="asset-field">
               <label>Installation Location</label>
-              <input class="asset-input" name="installation_location" value="{{ maintenance.installation_location or asset.location_name }}">
+              {% set installation_location_id = (maintenance.installation_location_id or asset.locationId)|int %}
+              <select class="asset-select" name="installation_location">
+                {% for location in lookups.locations %}
+                  <option value="{{ location.id }}" {% if installation_location_id == (location.id|int) %}selected{% endif %}>{{ location.code }} - {{ location.name }}</option>
+                {% endfor %}
+              </select>
             </div>
             <div class="asset-field">
               <label>Installed By</label>
@@ -103,14 +108,11 @@
               <label>AMC / CMC Status</label>
               {% set amc_value = maintenance.amc_status or '' %}
               <select class="asset-select" name="amc_status">
-                {% if amc_value and amc_value not in ['AMC', 'CMC', 'AMC / CMC', 'NO AMC', 'No AMC'] %}
-                  <option value="{{ amc_value }}" selected>{{ amc_value }}</option>
-                {% endif %}
                 <option value="" {% if not amc_value %}selected{% endif %}>Select AMC status</option>
-                <option value="AMC" {% if amc_value == 'AMC' %}selected{% endif %}>AMC</option>
-                <option value="CMC" {% if amc_value == 'CMC' %}selected{% endif %}>CMC</option>
-                <option value="AMC / CMC" {% if amc_value == 'AMC / CMC' %}selected{% endif %}>AMC / CMC</option>
-                <option value="No AMC" {% if amc_value in ['NO AMC', 'No AMC'] %}selected{% endif %}>No AMC</option>
+                <option value="1" {% if amc_value == 'AMC' %}selected{% endif %}>AMC</option>
+                <option value="2" {% if amc_value == 'CMC' %}selected{% endif %}>CMC</option>
+                <option value="3" {% if amc_value == 'AMC / CMC' %}selected{% endif %}>AMC / CMC</option>
+                <option value="4" {% if amc_value in ['NO AMC', 'No AMC'] %}selected{% endif %}>No AMC</option>
               </select>
             </div>
             <div class="asset-field">

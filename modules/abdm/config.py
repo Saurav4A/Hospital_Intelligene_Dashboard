@@ -90,6 +90,7 @@ class AbdmSettings:
     service_alias: str
     service_endpoint_url: str
     service_endpoint_use: str
+    hospital_units: tuple[dict[str, str], ...]
     timeout_seconds: int
     retry_attempts: int
     retry_backoff_seconds: float
@@ -150,6 +151,7 @@ class AbdmSettings:
             "service_alias": self.service_alias,
             "service_endpoint_url": self.service_endpoint_url,
             "service_endpoint_use": self.service_endpoint_use,
+            "hospital_units": list(self.hospital_units),
             "timeout_seconds": self.timeout_seconds,
             "retry_attempts": self.retry_attempts,
             "retry_backoff_seconds": self.retry_backoff_seconds,
@@ -190,9 +192,61 @@ def load_settings() -> AbdmSettings:
         service_alias=_setting("ABDM_SERVICE_ALIAS", "asarfi-hospital-hip"),
         service_endpoint_url=_setting("ABDM_SERVICE_ENDPOINT_URL"),
         service_endpoint_use=_setting("ABDM_SERVICE_ENDPOINT_USE", "registration"),
+        hospital_units=_hospital_units(),
         timeout_seconds=_setting_int("ABDM_TIMEOUT_SECONDS", 30),
         retry_attempts=_setting_int("ABDM_RETRY_ATTEMPTS", 3),
         retry_backoff_seconds=_setting_float("ABDM_RETRY_BACKOFF_SECONDS", 2.0),
         verify_ssl=_setting_bool("ABDM_VERIFY_SSL", True),
         ca_bundle=_setting("ABDM_CA_BUNDLE"),
     )
+
+
+def _hospital_units() -> tuple[dict[str, str], ...]:
+    raw = os.getenv("ABDM_HOSPITAL_UNITS")
+    if raw is None:
+        raw = _load_file_settings().get("ABDM_HOSPITAL_UNITS")
+    if raw is None:
+        raw = getattr(app_config, "ABDM_HOSPITAL_UNITS", None)
+    units = []
+    if isinstance(raw, str) and raw.strip():
+        try:
+            parsed = json.loads(raw)
+        except Exception:
+            parsed = []
+    else:
+        parsed = raw
+    if isinstance(parsed, dict):
+        parsed = parsed.values()
+    if isinstance(parsed, (list, tuple)):
+        for item in parsed:
+            if not isinstance(item, dict):
+                continue
+            code = str(item.get("code") or item.get("hospital_code") or "").strip().upper()
+            facility_id = str(item.get("facility_id") or item.get("facilityId") or "").strip()
+            hip_id = str(item.get("hip_id") or item.get("hipId") or facility_id).strip()
+            if not code:
+                continue
+            units.append(
+                {
+                    "code": code,
+                    "name": str(item.get("name") or code).strip(),
+                    "facility_id": facility_id,
+                    "hip_id": hip_id,
+                    "counter_id": str(item.get("counter_id") or item.get("counterId") or "REG01").strip(),
+                    "active": bool(item.get("active", bool(facility_id or hip_id))),
+                }
+            )
+    if not any(unit.get("code") == "AHL" for unit in units):
+        facility_id = _setting("ABDM_FACILITY_ID")
+        units.insert(
+            0,
+            {
+                "code": "AHL",
+                "name": _setting("ABDM_FACILITY_NAME", "Asarfi Hospital Limited"),
+                "facility_id": facility_id,
+                "hip_id": _setting("ABDM_SERVICE_ID", facility_id),
+                "counter_id": "REG01",
+                "active": bool(facility_id),
+            },
+        )
+    return tuple(units)

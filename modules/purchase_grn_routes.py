@@ -413,6 +413,42 @@ def register_purchase_grn_routes(
             )
         return rows
 
+    def _grn_report_type_label(grn_type_id, grn_type_name) -> str:
+        type_id = _safe_int(grn_type_id, 0)
+        type_name = str(grn_type_name or "").strip()
+        if type_id == AGAINST_PO_TYPE_ID:
+            return "Against PO"
+        if type_id == DIRECT_PURCHASE_TYPE_ID:
+            return "Direct Purchase"
+        lowered = type_name.lower()
+        if "po" in lowered:
+            return "Against PO"
+        if "direct" in lowered:
+            return "Direct Purchase"
+        return type_name or "-"
+
+    def _normalize_grn_summary_report(df):
+        rows = []
+        if df is None or df.empty:
+            return rows
+        df = _clean_df_columns(df)
+        cols = _col_map(df)
+        for _, row in df.iterrows():
+            grn_id = _safe_int(_cell(row, cols, "id", "grnid"), 0)
+            grn_type_id = _safe_int(_cell(row, cols, "grntypeid"), 0)
+            po_no = str(_cell(row, cols, "pono") or "").strip()
+            rows.append(
+                {
+                    "grn_id": grn_id,
+                    "grn_no": str(_cell(row, cols, "grnno") or (f"GRN-{grn_id}" if grn_id else "")).strip(),
+                    "supplier_name": str(_cell(row, cols, "suppliername") or "").strip(),
+                    "grn_date": _iso_date(_cell(row, cols, "grndate")),
+                    "grn_type": _grn_report_type_label(grn_type_id, _cell(row, cols, "grntypename")),
+                    "po_no": po_no if grn_type_id == AGAINST_PO_TYPE_ID or po_no else "",
+                }
+            )
+        return rows
+
     def _normalize_grn_header(df):
         if df is None or df.empty:
             return None
@@ -1083,6 +1119,255 @@ def register_purchase_grn_routes(
         buffer.seek(0)
         return buffer
 
+    def _build_grn_summary_report_pdf_buffer(
+        unit: str,
+        rows: list[dict],
+        printed_by: str,
+        printed_at,
+        *,
+        from_date: str = "",
+        to_date: str = "",
+        supplier_name: str = "",
+    ):
+        import io
+        from xml.sax.saxutils import escape
+        from reportlab.lib import colors
+        from reportlab.lib.enums import TA_CENTER
+        from reportlab.lib.pagesizes import A4
+        from reportlab.lib.styles import ParagraphStyle, getSampleStyleSheet
+        from reportlab.lib.units import mm
+        from reportlab.platypus import LongTable, Paragraph, SimpleDocTemplate, Spacer, Table, TableStyle
+
+        buffer = io.BytesIO()
+        doc = SimpleDocTemplate(
+            buffer,
+            pagesize=A4,
+            topMargin=8 * mm,
+            bottomMargin=12 * mm,
+            leftMargin=10 * mm,
+            rightMargin=10 * mm,
+        )
+        doc.title = "GRN Summary Report"
+        doc.author = printed_by or "Hospital Intelligence Dashboard"
+        styles = getSampleStyleSheet()
+
+        company_style = ParagraphStyle(
+            "GrnReportCompany",
+            parent=styles["Heading1"],
+            alignment=TA_CENTER,
+            fontName="Helvetica-Bold",
+            fontSize=14.5,
+            leading=16,
+            textColor=colors.black,
+            spaceAfter=1,
+        )
+        subtitle_style = ParagraphStyle(
+            "GrnReportSubtitle",
+            parent=styles["Normal"],
+            alignment=TA_CENTER,
+            fontSize=8.1,
+            leading=9.4,
+            textColor=colors.HexColor("#4b5563"),
+            spaceAfter=1,
+        )
+        title_style = ParagraphStyle(
+            "GrnReportTitle",
+            parent=styles["Normal"],
+            alignment=TA_CENTER,
+            fontName="Helvetica-Bold",
+            fontSize=10.5,
+            leading=11.8,
+            textColor=colors.black,
+        )
+        label_style = ParagraphStyle(
+            "GrnReportLabel",
+            parent=styles["Normal"],
+            fontSize=7.1,
+            fontName="Helvetica-Bold",
+            textColor=colors.HexColor("#475569"),
+        )
+        value_style = ParagraphStyle(
+            "GrnReportValue",
+            parent=styles["Normal"],
+            fontSize=7.8,
+            leading=9.2,
+            textColor=colors.black,
+        )
+        head_style = ParagraphStyle(
+            "GrnReportHead",
+            parent=styles["Normal"],
+            alignment=TA_CENTER,
+            fontName="Helvetica-Bold",
+            fontSize=7.5,
+            leading=8.7,
+            textColor=colors.black,
+        )
+        cell_style = ParagraphStyle(
+            "GrnReportCell",
+            parent=styles["Normal"],
+            fontSize=7.7,
+            leading=9.2,
+            textColor=colors.black,
+        )
+        strong_cell_style = ParagraphStyle("GrnReportStrongCell", parent=cell_style, fontName="Helvetica-Bold")
+        helper_style = ParagraphStyle(
+            "GrnReportHelper",
+            parent=styles["Normal"],
+            fontSize=7.1,
+            leading=8.4,
+            textColor=colors.HexColor("#4b5563"),
+        )
+
+        def para(text, style):
+            text = "-" if text in (None, "") else str(text)
+            return Paragraph(escape(text).replace("\n", "<br/>"), style)
+
+        header_block = Table(
+            [
+                [Paragraph("Asarfi Hospital Pvt Ltd", company_style)],
+                [Paragraph("Sharpsight Purchase Module", subtitle_style)],
+                [Paragraph("GRN Summary Report", title_style)],
+            ],
+            colWidths=[doc.width],
+        )
+        header_block.setStyle(
+            TableStyle(
+                [
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 0),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                    ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+                ]
+            )
+        )
+
+        title_rule = Table([[""]], colWidths=[doc.width])
+        title_rule.setStyle(TableStyle([("LINEABOVE", (0, 0), (-1, 0), 1, colors.black)]))
+
+        filter_table = Table(
+            [
+                [
+                    para("Unit", label_style), para(unit, value_style),
+                    para("Report Rows", label_style), para(str(len(rows or [])), value_style),
+                ],
+                [
+                    para("From Date", label_style), para(_format_display_date(from_date) if from_date else "-", value_style),
+                    para("To Date", label_style), para(_format_display_date(to_date) if to_date else "-", value_style),
+                ],
+                [
+                    para("Supplier", label_style), para(supplier_name or "All Suppliers", value_style),
+                    para("Report Type", label_style), para("GRN Header Summary", value_style),
+                ],
+                [
+                    para("Printed By", label_style), para(printed_by or "-", value_style),
+                    para("Printed On", label_style), para(_format_display_datetime(printed_at), value_style),
+                ],
+            ],
+            colWidths=[22 * mm, 73 * mm, 22 * mm, doc.width - (22 * mm + 73 * mm + 22 * mm)],
+        )
+        filter_table.setStyle(
+            TableStyle(
+                [
+                    ("BACKGROUND", (0, 0), (-1, -1), colors.HexColor("#f3f4f6")),
+                    ("BOX", (0, 0), (-1, -1), 0.7, colors.HexColor("#9ca3af")),
+                    ("INNERGRID", (0, 0), (-1, -1), 0.45, colors.HexColor("#d1d5db")),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 4),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+                    ("TOPPADDING", (0, 0), (-1, -1), 3),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+                    ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+                ]
+            )
+        )
+
+        table_rows = [
+            [
+                Paragraph("GRN No", head_style),
+                Paragraph("Supplier Name", head_style),
+                Paragraph("GRN Date", head_style),
+                Paragraph("GRN Type", head_style),
+                Paragraph("PO-Number", head_style),
+            ]
+        ]
+        for row in rows or []:
+            table_rows.append(
+                [
+                    Paragraph(escape(str(row.get("grn_no") or "-")), strong_cell_style),
+                    Paragraph(escape(str(row.get("supplier_name") or "-")), cell_style),
+                    Paragraph(escape(_format_display_date(row.get("grn_date"))), cell_style),
+                    Paragraph(escape(str(row.get("grn_type") or "-")), cell_style),
+                    Paragraph(escape(str(row.get("po_no") or "-")), cell_style),
+                ]
+            )
+        if len(table_rows) == 1:
+            table_rows.append([Paragraph("No GRNs found for the selected filters.", cell_style), "", "", "", ""])
+
+        report_table = LongTable(
+            table_rows,
+            repeatRows=1,
+            colWidths=[28 * mm, doc.width - (28 * mm + 26 * mm + 31 * mm + 27 * mm), 26 * mm, 31 * mm, 27 * mm],
+        )
+        report_style = [
+            ("LINEABOVE", (0, 0), (-1, 0), 0.9, colors.black),
+            ("LINEBELOW", (0, 0), (-1, 0), 0.9, colors.black),
+            ("BACKGROUND", (0, 0), (-1, 0), colors.HexColor("#e5e7eb")),
+            ("LINEBELOW", (0, 1), (-1, -1), 0.25, colors.HexColor("#d1d5db")),
+            ("LEFTPADDING", (0, 0), (-1, -1), 4),
+            ("RIGHTPADDING", (0, 0), (-1, -1), 4),
+            ("TOPPADDING", (0, 0), (-1, -1), 3),
+            ("BOTTOMPADDING", (0, 0), (-1, -1), 3),
+            ("VALIGN", (0, 0), (-1, -1), "TOP"),
+        ]
+        if len(table_rows) == 2 and not rows:
+            report_style.append(("SPAN", (0, 1), (-1, 1)))
+        report_table.setStyle(TableStyle(report_style))
+
+        note_table = Table(
+            [[Paragraph("Printed copy for purchase review, supplier follow-up, and audit reference.", helper_style)]],
+            colWidths=[doc.width],
+        )
+        note_table.setStyle(
+            TableStyle(
+                [
+                    ("LINEABOVE", (0, 0), (-1, 0), 0.7, colors.HexColor("#9ca3af")),
+                    ("LEFTPADDING", (0, 0), (-1, -1), 0),
+                    ("RIGHTPADDING", (0, 0), (-1, -1), 0),
+                    ("TOPPADDING", (0, 0), (-1, -1), 5),
+                    ("BOTTOMPADDING", (0, 0), (-1, -1), 0),
+                ]
+            )
+        )
+
+        elements = [
+            header_block,
+            Spacer(1, 1.5 * mm),
+            title_rule,
+            Spacer(1, 2 * mm),
+            filter_table,
+            Spacer(1, 2.2 * mm),
+            report_table,
+            Spacer(1, 2.5 * mm),
+            note_table,
+        ]
+
+        def draw_footer(canvas, doc_obj):
+            page_width, _ = A4
+            footer_y = 6 * mm
+            canvas.saveState()
+            canvas.setStrokeColor(colors.HexColor("#9ca3af"))
+            canvas.line(doc_obj.leftMargin, footer_y + 3.4 * mm, page_width - doc_obj.rightMargin, footer_y + 3.4 * mm)
+            canvas.setFont("Helvetica", 7)
+            canvas.setFillColor(colors.HexColor("#4b5563"))
+            canvas.drawString(doc_obj.leftMargin, footer_y, f"Printed By: {printed_by or '-'} | Printed On: {_format_display_datetime(printed_at)}")
+            canvas.drawCentredString(page_width / 2, footer_y, f"Page {canvas.getPageNumber()}")
+            canvas.drawRightString(page_width - doc_obj.rightMargin, footer_y, "Copyright (c) ASARFI HOSPITAL")
+            canvas.restoreState()
+
+        doc.build(elements, onFirstPage=draw_footer, onLaterPages=draw_footer)
+        buffer.seek(0)
+        return buffer
+
     @app.route("/purchase/grn")
     @login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
     def purchase_grn():
@@ -1270,6 +1555,103 @@ def register_purchase_grn_routes(
                     "has_next": page < total_pages,
                 },
             }
+        )
+
+    @app.route("/api/purchase/grn/report_summary")
+    @login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
+    def api_purchase_grn_report_summary():
+        unit, error = _grn_unit()
+        if error:
+            return error
+
+        from_date = str(request.args.get("from_date") or "").strip()
+        to_date = str(request.args.get("to_date") or "").strip()
+        supplier_name = str(request.args.get("supplier_name") or "").strip()
+        df = data_fetch.fetch_purchase_grn_summary_report(
+            unit,
+            from_date=from_date,
+            to_date=to_date,
+            supplier_name=supplier_name,
+        )
+        if df is None:
+            _audit_log_event(
+                "purchase",
+                "grn_report_summary",
+                status="error",
+                entity_type="grn",
+                unit=unit,
+                summary="GRN summary report failed",
+                details={"from_date": from_date, "to_date": to_date, "supplier_name": supplier_name},
+            )
+            return jsonify({"status": "error", "message": "Failed to fetch GRN summary report."}), 500
+
+        rows = _normalize_grn_summary_report(df)
+        _audit_log_event(
+            "purchase",
+            "grn_report_summary",
+            status="success",
+            entity_type="grn",
+            unit=unit,
+            summary="GRN summary report fetched",
+            details={"from_date": from_date, "to_date": to_date, "supplier_name": supplier_name, "count": len(rows)},
+        )
+        return jsonify({"status": "success", "unit": unit, "items": rows, "total_count": len(rows)})
+
+    @app.route("/api/purchase/grn/report_summary/pdf")
+    @login_required(allowed_roles={"IT", "Management", "Departmental Head", "Executive"})
+    def api_purchase_grn_report_summary_pdf():
+        unit, error = _grn_unit()
+        if error:
+            return error
+
+        from_date = str(request.args.get("from_date") or "").strip()
+        to_date = str(request.args.get("to_date") or "").strip()
+        supplier_name = str(request.args.get("supplier_name") or "").strip()
+        df = data_fetch.fetch_purchase_grn_summary_report(
+            unit,
+            from_date=from_date,
+            to_date=to_date,
+            supplier_name=supplier_name,
+        )
+        if df is None:
+            _audit_log_event(
+                "purchase",
+                "grn_report_summary_pdf",
+                status="error",
+                entity_type="grn",
+                unit=unit,
+                summary="GRN summary PDF failed",
+                details={"from_date": from_date, "to_date": to_date, "supplier_name": supplier_name},
+            )
+            return jsonify({"status": "error", "message": "Failed to fetch GRN summary report."}), 500
+
+        rows = _normalize_grn_summary_report(df)
+        printed_by = str(session.get("username") or session.get("user") or "Unknown").strip() or "Unknown"
+        printed_at = datetime.now(tz=LOCAL_TZ)
+        pdf_buffer = _build_grn_summary_report_pdf_buffer(
+            unit,
+            rows,
+            printed_by,
+            printed_at,
+            from_date=from_date,
+            to_date=to_date,
+            supplier_name=supplier_name,
+        )
+        date_part = f"{from_date or 'start'}_to_{to_date or 'today'}".replace("/", "-").replace("\\", "-")
+        _audit_log_event(
+            "purchase",
+            "grn_report_summary_pdf",
+            status="success",
+            entity_type="grn",
+            unit=unit,
+            summary="GRN summary PDF generated",
+            details={"from_date": from_date, "to_date": to_date, "supplier_name": supplier_name, "count": len(rows), "printed_by": printed_by},
+        )
+        return send_file(
+            pdf_buffer,
+            mimetype="application/pdf",
+            as_attachment=False,
+            download_name=f"GRN_Summary_Report_{date_part}.pdf",
         )
 
     @app.route("/api/purchase/grn/<int:grn_id>")

@@ -280,6 +280,164 @@ def fetch_corporate_bill_summary(unit: str, from_date: str, to_date: str, visit_
 
 
 # ===================== Collections / Receipts Summary =====================
+def _attach_receipt_patient_subtype(conn, df: pd.DataFrame, from_date: str, to_date: str) -> pd.DataFrame:
+    if df is None or df.empty:
+        return df
+
+    out = df.copy()
+    cols_lower = {str(c).strip().lower(): c for c in out.columns}
+    existing_subtype_col = next(
+        (cols_lower[key] for key in ["patientsubtype", "patient_subtype", "patient sub type", "patient subtype", "corptype", "corp type"] if key in cols_lower),
+        None,
+    )
+    if existing_subtype_col and existing_subtype_col != "PatientSubType":
+        out["PatientSubType"] = out[existing_subtype_col]
+    elif "PatientSubType" not in out.columns:
+        out["PatientSubType"] = ""
+
+    try:
+        non_blank = out["PatientSubType"].fillna("").astype(str).str.strip()
+        if len(non_blank) and bool((non_blank != "").all()):
+            return out
+    except Exception:
+        pass
+
+    def _q(name: str) -> str:
+        return f"[{str(name).replace(']', ']]')}]"
+
+    def _table_ref(table_name: str) -> str:
+        return f"dbo.{_q(table_name)}"
+
+    def _norm_key(value) -> str:
+        if value is None or pd.isna(value):
+            return ""
+        text = str(value).strip()
+        if not text:
+            return ""
+        try:
+            number = float(text)
+            if number.is_integer():
+                return str(int(number))
+        except Exception:
+            pass
+        return text
+
+    receipt_table = _resolve_table_name(conn, ["Receipt_mst", "Receipt_Mst", "receipt_mst"])
+    visit_table = _resolve_table_name(conn, ["Visit", "visit"])
+    billing_table = _resolve_table_name(conn, ["Billing_Mst", "Billing_MST", "billing_mst"])
+    if not receipt_table:
+        return out
+
+    receipt_id_col = _resolve_column(conn, receipt_table, ["Receipt_ID", "ReceiptId", "ReceiptID"])
+    receipt_no_col = _resolve_column(conn, receipt_table, ["Receipt_No", "ReceiptNo", "ReceiptNO"])
+    receipt_visit_col = _resolve_column(conn, receipt_table, ["Visit_ID", "VisitId", "VisitID"])
+    receipt_invoice_col = _resolve_column(conn, receipt_table, ["InvoiceNo", "Bill_ID", "BillID", "BillId"])
+    receipt_date_col = _resolve_column(conn, receipt_table, ["Receipt_Date", "ReceiptDate", "Date", "InsertedON", "InsertedOn"])
+    if not receipt_date_col:
+        return out
+
+    visit_id_col = _resolve_column(conn, visit_table, ["Visit_ID", "VisitId", "VisitID"]) if visit_table else None
+    visit_subtype_col = _resolve_column(conn, visit_table, ["PatientSubType_ID", "PatientSubTypeId", "PatientSubTypeID"]) if visit_table else None
+    bill_id_col = _resolve_column(conn, billing_table, ["Bill_ID", "BillId", "BillID"]) if billing_table else None
+    bill_no_col = _resolve_column(conn, billing_table, ["BillNo", "Bill_No", "BillNO"]) if billing_table else None
+    bill_visit_col = _resolve_column(conn, billing_table, ["Visit_ID", "VisitId", "VisitID"]) if billing_table else None
+    bill_subtype_col = _resolve_column(conn, billing_table, ["PatientTypeIdSrNo", "PatientSubType_ID", "PatientSubTypeId", "PatientSubTypeID"]) if billing_table else None
+
+    joins = []
+    subtype_parts = []
+    if receipt_visit_col and visit_id_col and visit_subtype_col:
+        joins.append(f"LEFT JOIN {_table_ref(visit_table)} rv WITH (NOLOCK) ON rv.{_q(visit_id_col)} = r.{_q(receipt_visit_col)}")
+        subtype_parts.append(f"NULLIF(ISNULL(dbo.fn_patsub_type(rv.{_q(visit_subtype_col)}), N''), N'')")
+    if receipt_invoice_col and bill_id_col:
+        joins.append(f"LEFT JOIN {_table_ref(billing_table)} b WITH (NOLOCK) ON b.{_q(bill_id_col)} = r.{_q(receipt_invoice_col)}")
+        if bill_subtype_col:
+            subtype_parts.append(f"NULLIF(ISNULL(dbo.fn_patsub_type(b.{_q(bill_subtype_col)}), N''), N'')")
+        if bill_visit_col and visit_id_col and visit_subtype_col:
+            joins.append(f"LEFT JOIN {_table_ref(visit_table)} bv WITH (NOLOCK) ON bv.{_q(visit_id_col)} = b.{_q(bill_visit_col)}")
+            subtype_parts.append(f"NULLIF(ISNULL(dbo.fn_patsub_type(bv.{_q(visit_subtype_col)}), N''), N'')")
+    if not subtype_parts:
+        return out
+
+    select_parts = [
+        f"CAST(NULLIF(r.{_q(receipt_id_col)}, 0) AS BIGINT) AS ReceiptIDKey" if receipt_id_col else "CAST(NULL AS BIGINT) AS ReceiptIDKey",
+        f"LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(100), r.{_q(receipt_no_col)}), N''))) AS ReceiptNoKey" if receipt_no_col else "CAST(N'' AS NVARCHAR(100)) AS ReceiptNoKey",
+        f"CAST(NULLIF(r.{_q(receipt_visit_col)}, 0) AS BIGINT) AS VisitIDKey" if receipt_visit_col else "CAST(NULL AS BIGINT) AS VisitIDKey",
+        f"CAST(NULLIF(r.{_q(receipt_invoice_col)}, 0) AS BIGINT) AS BillIDKey" if receipt_invoice_col else "CAST(NULL AS BIGINT) AS BillIDKey",
+        f"LTRIM(RTRIM(ISNULL(CONVERT(NVARCHAR(100), b.{_q(bill_no_col)}), N''))) AS BillNoKey" if receipt_invoice_col and bill_id_col and bill_no_col else "CAST(N'' AS NVARCHAR(100)) AS BillNoKey",
+        f"COALESCE({', '.join(subtype_parts)}, N'') AS PatientSubType",
+    ]
+    sql = f"""
+        SELECT
+            {', '.join(select_parts)}
+        FROM {_table_ref(receipt_table)} r WITH (NOLOCK)
+            {' '.join(joins)}
+        WHERE r.{_q(receipt_date_col)} >= CONVERT(DATETIME, ?)
+          AND r.{_q(receipt_date_col)} < DATEADD(day, 1, CONVERT(DATETIME, ?));
+    """
+
+    try:
+        subtype_df = pd.read_sql(sql, conn, params=[from_date, to_date])
+    except Exception as e:
+        print(f"Receipt PatientSubType enrichment skipped: {e}")
+        return out
+    if subtype_df is None or subtype_df.empty:
+        return out
+    subtype_df.columns = [str(c).strip() for c in subtype_df.columns]
+    subtype_df["PatientSubType"] = subtype_df.get("PatientSubType", "").fillna("").astype(str).str.strip()
+    subtype_df = subtype_df[subtype_df["PatientSubType"] != ""]
+    if subtype_df.empty:
+        return out
+
+    maps = {key: {} for key in ["receipt_id", "receipt_no", "visit_id", "bill_id", "bill_no"]}
+    for _, row in subtype_df.iterrows():
+        subtype = str(row.get("PatientSubType") or "").strip()
+        if not subtype:
+            continue
+        for map_key, col_name in [
+            ("receipt_id", "ReceiptIDKey"),
+            ("receipt_no", "ReceiptNoKey"),
+            ("visit_id", "VisitIDKey"),
+            ("bill_id", "BillIDKey"),
+            ("bill_no", "BillNoKey"),
+        ]:
+            key = _norm_key(row.get(col_name))
+            if key and key not in maps[map_key]:
+                maps[map_key][key] = subtype
+
+    def _pick_output_col(candidates):
+        local_cols = {str(c).strip().lower(): c for c in out.columns}
+        for candidate in candidates:
+            key = candidate.lower()
+            if key in local_cols:
+                return local_cols[key]
+        return None
+
+    lookup_cols = [
+        ("receipt_id", _pick_output_col(["Receipt_ID", "ReceiptId", "ReceiptID"])),
+        ("receipt_no", _pick_output_col(["Receipt_No", "ReceiptNo", "RcptNo"])),
+        ("visit_id", _pick_output_col(["Visit_ID", "VisitId", "VisitID", "VisitIdNo"])),
+        ("bill_id", _pick_output_col(["Bill_ID", "BillId", "BillID", "InvoiceNo"])),
+        ("bill_no", _pick_output_col(["BillNo", "Bill_No", "InvoiceNo"])),
+    ]
+
+    values = []
+    for _, row in out.iterrows():
+        current = str(row.get("PatientSubType") or "").strip()
+        if current and current.lower() not in {"nan", "none", "null"}:
+            values.append(current)
+            continue
+        resolved = ""
+        for map_key, col_name in lookup_cols:
+            if not col_name:
+                continue
+            resolved = maps[map_key].get(_norm_key(row.get(col_name)), "")
+            if resolved:
+                break
+        values.append(resolved)
+    out["PatientSubType"] = values
+    return out
+
+
 def fetch_receipt_summary(unit: str, from_date: str, to_date: str):
     """
     Executes dbo.Usp_ReceiptSummary for the given unit and date range.
@@ -296,6 +454,7 @@ def fetch_receipt_summary(unit: str, from_date: str, to_date: str):
             return df
         df.columns = [c.strip() for c in df.columns]
         df["Unit"] = (unit or "").upper()
+        df = _attach_receipt_patient_subtype(conn, df, from_date, to_date)
         return df
     except Exception as e:
         print(f"âš ï¸ Error fetching receipt summary ({unit}): {e}")
@@ -6969,6 +7128,57 @@ def _asset_warranty_years_param(raw):
     return years
 
 
+ASSET_AMC_STATUS_LABELS = {
+    1: "AMC",
+    2: "CMC",
+    3: "AMC / CMC",
+    4: "No AMC",
+}
+ASSET_AMC_STATUS_CODES = {
+    "AMC": 1,
+    "CMC": 2,
+    "AMC/CMC": 3,
+    "AMC / CMC": 3,
+    "NO AMC": 4,
+    "NOAMC": 4,
+    "NONE": 4,
+}
+
+
+def _asset_amc_status_param(raw):
+    if raw is None:
+        return None
+    status_id = _to_int(raw)
+    if status_id in ASSET_AMC_STATUS_LABELS:
+        return status_id
+    text = _asset_upper_text(raw)
+    if not text:
+        return None
+    return ASSET_AMC_STATUS_CODES.get(text)
+
+
+def _asset_amc_status_display(raw):
+    status_id = _to_int(raw)
+    return ASSET_AMC_STATUS_LABELS.get(status_id, _asset_clean_text(raw))
+
+
+def _asset_installation_location_param(raw, asset_row=None):
+    location_id = _to_int(raw)
+    if location_id:
+        return location_id
+    asset_row = asset_row or {}
+    fallback_id = _to_int(asset_row.get("locationId"))
+    text = _asset_upper_text(raw)
+    if not text:
+        return fallback_id
+    if text in {
+        _asset_upper_text(asset_row.get("location_name")),
+        _asset_upper_text(asset_row.get("location_code")),
+    }:
+        return fallback_id
+    return fallback_id
+
+
 def _asset_money_value(raw):
     text = _asset_clean_text(raw).replace(",", "")
     if text.upper().startswith("RS."):
@@ -8956,6 +9166,7 @@ def _asset_prepare_frame(df: pd.DataFrame):
         "insertBy",
         "updateBy",
         "locationId",
+        "installation_location_id",
         "asset_srno",
         "status",
         "maintenance_id",
@@ -9244,7 +9455,8 @@ def _fetch_asset_master_frame(location_codes=None, asset_id=None):
             lm.StatusAfter AS last_status_after,
             maint.id AS maintenance_id,
             maint.installation_date,
-            maint.installation_location,
+            maint.installation_location AS installation_location_id,
+            COALESCE(maint_loc.location_name, CAST(maint.installation_location AS varchar(20))) AS installation_location,
             maint.warranty_start_date,
             maint.warranty_end_date,
             maint.installedby_name,
@@ -9286,6 +9498,8 @@ def _fetch_asset_master_frame(location_codes=None, asset_id=None):
         LEFT JOIN LatestMaintenance maint
             ON maint.asset_id = am.asset_id
            AND maint.rn = 1
+        LEFT JOIN dbo.asset_locationMst maint_loc WITH (NOLOCK)
+            ON maint_loc.location_id = maint.installation_location
         LEFT JOIN ActiveCoverage cov
             ON cov.AssetID = am.asset_id
            AND cov.rn = 1
@@ -10333,12 +10547,14 @@ def fetch_asset_detail(asset_id, location_codes=None):
     maintenance = {
         "maintenance_id": asset_record.get("maintenance_id"),
         "installation_date": asset_record.get("installation_date_display"),
+        "installation_location_id": asset_record.get("installation_location_id"),
         "installation_location": asset_record.get("installation_location"),
         "warranty_start_date": asset_record.get("warranty_start_date_display"),
         "warranty_end_date": asset_record.get("warranty_end_date_display"),
         "installedby_name": asset_record.get("installedby_name"),
         "installedby_mobile": asset_record.get("installedby_mobile"),
-        "amc_status": asset_record.get("amc_status"),
+        "amc_status": _asset_amc_status_display(asset_record.get("amc_status")),
+        "amc_status_id": asset_record.get("amc_status"),
         "amc_date": asset_record.get("amc_date_display"),
         "amc_value": asset_record.get("amc_value"),
         "amc_tax": asset_record.get("amc_tax"),
@@ -10790,6 +11006,11 @@ def upsert_asset_maintenance(asset_id, payload, actor_user_id=None):
         base_equ_id = _to_int(asset_row.get("equ_id"))
         base_model = _asset_clean_text(asset_row.get("model_name"))
         base_serial = _asset_clean_text(asset_row.get("serial_number"))
+        installation_location_id = _asset_installation_location_param(
+            maintenance_payload.get("installation_location"),
+            asset_row,
+        )
+        amc_status_id = _asset_amc_status_param(maintenance_payload.get("amc_status"))
         warranty_start = _to_datetime(maintenance_payload.get("warranty_start_date")) or _to_datetime(asset_row.get("warranty_start_date_resolved"))
         warranty_end = _to_datetime(maintenance_payload.get("warranty_end_date")) or _to_datetime(asset_row.get("warranty_end_date_resolved"))
 
@@ -10824,12 +11045,12 @@ def upsert_asset_maintenance(asset_id, payload, actor_user_id=None):
                     _asset_clean_text(maintenance_payload.get("model_no"), base_model),
                     _asset_clean_text(maintenance_payload.get("serial_no"), base_serial),
                     _to_datetime(maintenance_payload.get("installation_date")),
-                    _asset_clean_text(maintenance_payload.get("installation_location")),
+                    installation_location_id,
                     warranty_start,
                     warranty_end,
                     _asset_clean_text(maintenance_payload.get("installedby_name")),
                     _asset_clean_text(maintenance_payload.get("installedby_mobile")),
-                    _asset_clean_text(maintenance_payload.get("amc_status")),
+                    amc_status_id,
                     _to_datetime(maintenance_payload.get("amc_date")),
                     _to_decimal(maintenance_payload.get("amc_value"), Decimal("0")),
                     _to_decimal(maintenance_payload.get("amc_tax"), Decimal("0")),
@@ -10861,12 +11082,12 @@ def upsert_asset_maintenance(asset_id, payload, actor_user_id=None):
                     _asset_clean_text(maintenance_payload.get("model_no"), base_model),
                     _asset_clean_text(maintenance_payload.get("serial_no"), base_serial),
                     _to_datetime(maintenance_payload.get("installation_date")),
-                    _asset_clean_text(maintenance_payload.get("installation_location")),
+                    installation_location_id,
                     warranty_start,
                     warranty_end,
                     _asset_clean_text(maintenance_payload.get("installedby_name")),
                     _asset_clean_text(maintenance_payload.get("installedby_mobile")),
-                    _asset_clean_text(maintenance_payload.get("amc_status")),
+                    amc_status_id,
                     _to_datetime(maintenance_payload.get("amc_date")),
                     _to_decimal(maintenance_payload.get("amc_value"), Decimal("0")),
                     _to_decimal(maintenance_payload.get("amc_tax"), Decimal("0")),
@@ -20969,7 +21190,7 @@ def fetch_refund_tracker_raw(unit: str, from_date: str, to_date: str):
 
 # Final column order expected by the UI/Excel
 VOLUME_TRACKER_COL_ORDER = [
-    "VisitNo","VisitDate","DischargeDate","PatientName","RegNo",
+    "VisitNo","Patient In Time","VisitDate","DischargeDate","PatientName","RegNo",
     "TypeOfVisit","AdmissionType","Consultant","ReferringConsultant","ExternalRefConsultant",
     "Address","City","PatientType","CorpType","PatientContact","Age","Dept"
 ]
@@ -21251,6 +21472,46 @@ def _volume_table_ref(name: str | None) -> str:
     return f"[dbo].{_volume_q_ident(name)}"
 
 
+def _volume_resolve_patient_in_time_column(conn, visit_table: str | None) -> str | None:
+    if not conn or not visit_table:
+        return None
+    candidates = [
+        "Patient In Time",
+        "PatientInTime",
+        "Patient_In_Time",
+        "Patient_Intime",
+        "PatientIntime",
+        "PatientIn_Time",
+    ]
+    try:
+        placeholders = ",".join("?" for _ in candidates)
+        sql = f"""
+            SELECT COLUMN_NAME
+            FROM INFORMATION_SCHEMA.COLUMNS
+            WHERE TABLE_SCHEMA = 'dbo'
+              AND TABLE_NAME = ?
+              AND COLUMN_NAME IN ({placeholders})
+        """
+        cols_df = pd.read_sql(sql, conn, params=[visit_table, *candidates])
+    except Exception:
+        cols_df = None
+    if cols_df is None or cols_df.empty:
+        try:
+            cols_df = pd.read_sql(
+                "SELECT name AS COLUMN_NAME FROM sys.columns WHERE object_id = OBJECT_ID(?)",
+                conn,
+                params=[f"dbo.{visit_table}"],
+            )
+        except Exception:
+            return None
+    cols = [str(c).strip() for c in cols_df["COLUMN_NAME"].tolist()]
+    for cand in candidates:
+        for col in cols:
+            if col.lower() == cand.lower():
+                return col
+    return None
+
+
 def _volume_sql_text_expr(alias: str, col_name: str | None, *, size: int = 255) -> str:
     if not alias or not col_name:
         return f"CAST(N'' AS NVARCHAR({size}))"
@@ -21292,6 +21553,7 @@ def _volume_fetch_raw_direct_paged(
     visit_id_col = _resolve_column(conn, visit_table, ["Visit_ID", "VisitId", "VisitID"])
     visit_no_col = _resolve_column(conn, visit_table, ["VisitNo", "Visit_No"])
     visit_date_col = _resolve_column(conn, visit_table, ["VisitDate", "Visit_Date"])
+    patient_in_time_col = _volume_resolve_patient_in_time_column(conn, visit_table)
     discharge_date_col = _resolve_column(conn, visit_table, ["DischargeDate", "Discharge_Date", "DischargeDateTime"])
     patient_id_col = _resolve_column(conn, visit_table, ["PatientID", "PatientId", "Patient_ID"])
     visit_type_col = _resolve_column(conn, visit_table, ["TypeOfVisit", "VisitType", "Type_Of_Visit"])
@@ -21393,6 +21655,11 @@ def _volume_fetch_raw_direct_paged(
         END
     """
     visit_date_dt_expr = f"CAST(v.{_volume_q_ident(visit_date_col)} AS DATETIME)"
+    patient_in_time_expr = (
+        f"CAST(v.{_volume_q_ident(patient_in_time_col)} AS DATETIME)"
+        if patient_in_time_col
+        else "CAST(NULL AS DATETIME)"
+    )
     ipd_daycare_expr = f"""
         CASE
             WHEN {visit_type_id_expr} <> 1 THEN N''
@@ -21490,6 +21757,7 @@ def _volume_fetch_raw_direct_paged(
             SELECT TOP {batch_size}
                 {visit_id_bigint_expr} AS Visit_ID,
                 {visit_no_expr} AS Visitno,
+                {patient_in_time_expr} AS [Patient In Time],
                 CAST(v.{_volume_q_ident(visit_date_col)} AS DATETIME) AS VisitDate,
                 {discharge_date_expr} AS DischargeDate,
                 {patient_name_expr} AS PatientName,
@@ -21694,6 +21962,12 @@ def shape_volume_details(
         else pd.Series([None] * len(df_raw), dtype="float64")
     )
     visit_date_series = pd.to_datetime(get("VisitDate"), errors="coerce")
+    patient_in_time_col = _find_column(df_raw, ["Patient In Time", "PatientInTime", "Patient_In_Time", "Patient_Intime", "PatientIntime"])
+    patient_in_time_series = (
+        pd.to_datetime(get(patient_in_time_col), errors="coerce")
+        if patient_in_time_col
+        else pd.Series([pd.NaT] * len(df_raw), index=df_raw.index)
+    )
     discharge_date_series = pd.to_datetime(get("DischargeDate"), errors="coerce")
 
     # Build TypeOfVisit display per your rule
@@ -21722,6 +21996,7 @@ def shape_volume_details(
     # Compose details
     details = pd.DataFrame({
         "VisitNo":             get("Visitno"),
+        "Patient In Time":     patient_in_time_series,
         "VisitDate":           visit_date_series,
         "DischargeDate":       discharge_date_series,
         "PatientName":         get("PatientName"),
@@ -21753,13 +22028,14 @@ def shape_volume_details(
     details = apply_volume_ipd_daycare_segmentation(details)
 
     # Format datetimes as IST display strings
+    details["Patient In Time"] = details["Patient In Time"].apply(_as_ist_string)
     details["VisitDate"]     = details["VisitDate"].apply(_as_ist_string)
     details["DischargeDate"] = details["DischargeDate"].apply(_as_ist_string)
 
     # Clean string fields
     for col in ["PatientName","Consultant","ReferringConsultant",
                 "ExternalRefConsultant","Address","City","PatientType",
-                "CorpType","Dept","PatientContact","RegNo","TypeOfVisit","AdmissionType","Gender"]:
+                "CorpType","Dept","PatientContact","RegNo","TypeOfVisit","AdmissionType","Gender","Patient In Time"]:
         if col in details.columns:
             details[col] = details[col].astype(str).str.strip().replace({"nan":"", "None":""})
 
@@ -23711,7 +23987,7 @@ def build_volume_excel(
 
     # ---- Details (Unit first) ----
     detail_cols = [
-        "Unit","VisitNo","VisitDate","DischargeDate","PatientName","RegNo",
+        "Unit","VisitNo","Patient In Time","VisitDate","DischargeDate","PatientName","RegNo",
         vt_col, admission_type_col, doc_col,"ReferringConsultant","ExternalRefConsultant",
         "Address","City",pt_col,corp_col,"PatientContact","Age",dep_col
     ]
@@ -26649,6 +26925,30 @@ def _ensure_iv_po_mst_purchasing_dept_column_conn(conn) -> bool:
         return bool(_resolve_column(conn, table_name, ["PurchasingDeptId", "PurchasingDeptID", "PurchaseDeptId", "PurchaseDeptID"]))
 
 
+def _ensure_iv_po_mst_approval_date_column_conn(conn) -> bool:
+    """
+    Ensure IVPoMst has POApprovalDate for the system-controlled approval timestamp.
+    """
+    if not conn:
+        return False
+    table_name = _resolve_table_name(conn, ["IVPoMst", "IvPoMst", "IVPO_MST", "IV_Po_Mst"])
+    if not table_name:
+        return False
+    if _resolve_column(conn, table_name, ["POApprovalDate", "PoApprovalDate"]):
+        return True
+    try:
+        cur = conn.cursor()
+        cur.execute(f"ALTER TABLE dbo.[{table_name}] ADD POApprovalDate DATETIME NULL")
+        conn.commit()
+        return True
+    except Exception:
+        try:
+            conn.rollback()
+        except Exception:
+            pass
+        return bool(_resolve_column(conn, table_name, ["POApprovalDate", "PoApprovalDate"]))
+
+
 def _ensure_iv_po_dtl_unit_name_column_conn(conn) -> bool:
     """
     Ensure IVPoDtl has UnitName so line-level unit overrides can be persisted.
@@ -27937,6 +28237,71 @@ def fetch_purchase_grn_list(unit: str, grn_no: str | None = None, supplier_name:
             pass
 
 
+def fetch_purchase_grn_summary_report(
+    unit: str,
+    from_date: str | None = None,
+    to_date: str | None = None,
+    supplier_name: str | None = None,
+):
+    """
+    Fetch GRN header rows for the Sharpsight GRN summary report.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        print(f"Could not connect to {unit} for GRN summary report")
+        return None
+    try:
+        filters = ["ISNULL(gm.Canceled, 0) = 0"]
+        params = []
+        from_date = str(from_date or "").strip()
+        to_date = str(to_date or "").strip()
+        supplier_name = str(supplier_name or "").strip()
+        if from_date:
+            filters.append("gm.GRNDate >= ?")
+            params.append(from_date)
+        if to_date:
+            filters.append("gm.GRNDate < DATEADD(DAY, 1, ?)")
+            params.append(to_date)
+        if supplier_name:
+            filters.append("sup.Name LIKE ?")
+            params.append(f"%{supplier_name}%")
+        where_sql = " AND ".join(filters)
+        sql = f"""
+            SET NOCOUNT ON;
+            SELECT TOP 250
+                gm.ID,
+                gm.GRNNo,
+                gm.GRNDate,
+                gm.GrnTypeID,
+                gt.Name AS GrnTypeName,
+                gm.PoID,
+                pom.PONo,
+                sup.Name AS SupplierName
+            FROM dbo.IVGrnMst AS gm WITH (NOLOCK)
+            LEFT JOIN dbo.IVGRNType AS gt WITH (NOLOCK)
+                ON gm.GrnTypeID = gt.ID
+            LEFT JOIN dbo.IVSupplier AS sup WITH (NOLOCK)
+                ON gm.SupplierID = sup.ID
+            LEFT JOIN dbo.IVPoMst AS pom WITH (NOLOCK)
+                ON gm.PoID = pom.ID
+            WHERE {where_sql}
+            ORDER BY gm.GRNDate DESC, gm.ID DESC
+        """
+        df = pd.read_sql(sql, conn, params=params)
+        if df is None or df.empty:
+            return df
+        df.columns = [c.strip() for c in df.columns]
+        return df
+    except Exception as e:
+        print(f"Error fetching GRN summary report ({unit}): {e}")
+        return None
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
 def fetch_purchase_grn_header(unit: str, grn_id: int):
     """
     Fetch a GRN header with supplier/store/type metadata.
@@ -28720,6 +29085,22 @@ def ensure_po_purchasing_dept_column(unit: str) -> bool:
         return False
     try:
         return _ensure_iv_po_mst_purchasing_dept_column_conn(conn)
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+
+def ensure_po_approval_date_column(unit: str) -> bool:
+    """
+    Public helper to create IVPoMst.POApprovalDate if missing.
+    """
+    conn = get_sql_connection(unit)
+    if not conn:
+        return False
+    try:
+        return _ensure_iv_po_mst_approval_date_column_conn(conn)
     finally:
         try:
             conn.close()
@@ -30385,6 +30766,7 @@ def fetch_purchase_po_header(
         custom1_col = pick_col(["Custom1"])
         custom2_col = pick_col(["Custom2"])
         purchasing_dept_col = pick_col(["PurchasingDeptId", "PurchasingDeptID", "PurchaseDeptId", "PurchaseDeptID"])
+        po_approval_date_col = pick_col(["POApprovalDate", "PoApprovalDate"])
         special_notes_col = pick_col(["SpecialNotes", "SpecialNote"])
         cmc_amc_warranty_col = pick_col(["CmcAmcWarrantyNotes", "CMCAMCWarrantyNotes", "CmcAmcWarranty", "CMCAMCWarranty"])
         overall_discount_mode_col = pick_col(["OverallDiscountMode", "POOverallDiscountMode"])
@@ -30413,6 +30795,11 @@ def fetch_purchase_po_header(
             f"mst.[{purchasing_dept_col}] AS PurchasingDeptId"
             if purchasing_dept_col
             else "CAST(NULL AS INT) AS PurchasingDeptId"
+        )
+        po_approval_date_select = (
+            f"mst.[{po_approval_date_col}] AS POApprovalDate"
+            if po_approval_date_col
+            else "CAST(NULL AS DATETIME) AS POApprovalDate"
         )
         special_notes_select = (
             f"mst.[{special_notes_col}] AS SpecialNotes"
@@ -30496,6 +30883,7 @@ def fetch_purchase_po_header(
                 mst.ID,
                 mst.PONo,
                 mst.PODate,
+                {po_approval_date_select},
                 {document_type_select},
                 mst.SupplierID,
                 mst.RefNo,
@@ -30562,6 +30950,7 @@ def fetch_purchase_po_header(
                 custom1_select=custom1_select,
                 custom2_select=custom2_select,
                 purchasing_dept_select=purchasing_dept_select,
+                po_approval_date_select=po_approval_date_select,
                 approver_name_select=approver_name_select,
                 approver_degree_select=approver_degree_select,
                 approver_designation_select=approver_designation_select,
@@ -31394,7 +31783,8 @@ def clear_work_order_dtl(unit: str, wo_id: int):
 
 def update_po_status(unit: str, po_id: int, status: str):
     """
-    Update PO status in IVPoMst.
+    Update PO status in IVPoMst. When a PO moves from Draft/Pending to
+    Approved, stamp POApprovalDate once and never overwrite it.
     """
     conn = get_sql_connection(unit)
     if not conn:
@@ -31403,19 +31793,42 @@ def update_po_status(unit: str, po_id: int, status: str):
         table_name, id_col, _, doc_type_col = _resolve_iv_po_mst_meta(conn)
         if not table_name:
             return {"error": "IVPoMst table not found"}
+        status_value = str(status or "").strip().upper()
+        approval_date_col = None
+        if status_value == "A":
+            _ensure_iv_po_mst_approval_date_column_conn(conn)
+            approval_date_col = _resolve_column(conn, table_name, ["POApprovalDate", "PoApprovalDate"])
+        status_set_sql = "Status = ?"
+        params = [status]
+        if approval_date_col:
+            status_set_sql = f"""
+                [{approval_date_col}] = CASE
+                    WHEN ? = 'A'
+                     AND [{approval_date_col}] IS NULL
+                     AND UPPER(LTRIM(RTRIM(ISNULL(CAST(Status AS NVARCHAR(30)), ''))))
+                         IN ('D', 'P', 'DRAFT', 'PENDING', 'PENDING APPROVAL')
+                    THEN GETDATE()
+                    ELSE [{approval_date_col}]
+                END,
+                Status = ?
+            """
+            params = [status_value, status]
         cur = conn.cursor()
         if doc_type_col:
             cur.execute(
                 f"""
                 UPDATE dbo.[{table_name}]
-                SET Status = ?
+                SET {status_set_sql}
                 WHERE [{id_col}] = ?
                   AND ISNULL(NULLIF(UPPER(LTRIM(RTRIM(CAST([{doc_type_col}] AS NVARCHAR(20))))), ''), 'PO') = 'PO'
                 """,
-                (status, int(po_id)),
+                (*params, int(po_id)),
             )
         else:
-            cur.execute(f"UPDATE dbo.[{table_name}] SET Status = ? WHERE [{id_col}] = ?", (status, int(po_id)))
+            cur.execute(
+                f"UPDATE dbo.[{table_name}] SET {status_set_sql} WHERE [{id_col}] = ?",
+                (*params, int(po_id)),
+            )
         conn.commit()
         return {"status": "success"}
     except Exception as e:

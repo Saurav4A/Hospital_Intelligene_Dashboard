@@ -37,6 +37,7 @@ ASSET_BREAKDOWN_ESCALATION_ROLES = {
     "ASSET-PURCHASE",
     "PURCHASE",
 }
+ASSET_DIRECTOR_ROLES = {"DIRECTOR"}
 ASSET_BREAKDOWN_NOTIFY_ROLES = ASSET_BREAKDOWN_IMMEDIATE_ROLES | ASSET_BREAKDOWN_ESCALATION_ROLES
 ASSET_COVERAGE_NOTIFY_ROLES = {
     "CENTER HEAD AHL",
@@ -140,15 +141,20 @@ def _breakdown_dt(row):
         return None
 
 
-def _breakdown_escalation_rows(rows, *, as_of=None):
+def _breakdown_escalation_rows(rows, *, as_of=None, days_open=2):
     as_of_dt = as_of or datetime.now(tz=data_fetch.LOCAL_TZ).replace(tzinfo=None)
-    cutoff_date = (as_of_dt.date() - timedelta(days=2))
+    cutoff_date = (as_of_dt.date() - timedelta(days=max(0, int(days_open or 0))))
     due = []
     for row in rows or []:
         dt_val = _breakdown_dt(row)
         if dt_val and dt_val.date() <= cutoff_date:
             due.append(row)
     return due
+
+
+def _breakdown_row_key(row):
+    row = row or {}
+    return row.get("ticket_id") or row.get("ticket_no") or id(row)
 
 
 def _asset_final_update_body(unit_code, title, ticket):
@@ -571,9 +577,38 @@ def run_asset_breakdown_reminder_job(*, send_graph_mail_with_attachment=None, un
         non_it_rows, it_rows = _split_asset_rows_for_it(rows)
         biomedical_recipients = _coverage_recipients_for_unit(unit, ASSET_BIOMEDICAL_ROLES) if non_it_rows else []
         it_recipients = _coverage_recipients_for_unit(unit, ASSET_IT_ROLES) if it_rows else []
-        escalation_rows = _breakdown_escalation_rows(rows)
-        escalation_recipients = _coverage_recipients_for_unit(unit, ASSET_BREAKDOWN_ESCALATION_ROLES) if escalation_rows else []
-        if not biomedical_recipients and not it_recipients and not escalation_recipients:
+        escalation_rows = _breakdown_escalation_rows(rows, days_open=2)
+        director_escalation_rows = _breakdown_escalation_rows(rows, days_open=3)
+        director_escalation_keys = {_breakdown_row_key(row) for row in director_escalation_rows}
+        t_plus_2_only_rows = [
+            row for row in escalation_rows
+            if _breakdown_row_key(row) not in director_escalation_keys
+        ]
+        escalation_mail_jobs = []
+        if t_plus_2_only_rows:
+            escalation_mail_jobs.append({
+                "group": "t_plus_2",
+                "rows": t_plus_2_only_rows,
+                "roles": set(ASSET_BREAKDOWN_ESCALATION_ROLES),
+                "title": "T+2 Open Breakdown Escalation",
+                "subject_prefix": "HID Asset Breakdown T+2 Escalation",
+            })
+        if director_escalation_rows:
+            escalation_mail_jobs.append({
+                "group": "t_plus_3",
+                "rows": director_escalation_rows,
+                "roles": set(ASSET_BREAKDOWN_ESCALATION_ROLES) | ASSET_DIRECTOR_ROLES,
+                "title": "T+3 Open Breakdown Escalation",
+                "subject_prefix": "HID Asset Breakdown T+3 Escalation",
+            })
+        for job in escalation_mail_jobs:
+            escalation_non_it_rows, escalation_it_rows = _split_asset_rows_for_it(job["rows"])
+            if escalation_non_it_rows:
+                job["roles"] |= ASSET_BIOMEDICAL_ROLES
+            if escalation_it_rows:
+                job["roles"] |= ASSET_IT_ROLES
+            job["recipients"] = _coverage_recipients_for_unit(unit, job["roles"])
+        if not biomedical_recipients and not it_recipients and not any(job.get("recipients") for job in escalation_mail_jobs):
             msg = "No asset breakdown recipients configured."
             if run_id:
                 data_fetch.finish_asset_breakdown_reminder_run(run_id, status="skipped", message=msg)
@@ -625,16 +660,20 @@ def run_asset_breakdown_reminder_job(*, send_graph_mail_with_attachment=None, un
                 result["recipient_count"] = len(it_recipients)
                 mail_results.append(result)
 
-        if escalation_recipients:
+        for job in escalation_mail_jobs:
+            escalation_recipients = job.get("recipients") or []
+            if not escalation_recipients:
+                mail_results.append({"group": job["group"], "status": "skipped", "message": "No configured recipients.", "recipient_count": 0})
+                continue
             pdf_bytes, filename = reports.build_breakdown_ticket_pdf(
                 unit_code=unit,
-                title="T+2 Open Breakdown Escalation",
-                rows=escalation_rows,
+                title=job["title"],
+                rows=job["rows"],
             )
-            subject = f"HID Asset Breakdown T+2 Escalation - {unit} - {len(escalation_rows)} open ticket(s)"
-            body = _breakdown_email_body(unit, "T+2 Open Breakdown Escalation", escalation_rows)
+            subject = f"{job['subject_prefix']} - {unit} - {len(job['rows'])} open ticket(s)"
+            body = _breakdown_email_body(unit, job["title"], job["rows"])
             if not send_graph_mail_with_attachment:
-                mail_results.append({"group": "t_plus_2", "status": "skipped", "message": "Mail sender unavailable.", "recipient_count": len(escalation_recipients)})
+                mail_results.append({"group": job["group"], "status": "skipped", "message": "Mail sender unavailable.", "recipient_count": len(escalation_recipients)})
             else:
                 result = send_graph_mail_with_attachment(
                     subject=subject,
@@ -643,7 +682,7 @@ def run_asset_breakdown_reminder_job(*, send_graph_mail_with_attachment=None, un
                     filename=filename,
                     content_bytes=pdf_bytes,
                 )
-                result["group"] = "t_plus_2"
+                result["group"] = job["group"]
                 result["recipient_count"] = len(escalation_recipients)
                 mail_results.append(result)
 
@@ -664,6 +703,7 @@ def run_asset_breakdown_reminder_job(*, send_graph_mail_with_attachment=None, un
                 "medical_nonmedical_count": len(non_it_rows),
                 "it_count": len(it_rows),
                 "t_plus_2_count": len(escalation_rows),
+                "t_plus_3_count": len(director_escalation_rows),
                 "recipient_count": sum(services.to_int(row.get("recipient_count"), 0) or 0 for row in mail_results),
                 "mail_results": mail_results,
                 "actor": actor,

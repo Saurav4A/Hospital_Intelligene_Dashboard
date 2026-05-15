@@ -3147,6 +3147,10 @@
           <input type="date" id="poDate">
         </div>
         <div class="field span-2">
+          <label>PO Approval Date</label>
+          <input type="text" id="poApprovalDate" value="-" readonly>
+        </div>
+        <div class="field span-2">
           <label>Against</label>
           <select id="againstType">
             <option>Indent</option>
@@ -5224,6 +5228,7 @@
 
   const poNoInput = document.getElementById('poNo');
   const poDateInput = document.getElementById('poDate');
+  const poApprovalDateInput = document.getElementById('poApprovalDate');
   const poStatusSelect = document.getElementById('poStatus');
   const purchasingDeptSelect = document.getElementById('purchasingDept');
   const purchasingDeptHint = document.getElementById('purchasingDeptHint');
@@ -7519,6 +7524,7 @@
       const today = new Date();
       poDateInput.value = today.toISOString().slice(0, 10);
     }
+    if (poApprovalDateInput) poApprovalDateInput.value = '-';
     if (againstSelect) againstSelect.selectedIndex = 0;
     if (indentSelect) indentSelect.value = '';
     if (poStatusSelect) poStatusSelect.value = 'Draft';
@@ -7769,6 +7775,17 @@
     const match = full.match(/^(\d{2})-(\d{2})-(\d{4})$/);
     if (!match) return full;
     return `${match[1]}-${match[2]}-${match[3].slice(-2)}`;
+  };
+
+  const formatPoHeaderDateLabel = (value) => {
+    const raw = String(value || '').trim();
+    if (!raw) return '-';
+    const isoMatch = raw.match(/^(\d{4})-(\d{2})-(\d{2})/);
+    if (!isoMatch) return raw.slice(0, 11) || '-';
+    const months = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    const monthIndex = Number(isoMatch[2]) - 1;
+    const monthName = months[monthIndex] || isoMatch[2];
+    return `${isoMatch[3]}-${monthName}-${isoMatch[1]}`;
   };
 
   const resolvePoStatusLabel = (statusRaw) => {
@@ -14607,6 +14624,9 @@
         const dateVal = String(header.po_date);
         poDateInput.value = dateVal.slice(0, 10);
       }
+      if (poApprovalDateInput) {
+        poApprovalDateInput.value = formatPoHeaderDateLabel(header.po_approval_date);
+      }
       if (supplierNameInput) supplierNameInput.value = header.supplier_name || '';
       if (supplierIdInput) supplierIdInput.value = header.supplier_id || '';
       if (supplierCodeInput) supplierCodeInput.value = header.supplier_code || '';
@@ -15257,6 +15277,7 @@
       if (res.status === 'success') {
         currentPoStatusCode = 'A';
         if (poStatusSelect) poStatusSelect.value = 'Approved';
+        if (poApprovalDateInput) poApprovalDateInput.value = formatPoHeaderDateLabel(res.po_approval_date);
         setPoReadonly(true);
         setOtpPanel(false, '', '');
         if (heroModeChip) heroModeChip.textContent = 'Mode: View';

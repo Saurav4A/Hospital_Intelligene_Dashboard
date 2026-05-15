@@ -1,0 +1,1877 @@
+﻿<!doctype html>
+<html lang="en">
+  <head>
+    <meta charset="utf-8">
+    <title>HR Certificate Records | Asarfi Hospital Ltd</title>
+    <link rel="icon" href="{{ url_for('static', filename='logo/asarfi.png') }}">
+    <meta name="viewport" content="width=device-width,initial-scale=1" />
+
+    <style>
+  /* Respect users who prefer no motion */
+  @media (prefers-reduced-motion: reduce){
+    html.page-fade-in, html.page-fade-out { animation: none !important; }
+  }
+
+  @keyframes pageFadeIn { from { opacity: 0 } to { opacity: 1 } }
+  @keyframes pageFadeOut{ from { opacity: 1 } to { opacity: 0 } }
+
+  /* apply to the root for smoother compositing */
+  html.page-fade-in  { animation: pageFadeIn .28s ease both; }
+  html.page-fade-out { animation: pageFadeOut .18s ease both; }
+
+  /* optional: keep pointer events during fade-out */
+  body { transition: filter .12s ease; }
+  html.page-fade-out body { filter: saturate(.96) brightness(.99); }
+</style>
+
+    <!-- Hide the preview overlay entirely if someone prints the page (no print from preview) -->
+    <style>
+      @media print {
+        .preview-overlay { display: none !important; }
+      }
+    </style>
+
+    <style>
+      :root{
+        --bg: #f4f7fb;
+        --card: #ffffff;
+        --ink: #0f172a;
+        --muted: #546e7a;
+        --brand: #3949ab;
+        --brand-2:#5c6bc0;
+        --teal:#009688;
+        --amber:#ffb300;
+        --ok:#22c55e;
+        --danger:#ef4444;
+        --shadow: 0 10px 30px rgba(0,0,0,.08);
+        --radius: 16px;
+        --tableRow: rgba(63,81,181,0.04);
+
+        /* Sticky header tuning */
+        --sticky-top: 60px;
+        --sticky-header-h: 48px;
+      }
+      *{box-sizing:border-box}
+      html,body{height:100%}
+      body{
+        margin:0;
+        font-family:"Segoe UI", system-ui, -apple-system, sans-serif;
+        color:var(--ink);
+        background:
+          radial-gradient(1200px 600px at -10% -10%, #e3f2fd 0, transparent 40%),
+          radial-gradient(1400px 700px at 110% -10%, #e3f2fd 0, transparent 35%),
+          var(--bg);
+        display:flex;flex-direction:column;align-items:center;
+      }
+
+      /* ===== Header ===== */
+      header{ text-align:center; padding-top:80px; padding-bottom:10px; }
+      header img{ width:78px;height:78px;object-fit:contain;border-radius:14px;box-shadow:0 10px 24px rgba(0,0,0,.18) }
+      header h1{ margin:10px 0 4px; font-size:28px; color:#1e3a8a }
+      header p{ margin:0; color:#607d8b; letter-spacing:.3px }
+      /* ===== Card / Container ===== */
+      .container{ width:96%; max-width:1760px; margin:16px auto 64px; }
+      .card{
+        background:rgba(255,255,255,.92);
+        border:1px solid rgba(0,0,0,.06);
+        border-radius:var(--radius);
+        box-shadow:var(--shadow);
+        overflow:hidden;
+      }
+
+      /* ===== Toolbar ===== */
+      .toolbar{
+        position:sticky; top:12px; z-index:10;
+        display:flex; gap:10px; align-items:center; justify-content:space-between;
+        background:linear-gradient(90deg,#eef2ff,#ffffff);
+        padding:12px 16px; border-bottom:1px solid rgba(0,0,0,.06);
+      }
+      .toolbar-left{ display:flex; gap:10px; align-items:center; flex-wrap:wrap }
+      .toolbar-right{ display:flex; gap:8px; align-items:center }
+      .btn{
+        display:inline-flex;align-items:center;gap:8px; text-decoration:none; cursor:pointer;
+        padding:9px 14px; border-radius:10px; border:none; font-weight:700; font-size:14px;
+        color:#fff; background:linear-gradient(90deg,var(--brand),var(--brand-2)); box-shadow:0 8px 20px rgba(63,81,181,.25); transition:.2s
+      }
+      .btn:hover{ transform:translateY(-1px) }
+      .btn-ghost{ background:#f1f5f9; color:#0f172a; box-shadow:none; border:1px solid rgba(0,0,0,.06) }
+      .btn-green{ background:linear-gradient(90deg,#00796b,#009688) }
+
+      .search{ position:relative; display:flex; align-items:center; }
+      .search input{
+        width:280px; max-width:38vw;
+        padding:10px 12px 10px 36px; border:1px solid rgba(0,0,0,.12); border-radius:10px; font-size:14px; background:#fff
+      }
+      .search .icon{ position:absolute; left:10px; font-size:16px; opacity:.6 }
+      .filters{ display:flex; gap:8px; flex-wrap:wrap }
+      .chip{
+        border:1px solid rgba(0,0,0,.12); background:#fff; color:#111827; padding:6px 10px; border-radius:999px; font-size:12px; cursor:pointer;
+      }
+      .chip.is-active{ background:#e0f2fe; border-color:#93c5fd }
+
+      .legend{
+        font-weight:800; font-size:18px; color:#1e3a8a; margin:12px 16px;
+        display:flex; align-items:center; gap:10px
+      }
+      .legend::before{ content:""; width:8px; height:24px; border-radius:4px; background:linear-gradient(180deg,var(--brand),var(--brand-2)) }
+
+      /* ===== Table ===== */
+      .table-wrap{
+        overflow-x:auto;
+        position: relative;
+        margin:0 16px 16px;
+        border:1px solid #dbe3f3;
+        border-radius:14px;
+        background:#fff;
+        box-shadow:0 10px 24px rgba(15,23,42,.06);
+      }
+      table{ width:100%; border-collapse:separate; border-spacing:0; font-size:13px; min-width:1280px }
+      thead th{
+        position: sticky;
+        top: var(--sticky-top);
+        z-index: 5;
+        background: #f5f7fc;
+        color: #1e3a8a;
+        font-weight: 800;
+        text-align: left;
+        padding: 13px 14px;
+        border-bottom: 1px solid #d6e1ff;
+        border-right:1px solid #e8edf7;
+        white-space: nowrap;
+        font-size:12px;
+        letter-spacing:.025em;
+        text-transform:uppercase;
+      }
+
+      #recordTable tbody::before{
+        content: "";
+        display: block;
+        height: var(--sticky-header-h);
+      }
+
+      tbody td{
+        padding:12px 14px;
+        border-bottom:1px solid #edf1f7;
+        border-right:1px solid #f1f4f9;
+        white-space:nowrap;
+        max-width: 320px;
+        overflow: hidden;
+        text-overflow: ellipsis;
+        background:#fff;
+        color:#172033;
+      }
+      tbody tr:nth-child(odd) td{ background:#fcfdff }
+      tbody tr:hover td{ background:#f8fbff }
+      tbody tr:last-child td{ border-bottom:0 }
+
+      .badge{
+        display:inline-flex; align-items:center; gap:6px; padding:6px 10px; border-radius:999px; font-weight:800; font-size:12px;
+      }
+      .badge-ok{ background:#dcfce7; color:#065f46 }
+      .badge-off{ background:#fee2e2; color:#991b1b }
+
+      .action{
+        display:inline-flex; align-items:center; gap:6px; padding:8px 12px; border-radius:9px; border:none;
+        background:#0f9690; color:#fff; font-weight:800; font-size:12px; cursor:pointer; transition:.2s;
+        box-shadow:0 4px 10px rgba(15,150,144,.16)
+      }
+      .action + .action{ margin-left:6px }
+      .action:hover{ transform:translateY(-1px) }
+      .action-red{ background:linear-gradient(90deg,#d32f2f,#f44336) }
+      .action-green{ background:linear-gradient(90deg,#388e3c,#4caf50) }
+
+      /* Sticky right columns (Status + Actions) */
+      #recordTable th.col-actions,
+      #recordTable td.col-actions{
+        position: sticky;
+        right: 0;
+        z-index: 6;
+        background: #ffffff;
+        border-left: 1px solid #e6e9f8;
+        min-width: 290px;
+        white-space: normal;
+        overflow: visible;
+      }
+      #recordTable th.col-actions{ background:#f5f7fc; }
+
+      #recordTable th.col-status,
+      #recordTable td.col-status{
+        position: sticky;
+        right: 290px;
+        z-index: 5;
+        background: #ffffff;
+        border-left: 1px solid #e6e9f8;
+        min-width: 110px;
+        text-align:center;
+      }
+      #recordTable th.col-status{ background:#f5f7fc; }
+
+      #recordTable th.col-actions::before,
+      #recordTable td.col-actions::before{
+        content:"";
+        position:absolute; left:-10px; top:0; bottom:0;
+        width:10px;
+        background: linear-gradient(90deg, rgba(0,0,0,0.06), transparent);
+        pointer-events:none;
+      }
+
+      .actions-stack{
+        display:flex;
+        flex-wrap:nowrap;
+        gap:8px;
+        align-items:center;
+      }
+      .actions-stack form{ display:inline; }
+
+      .empty{
+        padding:28px; text-align:center; color:#6b7280; font-style:italic; font-size:15px
+      }
+
+      @media (max-width: 900px){
+        .search input{ width:220px; }
+        thead th{ top:92px; }
+        :root{ --sticky-top: 92px; --sticky-header-h: 52px; }
+        #recordTable th.col-actions, #recordTable td.col-actions{ min-width: 260px; }
+        #recordTable th.col-status,  #recordTable td.col-status{ right: 260px; }
+      }
+
+      /* ===== Preview Modal (paper-like) ===== */
+      .preview-overlay{
+        position: fixed; inset: 0;
+        background: rgba(15,23,42,.45);
+        display:none; align-items:center; justify-content:center;
+        z-index: 9999;
+        padding: 16px;
+      }
+      .preview-overlay.is-open{ display:flex; }
+      .preview-modal{
+        width: min(1100px, 98vw);
+        max-height: 95vh;
+        overflow: hidden;
+        background: #fff;
+        border-radius: 16px;
+        box-shadow: 0 20px 60px rgba(0,0,0,.35);
+        display:flex; flex-direction:column;
+      }
+      .preview-head{
+        display:flex;align-items:center;justify-content:space-between;
+        gap:12px; padding:14px 18px;
+        border-bottom:1px solid rgba(0,0,0,.06);
+        background: linear-gradient(90deg,#eef2ff,#fff);
+        position: sticky; top:0; z-index: 2;
+      }
+      .preview-title{
+        font-size:18px;font-weight:800;color:#1e3a8a;display:flex;align-items:center;gap:10px
+      }
+      .pv-actions{ display:flex; gap:8px; }
+      .pv-btn{
+        border:none; border-radius:10px; padding:8px 12px; font-weight:700; cursor:pointer;
+        background:#f1f5f9; color:#0f172a;
+      }
+      .pv-btn.primary{ background:linear-gradient(90deg,var(--brand),var(--brand-2)); color:#fff; box-shadow:0 8px 20px rgba(63,81,181,.25) }
+      .pv-btn[disabled]{ opacity:.5; cursor:not-allowed; }
+      .pv-btn.tool{ background:#e2e8f0; }
+      .pv-btn.ok{ background:linear-gradient(90deg,#0f766e,#0ea5a4); color:#fff; }
+
+      .preview-toolbar{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:10px;
+        flex-wrap:wrap;
+        padding:10px 16px;
+        border-bottom:1px solid rgba(0,0,0,.06);
+        background:#f8fafc;
+      }
+      .pv-meta{
+        display:flex;
+        gap:8px;
+        flex-wrap:wrap;
+        align-items:center;
+      }
+      .pv-chip{
+        background:#ecfeff;
+        border:1px solid #a5f3fc;
+        color:#0f172a;
+        font-size:12px;
+        font-weight:700;
+        border-radius:999px;
+        padding:4px 10px;
+      }
+      .pv-tools{
+        display:flex;
+        gap:6px;
+        align-items:center;
+        flex-wrap:wrap;
+      }
+      .pv-zoom{
+        min-width:56px;
+        text-align:center;
+        font-size:12px;
+        color:#334155;
+        font-weight:700;
+      }
+
+      .preview-scroll{
+        overflow:auto; padding: 18px; background:#f8fafc;
+      }
+
+      .paper{
+        width: min(794px, 100%); /* ~A4 @ 96dpi */
+        margin:0 auto; background:#fff; color:#111827;
+        border:1px solid #e5e7eb; border-radius:12px; padding:42px 48px;
+        transition: font-size .12s ease;
+      }
+      .paper h2{ margin:0 0 10px; text-align:center; text-decoration:underline; }
+      .paper .meta{ display:flex; justify-content:space-between; font-size:12px; color:#334155; margin-bottom:10px }
+      .paper .section{ margin:16px 0 }
+      .hr-line{ height:1px; background:#e5e7eb; margin:10px 0 16px }
+      .sig{ margin-top:28px; display:flex; justify-content:flex-end; }
+      .sig .by{ text-align:right }
+
+      .pv-note{ font-size:12px; color:#64748b; margin-top:10px; text-align:center }
+      .pv-feedback{
+        min-height:18px;
+        font-size:12px;
+        color:#0f766e;
+        text-align:center;
+        margin-top:8px;
+        font-weight:700;
+      }
+      .mono{ font-feature-settings: "tnum"; font-variant-numeric: tabular-nums; }
+      .tag{ display:inline-block; font-size:11px; padding:3px 7px; border-radius:999px; background:#eef2ff; color:#1e3a8a; margin-left:8px }
+    </style>
+
+    <style>
+      :root{
+        --accent:#0f766e;
+        --accent-2:#0891b2;
+        --card-2:#f8fafc;
+        --sticky-top: 0px;
+        --sticky-header-h: 0px;
+      }
+      body{
+        background:
+          radial-gradient(900px 420px at 50% -20%, rgba(8,145,178,.15), transparent 60%),
+          radial-gradient(780px 360px at 5% 0%, rgba(15,118,110,.12), transparent 55%),
+          var(--bg);
+      }
+      header{
+        width:96%;
+        max-width:1200px;
+        padding-top:38px;
+        text-align:left;
+      }
+      header h1{
+        font-size:40px;
+        margin:8px 0 0;
+      }
+      .header-top{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:16px;
+        flex-wrap:wrap;
+      }
+      .brand-wrap{
+        display:flex;
+        align-items:center;
+        gap:14px;
+      }
+      .brand-copy p{
+        margin-top:6px;
+        font-size:26px;
+        color:#1f2937;
+        letter-spacing:.01em;
+      }
+      .toolbar{
+        position:relative;
+        top:0;
+        z-index:4;
+        display:grid;
+        grid-template-columns: 1fr auto;
+        gap:12px;
+        background:linear-gradient(120deg,#effaf7,#f8fbff 60%);
+      }
+      thead th{
+        top:0;
+      }
+      #recordTable tbody::before{
+        display:none;
+      }
+      .toolbar-left{
+        display:grid;
+        grid-template-columns:minmax(260px, 1fr) auto minmax(180px, 220px) minmax(180px, 220px) minmax(150px, 190px);
+        gap:10px;
+        align-items:center;
+      }
+      .toolbar-right{
+        display:flex;
+        gap:8px;
+        align-items:center;
+        flex-wrap:nowrap;
+        justify-content:flex-end;
+      }
+      .back-btn{
+        background:linear-gradient(90deg,#0f766e,#0ea5a4);
+        white-space:nowrap;
+      }
+      .btn{ white-space:nowrap; }
+      .search input{
+        width:100%;
+        max-width:none;
+        border:1px solid rgba(14,116,144,.2);
+      }
+      .chip{
+        background:#fff;
+      }
+      .chip.is-active{
+        background:#ccfbf1;
+        border-color:#5eead4;
+      }
+      .select{
+        min-width:160px;
+        width:100%;
+        padding:8px 10px;
+        border-radius:10px;
+        border:1px solid rgba(15,23,42,.12);
+        background:#fff;
+        font-size:13px;
+      }
+      .legend{
+        margin-top:0;
+      }
+      .assistant{
+        margin:0 16px 14px;
+        border:1px solid rgba(15,23,42,.08);
+        background:linear-gradient(180deg,#fff,#f8fafc);
+        border-radius:14px;
+        padding:12px;
+      }
+      .assistant-head{
+        display:flex;
+        align-items:flex-start;
+        justify-content:space-between;
+        gap:10px;
+        flex-wrap:wrap;
+      }
+      .assistant-title{
+        font-size:18px;
+        font-weight:800;
+        color:#134e4a;
+      }
+      .assistant-sub{
+        margin-top:2px;
+        font-size:12px;
+        color:#475569;
+      }
+      .assistant-note{
+        margin-top:10px;
+        padding:8px 10px;
+        border-radius:10px;
+        border:1px dashed rgba(15,23,42,.2);
+        font-size:13px;
+        color:#334155;
+        background:#fff;
+      }
+      .metrics{
+        display:grid;
+        grid-template-columns:repeat(auto-fit,minmax(150px,1fr));
+        gap:8px;
+        margin-top:10px;
+      }
+      .metric{
+        border:1px solid rgba(15,23,42,.08);
+        background:#fff;
+        border-radius:10px;
+        padding:8px 10px;
+      }
+      .metric .k{
+        font-size:11px;
+        color:#64748b;
+        text-transform:uppercase;
+        letter-spacing:.04em;
+      }
+      .metric .v{
+        margin-top:2px;
+        font-size:20px;
+        font-weight:800;
+        color:#0f172a;
+      }
+      .metric.good .v{ color:#0f766e; }
+      .metric.warn .v{ color:#b45309; }
+
+      .table-meta{
+        padding:0 16px 12px;
+        color:#475569;
+        font-size:13px;
+      }
+      .pager{
+        display:flex;
+        align-items:center;
+        justify-content:space-between;
+        gap:10px;
+        flex-wrap:wrap;
+        padding:10px 16px 16px;
+        border-top:1px solid rgba(15,23,42,.06);
+        background:#f8fafc;
+      }
+      .pager-left{
+        display:flex;
+        align-items:center;
+        gap:10px;
+        flex-wrap:wrap;
+      }
+      .pager-size{
+        font-size:12px;
+        color:#334155;
+        font-weight:700;
+        display:flex;
+        align-items:center;
+        gap:6px;
+      }
+      .pager-size select{
+        border:1px solid rgba(15,23,42,.15);
+        border-radius:8px;
+        padding:5px 8px;
+        background:#fff;
+        font-size:12px;
+      }
+      .pager-info{
+        font-size:12px;
+        color:#475569;
+      }
+      .pager-right{
+        display:flex;
+        align-items:center;
+        gap:6px;
+        flex-wrap:wrap;
+      }
+      .pager-pages{
+        display:flex;
+        align-items:center;
+        gap:4px;
+      }
+      .pager-page{
+        border:1px solid rgba(15,23,42,.12);
+        border-radius:8px;
+        background:#fff;
+        color:#0f172a;
+        font-size:12px;
+        padding:6px 8px;
+        min-width:34px;
+        text-align:center;
+        cursor:pointer;
+        font-weight:700;
+      }
+      .pager-page.is-active{
+        background:#ccfbf1;
+        border-color:#5eead4;
+      }
+      .pager-page[disabled]{
+        opacity:.45;
+        cursor:not-allowed;
+      }
+      .table-wrap.compact tbody td{
+        padding:6px 10px;
+        font-size:12px;
+      }
+      .table-wrap.compact .action{
+        padding:5px 8px;
+        font-size:11px;
+      }
+      .no-results[hidden]{
+        display:none !important;
+      }
+
+      .column-pop{
+        position:relative;
+      }
+      .column-menu{
+        position:absolute;
+        right:0;
+        top:44px;
+        width:260px;
+        max-height:300px;
+        overflow:auto;
+        padding:10px;
+        border:1px solid rgba(15,23,42,.12);
+        border-radius:12px;
+        background:#fff;
+        box-shadow:0 16px 32px rgba(2,6,23,.18);
+        display:none;
+        z-index:20;
+      }
+      .column-menu.is-open{ display:block; }
+      .column-title{
+        font-size:12px;
+        font-weight:800;
+        color:#0f172a;
+        margin-bottom:8px;
+        text-transform:uppercase;
+        letter-spacing:.04em;
+      }
+      .column-item{
+        display:flex;
+        align-items:center;
+        gap:8px;
+        font-size:13px;
+        margin:6px 0;
+        color:#334155;
+      }
+
+      .btn{
+        box-shadow:none;
+      }
+      .btn.btn-green{
+        background:linear-gradient(90deg,#0f766e,#0891b2);
+      }
+      .btn.btn-ghost{
+        background:#f8fafc;
+      }
+      .action{
+        background:#0f9690;
+      }
+      .action-red{ background:linear-gradient(90deg,#b91c1c,#ef4444); }
+      .action-green{ background:linear-gradient(90deg,#166534,#22c55e); }
+
+      @media (max-width: 1400px){
+        .toolbar{
+          grid-template-columns:1fr;
+        }
+        .toolbar-right{
+          justify-content:flex-start;
+          flex-wrap:wrap;
+        }
+        .toolbar-left{
+          grid-template-columns:repeat(3, minmax(0, 1fr));
+        }
+        .back-btn{ justify-content:center; }
+        .search{ grid-column:span 2; }
+      }
+      @media (max-width: 900px){
+        header{
+          text-align:center;
+        }
+        .header-top{
+          justify-content:center;
+        }
+        .brand-wrap{
+          flex-direction:column;
+        }
+        .brand-copy p{
+          margin-top:0;
+          font-size:22px;
+        }
+        .toolbar-left{
+          grid-template-columns:1fr;
+        }
+        .search{ grid-column:auto; }
+        .toolbar-right{
+          display:grid;
+          grid-template-columns:1fr 1fr;
+        }
+      }
+    </style>
+  </head>
+
+  <body>
+    {% include "hr_docgen/_fab_nav.html" %}
+    <header>
+  <div class="header-top">
+    <div class="brand-wrap">
+      <img src="{{ url_for('static', filename='hr_docgen/logo/asarfi.png') }}" alt="Asarfi Hospital Logo">
+      <div class="brand-copy">
+        <h1>Asarfi Hospital</h1>
+        <p>Human Resource Department - Certificate Records</p>
+      </div>
+    </div>
+  </div>
+</header>
+
+    <div class="container">
+      <div class="card">
+        <!-- Toolbar -->
+        <div class="toolbar">
+  <div class="toolbar-left">
+    <div class="search">
+      <span class="icon">&#128269;</span>
+      <input type="search" id="searchBox" list="recordSearchSuggestions" placeholder="Search name, ID, certificate, template, department..." autocomplete="off">
+      <datalist id="recordSearchSuggestions"></datalist>
+    </div>
+    <div class="filters">
+      <button class="chip is-active" data-filter="all" type="button">All</button>
+      <button class="chip" data-filter="active" type="button">Active</button>
+      <button class="chip" data-filter="inactive" type="button">Inactive</button>
+    </div>
+    <select class="select" id="certTypeFilter">
+      <option value="all">All Certificate Types</option>
+    </select>
+    <select class="select" id="templateFilter">
+      <option value="all">All Templates</option>
+    </select>
+    <select class="select" id="sortBy">
+      <option value="id_desc">Sort: Latest ID</option>
+      <option value="id_asc">Sort: Oldest ID</option>
+      <option value="date_desc">Date Issued: Newest</option>
+      <option value="date_asc">Date Issued: Oldest</option>
+      <option value="name_asc">Name: A to Z</option>
+      <option value="name_desc">Name: Z to A</option>
+    </select>
+  </div>
+  <div class="toolbar-right">
+    <button class="btn btn-green" id="jumpBtn" type="button">Jump to Table</button>
+    <button class="btn btn-ghost" id="compactToggle" type="button">Compact Rows</button>
+    <div class="column-pop">
+      <button class="btn btn-ghost" id="columnToggleBtn" type="button">Columns</button>
+      <div class="column-menu" id="columnMenu">
+        <div class="column-title">Show / Hide Columns</div>
+        <div id="columnChecklist"></div>
+      </div>
+    </div>
+    <button class="btn btn-ghost" id="clearBtn" type="button">Clear</button>
+  </div>
+</div>
+
+        <section class="assistant">
+  <div class="assistant-head">
+    <div>
+      <div class="assistant-title">Records Assistant</div>
+      <div class="assistant-sub">Use filters and search memory to find records faster and act confidently.</div>
+    </div>
+  </div>
+  <div class="metrics">
+    <div class="metric">
+      <div class="k">Total Records</div>
+      <div class="v" id="statTotal">0</div>
+    </div>
+    <div class="metric good">
+      <div class="k">Active</div>
+      <div class="v" id="statActive">0</div>
+    </div>
+    <div class="metric warn">
+      <div class="k">Inactive</div>
+      <div class="v" id="statInactive">0</div>
+    </div>
+    <div class="metric">
+      <div class="k">Visible (Current Filter)</div>
+      <div class="v" id="statVisible">0</div>
+    </div>
+  </div>
+  <div class="assistant-note" id="assistantHint">Select filters to narrow down records.</div>
+</section>
+
+<div class="legend">Registered HR Certificates</div>
+<div class="table-meta" id="resultsMeta">Showing 0 records.</div>
+
+        {% if records %}
+        <div class="table-wrap" id="tableTop">
+          <table id="recordTable">
+            <thead>
+              <tr>
+                {% for col in records[0].keys() %}
+                  <th>
+                    {% if col == 'CertificateType' %}Certificate Type
+                    {% elif col == 'Ref_No' %}Ref No
+                    {% elif col == 'DateIssued' %}Date Issued
+                    {% elif col == 'Emp_Name' %}Employee Name
+                    {% elif col == 'Emp_2ndName' %}Employee 2nd Name
+                    {% elif col == 'Emp_ID' %}Employee ID
+                    {% elif col == 'TemplateName' %}Template
+                    {% elif col == 'IsActive' %}Active Flag
+                    {% elif col == 'InsertedOn' %}Inserted On
+                    {% else %}{{ col|replace('_', ' ') }}
+                    {% endif %}
+                  </th>
+                {% endfor %}
+                <th class="col-status">Status</th>
+                <th class="col-actions">Actions</th>
+              </tr>
+            </thead>
+            <tbody>
+            {% for record in records %}
+              <tr data-active="{{ 1 if record['IsActive']==1 else 0 }}">
+                {% for val in record.values() %}
+                  <td>{{ val if val is not none else "-" }}</td>
+                {% endfor %}
+                <td class="col-status">
+                  {% if record['IsActive'] == 1 %}
+                    <span class="badge badge-ok">Active</span>
+                  {% else %}
+                    <span class="badge badge-off">Inactive</span>
+                  {% endif %}
+                </td>
+                <td class="col-actions">
+                  <div class="actions-stack">
+                    <!-- Live Preview -->
+                    <button type="button" class="action" onclick="openPreview(this)">Preview</button>
+
+                    {% if session['role'] in ['admin', 'hr-admin'] %}
+                      <a href="{{ url_for('hr_docgen.edit_record', record_id=record.ID) }}" class="action">Edit</a>
+                      <form action="{{ url_for('hr_docgen.toggle_status', record_id=record.ID) }}" method="post">
+                        {% if record['IsActive'] == 1 %}
+                          <button type="submit" class="action action-red">Deactivate</button>
+                        {% else %}
+                          <button type="submit" class="action action-green">Activate</button>
+                        {% endif %}
+                      </form>
+                    {% endif %}
+
+                    {% if record['IsActive'] == 1 %}
+                      <form action="{{ url_for('hr_docgen.generate_docx', record_id=record.ID) }}" method="post" data-no-transition>
+                        <button type="submit" class="action">Word</button>
+                      </form>
+                      <form action="{{ url_for('hr_docgen.generate_pdf', record_id=record.ID) }}" method="post" data-no-transition>
+                        <button type="submit" class="action">PDF</button>
+                      </form>
+                    {% endif %}
+                  </div>
+                </td>
+              </tr>
+            {% endfor %}
+            </tbody>
+          </table>
+        </div>
+        <div class="empty no-results" id="noResults" hidden>No records match your current filter selection.</div>
+        <div class="pager" id="recordsPager">
+          <div class="pager-left">
+            <label class="pager-size">
+              Rows per page
+              <select id="pageSizeSelect">
+                <option value="10">10</option>
+                <option value="20" selected>20</option>
+                <option value="30">30</option>
+                <option value="50">50</option>
+                <option value="100">100</option>
+              </select>
+            </label>
+            <div class="pager-info" id="pagerInfo">Page 1</div>
+          </div>
+          <div class="pager-right">
+            <button type="button" class="pv-btn tool" id="pagerFirst">First</button>
+            <button type="button" class="pv-btn tool" id="pagerPrev">Prev</button>
+            <div class="pager-pages" id="pagerPages"></div>
+            <button type="button" class="pv-btn tool" id="pagerNext">Next</button>
+            <button type="button" class="pv-btn tool" id="pagerLast">Last</button>
+          </div>
+        </div>
+        {% else %}
+          <div class="empty">No certificate records found.</div>
+        {% endif %}
+      </div>
+    </div>
+
+    <!-- ===== Preview Modal ===== -->
+    <div class="preview-overlay" id="pvOverlay" aria-hidden="true">
+      <div class="preview-modal" role="dialog" aria-modal="true" aria-labelledby="pvTitle">
+        <div class="preview-head">
+          <div class="preview-title" id="pvTitle">Preview</div>
+          <div class="pv-actions">
+            <button class="pv-btn tool" id="pvCopyBtn" type="button">Copy Text</button>
+            <button class="pv-btn primary" onclick="closePreview()">Close</button>
+          </div>
+        </div>
+        <div class="preview-toolbar">
+          <div class="pv-meta" id="pvMeta"></div>
+          <div class="pv-tools">
+            <button class="pv-btn tool" id="pvZoomOut" type="button">A-</button>
+            <div class="pv-zoom" id="pvZoomLabel">100%</div>
+            <button class="pv-btn tool" id="pvZoomIn" type="button">A+</button>
+            <button class="pv-btn tool" id="pvZoomReset" type="button">Reset</button>
+            <button class="pv-btn ok" id="pvWordBtn" type="button" disabled>Word</button>
+            <button class="pv-btn ok" id="pvPdfBtn" type="button" disabled>PDF</button>
+          </div>
+        </div>
+        <div class="preview-scroll">
+          <div class="paper" id="pvPaper">
+            <!-- body injected -->
+          </div>
+          <div class="pv-note">This on-screen preview mirrors templates and data. Shortcuts: Esc close, +/- zoom, 0 reset, C copy.</div>
+          <div class="pv-feedback" id="pvFeedback"></div>
+        </div>
+      </div>
+    </div>
+
+    <script>
+  (function(){
+    const table = document.getElementById('recordTable');
+    const statTotal = document.getElementById('statTotal');
+    const statActive = document.getElementById('statActive');
+    const statInactive = document.getElementById('statInactive');
+    const statVisible = document.getElementById('statVisible');
+    const hint = document.getElementById('assistantHint');
+    const resultsMeta = document.getElementById('resultsMeta');
+    const noResults = document.getElementById('noResults');
+
+    const searchBox = document.getElementById('searchBox');
+    const statusChips = Array.from(document.querySelectorAll('.chip[data-filter]'));
+    const certTypeFilter = document.getElementById('certTypeFilter');
+    const templateFilter = document.getElementById('templateFilter');
+    const sortBy = document.getElementById('sortBy');
+    const compactToggle = document.getElementById('compactToggle');
+    const jumpBtn = document.getElementById('jumpBtn');
+    const clearBtn = document.getElementById('clearBtn');
+    const tableWrap = document.getElementById('tableTop');
+    const columnToggleBtn = document.getElementById('columnToggleBtn');
+    const columnMenu = document.getElementById('columnMenu');
+    const columnChecklist = document.getElementById('columnChecklist');
+    const pageSizeSelect = document.getElementById('pageSizeSelect');
+    const pagerInfo = document.getElementById('pagerInfo');
+    const pagerPages = document.getElementById('pagerPages');
+    const pagerFirst = document.getElementById('pagerFirst');
+    const pagerPrev = document.getElementById('pagerPrev');
+    const pagerNext = document.getElementById('pagerNext');
+    const pagerLast = document.getElementById('pagerLast');
+
+    const PREFS_KEY = 'docgen.records.prefs.v1';
+    const SEARCH_HISTORY_KEY = 'docgen.records.search_history.v1';
+
+    const state = {
+      search: '',
+      status: 'all',
+      certType: 'all',
+      template: 'all',
+      sort: 'id_desc',
+      compact: false,
+      hiddenColumns: [],
+      page: 1,
+      pageSize: 20
+    };
+
+    function canonical(v){
+      return String(v || '').toLowerCase().replace(/[^a-z0-9]/g, '');
+    }
+    function parseNum(v){
+      const n = Number(String(v || '').replace(/[^0-9.-]/g, ''));
+      return Number.isFinite(n) ? n : 0;
+    }
+    function parseDate(v){
+      const t = Date.parse(String(v || '').trim());
+      return Number.isFinite(t) ? t : 0;
+    }
+
+    function readPrefs(){
+      try{
+        const raw = localStorage.getItem(PREFS_KEY);
+        if (!raw) return;
+        const p = JSON.parse(raw);
+        if (!p || typeof p !== 'object') return;
+        Object.assign(state, {
+          search: String(p.search || ''),
+          status: String(p.status || 'all'),
+          certType: String(p.certType || 'all'),
+          template: String(p.template || 'all'),
+          sort: String(p.sort || 'id_desc'),
+          compact: !!p.compact,
+          hiddenColumns: Array.isArray(p.hiddenColumns) ? p.hiddenColumns : [],
+          page: Math.max(1, Number(p.page) || 1),
+          pageSize: [10,20,30,50,100].includes(Number(p.pageSize)) ? Number(p.pageSize) : 20
+        });
+      }catch(_err){}
+    }
+    function writePrefs(){
+      try{
+        localStorage.setItem(PREFS_KEY, JSON.stringify(state));
+      }catch(_err){}
+    }
+
+    function readSearchHistory(){
+      try{
+        const raw = localStorage.getItem(SEARCH_HISTORY_KEY);
+        const arr = raw ? JSON.parse(raw) : [];
+        return Array.isArray(arr) ? arr : [];
+      }catch(_err){
+        return [];
+      }
+    }
+    function writeSearchHistory(values){
+      try{ localStorage.setItem(SEARCH_HISTORY_KEY, JSON.stringify(values)); }catch(_err){}
+    }
+    function addSearchHistory(query){
+      const q = String(query || '').trim();
+      if (!q) return;
+      const prev = readSearchHistory();
+      const next = [q, ...prev.filter(x => String(x).toLowerCase() !== q.toLowerCase())].slice(0, 12);
+      writeSearchHistory(next);
+      renderSearchSuggestions();
+    }
+    function renderSearchSuggestions(){
+      const dl = document.getElementById('recordSearchSuggestions');
+      if (!dl) return;
+      dl.innerHTML = '';
+      readSearchHistory().forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v;
+        dl.appendChild(opt);
+      });
+    }
+
+    function getTableContext(){
+      if (!table) return null;
+      const tbody = table.querySelector('tbody');
+      if (!tbody) return null;
+      const headers = Array.from(table.querySelectorAll('thead th'));
+      const dataHeaders = headers.slice(0, Math.max(0, headers.length - 2));
+      const headerNames = dataHeaders.map(th => (th.textContent || '').trim());
+      const indexByCanonical = {};
+      headerNames.forEach((name, i) => { indexByCanonical[canonical(name)] = i; });
+      return { tbody, dataHeaders, headerNames, indexByCanonical };
+    }
+
+    const ctx = getTableContext();
+    if (!ctx){
+      if (resultsMeta) resultsMeta.textContent = 'No records available yet.';
+      if (hint) hint.textContent = 'Create a record from Data Entry to start using records assistant tools.';
+      return;
+    }
+
+    const rows = Array.from(ctx.tbody.querySelectorAll('tr'));
+
+    function getCell(row, key){
+      const idx = ctx.indexByCanonical[canonical(key)];
+      if (idx === undefined) return '';
+      const td = row.children[idx];
+      if (!td) return '';
+      const v = (td.textContent || '').trim();
+      return (v === '\u2014' || v === '\u00e2\u20ac\u201d' || v === '-') ? '' : v;
+    }
+
+    function rowMeta(row){
+      const dataText = Array.from(row.children)
+        .slice(0, ctx.headerNames.length)
+        .map(td => (td.textContent || '').trim())
+        .join(' ')
+        .toLowerCase();
+      return {
+        text: dataText,
+        active: row.getAttribute('data-active') === '1',
+        certType: getCell(row, 'CertificateType'),
+        template: getCell(row, 'TemplateName'),
+        id: parseNum(getCell(row, 'ID')),
+        dateIssued: parseDate(getCell(row, 'DateIssued')),
+        empName: getCell(row, 'Emp_Name').toLowerCase()
+      };
+    }
+
+    function populateSelect(selectEl, values, allLabel){
+      if (!selectEl) return;
+      const current = selectEl.value || 'all';
+      selectEl.innerHTML = '';
+      const allOption = document.createElement('option');
+      allOption.value = 'all';
+      allOption.textContent = allLabel;
+      selectEl.appendChild(allOption);
+      values.forEach(v => {
+        const opt = document.createElement('option');
+        opt.value = v;
+        opt.textContent = v;
+        selectEl.appendChild(opt);
+      });
+      selectEl.value = values.includes(current) ? current : 'all';
+    }
+
+    function buildDynamicFilters(){
+      const certSet = new Set();
+      const tplSet = new Set();
+      rows.forEach(row => {
+        const cert = getCell(row, 'CertificateType');
+        const tpl = getCell(row, 'TemplateName');
+        if (cert) certSet.add(cert);
+        if (tpl) tplSet.add(tpl);
+      });
+      populateSelect(certTypeFilter, Array.from(certSet).sort((a,b)=>a.localeCompare(b)), 'All Certificate Types');
+      populateSelect(templateFilter, Array.from(tplSet).sort((a,b)=>a.localeCompare(b)), 'All Templates');
+    }
+
+    function sortRows(){
+      const sorted = [...rows].sort((a, b) => {
+        const A = rowMeta(a);
+        const B = rowMeta(b);
+        switch (state.sort){
+          case 'id_asc': return A.id - B.id;
+          case 'id_desc': return B.id - A.id;
+          case 'date_asc': return A.dateIssued - B.dateIssued;
+          case 'date_desc': return B.dateIssued - A.dateIssued;
+          case 'name_asc': return A.empName.localeCompare(B.empName);
+          case 'name_desc': return B.empName.localeCompare(A.empName);
+          default: return B.id - A.id;
+        }
+      });
+      sorted.forEach(r => ctx.tbody.appendChild(r));
+    }
+
+    function updateStats(filteredCount, pageCount, totalPages){
+      const total = rows.length;
+      const active = rows.filter(r => r.getAttribute('data-active') === '1').length;
+      const inactive = total - active;
+      if (statTotal) statTotal.textContent = String(total);
+      if (statActive) statActive.textContent = String(active);
+      if (statInactive) statInactive.textContent = String(inactive);
+      if (statVisible) statVisible.textContent = String(filteredCount);
+      const start = filteredCount === 0 ? 0 : ((state.page - 1) * state.pageSize + 1);
+      const end = filteredCount === 0 ? 0 : Math.min(filteredCount, state.page * state.pageSize);
+      if (resultsMeta){
+        resultsMeta.textContent = `Showing ${start}-${end} of ${filteredCount} filtered records (total ${total}) | Page ${state.page}/${totalPages} | Sort: ${state.sort}`;
+      }
+      if (hint){
+        if (filteredCount === 0){
+          hint.textContent = 'No records match this combination. Try clearing search or switching filters.';
+        } else if (state.status === 'inactive' && filteredCount > 0){
+          hint.textContent = `You have ${filteredCount} inactive record(s) visible. Use Activate to restore records when needed.`;
+        } else if (state.search){
+          hint.textContent = `Search is active for "${state.search}".`;
+        } else {
+          hint.textContent = 'Filters are ready. Open Preview to verify document output before exporting Word/PDF.';
+        }
+      }
+      if (pagerInfo){
+        pagerInfo.textContent = `Page ${state.page} of ${totalPages} | ${pageCount} row(s) on this page`;
+      }
+    }
+
+    function applyColumnVisibility(){
+      const hidden = new Set(state.hiddenColumns.map(canonical));
+      ctx.headerNames.forEach((name, index) => {
+        const hide = hidden.has(canonical(name));
+        const nth = index + 1;
+        table.querySelectorAll(`tr > *:nth-child(${nth})`).forEach(cell => {
+          cell.style.display = hide ? 'none' : '';
+        });
+      });
+      writePrefs();
+    }
+
+    function rebuildColumnMenu(){
+      if (!columnChecklist) return;
+      columnChecklist.innerHTML = '';
+      const hidden = new Set(state.hiddenColumns.map(canonical));
+      ctx.headerNames.forEach(name => {
+        const key = canonical(name);
+        const row = document.createElement('label');
+        row.className = 'column-item';
+
+        const cb = document.createElement('input');
+        cb.type = 'checkbox';
+        cb.checked = !hidden.has(key);
+        cb.addEventListener('change', () => {
+          const hiddenNow = new Set(state.hiddenColumns.map(canonical));
+          if (cb.checked){
+            hiddenNow.delete(key);
+          } else {
+            hiddenNow.add(key);
+          }
+          state.hiddenColumns = ctx.headerNames.filter(h => hiddenNow.has(canonical(h)));
+          applyColumnVisibility();
+        });
+
+        const span = document.createElement('span');
+        span.textContent = name;
+
+        row.appendChild(cb);
+        row.appendChild(span);
+        columnChecklist.appendChild(row);
+      });
+    }
+
+    function renderPager(totalRows, totalPages){
+      if (pagerPages){
+        pagerPages.innerHTML = '';
+        const pageButtons = [];
+        if (totalPages <= 7){
+          for (let p = 1; p <= totalPages; p += 1) pageButtons.push(p);
+        } else {
+          pageButtons.push(1);
+          const left = Math.max(2, state.page - 1);
+          const right = Math.min(totalPages - 1, state.page + 1);
+          if (left > 2) pageButtons.push('...');
+          for (let p = left; p <= right; p += 1) pageButtons.push(p);
+          if (right < totalPages - 1) pageButtons.push('...');
+          pageButtons.push(totalPages);
+        }
+        pageButtons.forEach(p => {
+          if (p === '...'){
+            const dot = document.createElement('span');
+            dot.className = 'pager-page';
+            dot.textContent = '...';
+            dot.setAttribute('disabled', 'disabled');
+            pagerPages.appendChild(dot);
+            return;
+          }
+          const btn = document.createElement('button');
+          btn.type = 'button';
+          btn.className = `pager-page${p === state.page ? ' is-active' : ''}`;
+          btn.textContent = String(p);
+          btn.addEventListener('click', () => {
+            state.page = p;
+            applyFilters();
+          });
+          pagerPages.appendChild(btn);
+        });
+      }
+      const disablePaging = totalRows === 0 || totalPages <= 1;
+      if (pagerFirst) pagerFirst.disabled = disablePaging || state.page <= 1;
+      if (pagerPrev) pagerPrev.disabled = disablePaging || state.page <= 1;
+      if (pagerNext) pagerNext.disabled = disablePaging || state.page >= totalPages;
+      if (pagerLast) pagerLast.disabled = disablePaging || state.page >= totalPages;
+    }
+
+    function applyFilters(){
+      const search = (state.search || '').toLowerCase().trim();
+      const filteredRows = [];
+      rows.forEach(row => {
+        const m = rowMeta(row);
+        const passSearch = !search || m.text.includes(search);
+        const passStatus =
+          state.status === 'all' ||
+          (state.status === 'active' && m.active) ||
+          (state.status === 'inactive' && !m.active);
+        const passCert = state.certType === 'all' || m.certType === state.certType;
+        const passTemplate = state.template === 'all' || m.template === state.template;
+        if (passSearch && passStatus && passCert && passTemplate){
+          filteredRows.push(row);
+        }
+        row.style.display = 'none';
+      });
+
+      const totalFiltered = filteredRows.length;
+      const totalPages = Math.max(1, Math.ceil(totalFiltered / state.pageSize));
+      if (state.page > totalPages) state.page = totalPages;
+      if (state.page < 1) state.page = 1;
+
+      const startIdx = (state.page - 1) * state.pageSize;
+      const endIdx = Math.min(startIdx + state.pageSize, totalFiltered);
+      const pageRows = filteredRows.slice(startIdx, endIdx);
+      pageRows.forEach(row => { row.style.display = ''; });
+
+      if (noResults) noResults.hidden = totalFiltered !== 0;
+      updateStats(totalFiltered, pageRows.length, totalPages);
+      renderPager(totalFiltered, totalPages);
+      writePrefs();
+    }
+
+    function refresh(){
+      sortRows();
+      applyColumnVisibility();
+      applyFilters();
+      statusChips.forEach(chip => chip.classList.toggle('is-active', chip.dataset.filter === state.status));
+      if (searchBox) searchBox.value = state.search;
+      if (certTypeFilter) certTypeFilter.value = state.certType;
+      if (templateFilter) templateFilter.value = state.template;
+      if (sortBy) sortBy.value = state.sort;
+      if (pageSizeSelect) pageSizeSelect.value = String(state.pageSize);
+      if (compactToggle){
+        compactToggle.textContent = state.compact ? 'Comfort Rows' : 'Compact Rows';
+      }
+      if (tableWrap){
+        tableWrap.classList.toggle('compact', !!state.compact);
+      }
+    }
+
+    readPrefs();
+    renderSearchSuggestions();
+    buildDynamicFilters();
+    rebuildColumnMenu();
+
+    if (searchBox){
+      searchBox.value = state.search;
+      searchBox.addEventListener('input', () => {
+        state.search = searchBox.value || '';
+        state.page = 1;
+        applyFilters();
+      });
+      searchBox.addEventListener('keydown', (e) => {
+        if (e.key === 'Enter') addSearchHistory(searchBox.value);
+      });
+      searchBox.addEventListener('blur', () => addSearchHistory(searchBox.value));
+    }
+
+    statusChips.forEach(chip => {
+      chip.addEventListener('click', () => {
+        state.status = chip.dataset.filter || 'all';
+        state.page = 1;
+        applyFilters();
+        statusChips.forEach(c => c.classList.toggle('is-active', c === chip));
+      });
+    });
+
+    if (certTypeFilter){
+      certTypeFilter.value = state.certType;
+      certTypeFilter.addEventListener('change', () => {
+        state.certType = certTypeFilter.value || 'all';
+        state.page = 1;
+        applyFilters();
+      });
+    }
+    if (templateFilter){
+      templateFilter.value = state.template;
+      templateFilter.addEventListener('change', () => {
+        state.template = templateFilter.value || 'all';
+        state.page = 1;
+        applyFilters();
+      });
+    }
+    if (sortBy){
+      sortBy.value = state.sort;
+      sortBy.addEventListener('change', () => {
+        state.sort = sortBy.value || 'id_desc';
+        state.page = 1;
+        refresh();
+      });
+    }
+    if (pageSizeSelect){
+      pageSizeSelect.value = String(state.pageSize);
+      pageSizeSelect.addEventListener('change', () => {
+        const nextSize = Number(pageSizeSelect.value) || 20;
+        state.pageSize = [10,20,30,50,100].includes(nextSize) ? nextSize : 20;
+        state.page = 1;
+        applyFilters();
+      });
+    }
+
+    if (compactToggle){
+      compactToggle.addEventListener('click', () => {
+        state.compact = !state.compact;
+        if (tableWrap) tableWrap.classList.toggle('compact', !!state.compact);
+        compactToggle.textContent = state.compact ? 'Comfort Rows' : 'Compact Rows';
+        writePrefs();
+      });
+    }
+
+    if (jumpBtn){
+      jumpBtn.addEventListener('click', () => {
+        if (tableWrap) tableWrap.scrollIntoView({ behavior:'smooth', block:'start' });
+      });
+    }
+
+    if (clearBtn){
+      clearBtn.addEventListener('click', () => {
+        state.search = '';
+        state.status = 'all';
+        state.certType = 'all';
+        state.template = 'all';
+        state.page = 1;
+        if (searchBox) searchBox.value = '';
+        if (certTypeFilter) certTypeFilter.value = 'all';
+        if (templateFilter) templateFilter.value = 'all';
+        statusChips.forEach(c => c.classList.toggle('is-active', c.dataset.filter === 'all'));
+        refresh();
+      });
+    }
+    if (pagerFirst){
+      pagerFirst.addEventListener('click', () => {
+        state.page = 1;
+        applyFilters();
+      });
+    }
+    if (pagerPrev){
+      pagerPrev.addEventListener('click', () => {
+        state.page = Math.max(1, state.page - 1);
+        applyFilters();
+      });
+    }
+    if (pagerNext){
+      pagerNext.addEventListener('click', () => {
+        state.page = state.page + 1;
+        applyFilters();
+      });
+    }
+    if (pagerLast){
+      pagerLast.addEventListener('click', () => {
+        const search = (state.search || '').toLowerCase().trim();
+        const totalFiltered = rows.filter(row => {
+          const m = rowMeta(row);
+          const passSearch = !search || m.text.includes(search);
+          const passStatus =
+            state.status === 'all' ||
+            (state.status === 'active' && m.active) ||
+            (state.status === 'inactive' && !m.active);
+          const passCert = state.certType === 'all' || m.certType === state.certType;
+          const passTemplate = state.template === 'all' || m.template === state.template;
+          return passSearch && passStatus && passCert && passTemplate;
+        }).length;
+        const totalPages = Math.max(1, Math.ceil(totalFiltered / state.pageSize));
+        state.page = totalPages;
+        applyFilters();
+      });
+    }
+
+    if (columnToggleBtn && columnMenu){
+      columnToggleBtn.addEventListener('click', () => {
+        columnMenu.classList.toggle('is-open');
+      });
+      document.addEventListener('click', (e) => {
+        if (!columnMenu.classList.contains('is-open')) return;
+        if (columnMenu.contains(e.target) || columnToggleBtn.contains(e.target)) return;
+        columnMenu.classList.remove('is-open');
+      });
+    }
+
+    document.addEventListener('keydown', (e) => {
+      if (e.key === '/' && searchBox){
+        e.preventDefault();
+        searchBox.focus();
+      }
+      if (e.key === 'Escape' && columnMenu){
+        columnMenu.classList.remove('is-open');
+      }
+    });
+
+    refresh();
+  })();
+</script>
+
+    <script>
+(function () {
+  document.documentElement.classList.add('page-fade-in');
+
+  window.addEventListener('pageshow', function (e) {
+    if (e.persisted) {
+      document.documentElement.classList.remove('page-fade-out');
+      document.documentElement.classList.add('page-fade-in');
+    }
+  });
+
+  function isSameOrigin(url) {
+    try { return new URL(url, location.href).origin === location.origin; }
+    catch { return false; }
+  }
+
+  document.addEventListener('click', function (e) {
+    const a = e.target.closest('a');
+    if (!a) return;
+    if (a.target === '_blank' || a.hasAttribute('download') || a.getAttribute('href')?.startsWith('#')) return;
+    const href = a.getAttribute('href');
+    if (!href || !isSameOrigin(href)) return;
+
+    e.preventDefault();
+    document.documentElement.classList.remove('page-fade-in');
+    document.documentElement.classList.add('page-fade-out');
+    setTimeout(() => { location.href = href; }, 180);
+  }, { capture: true });
+
+  document.addEventListener('submit', function (e) {
+    const form = e.target;
+    if (form.target === '_blank') return;
+    if (form.hasAttribute('data-no-transition')) return;
+
+    e.preventDefault();
+    document.documentElement.classList.remove('page-fade-in');
+    document.documentElement.classList.add('page-fade-out');
+
+    setTimeout(() => { form.submit(); }, 180);
+  }, { capture: true });
+})();
+</script>
+
+    <!-- ===== Preview logic: render per TemplateName/CertificateType ===== -->
+    <script>
+      // Helpers
+      function headersList(){
+        return Array.from(document.querySelectorAll('#recordTable thead th'))
+          .map(th => th.textContent.trim());
+      }
+      function rowToObject(btn){
+        const tr = btn.closest('tr');
+        const heads = headersList();
+        const fieldCount = Math.max(0, heads.length - 2); // exclude Status, Actions
+        const tds = Array.from(tr.querySelectorAll('td')).slice(0, fieldCount);
+        const o = {};
+        for (let i=0;i<fieldCount;i++){
+          const key = heads[i];
+          const val = (tds[i]?.innerText || "").trim();
+          o[key] = (val === "\u00e2\u20ac\u201d" || val === "-" || val === "\u2014") ? "" : val;
+        }
+        return o;
+      }
+      function cap(s){ s = String(s||""); return s ? (s[0].toUpperCase()+s.slice(1)) : s; }
+      function low(s){ return String(s||"").toLowerCase(); }
+      function hisHer(o, wantCap=false){ return wantCap ? cap(o.Alias_HisHer||"") : low(o.Alias_HisHer||""); }
+      function heShe(o, wantCap=false){ return wantCap ? cap(o.Alias_HeShe||"") : low(o.Alias_HeShe||""); }
+      function himHer(o, wantCap=false){ return wantCap ? cap(o.Alias_himHer||"") : low(o.Alias_himHer||""); }
+
+      // INR formatting for bits we show in Annexure-like previews
+      function inr(n){
+        const x = Math.round(Number(String(n).replace(/[^\d.]/g,""))||0).toString();
+        const last3 = x.slice(-3), other = x.slice(0,-3);
+        const withComma = other? other.replace(/\B(?=(\d{2})+(?!\d))/g, ",")+","+last3 : last3;
+        return "Rs " + (withComma || "0");
+      }
+
+      // Renderers for each template name (by TemplateName or CertificateType)
+      const renderers = {
+        // ===== Experience Certificate =====
+        "experience": function(o){
+          return `
+            <div class="meta"><div>Ref: <b>${o.Ref_No||"-"}</b></div><div>Date: <b>${o.DateIssued||"-"}</b></div></div>
+            <h2>Experience Certificate</h2>
+            <div class="hr-line"></div>
+            <div class="section">
+              This is to certify that <b>${o.Emp_Name||"-"}</b> (Employee ID: <b>${o.Emp_ID||"-"}</b>) was employed with Asarfi Hospital
+              as ${o.article||"-"} <b>${o.Designation||"-"}</b> in the <b>${o.Department||"-"}</b> department from <b>${o.From_Date||"-"}</b> to <b>${o.To_Date||"-"}</b>.
+              ${cap(heShe(o,true))} performed ${hisHer(o)} duties responsibly and demonstrated professional conduct at all times.
+            </div>
+            <div class="section">
+              During ${hisHer(o)} tenure, ${low(heShe(o))} showed dedication, punctuality and teamwork.
+              We wish ${himHer(o)} all the best in future endeavours.
+            </div>
+            <div class="sig"><div class="by">
+              <div><b>${o.HR||"Human Resources"}</b></div>
+              <div>Human Resources</div>
+            </div></div>
+          `;
+        },
+
+        // ===== Certificate of Appreciation =====
+        "certificate_appreciation": function(o){
+          return `
+            <div class="meta"><div>Ref: <b>${o.Ref_No||"-"}</b></div><div>Date: <b>${o.DateIssued||"-"}</b></div></div>
+            <h2>Certificate of Appreciation</h2>
+            <div class="hr-line"></div>
+            <div class="section">
+              Presented to <b>${o.Emp_Name||"-"}</b> (<b>${o.Emp_ID||"-"}</b>) in recognition of ${hisHer(o,true)} exceptional
+              commitment and performance as ${o.article||""} <b>${o.Designation||"-"}</b>.
+              ${cap(o.Alias_HeShe||"")} has shown consistency and hard work with great impact on the success of ${hisHer(o)} team and the organization.
+            </div>
+            <div class="section">
+              ${cap(o.Alias_HisHer||"")} professional responses and positive attitude serve as a role model to others.
+              We are truly grateful to have ${o.Alias_himHer||""} as a part of our team.
+            </div>
+            <div class="section"><b>Excellent work does not go unnoticed!</b></div>
+            <div class="sig"><div class="by">
+              <div><b>${o.HR||"Human Resources"}</b></div>
+              <div>Human Resources</div>
+            </div></div>
+          `;
+        },
+
+        // ===== Appointment Letter (condensed view + salary heads) =====
+        "appointment": function(o){
+          const gross = o.Salary ? inr(o.Salary) : "-";
+          return `
+            <div class="meta"><div>Ref: <b>${o.Ref_No||"-"}</b></div><div>Date: <b>${o.DateIssued||"-"}</b></div></div>
+            <h2>Appointment Letter <span class="tag">Preview</span></h2>
+            <div class="hr-line"></div>
+            <div class="section">
+              Dear <b>${o.Emp_2ndName||o.Emp_Name||"-"}</b>,<br/>
+              We are pleased to appoint you as <b>${o.Designation||"-"}</b> in the Department of <b>${o.Department||"-"}</b> at <b>${o.Organizationwithaddress||"Asarfi Hospital"}</b>
+              with effect from <b>${o.From_Date||"-"}</b>.
+            </div>
+            <div class="section">
+              <b>Address:</b> ${[o.Address,o.State&&(" "+o.State),o.Pincode&&(" - "+o.Pincode)].filter(Boolean).join("")||"-"}
+            </div>
+            <div class="section">
+              <b>Reporting To:</b> ${o.Reporting_to||"-"} &nbsp; | &nbsp; <b>Probation:</b> 6 months
+            </div>
+            <div class="section">
+              <b>Annual Gross Salary:</b> ${gross} (${o.SalaryinWords||"-"})
+              <div class="hr-line"></div>
+              <div><b>Annexure (Preview)</b></div>
+              <div>Basic: <span class="mono">${o.BasicYearly||"-"}</span> &nbsp; HRA: <span class="mono">${o.HRAYearly||"-"}</span> &nbsp; Conveyance: <span class="mono">${o.ConveyanceYearly||"-"}</span> &nbsp; Special: <span class="mono">${o.SpecialYearly||"-"}</span></div>
+              <div>Total Gross: <span class="mono">${o.GrossYearly||"-"}</span> &nbsp; PF: <span class="mono">${o.PFYearly||"-"}</span> &nbsp; ESIC: <span class="mono">${o.ESICYearly||"-"}</span></div>
+              <div>In-Hand (Year): <b class="mono">${o.InHandYearly||"-"}</b></div>
+            </div>
+            <div class="sig"><div class="by">
+              <div><b>${o.HR||"Human Resources"}</b></div>
+              <div>Human Resources</div>
+            </div></div>
+          `;
+        },
+
+        // ===== Internship Offer Letter =====
+        "internship_offer": function(o){
+          return `
+            <div class="meta"><div>Ref: <b>${o.Ref_No||"-"}</b></div><div>Date: <b>${o.DateIssued||"-"}</b></div></div>
+            <h2>Internship Offer Letter</h2>
+            <div class="hr-line"></div>
+            <div class="section">
+              To,<br/><b>${o.Emp_Name||"-"}</b><br/>${o.Institute||""}<br/>${o.Institute_Location||""}
+            </div>
+            <div class="section">
+              Dear <b>${o.Emp_2ndName||o.Emp_Name||"-"}</b>,<br/>
+              You are selected for an internship in <b>${o.Department||"-"}</b> at Asarfi Hospital, Dhanbad.
+            </div>
+            <div class="section">
+              <b>Department:</b> ${o.Department||"-"} &nbsp; | &nbsp;
+              <b>Location:</b> ${o.Institute_Location||"-"} &nbsp; | &nbsp;
+              <b>Duration:</b> ${o.Duration||"-"} <br/>
+              <b>Start Date:</b> ${o.Start_Date||"-"} &nbsp; | &nbsp;
+              <b>Reporting Manager:</b> ${o.Reporting_to||"-"} &nbsp; | &nbsp;
+              <b>Timings:</b> ${o.Timing||"-"}
+            </div>
+            <div class="section">
+              Please maintain confidentiality, follow hospital policies and attend regularly. An internship completion certificate will be awarded on successful completion.
+            </div>
+            <div class="sig"><div class="by">
+              <div><b>${o.HR||"Human Resources"}</b></div>
+              <div>Human Resources</div>
+            </div></div>
+          `;
+        },
+
+        // ===== Internship Completion Letter =====
+        "internship_completion": function(o){
+          return `
+            <div class="meta"><div>Ref: <b>${o.Ref_No||"-"}</b></div><div>Date: <b>${o.DateIssued||"-"}</b></div></div>
+            <h2>Internship Completion Letter</h2>
+            <div class="hr-line"></div>
+            <div class="section">
+              This is to certify that <b>${o.Emp_Name||"-"}</b> successfully completed ${hisHer(o)} internship in the
+              <b>${o.Department||"-"}</b> department from <b>${o.From_Date||"-"}</b> to <b>${o.To_Date||"-"}</b> at Asarfi Hospital.
+              ${cap(heShe(o,true))} showed enthusiasm and commitment throughout the period.
+            </div>
+            <div class="sig"><div class="by">
+              <div><b>${o.HR||"Human Resources"}</b></div>
+              <div>Human Resources</div>
+            </div></div>
+          `;
+        },
+
+        // ===== Relieving Letter =====
+        "relieving": function(o){
+          return `
+            <div class="meta"><div>Ref: <b>${o.Ref_No||"-"}</b></div><div>Date: <b>${o.DateIssued||"-"}</b></div></div>
+            <h2>Relieving Letter</h2>
+            <div class="hr-line"></div>
+            <div class="section">
+              This is to confirm that <b>${o.Emp_Name||"-"}</b> (Employee ID: <b>${o.Emp_ID||"-"}</b>) served as <b>${o.Designation||"-"}</b>
+              in the <b>${o.Department||"-"}</b> department and has been relieved from duties effective <b>${o.Relieving_Date||"-"}</b>.
+            </div>
+            <div class="section">We wish ${himHer(o)} success in future endeavors.</div>
+            <div class="sig"><div class="by"><div><b>${o.HR||"Human Resources"}</b></div><div>Human Resources</div></div></div>
+          `;
+        },
+
+        // ===== Termination Letter =====
+        "termination": function(o){
+          return `
+            <div class="meta"><div>Ref: <b>${o.Ref_No||"-"}</b></div><div>Date: <b>${o.DateIssued||"-"}</b></div></div>
+            <h2>Termination Letter</h2>
+            <div class="hr-line"></div>
+            <div class="section">
+              This is to notify that your employment as <b>${o.Designation||"-"}</b> stands terminated effective <b>${o.To_Date||o.Relieving_Date||"-"}</b>.
+              Reason: <b>${o.Reason||o.Reason_1||"-"}</b>.
+            </div>
+            <div class="sig"><div class="by"><div><b>${o.HR||"Human Resources"}</b></div><div>Human Resources</div></div></div>
+          `;
+        },
+
+        // ===== Warning Letter =====
+        "warning": function(o){
+          return `
+            <div class="meta"><div>Ref: <b>${o.Ref_No||"-"}</b></div><div>Date: <b>${o.DateIssued||"-"}</b></div></div>
+            <h2>Warning Letter</h2>
+            <div class="hr-line"></div>
+            <div class="section">
+              This serves as a warning for: <b>${o.Subject||"-"}</b>.<br/>
+              Details: ${o.Reason||"-"}<br/>
+              You are advised to maintain discipline and improve conduct henceforth. Further violations may attract strict action.
+            </div>
+            <div class="sig"><div class="by"><div><b>${o.HR||"Human Resources"}</b></div><div>Human Resources</div></div></div>
+          `;
+        },
+
+        // ===== Show Cause =====
+        "show_cause": function(o){
+          return `
+            <div class="meta"><div>Ref: <b>${o.Ref_No||"-"}</b></div><div>Date: <b>${o.DateIssued||"-"}</b></div></div>
+            <h2>Show Cause Notice</h2>
+            <div class="hr-line"></div>
+            <div class="section">
+              You are required to explain within 48 hours the reason for: <b>${o.Extrafield2||"-"}</b>.
+              Summary/Allegation: ${o.Extrafield2||"-"}.
+            </div>
+            <div class="section">Failing to respond may lead to disciplinary action as per company policy.</div>
+            <div class="sig"><div class="by"><div><b>${o.HR||"Human Resources"}</b></div><div>Human Resources</div></div></div>
+          `;
+        },
+
+        // ===== Still Working Certificate =====
+        "still_working": function(o){
+          return `
+            <div class="meta"><div>Ref: <b>${o.Ref_No||"-"}</b></div><div>Date: <b>${o.DateIssued||"-"}</b></div></div>
+            <h2>Still Working Certificate</h2>
+            <div class="hr-line"></div>
+            <div class="section">
+              This is to certify that <b>${o.Emp_Name||"-"}</b> (Employee ID: <b>${o.Emp_ID||"-"}</b>) is presently working with
+              Asarfi Hospital as <b>${o.Designation||"-"}</b> in the <b>${o.Department||"-"}</b> department since <b>${o.Joining_Date||"-"}</b>.
+            </div>
+            <div class="sig"><div class="by"><div><b>${o.HR||"Human Resources"}</b></div><div>Human Resources</div></div></div>
+          `;
+        },
+
+        // ===== Offer Letter (non-internship) =====
+        "offer": function(o){
+          return `
+            <div class="meta"><div>Ref: <b>${o.Ref_No||"-"}</b></div><div>Date: <b>${o.DateIssued||"-"}</b></div></div>
+            <h2>Offer Letter</h2>
+            <div class="hr-line"></div>
+            <div class="section">
+              Dear <b>${o.Emp_2ndName||o.Emp_Name||"-"}</b>, we are pleased to offer you the position of <b>${o.Designation||"-"}</b>
+              in <b>${o.Department||"-"}</b> at <b>${o.Organizationwithaddress||"Asarfi Hospital"}</b>, location: <b>${o.Place||o.Institute_Location||"-"}</b>.
+            </div>
+            <div class="section">
+              Annual Gross: <b>${o.Salary?inr(o.Salary):"-"}</b> (${o.SalaryinWords||"-"}). Joining from: <b>${o.From_Date||"-"}</b>.
+            </div>
+            <div class="sig"><div class="by"><div><b>${o.HR||"Human Resources"}</b></div><div>Human Resources</div></div></div>
+          `;
+        }
+      };
+
+      // Map various TemplateName/CertificateType strings to renderer keys
+      function pickRendererKey(o){
+        const name = String((o.TemplateName||o.CertificateType||"").toLowerCase());
+        if (name.includes("experience")) return "experience";
+        if (name.includes("appreciation")) return "certificate_appreciation";
+        if (name.includes("appointment")) return "appointment";
+        if (name.includes("internship offer")) return "internship_offer";
+        if (name.includes("internship completion")) return "internship_completion";
+        if (name.includes("relieving")) return "relieving";
+        if (name.includes("termination")) return "termination";
+        if (name.includes("warning")) return "warning";
+        if (name.includes("show cause")) return "show_cause";
+        if (name.includes("still working")) return "still_working";
+        if (name.includes("offer")) return "offer";
+        // default fallback
+        return "experience";
+      }
+
+      const PREVIEW_MIN_SCALE = 85;
+      const PREVIEW_MAX_SCALE = 135;
+      const previewState = { scale: 100, wordAction: "", pdfAction: "" };
+
+      function escHtml(v){
+        return String(v || "")
+          .replaceAll("&", "&amp;")
+          .replaceAll("<", "&lt;")
+          .replaceAll(">", "&gt;")
+          .replaceAll('"', "&quot;")
+          .replaceAll("'", "&#39;");
+      }
+      function setPreviewFeedback(message){
+        const el = document.getElementById("pvFeedback");
+        if (!el) return;
+        el.textContent = message || "";
+      }
+      function setPreviewScale(nextScale){
+        const clamped = Math.min(PREVIEW_MAX_SCALE, Math.max(PREVIEW_MIN_SCALE, nextScale));
+        previewState.scale = clamped;
+        const paper = document.getElementById("pvPaper");
+        const label = document.getElementById("pvZoomLabel");
+        if (paper) paper.style.fontSize = `${clamped}%`;
+        if (label) label.textContent = `${clamped}%`;
+      }
+      async function copyPreviewText(){
+        const paper = document.getElementById("pvPaper");
+        if (!paper) return;
+        const text = (paper.innerText || "").trim();
+        if (!text){
+          setPreviewFeedback("Nothing to copy from preview.");
+          return;
+        }
+        try{
+          await navigator.clipboard.writeText(text);
+          setPreviewFeedback("Preview text copied.");
+        }catch(_err){
+          setPreviewFeedback("Copy blocked by browser. Use Ctrl+C after selecting text.");
+        }
+      }
+      function runPreviewAction(action){
+        if (!action) return;
+        const form = document.createElement("form");
+        form.method = "post";
+        form.setAttribute("data-no-transition", "");
+        form.action = action;
+        document.body.appendChild(form);
+        form.submit();
+        form.remove();
+      }
+      function updatePreviewMeta(o){
+        const meta = document.getElementById("pvMeta");
+        if (!meta) return;
+        const chunks = [
+          `<span class="pv-chip">Template: ${escHtml(o.TemplateName || "-")}</span>`,
+          `<span class="pv-chip">Type: ${escHtml(o.CertificateType || "-")}</span>`,
+          `<span class="pv-chip">Employee: ${escHtml(o.Emp_Name || "-")}</span>`,
+          `<span class="pv-chip">Date: ${escHtml(o.DateIssued || "-")}</span>`,
+          `<span class="pv-chip">Ref: ${escHtml(o.Ref_No || "-")}</span>`
+        ];
+        meta.innerHTML = chunks.join("");
+      }
+
+      function openPreview(btn){
+        const tr = btn.closest("tr");
+        const o = rowToObject(btn);
+        const key = pickRendererKey(o);
+        const renderer = renderers[key] || renderers["experience"];
+        const bodyHtml = renderer(o);
+        const wordForm = tr ? tr.querySelector('form[action*="/generate_docx/"]') : null;
+        const pdfForm = tr ? tr.querySelector('form[action*="/generate_pdf/"]') : null;
+
+        previewState.wordAction = wordForm ? wordForm.getAttribute("action") : "";
+        previewState.pdfAction = pdfForm ? pdfForm.getAttribute("action") : "";
+
+        document.getElementById('pvTitle').textContent =
+          (o.TemplateName || o.CertificateType || "Preview");
+
+        document.getElementById('pvPaper').innerHTML = bodyHtml;
+        updatePreviewMeta(o);
+        setPreviewScale(100);
+        setPreviewFeedback("");
+
+        const wordBtn = document.getElementById("pvWordBtn");
+        const pdfBtn = document.getElementById("pvPdfBtn");
+        if (wordBtn) wordBtn.disabled = !previewState.wordAction;
+        if (pdfBtn) pdfBtn.disabled = !previewState.pdfAction;
+
+        const overlay = document.getElementById('pvOverlay');
+        overlay.classList.add('is-open');
+        overlay.setAttribute('aria-hidden','false');
+        document.body.style.overflow = "hidden";
+
+        overlay.addEventListener('click', function(e){
+          if (e.target === overlay) closePreview();
+        }, { once: true });
+
+        document.addEventListener('keydown', escListener);
+      }
+
+      function escListener(e){
+        if (e.key === 'Escape') closePreview();
+        if (e.key === '+' || e.key === '=') setPreviewScale(previewState.scale + 5);
+        if (e.key === '-') setPreviewScale(previewState.scale - 5);
+        if (e.key === '0') setPreviewScale(100);
+        if ((e.key === 'c' || e.key === 'C') && !e.ctrlKey && !e.metaKey){
+          copyPreviewText();
+        }
+      }
+      function closePreview(){
+        const overlay = document.getElementById('pvOverlay');
+        overlay.classList.remove('is-open');
+        overlay.setAttribute('aria-hidden','true');
+        document.body.style.overflow = "";
+        setPreviewFeedback("");
+        document.removeEventListener('keydown', escListener);
+      }
+
+      (function initPreviewControls(){
+        const zoomOut = document.getElementById("pvZoomOut");
+        const zoomIn = document.getElementById("pvZoomIn");
+        const zoomReset = document.getElementById("pvZoomReset");
+        const copyBtn = document.getElementById("pvCopyBtn");
+        const wordBtn = document.getElementById("pvWordBtn");
+        const pdfBtn = document.getElementById("pvPdfBtn");
+
+        if (zoomOut) zoomOut.addEventListener("click", () => setPreviewScale(previewState.scale - 5));
+        if (zoomIn) zoomIn.addEventListener("click", () => setPreviewScale(previewState.scale + 5));
+        if (zoomReset) zoomReset.addEventListener("click", () => setPreviewScale(100));
+        if (copyBtn) copyBtn.addEventListener("click", copyPreviewText);
+        if (wordBtn) wordBtn.addEventListener("click", () => runPreviewAction(previewState.wordAction));
+        if (pdfBtn) pdfBtn.addEventListener("click", () => runPreviewAction(previewState.pdfAction));
+      })();
+    </script>
+
+  </body>
+</html>
+
+
+

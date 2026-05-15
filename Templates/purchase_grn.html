@@ -128,6 +128,13 @@
     gap: 10px;
     margin-bottom: 16px;
   }
+  .grn-workspace-actions {
+    align-items: center;
+    padding: 10px;
+    border: 1px solid #dbeafe;
+    border-radius: 20px;
+    background: linear-gradient(135deg, #f8fbff, #eef6ff);
+  }
   .btn {
     border: none;
     border-radius: 14px;
@@ -154,6 +161,12 @@
     color: #991b1b;
     background: #fef2f2;
     border: 1px solid #fecaca;
+  }
+  .btn-report {
+    color: #0f172a;
+    background: linear-gradient(135deg, #ffffff, #ecfeff);
+    border: 1px solid #99f6e4;
+    box-shadow: 0 10px 20px rgba(15, 118, 110, 0.11);
   }
   .btn-success {
     color: #fff;
@@ -390,6 +403,76 @@
     border-color: #93c5fd;
     color: #1e3a8a;
   }
+  .grn-report-actions {
+    display: flex;
+    flex-wrap: wrap;
+    gap: 12px;
+    align-items: end;
+    margin-bottom: 14px;
+  }
+  .grn-report-actions .field {
+    flex: 1 1 180px;
+    min-width: 160px;
+  }
+  .grn-report-actions .field.report-supplier {
+    flex-basis: 260px;
+  }
+  .grn-report-actions .btn {
+    flex: 0 0 auto;
+    min-width: 138px;
+  }
+  .grn-report-meta {
+    margin-bottom: 10px;
+    color: var(--grn-muted);
+    font-size: 12px;
+    font-weight: 700;
+  }
+  .grn-report-table-wrap {
+    overflow: auto;
+    border: 1px solid #dbe4f0;
+    border-radius: 16px;
+    background: #fff;
+  }
+  .grn-report-table {
+    width: 100%;
+    min-width: 820px;
+    border-collapse: collapse;
+    table-layout: fixed;
+  }
+  .grn-report-table th,
+  .grn-report-table td {
+    padding: 12px 13px;
+    border-bottom: 1px solid #e5edf6;
+    text-align: left;
+    vertical-align: middle;
+    font-size: 13px;
+  }
+  .grn-report-table th {
+    background: #eff6ff;
+    color: #1e3a8a;
+    font-size: 11px;
+    font-weight: 800;
+    letter-spacing: 0.22px;
+    text-transform: uppercase;
+  }
+  .grn-report-table tbody tr {
+    cursor: pointer;
+  }
+  .grn-report-table tbody tr:hover {
+    background: #f8fbff;
+  }
+  .grn-report-table td {
+    color: #0f172a;
+    word-break: break-word;
+  }
+  .grn-report-table td:first-child {
+    font-weight: 800;
+    color: #1e3a8a;
+  }
+  .grn-report-table td:last-child {
+    color: #334155;
+    font-weight: 700;
+  }
   .grn-search-results {
     display: grid;
     gap: 10px;
@@ -585,6 +668,10 @@
   .grn-search-modal {
     width: min(980px, calc(100vw - 26px));
     height: min(760px, calc(100vh - 24px));
+  }
+  .grn-report-modal {
+    width: min(1240px, calc(100vw - 26px));
+    height: min(820px, calc(100vh - 24px));
   }
   .grn-search-modal-results {
     min-height: 320px;
@@ -829,10 +916,11 @@
           <p>Use Direct Purchase for manual receipt entry or Against PO to pull approved PO lines and receive them against balance.</p>
         </div>
         <div class="grn-card-body grn-editor">
-          <div class="grn-actions">
+          <div class="grn-actions grn-workspace-actions">
             <button class="btn btn-primary" type="button" id="saveGrnBtn" data-editable="true">Save GRN</button>
             <button class="btn btn-soft" type="button" id="newGrnBtn">New GRN</button>
             <button class="btn btn-soft" type="button" id="openSearchModalBtn">Find Existing GRN</button>
+            <button class="btn btn-report" type="button" id="openReportModalBtn">Reports</button>
             <button class="btn btn-soft" type="button" id="printGrnBtn" disabled>Print PDF</button>
             {% if can_authorize_grn %}
             <button class="btn btn-soft" type="button" id="openAuthModalBtn">Authorization Queue</button>
@@ -985,6 +1073,55 @@
   </div>
 </div>
 
+<div class="grn-modal-shell" id="grnReportModal" hidden>
+  <div class="grn-modal-backdrop" data-report-close="1"></div>
+  <div class="grn-modal grn-report-modal" role="dialog" aria-modal="true" aria-labelledby="grnReportModalTitle">
+    <div class="grn-modal-head">
+      <div>
+        <h3 id="grnReportModalTitle">Reports</h3>
+        <p>Review the Sharpsight GRN summary report with supplier, receipt date, receipt type, linked PO details, and PDF output.</p>
+      </div>
+      <button class="grn-modal-close" type="button" id="closeReportModalBtn" aria-label="Close reports">&times;</button>
+    </div>
+    <div class="grn-modal-body">
+      <div class="grn-report-actions">
+        <div class="field">
+          <label>From Date</label>
+          <input type="date" id="reportFromDate">
+        </div>
+        <div class="field">
+          <label>To Date</label>
+          <input type="date" id="reportToDate">
+        </div>
+        <div class="field report-supplier">
+          <label>Supplier Name</label>
+          <input type="text" id="reportSupplier" placeholder="Filter supplier">
+        </div>
+        <button class="btn btn-soft" type="button" id="refreshReportBtn">Refresh Report</button>
+        <button class="btn btn-report" type="button" id="printReportBtn">Print PDF</button>
+        <button class="btn btn-soft" type="button" id="clearReportBtn">Clear Filters</button>
+      </div>
+      <div class="grn-report-meta" id="reportMeta">Report will load after the workspace is ready.</div>
+      <div class="grn-report-table-wrap">
+        <table class="grn-report-table">
+          <thead>
+            <tr>
+              <th style="width: 150px;">GRN No</th>
+              <th>Supplier Name</th>
+              <th style="width: 140px;">GRN Date</th>
+              <th style="width: 170px;">GRN Type</th>
+              <th style="width: 160px;">PO-Number</th>
+            </tr>
+          </thead>
+          <tbody id="reportRows">
+            <tr><td colspan="5">Loading report...</td></tr>
+          </tbody>
+        </table>
+      </div>
+    </div>
+  </div>
+</div>
+
 <div class="grn-modal-shell" id="grnSearchModal" hidden>
   <div class="grn-modal-backdrop" data-search-close="1"></div>
   <div class="grn-modal grn-search-modal" role="dialog" aria-modal="true" aria-labelledby="grnSearchModalTitle">
@@ -1087,6 +1224,7 @@
     authLastSearchMode: 'recent',
     authSelectedGrnId: null,
     authPreview: null,
+    reportRows: [],
     readOnly: false,
     currentGrnId: null,
     currentStatusLabel: 'Draft',
@@ -1138,6 +1276,7 @@
     saveBtn: byId('saveGrnBtn'),
     newBtn: byId('newGrnBtn'),
     searchModalBtn: byId('openSearchModalBtn'),
+    reportModalBtn: byId('openReportModalBtn'),
     printBtn: byId('printGrnBtn'),
     authQueueBtn: byId('openAuthModalBtn'),
     addItemBtn: byId('addItemBtn'),
@@ -1156,6 +1295,8 @@
     searchPageMeta: byId('searchPageMeta'),
     searchModal: byId('grnSearchModal'),
     searchModalCloseBtn: byId('closeSearchModalBtn'),
+    reportModal: byId('grnReportModal'),
+    reportModalCloseBtn: byId('closeReportModalBtn'),
     authModal: byId('grnAuthModal'),
     authModalCloseBtn: byId('closeAuthModalBtn'),
     authSearchGrnNo: byId('authSearchGrnNo'),
@@ -1180,6 +1321,14 @@
     grandTotal: byId('grandTotal'),
     summaryGrnNo: byId('summaryGrnNo'),
     summaryStatus: byId('summaryStatus'),
+    reportFromDate: byId('reportFromDate'),
+    reportToDate: byId('reportToDate'),
+    reportSupplier: byId('reportSupplier'),
+    refreshReportBtn: byId('refreshReportBtn'),
+    printReportBtn: byId('printReportBtn'),
+    clearReportBtn: byId('clearReportBtn'),
+    reportRows: byId('reportRows'),
+    reportMeta: byId('reportMeta'),
   };
 
   const normalizeKey = (value) => String(value || '').trim().toLowerCase();
@@ -1262,8 +1411,9 @@
 
   const syncBodyScrollLock = () => {
     const searchOpen = Boolean(els.searchModal && !els.searchModal.hidden);
+    const reportOpen = Boolean(els.reportModal && !els.reportModal.hidden);
     const authOpen = Boolean(els.authModal && !els.authModal.hidden);
-    document.body.style.overflow = (searchOpen || authOpen) ? 'hidden' : '';
+    document.body.style.overflow = (searchOpen || reportOpen || authOpen) ? 'hidden' : '';
   };
 
   const syncSummaryMeta = ({ grnNo, statusLabel } = {}) => {
@@ -1303,6 +1453,21 @@
     if (!els.searchModal) return;
     els.searchModal.hidden = true;
     clearChannelLoading('search');
+    syncBodyScrollLock();
+  };
+
+  const openReportModal = async () => {
+    if (!els.reportModal) return;
+    els.reportModal.hidden = false;
+    syncBodyScrollLock();
+    setDefaultReportDates();
+    await loadGrnSummaryReport();
+  };
+
+  const closeReportModal = () => {
+    if (!els.reportModal) return;
+    els.reportModal.hidden = true;
+    clearChannelLoading('report');
     syncBodyScrollLock();
   };
 
@@ -1796,6 +1961,91 @@
     }
   };
 
+  const isoDateOffset = (isoDate, dayOffset) => {
+    const base = new Date(`${isoDate || new Date().toISOString().slice(0, 10)}T00:00:00`);
+    base.setDate(base.getDate() + Number(dayOffset || 0));
+    return base.toISOString().slice(0, 10);
+  };
+
+  const formatReportDate = (isoDate, fallback = '-') => {
+    const text = String(isoDate || '').trim();
+    if (!text) return fallback;
+    const match = text.match(/^(\d{4})-(\d{2})-(\d{2})$/);
+    if (!match) return text;
+    const monthNames = ['Jan', 'Feb', 'Mar', 'Apr', 'May', 'Jun', 'Jul', 'Aug', 'Sep', 'Oct', 'Nov', 'Dec'];
+    return `${match[3]}-${monthNames[Number(match[2]) - 1] || match[2]}-${match[1]}`;
+  };
+
+  const setDefaultReportDates = () => {
+    const today = grnState.init?.today || new Date().toISOString().slice(0, 10);
+    if (els.reportToDate && !els.reportToDate.value) els.reportToDate.value = today;
+    if (els.reportFromDate && !els.reportFromDate.value) els.reportFromDate.value = isoDateOffset(today, -30);
+  };
+  const isReportModalOpen = () => Boolean(els.reportModal && !els.reportModal.hidden);
+
+  const renderReportRows = (items = []) => {
+    grnState.reportRows = items;
+    if (!els.reportRows) return;
+    if (!items.length) {
+      els.reportRows.innerHTML = '<tr><td colspan="5">No GRNs found for the selected filters.</td></tr>';
+      return;
+    }
+    els.reportRows.innerHTML = items.map((item) => `
+      <tr data-report-grn-id="${item.grn_id || 0}" title="Open ${escapeHtml(item.grn_no || 'GRN')} in workspace">
+        <td>${escapeHtml(item.grn_no || '-')}</td>
+        <td>${escapeHtml(item.supplier_name || '-')}</td>
+        <td>${escapeHtml(item.grn_date || '-')}</td>
+        <td>${escapeHtml(item.grn_type || '-')}</td>
+        <td>${escapeHtml(item.po_no || '-')}</td>
+      </tr>
+    `).join('');
+  };
+
+  const loadGrnSummaryReport = async () => {
+    try {
+      setChannelAlert('Loading GRN summary report...', 'loading', 'report');
+      const params = new URLSearchParams();
+      if (els.reportFromDate?.value) params.set('from_date', els.reportFromDate.value);
+      if (els.reportToDate?.value) params.set('to_date', els.reportToDate.value);
+      if (els.reportSupplier?.value.trim()) params.set('supplier_name', els.reportSupplier.value.trim());
+      const data = await apiJson(`/api/purchase/grn/report_summary?${params.toString()}`);
+      const rows = data.items || [];
+      renderReportRows(rows);
+      if (els.reportMeta) {
+        const rangeText = [formatReportDate(els.reportFromDate?.value, 'start'), formatReportDate(els.reportToDate?.value, 'today')].join(' to ');
+        els.reportMeta.textContent = `Showing ${Number(data.total_count || rows.length)} GRN(s) for ${rangeText}.`;
+      }
+      clearChannelLoading('report');
+      setChannelAlert(`GRN summary report updated with ${Number(data.total_count || rows.length)} row(s).`, 'success', 'report');
+    } catch (error) {
+      clearChannelLoading('report');
+      if (els.reportRows) els.reportRows.innerHTML = '<tr><td colspan="5">Unable to load the GRN summary report.</td></tr>';
+      if (els.reportMeta) els.reportMeta.textContent = 'Report could not be updated.';
+      setChannelAlert(error.message || 'Failed to fetch GRN summary report.', 'error', 'report');
+    }
+  };
+
+  const openGrnSummaryReportPdf = () => {
+    const params = new URLSearchParams();
+    if (els.reportFromDate?.value) params.set('from_date', els.reportFromDate.value);
+    if (els.reportToDate?.value) params.set('to_date', els.reportToDate.value);
+    if (els.reportSupplier?.value.trim()) params.set('supplier_name', els.reportSupplier.value.trim());
+    const query = params.toString();
+    const popup = window.open(`/api/purchase/grn/report_summary/pdf${query ? `?${query}` : ''}`, '_blank', 'noopener');
+    if (!popup) {
+      setChannelAlert('Popup blocked. Allow popups for this app to open the GRN summary PDF.', 'warn', 'report');
+      return;
+    }
+    setChannelAlert('Opening GRN summary report PDF.', 'success', 'report');
+  };
+
+  const clearReportFilters = () => {
+    if (els.reportFromDate) els.reportFromDate.value = '';
+    if (els.reportToDate) els.reportToDate.value = '';
+    if (els.reportSupplier) els.reportSupplier.value = '';
+    void loadGrnSummaryReport();
+  };
+
   const renderSearchPagination = (pagination = {}) => {
     const totalCount = Number(pagination.total_count || 0);
     const totalPages = Math.max(1, Number(pagination.total_pages || 1));
@@ -2047,6 +2297,7 @@
       setChannelAlert(`${data.grn_no} authorized and stock posted.`, 'success', 'auth');
       closeAuthModal();
       await loadExistingGrn(grnId);
+      if (isReportModalOpen()) await loadGrnSummaryReport();
       await searchGrns({ recentOnly: true, page: 1 });
     } catch (error) {
       clearChannelLoading('auth');
@@ -2185,6 +2436,7 @@
       );
       if (data.grn_id) {
         await loadExistingGrn(data.grn_id);
+        if (isReportModalOpen()) await loadGrnSummaryReport();
       }
     } catch (error) {
       clearChannelLoading('grn');
@@ -2240,6 +2492,7 @@
       if (defaultType) els.grnType.value = String(defaultType.id);
       grnState.currentStatusLabel = 'Draft';
       await toggleTypeUi();
+      setDefaultReportDates();
       syncPrimaryActionState();
       syncSummaryMeta({ grnNo: '', statusLabel: 'Draft' });
       clearChannelLoading('grn');
@@ -2311,8 +2564,23 @@
   els.saveBtn.addEventListener('click', saveGrn);
   els.newBtn.addEventListener('click', resetToNew);
   els.searchModalBtn?.addEventListener('click', () => { void openSearchModal(); });
+  els.reportModalBtn?.addEventListener('click', () => { void openReportModal(); });
   els.printBtn.addEventListener('click', openPrintPdf);
   els.loadPoBtn.addEventListener('click', loadPoItems);
+  els.refreshReportBtn?.addEventListener('click', () => { void loadGrnSummaryReport(); });
+  els.printReportBtn?.addEventListener('click', openGrnSummaryReportPdf);
+  els.clearReportBtn?.addEventListener('click', clearReportFilters);
+  els.reportSupplier?.addEventListener('keydown', (event) => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      void loadGrnSummaryReport();
+    }
+  });
+  els.reportRows?.addEventListener('click', (event) => {
+    const row = event.target.closest('[data-report-grn-id]');
+    const grnId = Number(row?.dataset?.reportGrnId || 0);
+    if (grnId > 0) void loadExistingGrn(grnId);
+  });
   els.searchBtn.addEventListener('click', () => searchGrns({ recentOnly: false, page: 1 }));
   els.recentBtn.addEventListener('click', () => searchGrns({ recentOnly: true, page: 1 }));
   els.searchPrevBtn.addEventListener('click', () => {
@@ -2333,6 +2601,12 @@
   els.searchModal?.addEventListener('click', (event) => {
     if (event.target?.dataset?.searchClose === '1') {
       closeSearchModal();
+    }
+  });
+  els.reportModalCloseBtn?.addEventListener('click', closeReportModal);
+  els.reportModal?.addEventListener('click', (event) => {
+    if (event.target?.dataset?.reportClose === '1') {
+      closeReportModal();
     }
   });
   els.authQueueBtn?.addEventListener('click', () => { void openAuthModal(); });
@@ -2416,6 +2690,10 @@
   window.addEventListener('keydown', (event) => {
     if (event.key === 'Escape' && els.authModal && !els.authModal.hidden) {
       closeAuthModal();
+    } else if (event.key === 'Escape' && els.reportModal && !els.reportModal.hidden) {
+      closeReportModal();
+    } else if (event.key === 'Escape' && els.searchModal && !els.searchModal.hidden) {
+      closeSearchModal();
     }
   });
   window.addEventListener('load', loadInit);

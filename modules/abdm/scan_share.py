@@ -8,6 +8,7 @@ from typing import Any
 
 from .client import AbdmClient
 from .config import AbdmSettings, load_settings
+from .hospital_units import list_hospital_units
 from .log_store import log_abdm_event
 from .m2 import AbdmM2Store
 from .token_store import _encrypt
@@ -18,31 +19,44 @@ class AbdmScanShareStore:
     def save_callback(self, payload: dict[str, Any], *, headers: dict[str, str] | None = None, path: str = "") -> dict[str, Any]:
         _ensure_tables()
         normalized = normalize_scan_share_payload(payload)
+        normalized.update(_resolve_hospital_unit(normalized))
         normalized["callback_path"] = path
         normalized["header_request_id"] = _header_request_id(headers or {})
         normalized["share_ref"] = str(uuid.uuid4())
         linking_token = extract_linking_token(payload)
         normalized["linking_token_stored"] = bool(linking_token)
         linking_token_cipher = _encrypt(linking_token) if linking_token else ""
-        linkage = _linkage_from_normalized(normalized)
-        linkage["linking_token_cipher"] = linking_token_cipher
 
         conn = _connect()
         try:
             cur = conn.cursor()
+            match = _find_existing_linkage(cur, normalized)
+            linkage = _linkage_from_normalized(normalized, match=match)
+            linkage["linking_token_cipher"] = linking_token_cipher
+            normalized.update(
+                {
+                    "status": linkage.get("status"),
+                    "uhid": linkage.get("uhid"),
+                    "mr": linkage.get("mr"),
+                    "patient_reference": linkage.get("patient_reference"),
+                    "care_context_reference": linkage.get("care_context_reference"),
+                }
+            )
             cur.execute(
                 """
                 INSERT INTO dbo.HID_ABDM_ScanShare_Profile (
-                    ShareRef, ReceivedAtUtc, CallbackPath, HeaderRequestId, RequestId, TransactionId,
+                    ShareRef, HospitalCode, HospitalName, ReceivedAtUtc, CallbackPath, HeaderRequestId, RequestId, TransactionId,
                     FacilityId, HipId, CounterId, PatientReference, CareContextReference,
                     Uhid, MrNo, AbhaAddress, AbhaNumber, PatientName, Mobile, Gender,
                     YearOfBirth, Status, LinkingTokenCipher, RawJson, NormalizedJson
                 )
                 OUTPUT inserted.Id
-                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+                VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
                 """,
                 (
                     normalized["share_ref"],
+                    _clip(normalized.get("hospital_code"), 20),
+                    _clip(normalized.get("hospital_name"), 120),
                     _utc_now_naive(),
                     _clip(path, 300),
                     _clip(normalized.get("header_request_id"), 100),
@@ -51,10 +65,10 @@ class AbdmScanShareStore:
                     _clip(normalized.get("facility_id"), 100),
                     _clip(normalized.get("hip_id"), 100),
                     _clip(normalized.get("counter_id"), 100),
-                    _clip(normalized.get("patient_reference"), 120),
-                    _clip(normalized.get("care_context_reference"), 120),
-                    _clip(normalized.get("uhid"), 80),
-                    _clip(normalized.get("mr"), 80),
+                    _clip(linkage.get("patient_reference"), 120),
+                    _clip(linkage.get("care_context_reference"), 120),
+                    _clip(linkage.get("uhid"), 80),
+                    _clip(linkage.get("mr"), 80),
                     _clip(normalized.get("abha_address"), 120),
                     _clip(normalized.get("abha_number"), 40),
                     _clip(normalized.get("name"), 180),
@@ -97,21 +111,28 @@ class AbdmScanShareStore:
         )
         return result
 
-    def list_profiles(self, limit: int = 50) -> list[dict[str, Any]]:
+    def list_profiles(self, limit: int = 50, *, hospital_code: str = "") -> list[dict[str, Any]]:
         _ensure_tables()
         conn = _connect()
         try:
             cur = conn.cursor()
+            where = ""
+            params: list[Any] = [max(1, min(200, int(limit or 50)))]
+            code = _clean(hospital_code).upper()
+            if code:
+                where = "WHERE ISNULL(HospitalCode, 'AHL') = ?"
+                params.append(code)
             cur.execute(
-                """
-                SELECT TOP (?) Id, ShareRef, ReceivedAtUtc, RequestId, TransactionId, FacilityId,
+                f"""
+                SELECT TOP (?) Id, ShareRef, HospitalCode, HospitalName, ReceivedAtUtc, RequestId, TransactionId, FacilityId,
                        HipId, CounterId, PatientReference, CareContextReference, Uhid, MrNo,
                        AbhaAddress, AbhaNumber, PatientName, Mobile, Gender, YearOfBirth, Status,
                        CASE WHEN ISNULL(LinkingTokenCipher, '') = '' THEN CAST(0 AS bit) ELSE CAST(1 AS bit) END AS LinkingTokenStored
                 FROM dbo.HID_ABDM_ScanShare_Profile
+                {where}
                 ORDER BY Id DESC
                 """,
-                (max(1, min(200, int(limit or 50))),),
+                tuple(params),
             )
             columns = [col[0] for col in cur.description]
             rows = []
@@ -139,12 +160,14 @@ class AbdmScanShareStore:
             normalized = _json_or_dict(row.get("NormalizedJson"))
             if not isinstance(normalized, dict):
                 normalized = {}
+            normalized.update(_resolve_hospital_unit(normalized))
             merged = dict(normalized)
-            for key in ("uhid", "mr", "patient_reference", "care_context_reference", "care_context_display", "hi_type"):
+            for key in ("uhid", "mr", "patient_reference", "care_context_reference", "care_context_display", "hi_type", "hospital_code", "hospital_name", "facility_id", "hip_id"):
                 value = _clean(payload.get(key) or payload.get(_camel(key)))
                 if value:
                     merged[key] = value
-            linkage = _linkage_from_normalized(merged)
+            merged.update(_resolve_hospital_unit(merged))
+            linkage = _linkage_from_normalized(merged, force_linked=True)
             linkage["scan_share_id"] = int(row["Id"])
             linkage["share_ref"] = row["ShareRef"]
             linkage["linking_token_cipher"] = row.get("LinkingTokenCipher") or ""
@@ -152,11 +175,16 @@ class AbdmScanShareStore:
             cur.execute(
                 """
                 UPDATE dbo.HID_ABDM_ScanShare_Profile
-                   SET Uhid = ?, MrNo = ?, PatientReference = ?, CareContextReference = ?,
+                   SET HospitalCode = ?, HospitalName = ?, FacilityId = ?, HipId = ?,
+                       Uhid = ?, MrNo = ?, PatientReference = ?, CareContextReference = ?,
                        Status = ?, NormalizedJson = ?
                  WHERE Id = ?
                 """,
                 (
+                    _clip(merged.get("hospital_code"), 20),
+                    _clip(merged.get("hospital_name"), 120),
+                    _clip(merged.get("facility_id"), 100),
+                    _clip(merged.get("hip_id"), 100),
                     _clip(linkage.get("uhid"), 80),
                     _clip(linkage.get("mr"), 80),
                     _clip(linkage.get("patient_reference"), 120),
@@ -312,6 +340,50 @@ def extract_linking_token(payload: dict[str, Any]) -> str:
     return _clean(_find_any(payload if isinstance(payload, dict) else {}, "linkingToken", "linking_token", "linkToken", "link_token"))
 
 
+def _resolve_hospital_unit(normalized: dict[str, Any]) -> dict[str, str]:
+    facility_id = _clean(normalized.get("facility_id"))
+    hip_id = _clean(normalized.get("hip_id")) or facility_id
+    hospital_code = _clean(normalized.get("hospital_code")).upper()
+    units = list_hospital_units()
+    matched = None
+    if hospital_code:
+        matched = next((unit for unit in units if _clean(unit.get("code")).upper() == hospital_code), None)
+    if not matched and (facility_id or hip_id):
+        incoming_ids = {facility_id.lower(), hip_id.lower()} - {""}
+        matched = next(
+            (
+                unit
+                for unit in units
+                if (_clean(unit.get("facility_id")).lower() and _clean(unit.get("facility_id")).lower() in incoming_ids)
+                or (_clean(unit.get("hip_id")).lower() and _clean(unit.get("hip_id")).lower() in incoming_ids)
+            ),
+            None,
+        )
+    if not matched:
+        ahl = next((unit for unit in units if _clean(unit.get("code")).upper() == "AHL"), None)
+        ahl_ids = {_clean((ahl or {}).get("facility_id")).lower(), _clean((ahl or {}).get("hip_id")).lower()}
+        incoming_ids = {facility_id.lower(), hip_id.lower()} - {""}
+        if incoming_ids and not incoming_ids.intersection(ahl_ids):
+            matched = {
+                "code": "UNMAPPED",
+                "name": "Unmapped ABDM Facility",
+                "facility_id": facility_id,
+                "hip_id": hip_id,
+            }
+        else:
+            matched = ahl
+    if not matched:
+        matched = {"code": "AHL", "name": "Asarfi Hospital Limited", "facility_id": facility_id, "hip_id": hip_id}
+    resolved_facility = facility_id or _clean(matched.get("facility_id"))
+    resolved_hip = hip_id or _clean(matched.get("hip_id")) or resolved_facility
+    return {
+        "hospital_code": _clean(matched.get("code")).upper() or "AHL",
+        "hospital_name": _clean(matched.get("name")) or _clean(matched.get("code")).upper() or "AHL",
+        "facility_id": resolved_facility,
+        "hip_id": resolved_hip,
+    }
+
+
 def _ensure_tables() -> None:
     conn = _connect()
     try:
@@ -327,6 +399,8 @@ def _ensure_tables() -> None:
                 CREATE TABLE dbo.HID_ABDM_ScanShare_Profile (
                     Id BIGINT IDENTITY(1,1) NOT NULL PRIMARY KEY,
                     ShareRef NVARCHAR(64) NOT NULL,
+                    HospitalCode NVARCHAR(20) NULL,
+                    HospitalName NVARCHAR(120) NULL,
                     ReceivedAtUtc DATETIME2 NOT NULL,
                     CallbackPath NVARCHAR(300) NULL,
                     HeaderRequestId NVARCHAR(100) NULL,
@@ -370,6 +444,10 @@ def _ensure_tables() -> None:
                     ScanShareId BIGINT NULL,
                     ShareRef NVARCHAR(64) NULL,
                     Source NVARCHAR(40) NOT NULL,
+                    HospitalCode NVARCHAR(20) NULL,
+                    HospitalName NVARCHAR(120) NULL,
+                    FacilityId NVARCHAR(100) NULL,
+                    HipId NVARCHAR(100) NULL,
                     Uhid NVARCHAR(80) NULL,
                     MrNo NVARCHAR(80) NULL,
                     PatientReference NVARCHAR(120) NULL,
@@ -393,8 +471,39 @@ def _ensure_tables() -> None:
             IF COL_LENGTH('dbo.HID_ABDM_ScanShare_Profile', 'LinkingTokenCipher') IS NULL
                 ALTER TABLE dbo.HID_ABDM_ScanShare_Profile ADD LinkingTokenCipher NVARCHAR(MAX) NULL
 
+            IF COL_LENGTH('dbo.HID_ABDM_ScanShare_Profile', 'HospitalCode') IS NULL
+                ALTER TABLE dbo.HID_ABDM_ScanShare_Profile ADD HospitalCode NVARCHAR(20) NULL
+
+            IF COL_LENGTH('dbo.HID_ABDM_ScanShare_Profile', 'HospitalName') IS NULL
+                ALTER TABLE dbo.HID_ABDM_ScanShare_Profile ADD HospitalName NVARCHAR(120) NULL
+
             IF COL_LENGTH('dbo.HID_ABDM_Patient_Linkage', 'LinkingTokenCipher') IS NULL
                 ALTER TABLE dbo.HID_ABDM_Patient_Linkage ADD LinkingTokenCipher NVARCHAR(MAX) NULL
+
+            IF COL_LENGTH('dbo.HID_ABDM_Patient_Linkage', 'HospitalCode') IS NULL
+                ALTER TABLE dbo.HID_ABDM_Patient_Linkage ADD HospitalCode NVARCHAR(20) NULL
+
+            IF COL_LENGTH('dbo.HID_ABDM_Patient_Linkage', 'HospitalName') IS NULL
+                ALTER TABLE dbo.HID_ABDM_Patient_Linkage ADD HospitalName NVARCHAR(120) NULL
+
+            IF COL_LENGTH('dbo.HID_ABDM_Patient_Linkage', 'FacilityId') IS NULL
+                ALTER TABLE dbo.HID_ABDM_Patient_Linkage ADD FacilityId NVARCHAR(100) NULL
+
+            IF COL_LENGTH('dbo.HID_ABDM_Patient_Linkage', 'HipId') IS NULL
+                ALTER TABLE dbo.HID_ABDM_Patient_Linkage ADD HipId NVARCHAR(100) NULL
+
+            EXEC('UPDATE dbo.HID_ABDM_ScanShare_Profile
+                     SET HospitalCode = ''AHL'',
+                         HospitalName = COALESCE(NULLIF(HospitalName, ''''), ''Asarfi Hospital Limited'')
+                   WHERE (HospitalCode IS NULL OR HospitalCode = '''')
+                     AND (FacilityId = ''IN2010000816'' OR HipId = ''IN2010000816'')')
+
+            EXEC('UPDATE dbo.HID_ABDM_Patient_Linkage
+                     SET HospitalCode = ''AHL'',
+                         HospitalName = COALESCE(NULLIF(HospitalName, ''''), ''Asarfi Hospital Limited''),
+                         FacilityId = COALESCE(NULLIF(FacilityId, ''''), ''IN2010000816''),
+                         HipId = COALESCE(NULLIF(HipId, ''''), ''IN2010000816'')
+                   WHERE HospitalCode IS NULL OR HospitalCode = ''''')
             """
         )
         conn.commit()
@@ -403,18 +512,23 @@ def _ensure_tables() -> None:
 
 
 def _upsert_linkage(cur, linkage: dict[str, Any]) -> None:
+    hospital_code = _clean(linkage.get("hospital_code")) or "AHL"
     cur.execute(
         """
         SELECT TOP 1 Id
         FROM dbo.HID_ABDM_Patient_Linkage
         WHERE
-            (AbhaAddress IS NOT NULL AND AbhaAddress <> '' AND LOWER(AbhaAddress) = LOWER(?))
-            OR (AbhaNumber IS NOT NULL AND AbhaNumber <> '' AND REPLACE(AbhaNumber, '-', '') = ?)
-            OR (Uhid IS NOT NULL AND Uhid <> '' AND Uhid = ?)
-            OR (MrNo IS NOT NULL AND MrNo <> '' AND MrNo = ?)
+            ISNULL(HospitalCode, 'AHL') = ?
+            AND (
+                (AbhaAddress IS NOT NULL AND AbhaAddress <> '' AND LOWER(AbhaAddress) = LOWER(?))
+                OR (AbhaNumber IS NOT NULL AND AbhaNumber <> '' AND REPLACE(AbhaNumber, '-', '') = ?)
+                OR (Uhid IS NOT NULL AND Uhid <> '' AND Uhid = ?)
+                OR (MrNo IS NOT NULL AND MrNo <> '' AND MrNo = ?)
+            )
         ORDER BY UpdatedAtUtc DESC
         """,
         (
+            hospital_code,
             linkage.get("abha_address") or "__no_abha_address__",
             _digits_only(linkage.get("abha_number")) or "__no_abha_number__",
             linkage.get("uhid") or "__no_uhid__",
@@ -426,7 +540,8 @@ def _upsert_linkage(cur, linkage: dict[str, Any]) -> None:
         cur.execute(
             """
             UPDATE dbo.HID_ABDM_Patient_Linkage
-               SET ScanShareId = ?, ShareRef = ?, Uhid = ?, MrNo = ?, PatientReference = ?,
+               SET ScanShareId = ?, ShareRef = ?, HospitalCode = ?, HospitalName = ?,
+                   FacilityId = ?, HipId = ?, Uhid = ?, MrNo = ?, PatientReference = ?,
                    CareContextReference = ?, AbhaAddress = ?, AbhaNumber = ?, PatientName = ?,
                    Mobile = ?, Status = ?, LinkingTokenCipher = COALESCE(NULLIF(?, ''), LinkingTokenCipher),
                    RawJson = ?, UpdatedAtUtc = ?
@@ -435,6 +550,10 @@ def _upsert_linkage(cur, linkage: dict[str, Any]) -> None:
             (
                 linkage.get("scan_share_id"),
                 _clip(linkage.get("share_ref"), 64),
+                _clip(hospital_code, 20),
+                _clip(linkage.get("hospital_name"), 120),
+                _clip(linkage.get("facility_id"), 100),
+                _clip(linkage.get("hip_id"), 100),
                 _clip(linkage.get("uhid"), 80),
                 _clip(linkage.get("mr"), 80),
                 _clip(linkage.get("patient_reference"), 120),
@@ -454,17 +573,22 @@ def _upsert_linkage(cur, linkage: dict[str, Any]) -> None:
     cur.execute(
         """
         INSERT INTO dbo.HID_ABDM_Patient_Linkage (
-            LinkRef, ScanShareId, ShareRef, Source, Uhid, MrNo, PatientReference,
+            LinkRef, ScanShareId, ShareRef, Source, HospitalCode, HospitalName,
+            FacilityId, HipId, Uhid, MrNo, PatientReference,
             CareContextReference, AbhaAddress, AbhaNumber, PatientName, Mobile,
             Status, LinkingTokenCipher, RawJson, CreatedAtUtc, UpdatedAtUtc
         )
-        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+        VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
         """,
         (
             str(uuid.uuid4()),
             linkage.get("scan_share_id"),
             _clip(linkage.get("share_ref"), 64),
             "scan_share",
+            _clip(hospital_code, 20),
+            _clip(linkage.get("hospital_name"), 120),
+            _clip(linkage.get("facility_id"), 100),
+            _clip(linkage.get("hip_id"), 100),
             _clip(linkage.get("uhid"), 80),
             _clip(linkage.get("mr"), 80),
             _clip(linkage.get("patient_reference"), 120),
@@ -492,18 +616,75 @@ def _fetch_scan_row(cur, *, scan_share_id: int | None = None, share_ref: str = "
     return dict(zip(columns, row)) if row else None
 
 
-def _linkage_from_normalized(normalized: dict[str, Any]) -> dict[str, Any]:
-    status = "linked" if normalized.get("uhid") or normalized.get("mr") else "pending_registration"
+def _find_existing_linkage(cur, normalized: dict[str, Any]) -> dict[str, Any] | None:
+    hospital_code = _clean(normalized.get("hospital_code")) or "AHL"
+    abha_address = _clean(normalized.get("abha_address"))
+    abha_number = _digits_only(normalized.get("abha_number"))
+    mobile = _digits_only(normalized.get("mobile"))
+    clauses = ["ISNULL(HospitalCode, 'AHL') = ?"]
+    params: list[Any] = [hospital_code]
+    match_parts = []
+    if abha_address:
+        match_parts.append("(AbhaAddress IS NOT NULL AND AbhaAddress <> '' AND LOWER(AbhaAddress) = LOWER(?))")
+        params.append(abha_address)
+    if abha_number:
+        match_parts.append("(AbhaNumber IS NOT NULL AND AbhaNumber <> '' AND REPLACE(AbhaNumber, '-', '') = ?)")
+        params.append(abha_number)
+    if mobile:
+        match_parts.append("(Mobile IS NOT NULL AND Mobile <> '' AND Mobile = ?)")
+        params.append(mobile)
+    if not match_parts:
+        return None
+    clauses.append("(" + " OR ".join(match_parts) + ")")
+    cur.execute(
+        f"""
+        SELECT TOP 1 *
+        FROM dbo.HID_ABDM_Patient_Linkage
+        WHERE {' AND '.join(clauses)}
+        ORDER BY
+            CASE WHEN (Uhid IS NOT NULL AND Uhid <> '') OR (MrNo IS NOT NULL AND MrNo <> '') THEN 0 ELSE 1 END,
+            UpdatedAtUtc DESC
+        """,
+        tuple(params),
+    )
+    row = cur.fetchone()
+    if not row:
+        return None
+    columns = [col[0] for col in cur.description]
+    return dict(zip(columns, row))
+
+
+def _linkage_from_normalized(normalized: dict[str, Any], *, match: dict[str, Any] | None = None, force_linked: bool = False) -> dict[str, Any]:
+    matched_uhid = _clean((match or {}).get("Uhid"))
+    matched_mr = _clean((match or {}).get("MrNo"))
+    matched_patient_ref = _clean((match or {}).get("PatientReference"))
+    matched_cc_ref = _clean((match or {}).get("CareContextReference"))
+    has_local_id = bool(normalized.get("uhid") or normalized.get("mr"))
+    if _clean(normalized.get("hospital_code")).upper() == "UNMAPPED":
+        status = "unmapped_facility"
+    elif force_linked or has_local_id:
+        status = "linked"
+    elif matched_uhid or matched_mr:
+        status = "returning_matched"
+    elif match:
+        status = "duplicate_needs_review"
+    else:
+        status = "new_pending_registration"
     return {
         "status": status,
-        "uhid": normalized.get("uhid") or "",
-        "mr": normalized.get("mr") or normalized.get("uhid") or "",
-        "patient_reference": normalized.get("patient_reference") or "",
-        "care_context_reference": normalized.get("care_context_reference") or "",
+        "hospital_code": normalized.get("hospital_code") or "AHL",
+        "hospital_name": normalized.get("hospital_name") or "",
+        "facility_id": normalized.get("facility_id") or "",
+        "hip_id": normalized.get("hip_id") or "",
+        "uhid": normalized.get("uhid") or matched_uhid or "",
+        "mr": normalized.get("mr") or normalized.get("uhid") or matched_mr or matched_uhid or "",
+        "patient_reference": normalized.get("patient_reference") or matched_patient_ref or "",
+        "care_context_reference": normalized.get("care_context_reference") or matched_cc_ref or "",
         "abha_address": normalized.get("abha_address") or "",
         "abha_number": normalized.get("abha_number") or "",
         "name": normalized.get("name") or "",
         "mobile": normalized.get("mobile") or "",
+        "match_ref": (match or {}).get("LinkRef") or "",
     }
 
 

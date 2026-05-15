@@ -603,6 +603,24 @@
         <tr><td colspan="7">Loading...</td></tr>
       </tbody>
     </table>
+
+    <table class="report-table" id="dischargeDateChangeTable" style="margin-top:8px; display:none;">
+      <thead>
+        <tr class="alt-section">
+          <th colspan="7">* Discharge date changed after night snapshot</th>
+        </tr>
+        <tr class="alt-head">
+          <th style="width:60px;">Sl.</th>
+          <th>Patient Name</th>
+          <th style="width:150px;">RegNo / Visit No</th>
+          <th style="width:110px;">Unit Bucket</th>
+          <th style="width:130px;">Date changed from</th>
+          <th style="width:130px;">Date changed to</th>
+          <th style="width:180px;">Doctor</th>
+        </tr>
+      </thead>
+      <tbody id="dischargeDateChangeBody"></tbody>
+    </table>
   </div>
 </section>
 
@@ -628,6 +646,8 @@
   const referralBody = document.getElementById('referralBody');
   const daycareBody = document.getElementById('daycareBody');
   const nonCuredDischargeBody = document.getElementById('nonCuredDischargeBody');
+  const dischargeDateChangeTable = document.getElementById('dischargeDateChangeTable');
+  const dischargeDateChangeBody = document.getElementById('dischargeDateChangeBody');
   const addDoctorwiseRowBtn = document.getElementById('addDoctorwiseRowBtn');
   const addOccupancyRowBtn = document.getElementById('addOccupancyRowBtn');
   const addNightVisitRowBtn = document.getElementById('addNightVisitRowBtn');
@@ -905,6 +925,55 @@
         totalCell.textContent = (total || hasAnyInput) ? total : '';
       }
     });
+  }
+
+  function countNonCuredDetailRows() {
+    if (!nonCuredDischargeBody) return { asarfi: 0, cardiac: 0, total: 0 };
+    const counts = { asarfi: 0, cardiac: 0, total: 0 };
+    nonCuredDischargeBody.querySelectorAll('tr[data-non-cured-row]').forEach((row) => {
+      const hasValue = [
+        row.querySelector('[data-non-cured="patient_name"]')?.textContent,
+        row.querySelector('[data-non-cured="admission_time"]')?.textContent,
+        row.querySelector('[data-non-cured="discharge_time"]')?.textContent,
+        row.querySelector('[data-non-cured="doctor_name"]')?.textContent,
+        row.querySelector('[data-non-cured="reason"]')?.textContent,
+        row.querySelector('[data-non-cured="remarks"]')?.value
+      ].some((value) => String(value || '').trim());
+      if (!hasValue) return;
+      const bucket = String(row.dataset.unitBucket || '').trim().toUpperCase();
+      if (bucket === 'CARDIAC') {
+        counts.cardiac += 1;
+      } else {
+        counts.asarfi += 1;
+      }
+      counts.total += 1;
+    });
+    return counts;
+  }
+
+  function syncLamaSummaryFromDetails({ onlyWhenEmpty = true } = {}) {
+    if (!summaryBody) return;
+    const lamaRow = summaryBody.querySelector('tr[data-manual="lama"]');
+    if (!lamaRow) return;
+    const detailCounts = countNonCuredDetailRows();
+    const asarfiInput = lamaRow.querySelector('input[data-side="asarfi"]');
+    const cardiacInput = lamaRow.querySelector('input[data-side="cardiac"]');
+    if (!asarfiInput || !cardiacInput) return;
+
+    if (onlyWhenEmpty) {
+      const currentAsarfi = parseCountInput(asarfiInput.value).value;
+      const currentCardiac = parseCountInput(cardiacInput.value).value;
+      if (currentAsarfi || currentCardiac) return;
+    }
+
+    if (isSegmentedUnit(morningUnit?.value || currentPayload?.unit || '')) {
+      asarfiInput.value = String(detailCounts.asarfi || 0);
+      cardiacInput.value = String(detailCounts.cardiac || 0);
+    } else {
+      asarfiInput.value = String(detailCounts.total || 0);
+      cardiacInput.value = '0';
+    }
+    updateManualTotals();
   }
 
   function updateProcedureTotals() {
@@ -1366,7 +1435,7 @@
     targetBody.innerHTML = data.map((row, idx) => {
       const sl = row.sl ?? (idx + 1);
       return `
-        <tr data-non-cured-row>
+        <tr data-non-cured-row data-unit-bucket="${fmt(row.unit_bucket)}">
           <td data-non-cured="sl">${sl}</td>
           <td class="left" data-non-cured="patient_name">${fmt(row.patient_name)}</td>
           <td data-non-cured="admission_time">${fmt(row.admission_time)}</td>
@@ -1385,6 +1454,33 @@
 
   function renderNonCuredDischarges(rows) {
     renderDischargeDetailRows(nonCuredDischargeBody, rows);
+    syncLamaSummaryFromDetails({ onlyWhenEmpty: true });
+  }
+
+  function renderDischargeDateChanges(rows) {
+    if (!dischargeDateChangeTable || !dischargeDateChangeBody) return;
+    const data = filterRows(rows, ["patient_name", "reg_no", "visit_no", "unit_bucket", "date_changed_from", "date_changed_to", "doctor_name"]);
+    if (!data.length) {
+      dischargeDateChangeTable.style.display = 'none';
+      dischargeDateChangeBody.innerHTML = '';
+      return;
+    }
+    dischargeDateChangeTable.style.display = '';
+    dischargeDateChangeBody.innerHTML = data.map((row, idx) => {
+      const sl = row.sl ?? (idx + 1);
+      const regOrVisit = row.reg_no || row.visit_no || '';
+      return `
+        <tr>
+          <td>${sl}</td>
+          <td class="left">${fmt(row.patient_name)}</td>
+          <td>${fmt(regOrVisit)}</td>
+          <td>${fmt(row.unit_bucket)}</td>
+          <td>${fmt(row.date_changed_from)}</td>
+          <td>${fmt(row.date_changed_to)}</td>
+          <td class="left">${fmt(row.doctor_name)}</td>
+        </tr>
+      `;
+    }).join('');
   }
 
   async function loadMorningReport(mode) {
@@ -1430,6 +1526,7 @@
       renderNonMedical(data.non_medical_rows || []);
       renderReferral(data.referral_rows || []);
       renderNonCuredDischarges(data.non_cured_discharge_rows || []);
+      renderDischargeDateChanges(data.discharge_date_change_rows || []);
       resetPrefillTracking();
       setPrefillTracking(data);
       if (data.source === 'snapshot') {
@@ -1453,6 +1550,7 @@
       if (nonMedicalBody) nonMedicalBody.innerHTML = `<tr><td colspan="5">Error loading data.</td></tr>`;
       if (referralBody) referralBody.innerHTML = `<tr><td colspan="7">Error loading data.</td></tr>`;
       if (nonCuredDischargeBody) nonCuredDischargeBody.innerHTML = `<tr><td colspan="7">Error loading data.</td></tr>`;
+      renderDischargeDateChanges([]);
       setStatus('Failed to load report.', true);
     }
   }
@@ -1701,7 +1799,8 @@
         discharge_time: dischargeTime.trim(),
         doctor_name: doctorName.trim(),
         reason: reason.trim(),
-        remarks
+        remarks,
+        unit_bucket: row.dataset.unitBucket || ''
       });
     });
     return rows;

@@ -2131,6 +2131,7 @@
         corp: normalizeLabel(row.CorpType || row.PatientSubType) || 'Unknown',
         dept: normalizeLabel(cleanDeptName(row.Dept || '')) || 'Unknown',
         doctor: normalizeLabel(row.Consultant) || 'Unknown',
+        patientInTime: normalizeLabel(row['Patient In Time'] || row.PatientInTime || row.Patient_In_Time || ''),
         visitDate: normalizeLabel(row.VisitDate) || 'Unknown',
         ts: parseVisitTimestamp(row.VisitDate)
       };
@@ -2142,6 +2143,7 @@
         entry.corp,
         entry.dept,
         entry.doctor,
+        entry.patientInTime,
         entry.visitDate
       ].join(' ').toLowerCase();
       out.push(entry);
@@ -2170,6 +2172,8 @@
       `<span class="vt-admissions-value">${escapeHtml(item.dept)}</span></div>` +
       `<div class="vt-admissions-cell"><span class="vt-admissions-label">Doctor</span>` +
       `<span class="vt-admissions-value">${escapeHtml(item.doctor)}</span></div>` +
+      `<div class="vt-admissions-cell"><span class="vt-admissions-label">Patient In Time</span>` +
+      `<span class="vt-admissions-value">${escapeHtml(item.patientInTime || '-')}</span></div>` +
       `<div class="vt-admissions-cell"><span class="vt-admissions-label">Visit Date</span>` +
       `<span class="vt-admissions-value">${escapeHtml(item.visitDate)}</span></div>` +
       `</div>`

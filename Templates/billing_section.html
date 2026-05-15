@@ -4167,6 +4167,7 @@
           }
           return raw;
         };
+        const getCorpType = (row)=> cleanText(row.PatientSubType || row.Patient_SubType || row["Patient SubType"] || row.CorpType || row["Corp Type"]);
         const isCashlessRow = (row)=>{
           const pay = cleanText(row.PayType || row.paytype || row.PatientCategory).toLowerCase();
           const mode = cleanText(row.PModeName).toLowerCase();
@@ -4274,6 +4275,7 @@
           const billDate = fmtDateCell(r.BillDate);
           const billNet = fmtNumberCell(r.NetAmount || r.BILLING_MST_NETAMOUNT || r.NETAMOUNT);
           const tov = getVisitType(r);
+          const corpType = getCorpType(r);
           const rowClasses = [];
           if(isCashlessRow(r)) rowClasses.push('row-cashless');
           if(canteenReceipt) rowClasses.push('row-canteen');
@@ -4293,6 +4295,7 @@
               <td>${reg}</td>
               <td>${cleanText(r.VisitNo)}</td>
               <td>${getPatientType(r)}</td>
+              <td>${corpType}</td>
               <td>${tov}</td>
               <td>${cleanText(r.Admission_Dt)}</td>
               <td>${user}</td>
@@ -4324,7 +4327,7 @@
             </section>
           </div>
           <div class="table-wrap-inner" style="overflow-x:auto;">
-            <table style="min-width:1400px;">
+            <table style="min-width:1480px;">
               <thead>
                 <tr>
                   <th>Receipt No</th>
@@ -4341,6 +4344,7 @@
                   <th>Reg No</th>
                   <th>Visit No</th>
                   <th>Patient Type</th>
+                  <th>Corp Type</th>
                   <th>Visit</th>
                   <th>Admission Date</th>
                   <th>User</th>
@@ -4384,7 +4388,7 @@
         if(q){
           const fields = [
             'Amount','Receipt_No','VisitNo','Receipt_Time','Receipt_Date',
-            'PModeName','BillDate','UserName','User','PatientTypes','PatientType','Patient_Types','Patient Type','Patient','PatientName','Patientname',
+            'PModeName','BillDate','UserName','User','PatientTypes','PatientType','Patient_Types','Patient Type','PatientSubType','Patient_SubType','Patient SubType','CorpType','Corp Type','Patient','PatientName','Patientname',
             'ReceiptSource','Source','CanteenBillCreatedBy','DepartmentName','Note','BillNo','RegNo'
           ];
           working = working.filter(r=>{

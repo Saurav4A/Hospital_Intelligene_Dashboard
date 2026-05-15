@@ -1,0 +1,123 @@
+﻿<!doctype html>
+<html lang="en">
+<head>
+  <meta charset="utf-8" />
+  <title>Attendance Editor - Upload CSV | Asarfi Hospital Ltd</title>
+  <link rel="icon" href="{{ url_for('static', filename='logo/asarfi.png') }}">
+  <meta name="viewport" content="width=device-width,initial-scale=1" />
+  <style>
+    :root{
+      --bg:#f4f7fb;--ink:#0f172a;--muted:#607d8b;--brand:#3949ab;--brand2:#5c6bc0;
+      --card:#ffffff;--border:#e5e7eb;--shadow:0 10px 24px rgba(0,0,0,.08);
+      --radius:16px;
+    }
+    *{box-sizing:border-box}
+    html,body{height:100%}
+    body{
+      margin:0;font-family:"Segoe UI",system-ui,-apple-system,sans-serif;color:var(--ink);
+      background:
+        radial-gradient(1200px 600px at -10% -10%, #e3f2fd 0, transparent 40%),
+        radial-gradient(1400px 700px at 110% -10%, #e3f2fd 0, transparent 35%),
+        var(--bg);
+    }
+
+    .shell{ max-width:980px; margin:28px auto 26px; padding:0 16px; }
+    .att-wrap{
+      background: rgba(255,255,255,.9);
+      border: 1px solid rgba(0,0,0,.06);
+      border-radius: 16px;
+      box-shadow: var(--shadow);
+      padding: 26px 28px;
+      backdrop-filter: blur(10px) saturate(160%);
+    }
+    .att-h1{ margin: 0 0 4px; color:#1e3a8a; font-size: 22px; font-weight: 800; letter-spacing:.2px; }
+    .att-sub{ margin:0 0 16px; color:#607d8b; font-size:14px; }
+    .att-row{ display:flex; align-items:center; gap:12px; flex-wrap:wrap; margin-top:6px; }
+    input[type=file]{ padding:10px 12px; border:1px solid #e2e8f0; border-radius:10px; background:#fff; }
+    .btn{
+      display:inline-flex;gap:8px;align-items:center;justify-content:center;
+      padding:10px 14px;border-radius:999px;border:1px solid #cbd5e1;font-weight:700;cursor:pointer;transition:.2s;
+      background:#fff; text-decoration:none; line-height:1;
+    }
+    .btn:hover{ transform: translateY(-1px); }
+    .btn-blue{ background:linear-gradient(90deg,#3949ab,#5c6bc0); color:#fff; border:none; box-shadow:0 8px 18px rgba(63,81,181,.22) }
+    .hint{ margin-top:14px; font-size:13px; color:#546e7a }
+    .err{ color:#b91c1c; margin:6px 0 0; }
+    footer{ margin:36px 0 28px; text-align:center; color:#64748b; font-size:13px; }
+  </style>
+
+  <!-- small page fade to match dashboard -->
+  <style>
+    @media (prefers-reduced-motion: reduce){
+      html.page-fade-in, html.page-fade-out { animation: none !important; }
+    }
+    @keyframes pageFadeIn { from { opacity: 0 } to { opacity: 1 } }
+    @keyframes pageFadeOut{ from { opacity: 1 } to { opacity: 0 } }
+    html.page-fade-in  { animation: pageFadeIn .28s ease both; }
+    html.page-fade-out { animation: pageFadeOut .18s ease both; }
+    body { transition: filter .12s ease; }
+    html.page-fade-out body { filter: saturate(.96) brightness(.99); }
+  </style>
+</head>
+<body>
+    {% include "hr_docgen/_fab_nav.html" %}
+
+  <div class="shell">
+    {% with messages = get_flashed_messages(with_categories=true) %}
+      {% if messages %}
+        <div style="display:grid;gap:8px;margin:12px 0">
+          {% for category, message in messages %}
+            <div style="padding:10px 12px;border-radius:10px;border:1px solid #e5e7eb;background:#fff;font-weight:600">{{ message }}</div>
+          {% endfor %}
+        </div>
+      {% endif %}
+    {% endwith %}
+
+    <div class="att-wrap">
+      <h2 class="att-h1">Attendance Editor - Upload CSV</h2>
+      <p class="att-sub">Upload the monthly attendance CSV to edit daily codes and auto-calculate Present, Leave, Weekly Off, Payables.</p>
+
+      {% if error %}<div class="err">{{ error }}</div>{% endif %}
+
+      <form method="post" enctype="multipart/form-data">
+        <div class="att-row">
+          <input type="file" name="file" accept=".csv" required />
+          <button class="btn btn-blue" type="submit">
+            Upload & Open
+            <svg viewBox="0 0 24 24" width="18" height="18" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round"><path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path></svg>
+          </button>
+        </div>
+      </form>
+
+      <p class="hint">
+        <b>Tips:</b>
+        <br/>- The date columns in the header row should be actual dates (e.g., <code>2025-10-01</code> or <code>01-10-2025</code>) for best weekday detection.
+        <br/>- To lock a regular weekly off day for a staff, add a column <code>RegularWO</code> with values Mon/Tue/Wed/Thu/Fri/Sat/Sun or "(Auto)".
+      </p>
+    </div>
+  </div>
+
+  <footer>&copy; 2025 Asarfi Hospital Ltd. All Rights Reserved.</footer>
+
+  <script>
+    (function () {
+      document.documentElement.classList.add('page-fade-in');
+      function isSameOrigin(url) { try { return new URL(url, location.href).origin === location.origin; } catch { return false; } }
+      document.addEventListener('click', function (e) {
+        const a = e.target.closest('a');
+        if (!a) return;
+        if (a.target === '_blank' || a.hasAttribute('download') || a.getAttribute('href')?.startsWith('#')) return;
+        const href = a.getAttribute('href');
+        if (!href || !isSameOrigin(href)) return;
+        e.preventDefault();
+        document.documentElement.classList.remove('page-fade-in');
+        document.documentElement.classList.add('page-fade-out');
+        setTimeout(() => { location.href = href; }, 160);
+      }, { capture: true });
+    })();
+  </script>
+</body>
+</html>
+
+
+

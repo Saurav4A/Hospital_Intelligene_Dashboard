@@ -52,7 +52,9 @@ from modules.mod_reports_night_routes import register_mod_reports_night_routes
 from modules.asset_management import create_asset_management_blueprint, run_asset_breakdown_reminder_job, run_asset_coverage_reminder_job
 from modules.feedback_complaint import create_feedback_complaint_blueprint, run_feedback_escalation_job
 from modules.govt_scheme_tracker import create_govt_scheme_tracker_blueprint
+from modules.hr_docgen import create_hr_docgen_blueprint
 from modules.abdm import register_abdm_routes
+from modules.patient_diagnostic_intelligence import create_patient_diagnostic_blueprint
 try:
     from modules.notification_routes import NOTIFICATIONS_FILE, USER_NOTIFICATIONS_FILE
 except Exception:
@@ -179,6 +181,58 @@ def _start_booking_payment_worker_if_enabled():
         except Exception as e:
             BOOKING_PAYMENT_WORKER_DISABLED_REASON = str(e)
             print(f"BookingPayment mail worker disabled: {BOOKING_PAYMENT_WORKER_DISABLED_REASON}")
+
+
+RADIOLOGY_WEBHOOK_WORKER_THREAD = None
+RADIOLOGY_WEBHOOK_WORKER_ENABLED = bool(getattr(config, "RADIOLOGY_WEBHOOK_ENABLED", True))
+RADIOLOGY_WEBHOOK_WORKER_INIT_LOCK = Lock()
+RADIOLOGY_WEBHOOK_WORKER_INIT_ATTEMPTED = False
+RADIOLOGY_WEBHOOK_WORKER_DISABLED_REASON = ""
+
+
+def _start_radiology_webhook_worker_if_enabled():
+    """
+    Start the RadiologyOrderList -> RPS webhook worker in the HID process.
+    Uses config.RADIOLOGY_WEBHOOK_POLL_SECONDS for polling frequency.
+    """
+    global RADIOLOGY_WEBHOOK_WORKER_THREAD, RADIOLOGY_WEBHOOK_WORKER_INIT_ATTEMPTED, RADIOLOGY_WEBHOOK_WORKER_DISABLED_REASON
+    if not RADIOLOGY_WEBHOOK_WORKER_ENABLED:
+        return
+    if RADIOLOGY_WEBHOOK_WORKER_DISABLED_REASON:
+        return
+    if app.debug and os.environ.get("WERKZEUG_RUN_MAIN") != "true":
+        return
+    if RADIOLOGY_WEBHOOK_WORKER_THREAD and RADIOLOGY_WEBHOOK_WORKER_THREAD.is_alive():
+        return
+    with RADIOLOGY_WEBHOOK_WORKER_INIT_LOCK:
+        if RADIOLOGY_WEBHOOK_WORKER_THREAD and RADIOLOGY_WEBHOOK_WORKER_THREAD.is_alive():
+            return
+        if RADIOLOGY_WEBHOOK_WORKER_INIT_ATTEMPTED:
+            return
+        RADIOLOGY_WEBHOOK_WORKER_INIT_ATTEMPTED = True
+        try:
+            radiology_webhook_worker = importlib.import_module("modules.radiology_webhook_worker")
+            interval = int(getattr(config, "RADIOLOGY_WEBHOOK_POLL_SECONDS", 120))
+            t = Thread(
+                target=radiology_webhook_worker.main_loop,
+                kwargs={"poll_interval_seconds": interval},
+                daemon=True,
+            )
+            t.start()
+            RADIOLOGY_WEBHOOK_WORKER_THREAD = t
+        except ModuleNotFoundError as e:
+            RADIOLOGY_WEBHOOK_WORKER_DISABLED_REASON = f"Missing dependency: {getattr(e, 'name', str(e))}"
+            print(f"Radiology webhook worker disabled: {RADIOLOGY_WEBHOOK_WORKER_DISABLED_REASON}")
+        except Exception as e:
+            RADIOLOGY_WEBHOOK_WORKER_DISABLED_REASON = str(e)
+            print(f"Radiology webhook worker disabled: {RADIOLOGY_WEBHOOK_WORKER_DISABLED_REASON}")
+
+
+if os.environ.get("START_RADIOLOGY_WEBHOOK_ON_IMPORT", "0").lower() in ("1", "true", "yes"):
+    try:
+        _start_radiology_webhook_worker_if_enabled()
+    except Exception as e:
+        print(f"[WARN] Radiology webhook worker import-time start failed: {e}")
 
 
 ASSET_COVERAGE_WORKER_THREAD = None
@@ -745,6 +799,7 @@ ASSET_COVERAGE_RECIPIENT_ROLE_CHOICES = [
     {"key": "BIOMEDICAL", "label": "Biomedical"},
     {"key": "IT", "label": "IT"},
     {"key": "VP_OPERATIONS", "label": "VP Operations"},
+    {"key": "DIRECTOR", "label": "Director"},
     {"key": "PURCHASE", "label": "Asset-Purchase"},
     {"key": "ACCOUNTS", "label": "Accounts"},
 ]
@@ -1261,6 +1316,13 @@ def has_section_access(section_key: str) -> bool:
             return True
         return any(item.startswith("service_addition_") for item in allowed)
 
+    if norm.startswith("hr_docgen_"):
+        return "*" in allowed or "hr_docgen" in allowed or norm in allowed
+    if norm == "hr_docgen":
+        if "*" in allowed or "hr_docgen" in allowed:
+            return True
+        return any(item.startswith("hr_docgen_") for item in allowed)
+
     return "*" in allowed or norm in allowed
 
 
@@ -1273,6 +1335,35 @@ def _forbidden_response(message: str, status_code: int = 403):
 # Central route->section mapping to avoid per-route decorators.
 # Keys are lowercase paths (with or without trailing slash).
 ROUTE_SECTION_MAP = {
+    "/hr/docgen": "hr_docgen_entry",
+    "/hr/docgen/index": "hr_docgen",
+    "/hr/docgen/dashboard": "hr_docgen",
+    "/hr/docgen/login": None,
+    "/hr/docgen/logout": None,
+    "/hr/docgen/session/heartbeat": None,
+    "/hr/docgen/word_templates": "hr_docgen_entry",
+    "/hr/docgen/template_preview": "hr_docgen_entry",
+    "/hr/docgen/api/template_placeholders": "hr_docgen_entry",
+    "/hr/docgen/api/employees": "hr_docgen_entry",
+    "/hr/docgen/api/employee": "hr_docgen_entry",
+    "/hr/docgen/edit": "hr_docgen_entry",
+    "/hr/docgen/save_generate": "hr_docgen_entry",
+    "/hr/docgen/templates": "hr_docgen_entry",
+    "/hr/docgen/records": "hr_docgen_records",
+    "/hr/docgen/toggle_status": "hr_docgen_records",
+    "/hr/docgen/generate_pdf": "hr_docgen_records",
+    "/hr/docgen/generate_docx": "hr_docgen_records",
+    "/hr/docgen/attendance/always-full": "hr_docgen_attendance_full",
+    "/hr/docgen/attendance/history": "hr_docgen_attendance_history",
+    "/hr/docgen/attendance/load": "hr_docgen_attendance_history",
+    "/hr/docgen/attendance/delete": "hr_docgen_attendance_history",
+    "/hr/docgen/attendance/download": "hr_docgen_attendance_upload",
+    "/hr/docgen/attendance/edit": "hr_docgen_attendance_upload",
+    "/hr/docgen/attendance/save": "hr_docgen_attendance_upload",
+    "/hr/docgen/attendance": "hr_docgen_attendance_upload",
+    "/hr/docgen/debug/db-status": "hr_docgen",
+    "/hr/docgen/diag/dbcheck": "hr_docgen",
+
     "/revenue": "revenue",
     "/fetch": "revenue",
     "/export_revenue_excel": "revenue",
@@ -1623,6 +1714,8 @@ ROUTE_SECTION_MAP = {
     "/api/modifications/logs": "discount_module",
     "/abdm": "abdm",
     "/api/abdm": "abdm",
+    "/patient-diagnostic-intelligence": "patient_diagnostic_intelligence",
+    "/api/patient-diagnostic": "patient_diagnostic_intelligence",
 }
 
 def _all_section_keys():
@@ -5479,6 +5572,7 @@ def _asset_coverage_recipient_role_key(value: str | None) -> str:
         "VP_OPERATIONS": "VP_OPERATIONS",
         "VP_OPERATION": "VP_OPERATIONS",
         "VP": "VP_OPERATIONS",
+        "DIRECTOR": "DIRECTOR",
         "PURCHASE": "PURCHASE",
         "ASSET_PURCHASE": "PURCHASE",
         "ASSET_PURCHASE_TEAM": "PURCHASE",
@@ -8269,6 +8363,7 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
     referral_rows = payload.get("referral_rows") or []
     daycare_rows = payload.get("daycare_rows") or []
     non_cured_discharge_rows = payload.get("non_cured_discharge_rows") or []
+    discharge_date_change_rows = payload.get("discharge_date_change_rows") or []
     def _fmt(val):
         if val is None:
             return ""
@@ -8278,11 +8373,28 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
 
     def _find_font_path(names):
         win_dir = os.environ.get("WINDIR", "C:\\Windows")
-        font_dir = os.path.join(win_dir, "Fonts")
+        search_dirs = [
+            os.path.join(os.path.dirname(os.path.abspath(__file__)), "Static", "fonts"),
+            os.path.join(win_dir, "Fonts"),
+            "/usr/share/fonts",
+            "/usr/local/share/fonts",
+            os.path.expanduser("~/.local/share/fonts"),
+        ]
         for name in names:
-            path = os.path.join(font_dir, name)
-            if os.path.exists(path):
-                return path
+            if not name:
+                continue
+            if os.path.isabs(name) and os.path.exists(name):
+                return name
+            for font_dir in search_dirs:
+                path = os.path.join(font_dir, name)
+                if os.path.exists(path):
+                    return path
+                try:
+                    for root, _, files in os.walk(font_dir):
+                        if name.lower() in {file_name.lower() for file_name in files}:
+                            return os.path.join(root, next(file_name for file_name in files if file_name.lower() == name.lower()))
+                except Exception:
+                    continue
         return None
 
     def _register_calibri():
@@ -8299,7 +8411,54 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
         except Exception:
             return "Helvetica", "Helvetica-Bold"
 
+    def _register_devanagari_font():
+        env_font = str(os.getenv("MOD_REPORT_DEVANAGARI_FONT_PATH") or "").strip()
+        candidates = [
+            {"normal": env_font, "bold": env_font, "name": "ModReportDevanagariEnv", "bold_name": "ModReportDevanagariEnv-Bold"},
+            {"normal": "Nirmala.ttc", "bold": "Nirmala.ttc", "name": "NirmalaText", "bold_name": "NirmalaText-Bold", "subfont": 3, "bold_subfont": 4},
+            {"normal": "mangal.ttf", "bold": "mangalb.ttf", "name": "Mangal", "bold_name": "Mangal-Bold"},
+            {"normal": "Mangal.ttf", "bold": "Mangalb.ttf", "name": "Mangal", "bold_name": "Mangal-Bold"},
+            {"normal": "NotoSansDevanagari-Regular.ttf", "bold": "NotoSansDevanagari-Bold.ttf", "name": "NotoSansDevanagari", "bold_name": "NotoSansDevanagari-Bold"},
+            {"normal": "NotoSansDevanagariUI-Regular.ttf", "bold": "NotoSansDevanagariUI-Bold.ttf", "name": "NotoSansDevanagariUI", "bold_name": "NotoSansDevanagariUI-Bold"},
+            {"normal": "Lohit-Devanagari.ttf", "bold": "Lohit-Devanagari.ttf", "name": "LohitDevanagari", "bold_name": "LohitDevanagari-Bold"},
+        ]
+        registered = set(pdfmetrics.getRegisteredFontNames())
+        for candidate in candidates:
+            normal_path = _find_font_path([candidate.get("normal")])
+            if not normal_path:
+                continue
+            bold_path = _find_font_path([candidate.get("bold")]) or normal_path
+            try:
+                normal_name = candidate["name"]
+                bold_name = candidate["bold_name"]
+                if normal_name not in registered:
+                    pdfmetrics.registerFont(TTFont(normal_name, normal_path, subfontIndex=int(candidate.get("subfont", 0))))
+                    registered.add(normal_name)
+                if bold_name not in registered:
+                    pdfmetrics.registerFont(TTFont(bold_name, bold_path, subfontIndex=int(candidate.get("bold_subfont", candidate.get("subfont", 0)))))
+                    registered.add(bold_name)
+                return normal_name, bold_name
+            except Exception as exc:
+                try:
+                    app.logger.warning("Could not register MOD report Devanagari font %s: %s", normal_path, exc)
+                except Exception:
+                    pass
+                continue
+        try:
+            app.logger.warning("No Devanagari-capable font found for MOD morning PDF export. Set MOD_REPORT_DEVANAGARI_FONT_PATH or install Nirmala UI/Mangal/Noto Sans Devanagari.")
+        except Exception:
+            pass
+        return None, None
+
     font_regular_name, font_bold_name = _register_calibri()
+    devanagari_font_name, devanagari_bold_font_name = _register_devanagari_font()
+
+    def _has_devanagari(val) -> bool:
+        try:
+            return any("\u0900" <= ch <= "\u097f" for ch in str(val or ""))
+        except Exception:
+            return False
+
     data_font_size = 11.5
     header_font_size = 7.5
     title_font_size = 12.5
@@ -8371,8 +8530,23 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
 
     cell_left = ParagraphStyle("cell_left", fontName=font_regular_name, fontSize=data_font_size, leading=data_font_size + 1, alignment=TA_LEFT)
     cell_center = ParagraphStyle("cell_center", fontName=font_regular_name, fontSize=data_font_size, leading=data_font_size + 1, alignment=TA_CENTER)
+    devanagari_style_cache = {}
+
+    def _devanagari_style(style):
+        if not devanagari_font_name:
+            return style
+        key = id(style)
+        if key not in devanagari_style_cache:
+            devanagari_style_cache[key] = ParagraphStyle(
+                f"{getattr(style, 'name', 'cell')}_devanagari_{key}",
+                parent=style,
+                fontName=devanagari_font_name,
+            )
+        return devanagari_style_cache[key]
 
     def _p(val, style):
+        if devanagari_font_name and _has_devanagari(val):
+            return Paragraph(str(val or ""), _devanagari_style(style))
         return Paragraph(str(val or ""), style)
 
     def _build_summary_table(rows, section_title=None):
@@ -8697,6 +8871,29 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
         leading=page3_detail_data_font_size + 0.8,
         alignment=TA_CENTER,
     )
+    page3_referral_left_devanagari = ParagraphStyle(
+        "page3_referral_left_devanagari",
+        parent=page3_referral_left,
+        fontName=devanagari_font_name or font_regular_name,
+    )
+    page3_referral_center_devanagari = ParagraphStyle(
+        "page3_referral_center_devanagari",
+        parent=page3_referral_center,
+        fontName=devanagari_font_name or font_regular_name,
+    )
+    page3_detail_left_devanagari = ParagraphStyle(
+        "page3_detail_left_devanagari",
+        parent=page3_detail_left,
+        fontName=devanagari_font_name or font_regular_name,
+    )
+    page3_detail_center_devanagari = ParagraphStyle(
+        "page3_detail_center_devanagari",
+        parent=page3_detail_center,
+        fontName=devanagari_font_name or font_regular_name,
+    )
+
+    def _p_auto(val, style, devanagari_style):
+        return Paragraph(str(val or ""), devanagari_style if devanagari_font_name and _has_devanagari(val) else style)
 
     def _scaled_widths_mm(widths_mm, target_width):
         widths = [w * mm for w in widths_mm]
@@ -8989,12 +9186,12 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
     for row in referral_rows:
         ref_body.append([
             str(row.get("sl") or ""),
-            Paragraph(str(row.get("patient_name") or ""), page3_referral_left),
-            Paragraph(str(row.get("visit_time") or ""), page3_referral_center),
-            Paragraph(str(row.get("discharge_time") or ""), page3_referral_center),
-            Paragraph(str(row.get("consultant") or ""), page3_referral_left),
-            Paragraph(str(row.get("reason_type") or ""), page3_referral_left),
-            Paragraph(str(row.get("reason") or ""), page3_referral_left),
+            _p_auto(row.get("patient_name"), page3_referral_left, page3_referral_left_devanagari),
+            _p_auto(row.get("visit_time"), page3_referral_center, page3_referral_center_devanagari),
+            _p_auto(row.get("discharge_time"), page3_referral_center, page3_referral_center_devanagari),
+            _p_auto(row.get("consultant"), page3_referral_left, page3_referral_left_devanagari),
+            _p_auto(row.get("reason_type"), page3_referral_left, page3_referral_left_devanagari),
+            _p_auto(row.get("reason"), page3_referral_left, page3_referral_left_devanagari),
         ])
     if not ref_body:
         ref_body = [["", Paragraph("No data", page3_referral_left), "", "", "", "", ""]]
@@ -9006,7 +9203,7 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
         ("BACKGROUND", (0, 0), (-1, 0), alt_section_bg),
         ("BACKGROUND", (0, 1), (-1, 1), alt_head_bg),
         ("BACKGROUND", (0, 2), (-1, -1), colors.white),
-        ("FONTNAME", (0, 0), (-1, 1), "Helvetica-Bold"),
+        ("FONTNAME", (0, 0), (-1, 1), font_bold_name),
         ("FONTSIZE", (0, 0), (-1, -1), page3_referral_data_font_size),
         ("FONTSIZE", (0, 0), (-1, 0), page3_referral_section_title_size),
         ("FONTSIZE", (0, 1), (-1, 1), page3_referral_header_font_size),
@@ -9033,12 +9230,12 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
         for item in rows or []:
             detail_body.append([
                 str(item.get("sl") or ""),
-                Paragraph(str(item.get("patient_name") or ""), page3_detail_left),
-                Paragraph(str(item.get("admission_time") or ""), page3_detail_center),
-                Paragraph(str(item.get("discharge_time") or ""), page3_detail_center),
-                Paragraph(str(item.get("doctor_name") or ""), page3_detail_left),
-                Paragraph(str(item.get("reason") or ""), page3_detail_left),
-                Paragraph(str(item.get("remarks") or ""), page3_detail_left),
+                _p_auto(item.get("patient_name"), page3_detail_left, page3_detail_left_devanagari),
+                _p_auto(item.get("admission_time"), page3_detail_center, page3_detail_center_devanagari),
+                _p_auto(item.get("discharge_time"), page3_detail_center, page3_detail_center_devanagari),
+                _p_auto(item.get("doctor_name"), page3_detail_left, page3_detail_left_devanagari),
+                _p_auto(item.get("reason"), page3_detail_left, page3_detail_left_devanagari),
+                _p_auto(item.get("remarks"), page3_detail_left, page3_detail_left_devanagari),
             ])
         if not detail_body:
             detail_body = [["", Paragraph("No data", page3_detail_left), "", "", "", "", ""]]
@@ -9075,6 +9272,52 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
         detail_tbl.hAlign = "CENTER"
         return detail_tbl
 
+    def _build_discharge_date_change_table(rows: list[dict]):
+        change_headers = ["Sl.", "Patient Name", "RegNo / Visit No", "Unit Bucket", "Date changed from", "Date changed to", "Doctor"]
+        change_body = []
+        for item in rows or []:
+            change_body.append([
+                str(item.get("sl") or ""),
+                _p_auto(item.get("patient_name"), page3_detail_left, page3_detail_left_devanagari),
+                _p_auto(item.get("reg_no") or item.get("visit_no"), page3_detail_center, page3_detail_center_devanagari),
+                _p_auto(item.get("unit_bucket"), page3_detail_center, page3_detail_center_devanagari),
+                _p_auto(item.get("date_changed_from"), page3_detail_center, page3_detail_center_devanagari),
+                _p_auto(item.get("date_changed_to"), page3_detail_center, page3_detail_center_devanagari),
+                _p_auto(item.get("doctor_name"), page3_detail_left, page3_detail_left_devanagari),
+            ])
+        change_data = [[f"* {MORNING_REPORT_DISCHARGE_DATE_CHANGE_TITLE}"] + [""] * (len(change_headers) - 1), change_headers]
+        change_data.extend(change_body)
+        change_tbl = Table(
+            change_data,
+            colWidths=_scaled_widths_mm([8, 34, 26, 19, 22, 22, 32], content_width),
+            repeatRows=2,
+        )
+        change_tbl.setStyle(TableStyle([
+            ("SPAN", (0, 0), (-1, 0)),
+            ("BACKGROUND", (0, 0), (-1, 0), alt_section_bg),
+            ("BACKGROUND", (0, 1), (-1, 1), alt_head_bg),
+            ("BACKGROUND", (0, 2), (-1, -1), colors.white),
+            ("FONTNAME", (0, 0), (-1, 1), font_bold_name),
+            ("FONTSIZE", (0, 0), (-1, -1), page3_detail_data_font_size),
+            ("FONTSIZE", (0, 0), (-1, 0), page3_detail_section_title_size),
+            ("FONTSIZE", (0, 1), (-1, 1), page3_detail_header_font_size),
+            ("ALIGN", (0, 0), (-1, -1), "CENTER"),
+            ("ALIGN", (1, 2), (1, -1), "LEFT"),
+            ("ALIGN", (6, 2), (6, -1), "LEFT"),
+            ("VALIGN", (0, 0), (-1, -1), "MIDDLE"),
+            ("LEFTPADDING", (0, 0), (-1, -1), pad_x),
+            ("RIGHTPADDING", (0, 0), (-1, -1), pad_x),
+            ("TOPPADDING", (0, 0), (-1, 0), pad_title_y),
+            ("BOTTOMPADDING", (0, 0), (-1, 0), pad_title_y),
+            ("TOPPADDING", (0, 1), (-1, 1), pad_header_y),
+            ("BOTTOMPADDING", (0, 1), (-1, 1), pad_header_y),
+            ("TOPPADDING", (0, 2), (-1, -1), pad_body_y),
+            ("BOTTOMPADDING", (0, 2), (-1, -1), pad_body_y),
+            ("GRID", (0, 0), (-1, -1), 0.4, alt_border),
+        ]))
+        change_tbl.hAlign = "CENTER"
+        return change_tbl
+
     night_visit_page_limit = 25
     night_visit_count = len(doctor_night_visits or [])
 
@@ -9099,6 +9342,11 @@ def _build_morning_report_pdf(payload: dict, exported_by: str | None = None) -> 
             non_cured_discharge_rows,
         ),
     ])
+    if discharge_date_change_rows:
+        story.extend([
+            Spacer(0, pad_body_y),
+            _build_discharge_date_change_table(discharge_date_change_rows),
+        ])
     doc.build(story, onFirstPage=_draw_footer, onLaterPages=_draw_footer)
     buffer.seek(0)
     return buffer.getvalue()
@@ -9142,6 +9390,7 @@ def _build_morning_report_jpg(payload: dict, exported_by: str | None = None, fon
     referral_rows = payload.get("referral_rows") or []
     daycare_rows = payload.get("daycare_rows") or []
     non_cured_discharge_rows = payload.get("non_cured_discharge_rows") or []
+    discharge_date_change_rows = payload.get("discharge_date_change_rows") or []
 
     def _fmt(val):
         if val is None:
@@ -9739,6 +9988,30 @@ def _build_morning_report_jpg(payload: dict, exported_by: str | None = None, fon
             body_bold_font=font_bold_detail,
         )
         section_y += non_cured_height
+        if discharge_date_change_rows:
+            section_y += gap_v_px
+            change_cols = [["Sl.", "Patient Name", "RegNo / Visit No", "Unit Bucket", "Date changed from", "Date changed to", "Doctor"]]
+            for item in discharge_date_change_rows:
+                change_cols.append([
+                    str(item.get("sl") or ""),
+                    str(item.get("patient_name") or ""),
+                    str(item.get("reg_no") or item.get("visit_no") or ""),
+                    str(item.get("unit_bucket") or ""),
+                    str(item.get("date_changed_from") or ""),
+                    str(item.get("date_changed_to") or ""),
+                    str(item.get("doctor_name") or ""),
+                ])
+            change_col_widths = _scale_cols([8, 34, 26, 19, 22, 22, 32], usable_width_px)
+            change_height = _draw_table(
+                margin_left_px, section_y, change_col_widths,
+                f"* {MORNING_REPORT_DISCHARGE_DATE_CHANGE_TITLE}", change_cols,
+                left_align_cols={1, 6}, section_bg=alt_section, header_bg=alt_head,
+                section_title_font=font_section_title_detail,
+                header_font_override=font_header_detail,
+                body_font=font_regular_detail,
+                body_bold_font=font_bold_detail,
+            )
+            section_y += change_height
         return section_y
 
     def _render_page(which: int | None) -> int:
@@ -10937,6 +11210,7 @@ MORNING_REPORT_REFERRAL_DEFAULT_ROWS = 3
 MORNING_REPORT_REFERRAL_SECTION_TITLE = "Referral/Refusal/Brought Death/Daycare Information (12:00 AM to 11:59 PM)"
 MORNING_REPORT_DAYCARE_SECTION_TITLE = "Daycare Information (12:00 AM to 11:59 PM)"
 MORNING_REPORT_NON_CURED_DISCHARGE_SECTION_TITLE = "Lama/Dama/Refer (12:00 AM to 11:59 PM)"
+MORNING_REPORT_DISCHARGE_DATE_CHANGE_TITLE = "Discharge date changed after night snapshot"
 MORNING_REPORT_DISCHARGE_DETAIL_HEADERS = [
     "Sl.",
     "Patient Name",
@@ -11120,6 +11394,7 @@ def _fetch_morning_ipd_discharge_detail_rows(unit: str, report_date: date | str 
             if doctor_col
             else "N''"
         )
+        doctor_id_expr = f"v.[{doctor_col}]" if doctor_col else "NULL"
         join_discharge_type = ""
         if discharge_type_ref and dt_id_col and dis_type_id_col:
             join_discharge_type = (
@@ -11153,7 +11428,8 @@ def _fetch_morning_ipd_discharge_detail_rows(unit: str, report_date: date | str 
                 ld.DischargeType_ID AS DischargeType_ID,
                 COALESCE(NULLIF({dt_name_expr}, N''), NULLIF(ld.DischargeTypeRaw, N''), N'Unknown') AS DischargeType,
                 {patient_expr} AS PatientName,
-                {doctor_expr} AS DoctorName
+                {doctor_expr} AS DoctorName,
+                {doctor_id_expr} AS DocInCharge
             FROM {visit_ref} v WITH (NOLOCK)
             INNER JOIN latest_discharge ld
                 ON v.[{visit_id_col}] = ld.Visit_ID
@@ -11225,6 +11501,298 @@ def _format_morning_detail_time(value) -> str:
         return ""
 
 
+def _format_morning_change_date(value) -> str:
+    try:
+        if value is None or pd.isna(value):
+            return ""
+        ts = pd.Timestamp(value)
+        return ts.strftime("%d-%m-%Y")
+    except Exception:
+        text = str(value or "").strip()
+        if len(text) >= 10 and text[4] == "-" and text[7] == "-":
+            try:
+                return datetime.strptime(text[:10], "%Y-%m-%d").strftime("%d-%m-%Y")
+            except Exception:
+                return text[:10]
+        return text
+
+
+def _morning_date_only(value) -> date | None:
+    if value is None:
+        return None
+    try:
+        if pd.isna(value):
+            return None
+    except Exception:
+        pass
+    if isinstance(value, datetime):
+        return value.date()
+    if isinstance(value, date):
+        return value
+    text = str(value or "").strip()
+    if not text:
+        return None
+    try:
+        return pd.Timestamp(text).date()
+    except Exception:
+        return None
+
+
+def _morning_summary_discharge_counts(rows: list[dict] | None) -> dict:
+    target_key = _normalize_morning_summary_label("Discharge Previous Day")
+    for row in rows or []:
+        if _normalize_morning_summary_label(row.get("label")) == target_key:
+            return {
+                "asarfi": _safe_int(row.get("asarfi"), 0),
+                "cardiac": _safe_int(row.get("cardiac"), 0),
+                "total": _safe_int(row.get("total"), 0),
+            }
+    return {"asarfi": 0, "cardiac": 0, "total": 0}
+
+
+def _night_snapshot_discharge_counts(unit: str, prev_date_str: str) -> tuple[dict, str | None]:
+    details, snapshot_time = _fetch_night_report_detail_snapshot(prev_date_str, unit)
+    counts = {"asarfi": 0, "cardiac": 0, "total": 0}
+    if not details:
+        return counts, snapshot_time
+    by_label = {
+        str(row.get("label") or "").strip().upper(): row
+        for row in (details.get("particulars") or [])
+        if str(row.get("label") or "").strip()
+    }
+    counts["asarfi"] = _safe_int((by_label.get("ASARFI UNIT") or {}).get("discharge"), 0)
+    counts["cardiac"] = _safe_int((by_label.get("CARDIAC UNIT") or {}).get("discharge"), 0)
+    total_row = by_label.get("TOTAL") or by_label.get(str(unit or "").strip().upper()) or {}
+    counts["total"] = _safe_int(total_row.get("discharge"), counts["asarfi"] + counts["cardiac"])
+    return counts, snapshot_time
+
+
+def _morning_discharge_counts_differ(unit: str, night_counts: dict, morning_counts: dict) -> bool:
+    unit_norm = (unit or "").strip().upper()
+    keys = ("asarfi", "cardiac", "total") if unit_norm == "AHL" else ("total",)
+    for key in keys:
+        if _safe_int(night_counts.get(key), 0) != _safe_int(morning_counts.get(key), 0):
+            return True
+    return False
+
+
+def _fetch_morning_discharge_date_change_rows(
+    unit: str,
+    report_date: date | str | None,
+    *,
+    night_snapshot_time: str | None = None,
+    cardiac_doc_ids: list[int] | None = None,
+    include_from_previous_day: bool = True,
+    include_to_previous_day: bool = True,
+) -> list[dict]:
+    unit_norm = (unit or "").strip().upper()
+    window_date, _, _ = _morning_report_full_day_window(report_date)
+    if not unit_norm or window_date is None:
+        return []
+
+    from modules.db_connection import get_sql_connection
+
+    conn = get_sql_connection(unit_norm)
+    if not conn:
+        return []
+    try:
+        visit_map = _get_table_columns_map(conn, "Visit")
+        discharge_map = _get_table_columns_map(conn, "Discharge")
+        patient_map = _get_table_columns_map(conn, "Patient")
+        if not visit_map or not discharge_map:
+            return []
+
+        visit_id_col = _resolve_column(visit_map, ["Visit_ID", "VisitId", "VisitID"])
+        visit_no_col = _resolve_column(visit_map, ["VisitNo", "Visit_No", "VisitNumber"])
+        visit_type_col = _resolve_column(visit_map, ["VisitTypeID", "VisitTypeId", "VisitType_ID", "Visit_Type_ID"])
+        visit_date_col = _resolve_column(visit_map, ["VisitDate", "Visit_Date", "AdmissionDate", "Admission_Date", "AdmitDate", "Admit_Date"])
+        final_discharge_col = _resolve_column(visit_map, ["DischargeDate", "Discharge_Date", "DischDate", "DischargeDateTime", "Discharge_DateTime"])
+        patient_id_col = _resolve_column(visit_map, ["PatientID", "PatientId", "Patient_ID"])
+        doctor_col = _resolve_column(visit_map, ["DocInCharge", "DoctorInCharge", "DoctorIncharge", "DoctorInchargeID", "DoctorInChargeID"])
+
+        dis_visit_id_col = _resolve_column(discharge_map, ["Visit_ID", "VisitId", "VisitID"])
+        dis_id_col = _resolve_column(discharge_map, ["Discharge_ID", "DischargeId", "DischargeID"])
+        dis_type_id_col = _resolve_column(discharge_map, ["DischargeType_ID", "DischargeTypeId", "DischargeTypeID"])
+        dis_cancel_col = _resolve_column(discharge_map, ["CancelStatus", "Cancelled", "Canceled"])
+        discharge_date_cols = [
+            col_name
+            for col_name in [
+                _resolve_column(discharge_map, ["adminDischargeDate", "AdminDischargeDate"]),
+                _resolve_column(discharge_map, ["Discharge_Date", "DischargeDate"]),
+                _resolve_column(discharge_map, ["CDdate", "CDDate"]),
+                _resolve_column(discharge_map, ["UpdatedOn", "Updated_ON"]),
+                _resolve_column(discharge_map, ["InsertedON", "InsertedOn", "Inserted_ON"]),
+            ]
+            if col_name
+        ]
+
+        if not all([visit_id_col, visit_type_col, final_discharge_col, dis_visit_id_col, dis_id_col]) or not discharge_date_cols:
+            return []
+
+        patient_key_col = _resolve_column(patient_map, ["PatientId", "PatientID", "Patient_ID"]) if patient_map else None
+        patient_reg_col = _resolve_column(patient_map, ["Registration_No", "RegistrationNo", "RegNo", "Reg_No"]) if patient_map else None
+        patient_join = ""
+        reg_expr = "NULL"
+        if patient_id_col and patient_key_col and patient_reg_col:
+            patient_join = f"LEFT JOIN Patient p WITH (NOLOCK) ON p.[{patient_key_col}] = v.[{patient_id_col}]"
+            reg_expr = f"p.[{patient_reg_col}]"
+        visit_no_expr = f"v.[{visit_no_col}]" if visit_no_col else "NULL"
+        patient_expr = f"CASE WHEN v.[{patient_id_col}] IS NULL THEN N'' ELSE dbo.fn_patientfullname(v.[{patient_id_col}]) END" if patient_id_col else "N''"
+        doctor_expr = f"CASE WHEN v.[{doctor_col}] IS NULL THEN N'' ELSE dbo.fn_doctorfirstname(v.[{doctor_col}]) END" if doctor_col else "N''"
+        cancel_expr = f"ISNULL(d.[{dis_cancel_col}], 0)" if dis_cancel_col else "0"
+        dis_type_expr = f"d.[{dis_type_id_col}]" if dis_type_id_col else "NULL"
+        admission_expr = f"v.[{visit_date_col}]" if visit_date_col else "NULL"
+        doc_expr = f"v.[{doctor_col}]" if doctor_col else "NULL"
+
+        prev_date_str = window_date.strftime("%Y-%m-%d")
+        prev_day_clauses = [f"CAST(d.[{col_name}] AS DATE) = CAST(? AS DATE)" for col_name in discharge_date_cols]
+        after_snapshot_clauses = []
+        after_snapshot_params = []
+        if night_snapshot_time:
+            for col_name in discharge_date_cols:
+                after_snapshot_clauses.append(f"d.[{col_name}] > CAST(? AS DATETIME)")
+                after_snapshot_params.append(night_snapshot_time)
+        else:
+            after_snapshot_clauses = ["1 = 0"]
+
+        select_date_cols = ",\n            ".join(
+            f"d.[{col_name}] AS [{col_name}]" for col_name in discharge_date_cols
+        )
+        sql = f"""
+            SELECT DISTINCT
+                v.[{visit_id_col}] AS Visit_ID,
+                {visit_no_expr} AS VisitNo,
+                {reg_expr} AS RegNo,
+                {patient_expr} AS PatientName,
+                {doctor_expr} AS DoctorName,
+                {admission_expr} AS AdmissionDate,
+                v.[{final_discharge_col}] AS CurrentVisitDischargeDate,
+                d.[{dis_id_col}] AS Discharge_ID,
+                {dis_type_expr} AS DischargeType_ID,
+                {cancel_expr} AS CancelStatus,
+                {doc_expr} AS DocInCharge,
+                {select_date_cols}
+            FROM Discharge d WITH (NOLOCK)
+            INNER JOIN Visit v WITH (NOLOCK) ON v.[{visit_id_col}] = d.[{dis_visit_id_col}]
+            {patient_join}
+            WHERE v.[{visit_type_col}] = 1
+              AND ISNULL({cancel_expr}, 0) = 0
+              AND (
+                (
+                  v.[{final_discharge_col}] IS NOT NULL
+                  AND CAST(v.[{final_discharge_col}] AS DATE) <> CAST(? AS DATE)
+                  AND ({' OR '.join(prev_day_clauses)})
+                )
+                OR
+                (
+                  v.[{final_discharge_col}] IS NOT NULL
+                  AND CAST(v.[{final_discharge_col}] AS DATE) = CAST(? AS DATE)
+                  AND ({' OR '.join(after_snapshot_clauses)})
+                )
+              )
+            ORDER BY PatientName, v.[{visit_id_col}], d.[{dis_id_col}]
+        """
+        params = [prev_date_str]
+        params.extend([prev_date_str] * len(prev_day_clauses))
+        params.append(prev_date_str)
+        params.extend(after_snapshot_params)
+
+        cur = conn.cursor()
+        cur.execute(sql, params)
+        col_names = [c[0] for c in cur.description]
+        raw_rows = [dict(zip(col_names, row)) for row in cur.fetchall()]
+    except Exception:
+        return []
+    finally:
+        try:
+            conn.close()
+        except Exception:
+            pass
+
+    cardiac_ids = set(_resolve_mod_cardiac_doc_ids(unit_norm, cardiac_doc_ids or MORNING_REPORT_CARDIAC_DOC_IDS))
+    out = []
+    seen = set()
+    for raw in raw_rows:
+        current_date = _morning_date_only(raw.get("CurrentVisitDischargeDate"))
+        if current_date is None:
+            continue
+        source_dates = [
+            _morning_date_only(raw.get(col_name))
+            for col_name in discharge_date_cols
+            if raw.get(col_name) is not None
+        ]
+        source_dates = [d for d in source_dates if d is not None]
+        if include_from_previous_day and current_date != window_date and window_date in source_dates:
+            from_date = window_date
+            to_date = current_date
+        elif include_to_previous_day and current_date == window_date:
+            other_dates = [d for d in source_dates if d != window_date]
+            from_date = other_dates[-1] if other_dates else None
+            to_date = window_date
+        else:
+            continue
+
+        visit_id = raw.get("Visit_ID")
+        key = (visit_id, from_date, to_date)
+        if key in seen:
+            continue
+        seen.add(key)
+        try:
+            doc_id = int(raw.get("DocInCharge") or 0)
+        except Exception:
+            doc_id = 0
+        bucket = "Cardiac" if unit_norm == "AHL" and doc_id in cardiac_ids else ("Asarfi" if unit_norm == "AHL" else unit_norm)
+        out.append({
+            "sl": len(out) + 1,
+            "patient_name": str(raw.get("PatientName") or "").strip(),
+            "reg_no": str(raw.get("RegNo") or "").strip(),
+            "visit_no": str(raw.get("VisitNo") or "").strip(),
+            "unit_bucket": bucket,
+            "date_changed_from": _format_morning_change_date(from_date),
+            "date_changed_to": _format_morning_change_date(to_date),
+            "doctor_name": str(raw.get("DoctorName") or "").strip(),
+        })
+    return out
+
+
+def _attach_morning_discharge_date_change_rows(payload: dict | None) -> dict | None:
+    if not payload or not isinstance(payload, dict):
+        return payload
+    out = dict(payload)
+    unit_norm = (out.get("unit") or "").strip().upper()
+    report_date = out.get("report_date")
+    window_date, _, _ = _morning_report_full_day_window(report_date)
+    if not unit_norm or window_date is None:
+        out["discharge_date_change_rows"] = []
+        return out
+    prev_date_str = window_date.strftime("%Y-%m-%d")
+    night_counts, night_snapshot_time = _night_snapshot_discharge_counts(unit_norm, prev_date_str)
+    morning_counts = _morning_summary_discharge_counts(out.get("summary_rows") or [])
+    if not _morning_discharge_counts_differ(unit_norm, night_counts, morning_counts):
+        out["discharge_date_change_rows"] = []
+        return out
+    compare_keys = ("asarfi", "cardiac", "total") if unit_norm == "AHL" else ("total",)
+    include_from_previous_day = any(
+        _safe_int(night_counts.get(key), 0) > _safe_int(morning_counts.get(key), 0)
+        for key in compare_keys
+    )
+    include_to_previous_day = any(
+        _safe_int(night_counts.get(key), 0) < _safe_int(morning_counts.get(key), 0)
+        for key in compare_keys
+    )
+    rows = _fetch_morning_discharge_date_change_rows(
+        unit_norm,
+        report_date,
+        night_snapshot_time=night_snapshot_time,
+        cardiac_doc_ids=MORNING_REPORT_CARDIAC_DOC_IDS,
+        include_from_previous_day=include_from_previous_day,
+        include_to_previous_day=include_to_previous_day,
+    )
+    out["discharge_date_change_rows"] = rows
+    out["discharge_date_change_title"] = MORNING_REPORT_DISCHARGE_DATE_CHANGE_TITLE
+    return out
+
+
 def _normalize_morning_referral_row(row: dict | None) -> dict:
     row = row or {}
     return {
@@ -11248,6 +11816,7 @@ def _normalize_morning_non_cured_row(row: dict | None) -> dict:
         "doctor_name": str(row.get("doctor_name") or row.get("doctor") or row.get("consultant") or "").strip(),
         "reason": str(row.get("reason") or "").strip(),
         "remarks": str(row.get("remarks") or row.get("remark") or "").strip(),
+        "unit_bucket": str(row.get("unit_bucket") or row.get("bucket") or "").strip(),
     }
 
 
@@ -11363,6 +11932,7 @@ def _merge_morning_referral_rows(referral_rows: list[dict] | None, daycare_rows:
 
 
 def _build_morning_auto_discharge_sections(unit: str, report_date: date | str | None) -> dict:
+    unit_norm = (unit or "").strip().upper()
     _, window_start, window_end = _morning_report_full_day_window(report_date)
     empty = {
         "daycare_rows": [],
@@ -11399,10 +11969,15 @@ def _build_morning_auto_discharge_sections(unit: str, report_date: date | str | 
         lambda row: _is_morning_death_discharge_type(row.get("DischargeType_ID"), row.get("DischargeType")),
         axis=1,
     )
+    cardiac_doc_ids = set(_resolve_mod_cardiac_doc_ids(unit, MORNING_REPORT_CARDIAC_DOC_IDS))
 
     def _rows_from_frame(frame: pd.DataFrame, reason_type_label: str) -> list[dict]:
         rows = []
         for idx, (_, item) in enumerate(frame.iterrows(), start=1):
+            try:
+                doc_id = int(item.get("DocInCharge") or 0)
+            except Exception:
+                doc_id = 0
             rows.append({
                 "sl": idx,
                 "patient_name": str(item.get("PatientName") or "").strip(),
@@ -11412,6 +11987,7 @@ def _build_morning_auto_discharge_sections(unit: str, report_date: date | str | 
                 "doctor_name": str(item.get("DoctorName") or "").strip(),
                 "reason": str(item.get("DischargeType") or "Unknown").strip() or "Unknown",
                 "remarks": "",
+                "unit_bucket": "Cardiac" if unit_norm == "AHL" and doc_id in cardiac_doc_ids else ("Asarfi" if unit_norm == "AHL" else unit_norm),
             })
         return rows
 
@@ -11452,7 +12028,7 @@ def _attach_morning_auto_sections(payload: dict | None) -> dict | None:
         out.get("referral_rows") or [],
         out.get("daycare_rows") or [],
     )
-    return out
+    return _attach_morning_discharge_date_change_rows(out)
 
 def _rows_have_any_value(rows: list[dict] | None, keys: tuple[str, ...]) -> bool:
     if not rows:
@@ -14494,6 +15070,7 @@ def _build_morning_report_excel(payload: dict, exported_by: str | None = None) -
     referral_rows = payload.get("referral_rows") or []
     daycare_rows = payload.get("daycare_rows") or []
     non_cured_discharge_rows = payload.get("non_cured_discharge_rows") or []
+    discharge_date_change_rows = payload.get("discharge_date_change_rows") or []
     summary_rows = _collapse_morning_counts(unit_norm, summary_rows)
     investigations = _collapse_morning_counts(unit_norm, investigations)
 
@@ -14926,6 +15503,26 @@ def _build_morning_report_excel(payload: dict, exported_by: str | None = None) -
             non_cured_discharge_rows,
         )
 
+        if discharge_date_change_rows:
+            staff_row += 1
+            ws_extra2.merge_range(staff_row, 0, staff_row, 6, f"* {MORNING_REPORT_DISCHARGE_DATE_CHANGE_TITLE}", alt_section_fmt)
+            staff_row += 1
+            change_headers = ["Sl.", "Patient Name", "RegNo / Visit No", "Unit Bucket", "Date changed from", "Date changed to", "Doctor"]
+            for col_idx, header in enumerate(change_headers):
+                ws_extra2.write(staff_row, col_idx, header, alt_header_fmt)
+            ws_extra2.set_row(staff_row, 24)
+            staff_row += 1
+            for item in discharge_date_change_rows:
+                ws_extra2.write(staff_row, 0, item.get("sl") or "", detail_center_wrap_fmt)
+                ws_extra2.write(staff_row, 1, item.get("patient_name") or "", detail_left_wrap_fmt)
+                ws_extra2.write(staff_row, 2, item.get("reg_no") or item.get("visit_no") or "", detail_center_wrap_fmt)
+                ws_extra2.write(staff_row, 3, item.get("unit_bucket") or "", detail_center_wrap_fmt)
+                ws_extra2.write(staff_row, 4, item.get("date_changed_from") or "", detail_center_wrap_fmt)
+                ws_extra2.write(staff_row, 5, item.get("date_changed_to") or "", detail_center_wrap_fmt)
+                ws_extra2.write(staff_row, 6, item.get("doctor_name") or "", detail_left_wrap_fmt)
+                ws_extra2.set_row(staff_row, 34)
+                staff_row += 1
+
         ws_extra2.set_column(0, 0, 6)
         ws_extra2.set_column(1, 1, 26)
         ws_extra2.set_column(2, 3, 19)
@@ -15345,7 +15942,7 @@ def _volume_cache_get(unit, from_date, to_date):
             df["Unit"] = unit
         else:
             df["Unit"] = df["Unit"].astype(str).str.strip().str.upper().replace("", unit)
-        required_cols = {"Gender", "VisitTypeID", "Age", "AdmissionType"}
+        required_cols = {"Gender", "VisitTypeID", "Age", "AdmissionType", "Patient In Time"}
         if not required_cols.issubset(set(df.columns)):
             _volume_cache_evict(unit, from_date, to_date)
             return None
@@ -16670,6 +17267,7 @@ def enforce_session_policies():
     # Lazy-start OTP worker on first incoming request (Flask 3 removed before_first_request)
     _start_otp_worker_if_enabled()
     _start_booking_payment_worker_if_enabled()
+    _start_radiology_webhook_worker_if_enabled()
     _start_asset_coverage_worker_if_enabled()
 
     if request.endpoint in ('login', 'logout', 'static'):
@@ -25899,6 +26497,11 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
     def fmt_date(val):
         if val is None or val == "":
             return "-"
+        try:
+            if pd.isna(val):
+                return "-"
+        except Exception:
+            pass
         if isinstance(val, (datetime, date)):
             return val.strftime("%d-%b-%Y")
         return str(val)[:10]
@@ -25991,6 +26594,7 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
         or (f"PO-{header.get('ID')}" if header.get("ID") else "")
     )
     po_date = header.get("PODate") or header.get("po_date")
+    po_approval_date = header.get("POApprovalDate") or header.get("po_approval_date")
     status_code = str(header.get("Status") or header.get("status_code") or "").strip().upper()
     status_label = {"A": "Approved", "P": "Pending Approval", "D": "Draft", "C": "Cancelled"}.get(status_code, "Draft")
     supplier_name = header.get("SupplierName") or ""
@@ -26188,6 +26792,7 @@ def _build_po_pdf_buffer(unit: str, header: dict, items: list[dict], approval_me
     po_details = [
         ("Purchase Order No", po_no),
         ("Purchase Order Date", fmt_date(po_date)),
+        ("PO Approval Date", fmt_date(po_approval_date)),
         ("Purchasing Dept", purchasing_dept_name),
         ("Status", status_label),
         ("Reference No", ref_no),
@@ -45754,6 +46359,7 @@ def _load_canteen_collections_for_mis(target_unit: str, from_date: str, to_date:
                 "VisitNo": row.get("BillNo"),
                 "PatientTypes": pick(row, "TypeName", default="Canteen"),
                 "PatientType": pick(row, "TypeName", default="Canteen"),
+                "PatientSubType": "Canteen",
                 "TypeOfVisit": "Canteen",
                 "VisitType": "Canteen",
                 "UserName": pick(row, "CollectionByName", default="Unknown"),
@@ -46612,6 +47218,7 @@ def api_mis_collections_export_excel():
     cat_col = get_col(["ReceiptCategory", "Category"])
     pat_cat_col = get_col(["PatientCategory", "Patient_Category", "PayTypeRaw", "PayType"])
     pat_type_col = get_col(["PatientTypes", "PatientType", "Patient_Types"])
+    corp_type_col = get_col(["PatientSubType", "Patient_SubType", "Patient SubType", "CorpType", "Corp Type"])
     visit_col = get_col(["TypeOfVisit", "VisitType", "Visit_Type"])
     type_col = get_col(["ReceiptType", "Type"]) # Needed for PH/PI/P logic
 
@@ -46623,7 +47230,7 @@ def api_mis_collections_export_excel():
         amt_col = "Amount"
 
     # Fill NaNs for strings
-    for col in [user_col, mode_col, cat_col, pat_cat_col, pat_type_col, visit_col, type_col]:
+    for col in [user_col, mode_col, cat_col, pat_cat_col, pat_type_col, corp_type_col, visit_col, type_col]:
         if col: df[col] = df[col].fillna("").astype(str).str.strip()
 
     # --- Logic 1: Crystal Categories ---
@@ -46961,6 +47568,7 @@ def api_mis_collections_export_excel():
         export_df["Visit ID"] = pick_series(["Visit_ID", "VisitId", "VisitID", "VisitIdNo"])
         export_df["Visit No"] = pick_series(["VisitNo", "Visit_No", "Visit_No.", "VisitNumber", "IPDNo", "OPDNo"])
         export_df["Patient Type"] = pick_series(["PatientTypes", "PatientType"])
+        export_df["Corp Type"] = pick_series(["PatientSubType", "Patient_SubType", "Patient SubType", "CorpType", "Corp Type"])
         export_df["Visit"] = pick_series(["TypeOfVisit", "VisitType"])
         export_df["User"] = pick_series(["UserName", "User"])
         export_df["Report Category"] = df["CalculatedCategory"]
@@ -47002,7 +47610,7 @@ def api_mis_collections_export_excel():
 
             for idx, col_name in enumerate(local_df.columns):
                 width = 14
-                if col_name in ["Patient", "Payment Mode", "Report Group"]: width = 20
+                if col_name in ["Patient", "Payment Mode", "Report Group", "Corp Type"]: width = 20
                 if col_name == "Sl.": width = 5
                 ws.set_column(idx, idx, width, curr_raw_fmt if col_name == "Amount" else None, {"hidden": col_name == "CashlessFlag"})
 
@@ -48174,8 +48782,8 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
         rows.sort(key=lambda x: txt(x.get("UserName") or "Unknown User").lower())
 
         # 2. Define Columns (Removed 'User', adjusted widths)
-        # Sl, RecNo, Date, Patient, RegNo, RefNo, Mode, Amount
-        col_widths = [10*mm, 35*mm, 20*mm, 70*mm, 30*mm, 35*mm, 45*mm, 30*mm]
+        # Sl, RecNo, Date, Patient, Corp Type, RegNo, RefNo, Mode, Amount
+        col_widths = [9*mm, 28*mm, 23*mm, 52*mm, 30*mm, 25*mm, 38*mm, 45*mm, 24*mm]
 
         # 3. Initialize Table Data with Header
         table_data = [[
@@ -48183,6 +48791,7 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
             Paragraph("Receipt No", style_th),
             Paragraph("Date", style_th),
             Paragraph("Patient Name", style_th),
+            Paragraph("Corp Type", style_th),
             Paragraph("Reg. No", style_th),
             Paragraph("Bill/Visit No", style_th),
             Paragraph("Payment Mode", style_th),
@@ -48218,20 +48827,20 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
                 # If not the first user, print previous user's subtotal
                 if current_user is not None:
                     table_data.append([
-                        "", "", "", "", "", "",
+                        "", "", "", "", "", "", "",
                         make_paragraph(f"Total for {current_user}:", style_td_right, bold=True),
                         make_paragraph(format_inr(user_total), style_td_right, bold=True)
                     ])
                     # Style for Subtotal Row
                     tbl_style_cmds.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#f1f5f9')))
                     tbl_style_cmds.append(('LINEABOVE', (-2, row_idx), (-1, row_idx), 1, colors.black))
-                    tbl_style_cmds.append(('SPAN', (0, row_idx), (5, row_idx)))
+                    tbl_style_cmds.append(('SPAN', (0, row_idx), (6, row_idx)))
                     row_idx += 1
 
                 # Print New User Header
                 table_data.append([
                     make_paragraph(f"User: {this_user}", style_td, bold=True),
-                    "", "", "", "", "", "", ""
+                    "", "", "", "", "", "", "", ""
                 ])
                 # Style for User Header Row
                 tbl_style_cmds.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#dbeafe')))
@@ -48250,6 +48859,7 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
                 make_paragraph(r.get("Receipt_No"), style_td),
                 make_paragraph(fmt_date(r.get("Receipt_Date")), style_td),
                 make_paragraph(r.get("Patientname") or r.get("Patient"), style_td),
+                make_paragraph(r.get("PatientSubType") or r.get("CorpType"), style_td),
                 make_paragraph(r.get("RegNo"), style_td),
                 make_paragraph(ref_no, style_td),
                 make_paragraph(r.get("PModeName"), style_td),
@@ -48265,24 +48875,24 @@ def _build_collections_pdf_buffer(target_unit: str, from_date: str, to_date: str
         # --- After Loop: Print Last User Subtotal ---
         if current_user is not None:
             table_data.append([
-                "", "", "", "", "", "",
+                "", "", "", "", "", "", "",
                 make_paragraph(f"Total for {current_user}:", style_td_right, bold=True),
                 make_paragraph(format_inr(user_total), style_td_right, bold=True)
             ])
             tbl_style_cmds.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#f1f5f9')))
             tbl_style_cmds.append(('LINEABOVE', (-2, row_idx), (-1, row_idx), 1, colors.black))
-            tbl_style_cmds.append(('SPAN', (0, row_idx), (5, row_idx)))
+            tbl_style_cmds.append(('SPAN', (0, row_idx), (6, row_idx)))
             row_idx += 1
 
         # --- Print Grand Total ---
         table_data.append([
-            "", "", "", "", "", "",
+            "", "", "", "", "", "", "",
             Paragraph("<b><font color='white'>GRAND TOTAL:</font></b>", style_td_right),
             Paragraph(f"<b><font color='white'>{escape(format_inr(grand_total))}</font></b>", style_td_right)
         ])
         tbl_style_cmds.append(('BACKGROUND', (0, row_idx), (-1, row_idx), colors.HexColor('#1e3a8a')))
         tbl_style_cmds.append(('TEXTCOLOR', (0, row_idx), (-1, row_idx), colors.white))
-        tbl_style_cmds.append(('SPAN', (0, row_idx), (5, row_idx)))
+        tbl_style_cmds.append(('SPAN', (0, row_idx), (6, row_idx)))
 
         # Build Table
         t = Table(table_data, colWidths=col_widths, repeatRows=1)
@@ -63222,6 +63832,24 @@ def _register_abdm_route_module():
     )
 
 
+def _register_hr_docgen_route_module():
+    app.register_blueprint(
+        create_hr_docgen_blueprint(
+            login_required=login_required,
+            allowed_units_for_session=_allowed_units_for_session,
+        )
+    )
+
+
+def _register_patient_diagnostic_route_module():
+    app.register_blueprint(
+        create_patient_diagnostic_blueprint(
+            login_required=login_required,
+            allowed_units_for_session=_allowed_units_for_session,
+        )
+    )
+
+
 def _register_purchase_route_modules():
     register_purchase_master_routes(
         app,
@@ -63404,6 +64032,8 @@ _register_asset_management_route_module()
 _register_feedback_complaint_route_module()
 _register_govt_scheme_tracker_route_module()
 _register_abdm_route_module()
+_register_hr_docgen_route_module()
+_register_patient_diagnostic_route_module()
 _register_purchase_route_modules()
 # ============================================================
 # Launch App

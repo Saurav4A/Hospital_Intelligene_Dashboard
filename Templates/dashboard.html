@@ -476,9 +476,18 @@
     {% set allow_pharmacy_sales = allow_all or ('pharmacy_sales' in _sections) %}
     {% set allow_canteen = allow_all or ('canteen' in _sections) %}
     {% set allow_patient_care_journey = allow_all or ('patient_care_journey' in _sections) %}
+    {% set allow_patient_diagnostic_intelligence = allow_all or ('patient_diagnostic_intelligence' in _sections) %}
     {% set allow_asset_management = allow_all or ('asset_management' in _sections) %}
     {% set allow_feedback_complaint = allow_all or ('feedback_complaint' in _sections) %}
     {% set allow_discount = allow_all or ('discount_module' in _sections) %}
+    {% set ns_hr_docgen = namespace(allow_hr_docgen=allow_all or ('hr_docgen' in _sections)) %}
+    {% if not ns_hr_docgen.allow_hr_docgen %}
+      {% for s in _sections %}
+        {% if s.startswith('hr_docgen_') %}
+          {% set ns_hr_docgen.allow_hr_docgen = True %}
+        {% endif %}
+      {% endfor %}
+    {% endif %}
     {% set _unit_scope_text = ((session.get('unit_scope') or _role)|string).upper() %}
     {% set has_govt_scheme_unit = (_role in ['IT', 'Management']) or ('AHL' in _unit_scope_text) or ('ACI' in _unit_scope_text) or ('BALLIA' in _unit_scope_text) %}
     {% set allow_govt_scheme_tracker = (allow_all or ('govt_scheme_tracker' in _sections)) and has_govt_scheme_unit %}
@@ -547,6 +556,33 @@
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M5 12h14"></path>
                   <path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+
+      {% if allow_patient_diagnostic_intelligence %}
+      <a class="card-link" href="{{ url_for('patient_diagnostic_intelligence.page') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0f766e" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M4 19V5"></path>
+              <path d="M4 19h16"></path>
+              <path d="M8 15l3-4 3 2 4-6"></path>
+              <path d="M7 7h4"></path>
+              <path d="M7 10h2"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">Patient Diagnostic Intelligence</div>
+            <p class="card-desc">Search patients or pathology tests, review result history, compare repeated test parameters, and export reports.</p>
+            <div class="quick">
+              <span class="btn btn-blue">Open Intelligence
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
                 </svg>
               </span>
             </div>
@@ -892,6 +928,32 @@
             <p class="card-desc">Submit and approve user creation requests with section/unit rights.</p>
             <div class="quick">
               <span class="btn btn-blue">Manage Users
+                <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
+                  <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
+                </svg>
+              </span>
+            </div>
+          </div>
+        </div>
+      </a>
+      {% endif %}
+
+      {% if ns_hr_docgen.allow_hr_docgen %}
+      <a class="card-link" href="{{ url_for('hr_docgen.dashboard') }}">
+        <div class="card-body">
+          <div class="card-icon">
+            <svg viewBox="0 0 24 24" fill="none" stroke="#0f766e" stroke-width="1.7" stroke-linecap="round" stroke-linejoin="round">
+              <path d="M6 3h9l3 3v15H6z"></path>
+              <path d="M14 3v4h4"></path>
+              <path d="M9 12h6"></path>
+              <path d="M9 16h5"></path>
+            </svg>
+          </div>
+          <div>
+            <div class="card-title">HR Panel</div>
+            <p class="card-desc">Generate HR letters, maintain certificate records, and manage attendance tools from the HID-controlled HR module.</p>
+            <div class="quick">
+              <span class="btn btn-blue">Open HR Module
                 <svg viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="2" stroke-linecap="round" stroke-linejoin="round">
                   <path d="M5 12h14"></path><path d="M12 5l7 7-7 7"></path>
                 </svg>
